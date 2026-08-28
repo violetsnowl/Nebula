@@ -45,6 +45,8 @@ class AudioPlayer {
   private order: number[] = [];
   /** 在 order 中的当前位置。 */
   private pos = -1;
+  /** 通过「下一首播放」插入、尚在等待播放的 queue 下标集合（FIFO 段标记）。 */
+  private viaNextIdx = new Set<number>();
   private mode: PlayMode = 'sequential';
   private failStreak = 0;
   private consecutiveSkips = 0;
@@ -105,6 +107,7 @@ class AudioPlayer {
   /** 播放指定歌曲；可选传入整个队列用于上一首/下一首。 */
   playSong(track: Track, queue?: Track[]): void {
     this.transientBackup = null;
+    this.viaNextIdx.clear();
     if (queue && queue.length) {
       this.queue = queue;
     }
@@ -142,6 +145,7 @@ class AudioPlayer {
       this.playSong(track, [track]);
       return;
     }
+    this.viaNextIdx.clear();
     this.transientBackup = { queue: this.queue, order: [...this.order], pos: this.pos };
     this.queue = [track];
     this.order = [0];
@@ -155,6 +159,7 @@ class AudioPlayer {
 
   /** 恢复上次会话：设置当前歌曲与队列，但不自动播放、不加载音源。 */
   restore(track: Track, queue?: Track[]): void {
+    this.viaNextIdx.clear();
     if (queue && queue.length) {
       this.queue = queue;
     }
@@ -172,12 +177,13 @@ class AudioPlayer {
     this.emit();
   }
 
-  /** 把歌曲插入到“下一首”播放位置（不打断当前播放）。 */
+  /** 把歌曲插入到「下一首」段尾部（FIFO：先添加的先播；不打断当前播放）。 */
   insertNext(track: Track): void {
     if (!this.queue.length) {
       this.queue = [track];
       this.order = [0];
       this.pos = 0;
+      this.viaNextIdx.clear();
       this.state.song = track;
       this.emit();
       return;
@@ -190,8 +196,53 @@ class AudioPlayer {
     const existingAt = this.order.indexOf(idx);
     if (existingAt >= 0) this.order.splice(existingAt, 1);
     const curAt = this.order.indexOf(this.pos);
-    this.order.splice(curAt + 1, 0, idx);
+    // 跳过已插入的「下一首」段，插到段尾，保证多首按添加顺序播放
+    let insertAt = curAt + 1;
+    while (insertAt < this.order.length && this.viaNextIdx.has(this.order[insertAt]!)) insertAt++;
+    this.order.splice(insertAt, 0, idx);
+    this.viaNextIdx.add(idx);
     this.emit();
+  }
+
+  /** 队列快照（按实际播放顺序）：当前曲 + 即将播放。 */
+  getQueueSnapshot(): { current: Track | null; upcoming: Track[] } {
+    if (this.pos < 0 || !this.queue.length || this.pos >= this.order.length) {
+      return { current: null, upcoming: [] };
+    }
+    const current = this.queue[this.order[this.pos]!] ?? null;
+    const upcoming = this.order
+      .slice(this.pos + 1)
+      .map((i) => this.queue[i])
+      .filter((t): t is Track => !!t);
+    return { current, upcoming };
+  }
+
+  /** 从「即将播放」中移除（当前项不可移除）。 */
+  removeUpcoming(trackId: number): void {
+    const qIdx = this.queue.findIndex((t) => t.id === trackId);
+    if (qIdx < 0) return;
+    const at = this.order.indexOf(qIdx);
+    if (at <= this.pos) return;
+    this.order.splice(at, 1);
+    this.queue.splice(qIdx, 1);
+    // 队列删除导致下标前移：统一重映射 order 与 viaNext 段
+    this.order = this.order.map((i) => (i > qIdx ? i - 1 : i));
+    const remapped = new Set<number>();
+    for (const i of this.viaNextIdx) {
+      if (i === qIdx) continue;
+      remapped.add(i > qIdx ? i - 1 : i);
+    }
+    this.viaNextIdx = remapped;
+    this.emit();
+  }
+
+  /** 跳转到队列中的指定曲目并播放（队列 UI 点击）。 */
+  playQueueItem(trackId: number): void {
+    const qIdx = this.queue.findIndex((t) => t.id === trackId);
+    if (qIdx < 0) return;
+    const at = this.order.indexOf(qIdx);
+    if (at < 0) return;
+    this.loadAtOrder(at);
   }
 
   toggle(): void {
@@ -227,6 +278,8 @@ class AudioPlayer {
       }
       this.pos = 0;
     }
+    // 当前曲已消费：不再是「下一首」段
+    this.viaNextIdx.delete(this.order[this.pos]!);
     this.loadAtOrder(this.pos);
   }
 

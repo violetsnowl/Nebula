@@ -390,9 +390,9 @@ async function main() {
   const shuffleOk = modeOk && shuffle.mode === 'random' && shuffle.unique === 12;
 
   // 10a+++. 音量面板悬停向上展开
-  await page.locator('.bar-tools .up-panel').last().hover();
-  await page.waitForSelector('.up-pop .vol-slider', { state: 'visible', timeout: 4000 });
-  const volAfter = await page.locator('.up-pop .vol-slider').count();
+  await page.locator('.bp-tools .vol-ctl').hover();
+  await page.waitForSelector('.vol-pop .vol-slider', { state: 'visible', timeout: 4000 });
+  const volAfter = await page.locator('.vol-pop .vol-slider').count();
   log('音量面板展开', `0 -> ${volAfter}`);
   const volOk = volAfter > 0;
 
@@ -444,16 +444,16 @@ async function main() {
   await page.waitForTimeout(350);
 
   // 10c. 播放 / 暂停
-  await page.locator('.bottom-bar .play-btn').click();
+  await page.locator('.player-surface .bp-play').click();
   await page.waitForFunction(() => !window.__nebula.player.getState().playing);
   log('暂停后 playing=false', await page.evaluate(() => window.__nebula.player.getState().playing === false));
-  await page.locator('.bottom-bar .play-btn').click();
+  await page.locator('.player-surface .bp-play').click();
   await page.waitForFunction(() => window.__nebula.player.getState().playing);
   log('恢复播放 playing=true', 'ok');
 
   // 10d. 下一首 / 上一首
   const idBefore = await page.evaluate(() => window.__nebula.player.getState().song.id);
-  await page.locator('.bottom-bar .ctrl-btn[aria-label="下一首"]').click();
+  await page.locator('.player-surface .bp-ctrl[aria-label="下一首"]').click();
   await page.waitForFunction(
     (prev) => {
       const s = window.__nebula.player.getState();
@@ -464,7 +464,7 @@ async function main() {
   );
   const idAfterNext = await page.evaluate(() => window.__nebula.player.getState().song.id);
   log('下一首切换', `${idBefore} -> ${idAfterNext}`);
-  await page.locator('.bottom-bar .ctrl-btn[aria-label="上一首"]').click();
+  await page.locator('.player-surface .bp-ctrl[aria-label="上一首"]').click();
   await page.waitForFunction(
     (prev) => {
       const s = window.__nebula.player.getState();
@@ -478,7 +478,7 @@ async function main() {
   // 10e. 进度条 seek
   if (duration > 0) {
     const beforeT = await page.evaluate(() => window.__nebula.player.getState().currentTime);
-    const box = await page.locator('.bottom-bar .progress-track').boundingBox();
+    const box = await page.locator('.player-surface .bp-progress-track').boundingBox();
     await page.mouse.click(box.x + box.width * 0.6, box.y + box.height / 2);
     await page.waitForTimeout(500);
     const afterT = await page.evaluate(() => window.__nebula.player.getState().currentTime);
@@ -581,11 +581,14 @@ async function main() {
     window.__nebula.player.playSong(track, [track]);
   });
   await page.waitForFunction(
-    () => document.querySelectorAll('.bar-tools .up-panel .ctrl-btn:not(:disabled)').length >= 3,
+    () => {
+      const btn = document.querySelector('.bp-tools .up-panel .bp-ctrl');
+      return !!btn && !btn.disabled;
+    },
     null,
     { timeout: 8000 },
   );
-  await page.locator('.bar-tools .up-panel').first().hover();
+  await page.locator('.bp-tools .up-panel').first().hover();
   await page.waitForSelector('.up-pop .quality-item', { state: 'visible', timeout: 4000 });
   const qualityItems = await page.locator('.up-pop .quality-item').count();
   await page.locator('.up-pop .quality-item', { hasText: '无损' }).click();

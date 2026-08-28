@@ -5,6 +5,23 @@
 
 ---
 
+## 2026-08-28 — Player P1：Bottom Player 结构重构（分支 ui/nebula-design-deepseek-codex）
+
+**目标**：按 NEBULA_PLAYER_DESIGN_SPEC + PLAYER_AGENT_BRIEF 重做底部播放条（Phase 1），建立 PlayerSurface 单一身份架构。
+
+**改动**
+
+- 新 `src/components/player/`：`PlayerSurface`（compact/expanded 单一 DOM 身份，Phase 2 加入 expanded）、`BottomPlayer`（左 Now Playing / 中 Playback Core / 右 Utility Cluster，视觉权重而非等宽）、`ProgressLine`（极细常显、hover 显示时间）、`VolumeControl`（图标常显 + 滑杆恒在图标上方）、`QueueControl`（常显入口 + 面板：当前项/即将播放、仅即将可移除、点击跳播）、`icons`（统一线性图标）。
+- `AudioPlayer`：`insertNext` 改为 FIFO（viaNext 段标记，先添加先播）；新增 `getQueueSnapshot` / `removeUpcoming` / `playQueueItem`。
+- `App.tsx`：BottomBar 替换为 PlayerSurface(compact) + BottomPlayer；删除旧 `BottomBar.tsx`。
+- `styles.css`：Balanced Frost 材料变量（`--mat-*`，Liquid 未来只换变量）；播放器从「液态玻璃 V2 渐变边框」组移除（禁止常显边框）；工具弹层触发时播放器 z-index 提到 hover 卡片之上（修复弹层被舞台卡片遮挡）。
+- `scripts/qa.cjs`：选择器同步到新组件；音量/音质/播放/seek 用例适配。
+- 新增 `docs/PLAYER_IMPL_PLAN.md`：grill 决策固化 + 8 阶段跟踪。
+
+**验证**：`tsc` + `pnpm qa`（含 check-arch）全绿；音质切换/音量展开/队列逻辑通过自动化用例。
+
+**遗留/待确认**：播放模式循环顺序——文档写 sequential→shuffle→repeat，现有实现为 sequential→repeat-one→random，Phase 1 保持现状，待用户拍板是否改语义。
+
 ## 2026-08-27 — 跨平台歌手/专辑转译路由 + 专辑点播 VIP 路由 + 评论/歌手全曲/详情跳转/头像修复
 
 **目标**

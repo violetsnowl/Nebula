@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BackgroundLayer } from './components/BackgroundLayer';
-import { BottomBar } from './components/BottomBar';
+  import { PlayerSurface } from './components/player/PlayerSurface';
+  import { BottomPlayer } from './components/player/BottomPlayer';
 import { SearchBar } from './components/SearchBar';
 import { LyricsLayer } from './components/LyricsLayer';
 import { StageCanvas } from './components/StageCanvas';
@@ -576,19 +577,19 @@ export default function App() {
         )}
       </div>
 
-      <BottomBar
-        translateOn={lyricTranslationEnabled}
-        qualities={playerState.qualities}
-        quality={playerState.quality || preferredQuality()}
-        mode={playerState.mode}
-        onToggleTranslate={toggleTranslation}
-        onSelectQuality={handleQualitySelect}
-        onCycleMode={cycleModeWithToast}
-        onOpenNowPlaying={openNowPlaying}
-        onOpenComments={openCommentsModal}
-        onOpenSongDetail={openSongDetailModal}
-        onOpenArtist={openArtistByName}
-      />
+      <PlayerSurface variant="compact">
+        <BottomPlayer
+          qualities={playerState.qualities}
+          quality={playerState.quality || preferredQuality()}
+          mode={playerState.mode}
+          onSelectQuality={handleQualitySelect}
+          onCycleMode={cycleModeWithToast}
+          onOpenNowPlaying={openNowPlaying}
+          onOpenComments={openCommentsModal}
+          onOpenSongDetail={openSongDetailModal}
+          onOpenArtist={openArtistByName}
+        />
+      </PlayerSurface>
 
       <OverlayStack
         nowPlayingOpen={nowPlayingOpen}
