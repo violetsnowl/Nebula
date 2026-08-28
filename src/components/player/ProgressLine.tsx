@@ -24,6 +24,10 @@ export const ProgressLine = memo(function ProgressLine({ current, duration, disa
     const rect = el.getBoundingClientRect();
     audioPlayer.seek(((clientX - rect.left) / rect.width) * duration);
   };
+  const endDrag = () => {
+    if (dragging) flush();
+    setDragging(false);
+  };
   const schedule = () => {
     if (timerRef.current !== null) return;
     timerRef.current = window.setTimeout(() => {
@@ -55,8 +59,9 @@ export const ProgressLine = memo(function ProgressLine({ current, duration, disa
           schedule();
         }
       }}
-      onPointerUp={flush}
-      onPointerCancel={flush}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+      onLostPointerCapture={() => setDragging(false)}
     >
       <div className="bp-progress-track">
         <div className="bp-progress-fill" style={{ width: `${pct}%` }} />

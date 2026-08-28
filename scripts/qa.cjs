@@ -582,16 +582,16 @@ async function main() {
   });
   await page.waitForFunction(
     () => {
-      const btn = document.querySelector('.bp-tools .up-panel .bp-ctrl');
+      const btn = document.querySelector('.bp-tools .bp-quality');
       return !!btn && !btn.disabled;
     },
     null,
     { timeout: 8000 },
   );
-  await page.locator('.bp-tools .up-panel').first().hover();
-  await page.waitForSelector('.up-pop .quality-item', { state: 'visible', timeout: 4000 });
-  const qualityItems = await page.locator('.up-pop .quality-item').count();
-  await page.locator('.up-pop .quality-item', { hasText: '无损' }).click();
+  await page.locator('.bp-tools .bp-quality').click();
+  await page.waitForSelector('.quality-pop .quality-item', { state: 'visible', timeout: 4000 });
+  const qualityItems = await page.locator('.quality-pop .quality-item').count();
+  await page.locator('.quality-pop .quality-item', { hasText: '无损' }).click();
   await page.waitForTimeout(300);
   const qualityState = await page.evaluate(() => {
     const s = window.__nebula.player.getState();

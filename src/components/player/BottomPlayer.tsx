@@ -4,6 +4,7 @@ import { useAudioPlayer } from '../../lib/audio/useAudioPlayer';
 import { ProgressLine } from './ProgressLine';
 import { VolumeControl } from './VolumeControl';
 import { QueueControl } from './QueueControl';
+import { QualityControl } from './QualityControl';
 import {
   IconPrev,
   IconNext,
@@ -11,7 +12,7 @@ import {
   IconPause,
   IconModeSequential,
   IconModeShuffle,
-  IconModeRepeat,
+  IconModeRepeatOne,
   IconComments,
 } from './icons';
 
@@ -39,7 +40,7 @@ const SOURCE_LABEL: Record<string, string> = {
 const MODE_ICON = {
   sequential: <IconModeSequential />,
   random: <IconModeShuffle />,
-  'repeat-one': <IconModeRepeat />,
+  'repeat-one': <IconModeRepeatOne />,
 };
 
 /**
@@ -64,8 +65,6 @@ export const BottomPlayer = memo(function BottomPlayer({
     : {
         background: `linear-gradient(135deg, hsl(${state.song?.hue1 ?? 220} 70% 58%), hsl(${state.song?.hue2 ?? 280} 72% 34%))`,
       };
-  const qualityLabel = qualities.find((o) => o.level === quality)?.label ?? (quality ? quality : '音质');
-
   return (
     <div className={`bp-shell${state.loading ? ' is-loading' : ''}`}>
       <ProgressLine current={state.currentTime} duration={state.duration} disabled={!hasSong} />
@@ -134,23 +133,7 @@ export const BottomPlayer = memo(function BottomPlayer({
           </button>
           <VolumeControl state={state} />
           <QueueControl />
-          <div className="up-panel">
-            <button className="bp-ctrl bp-quality" title="音质" disabled={!hasSong}>
-              <span className="quality-badge">{qualityLabel.length > 5 ? qualityLabel.slice(0, 5) + '…' : qualityLabel}</span>
-            </button>
-            <div className="up-pop">
-              <div className="up-pop-title">音质</div>
-              {qualities.map((o) => (
-                <button
-                  key={o.level}
-                  className={`quality-item${o.level === quality ? ' is-current' : ''}`}
-                  onClick={() => onSelectQuality(o.level)}
-                >
-                  {o.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          <QualityControl qualities={qualities} quality={quality} onSelectQuality={onSelectQuality} />
           <button className="bp-ctrl bp-ctrl--ghost" aria-label="评论" title="查看评论" disabled={!hasSong} onClick={onOpenComments}>
             <IconComments />
           </button>

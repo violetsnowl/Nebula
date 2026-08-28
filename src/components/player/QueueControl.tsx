@@ -41,7 +41,7 @@ export const QueueControl = memo(function QueueControl() {
         <IconQueue />
       </button>
       {open && (
-        <div className="queue-pop">
+        <div className="queue-pop" onMouseEnter={() => setOpen(true)}>
           <div className="queue-pop-title">播放队列</div>
           {snap.current && (
             <button className="queue-row is-current" onClick={() => audioPlayer.playQueueItem(snap.current!.id)}>

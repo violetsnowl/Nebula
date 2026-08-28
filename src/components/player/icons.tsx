@@ -33,14 +33,16 @@ export function IconPause() {
 }
 
 export function IconModeSequential() {
+  // 顺序播放：两个围成一圈的箭头（经典 repeat 图标）
   return (
     <svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true">
-      <path d="M7 7h10v2H7V7zm0 4h10v2H7v-2zm0 4h6v2H7v-2zM17 15l4 2-4 2v-4z" />
+      <path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z" />
     </svg>
   );
 }
 
 export function IconModeShuffle() {
+  // 随机播放：顺序箭头交叉（经典 shuffle 图标）
   return (
     <svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true">
       <path d="M5 7h3.2l7.5 10H19a1 1 0 0 1 0 2h-3.2L8.3 9H5a1 1 0 0 1 0-2zm0 10h3.2L13 10.6l1.4 1.9L9.6 19H5a1 1 0 0 1 0-2zM19 5h-3.2L10.6 11l-1.4-1.9L14.4 5H19a1 1 0 0 1 0 2z" />
@@ -48,11 +50,15 @@ export function IconModeShuffle() {
   );
 }
 
-export function IconModeRepeat() {
+export function IconModeRepeatOne() {
+  // 单曲循环：顺序播放图标 + 小数字 1
   return (
-    <svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true">
-      <path d="M7 7h10v2.2l4-3.2-4-3.2V5H6a1 1 0 0 0-1 1v5h2V7zm10 10H7v-2.2l-4 3.2 4 3.2V19h11a1 1 0 0 0 1-1v-5h-2v4z" />
-    </svg>
+    <span className="mode-repeat-one">
+      <svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true">
+        <path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z" />
+      </svg>
+      <em>1</em>
+    </span>
   );
 }
 
