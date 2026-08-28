@@ -33,31 +33,72 @@ export function IconPause() {
 }
 
 export function IconModeSequential() {
-  // 顺序播放：两个围成一圈的箭头（经典 repeat 图标）
+  // 顺序播放：两个围成一圈的箭头（经典 repeat 图标，线条风格）
   return (
-    <svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true">
-      <path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z" />
+    <svg
+      viewBox="0 0 24 24"
+      width="18"
+      height="18"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="m17 2 4 4-4 4" />
+      <path d="M3 11v-1a4 4 0 0 1 4-4h14" />
+      <path d="m7 22-4-4 4-4" />
+      <path d="M21 13v1a4 4 0 0 1-4 4H3" />
     </svg>
   );
 }
 
 export function IconModeShuffle() {
-  // 随机播放：顺序箭头交叉（经典 shuffle 图标）
+  // 随机播放：两条箭头交叉（经典 shuffle 图标）
   return (
-    <svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true">
-      <path d="M5 7h3.2l7.5 10H19a1 1 0 0 1 0 2h-3.2L8.3 9H5a1 1 0 0 1 0-2zm0 10h3.2L13 10.6l1.4 1.9L9.6 19H5a1 1 0 0 1 0-2zM19 5h-3.2L10.6 11l-1.4-1.9L14.4 5H19a1 1 0 0 1 0 2z" />
+    <svg
+      viewBox="0 0 24 24"
+      width="18"
+      height="18"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M2 18h1.4c1.3 0 2.5-.6 3.3-1.7l6.1-8.6c.8-1.1 2-1.7 3.3-1.7H22" />
+      <path d="m18 2 4 4-4 4" />
+      <path d="M2 6h1.9c1.5 0 2.9.9 3.6 2.2" />
+      <path d="M22 18h-5.9c-1.3 0-2.6-.7-3.3-1.8l-.5-.8" />
+      <path d="m18 14 4 4-4 4" />
     </svg>
   );
 }
 
 export function IconModeRepeatOne() {
-  // 单曲循环：顺序播放图标 + 小数字 1
+  // 单曲循环：顺序播放图标 + 居中小数字 1
   return (
     <span className="mode-repeat-one">
-      <svg viewBox="0 0 24 24" width="17" height="17" fill="currentColor" aria-hidden="true">
-        <path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z" />
+      <svg
+        viewBox="0 0 24 24"
+        width="18"
+        height="18"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        aria-hidden="true"
+      >
+        <path d="m17 2 4 4-4 4" />
+        <path d="M3 11v-1a4 4 0 0 1 4-4h14" />
+        <path d="m7 22-4-4 4-4" />
+        <path d="M21 13v1a4 4 0 0 1-4 4H3" />
+        <path d="M12 9.4v5.2" />
+        <path d="M10.7 10.9 12 9.4" />
       </svg>
-      <em>1</em>
     </span>
   );
 }

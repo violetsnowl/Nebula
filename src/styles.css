@@ -1230,11 +1230,11 @@ body {
 
 .player-surface {
   /* Balanced Frost 材料参数：Liquid 未来只换这组变量，不动结构 */
-  --mat-bg: rgba(17, 19, 32, 0.52);
-  --mat-bg-top: rgba(31, 34, 54, 0.44);
-  --mat-blur: 24px;
-  --mat-saturate: 160%;
-  --mat-edge: rgba(255, 255, 255, 0.055);
+  --mat-bg: rgba(26, 30, 50, 0.34);
+  --mat-bg-top: rgba(56, 62, 94, 0.24);
+  --mat-blur: 28px;
+  --mat-saturate: 170%;
+  --mat-edge: rgba(255, 255, 255, 0.08);
   --mat-shadow-contact: 0 2px 8px rgba(0, 0, 0, 0.28);
   --mat-shadow-ambient: 0 18px 44px rgba(0, 0, 0, 0.38);
   position: fixed;
@@ -1415,8 +1415,8 @@ body {
 }
 
 .bp-ctrl:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.1);
   color: #fff;
+  transform: scale(1.07);
 }
 
 .bp-ctrl:active:not(:disabled) {
@@ -1441,7 +1441,6 @@ body {
   height: 40px;
   border-radius: 50%;
   border: none;
-  background: rgba(255, 255, 255, 0.1);
   color: #fff;
   display: flex;
   align-items: center;
@@ -1451,7 +1450,8 @@ body {
 }
 
 .bp-play:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.16);
+  transform: scale(1.06);
+  filter: brightness(1.18);
 }
 
 .bp-play:active:not(:disabled) {
@@ -1461,6 +1461,18 @@ body {
 .bp-play:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+/* 播放器内所有按钮：禁止默认焦点方框（hover/激活反馈由图标与文字自身呈现） */
+.bp-title:focus,
+.bp-artist:focus,
+.bp-cover:focus,
+.bp-ctrl:focus,
+.bp-play:focus,
+.quality-item:focus,
+.queue-row:focus,
+.queue-remove:focus {
+  outline: none;
 }
 
 /* 右：Utility Cluster（按视觉权重） */
@@ -1544,21 +1556,11 @@ body {
 .bp-progress-time {
   position: absolute;
   right: 0;
-  top: 50%;
-  transform: translateY(-50%);
+  bottom: 2px;
   font-size: 9.5px;
   font-variant-numeric: tabular-nums;
-  color: rgba(255, 255, 255, 0.8);
-  background: rgba(10, 12, 22, 0.5);
-  padding: 1px 6px;
-  border-radius: 7px;
-  opacity: 0;
+  color: rgba(255, 255, 255, 0.5);
   pointer-events: none;
-  transition: opacity 0.15s ease;
-}
-
-.bp-progress:hover .bp-progress-time {
-  opacity: 1;
 }
 
 /* 音量：图标常显，滑杆永远在图标上方 */
@@ -1627,17 +1629,41 @@ body {
   bottom: calc(100% + 10px);
   left: 50%;
   transform: translateX(-50%);
-  min-width: 150px;
+  min-width: 160px;
   display: flex;
   flex-direction: column;
   gap: 2px;
-  padding: 8px;
-  border-radius: 14px;
+  padding: 10px;
+  border-radius: 16px;
   background: rgba(14, 16, 28, 0.74);
-  backdrop-filter: blur(22px) saturate(160%);
-  -webkit-backdrop-filter: blur(22px) saturate(160%);
-  box-shadow: 0 14px 36px rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(24px) saturate(160%);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
   animation: popFade 0.14s ease;
+}
+
+.quality-pop .quality-item {
+  display: flex;
+  align-items: center;
+  text-align: left;
+  font-size: 12px;
+  padding: 7px 10px;
+  border: none;
+  border-radius: 9px;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+  transition: color 0.15s ease, transform 0.15s ease;
+}
+
+.quality-pop .quality-item:hover {
+  color: #fff;
+  transform: translateX(2px);
+}
+
+.quality-pop .quality-item.is-current {
+  color: rgba(150, 205, 255, 0.9);
+  font-weight: 600;
 }
 
 @keyframes popFade {
@@ -1757,7 +1783,7 @@ body {
 
 .queue-remove:hover {
   color: #fff;
-  background: rgba(255, 255, 255, 0.1);
+  transform: translateY(-1px);
 }
 
 .progress-track {

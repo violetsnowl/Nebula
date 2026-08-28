@@ -1,4 +1,5 @@
 import { memo, useEffect, useRef, useState } from 'react';
+import { useVisualAtmosphere } from '../../hooks/background/VisualAtmosphereContext';
 
 interface QualityControlProps {
   qualities: { level: string; label: string; needsVip?: boolean; needsSvip?: boolean }[];
@@ -17,7 +18,9 @@ export const QualityControl = memo(function QualityControl({
 }: QualityControlProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const { palette } = useVisualAtmosphere();
   const qualityLabel = qualities.find((o) => o.level === quality)?.label ?? (quality ? quality : '音质');
+  const accent = palette?.primary;
 
   useEffect(() => {
     if (!open) return;
@@ -46,11 +49,12 @@ export const QualityControl = memo(function QualityControl({
       </button>
       {open && (
         <div className="quality-pop">
-          <div className="up-pop-title">音质</div>
+          <div className="queue-pop-title">音质</div>
           {qualities.map((o) => (
             <button
               key={o.level}
               className={`quality-item${o.level === quality ? ' is-current' : ''}`}
+              style={o.level === quality && accent ? { color: accent } : undefined}
               onClick={() => {
                 onSelectQuality(o.level);
                 setOpen(false);
