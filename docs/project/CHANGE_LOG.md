@@ -5,6 +5,20 @@
 
 ---
 
+## 2026-08-30 — 文档体系重构：docs 二级分类 + 用户画像/上下文快照（与 main 同步）
+
+**目标**：docs 按二级目录分类；补齐长期用户记忆画像与上下文压缩继承机制。
+
+**改动**
+
+- 分类：`docs/{project,design,meta}`；播放器三份母稿（NEBULA_PLAYER_DESIGN_SPEC / PLAYER_AGENT_BRIEF / PLAYER_IMPL_PLAN）归入 `docs/design/`。
+- 新增 `docs/meta/USER_PROFILE.md` 与 `docs/meta/CONTEXT_SNAPSHOT.md`（与 main 内容一致）。
+- 更新 HANDOFF / PROJECT / NOTES 内部引用与代码注释中的 docs 路径。
+
+**验证**
+
+- 全库 grep `docs/` 引用已核对；文档 + 注释改动，不涉及构建 / QA。
+
 ## 2026-08-29 — Player P1 二轮打磨：音质弹窗重设计、模式图标重绘、系统取色、去方框/圆hover、玻璃通透、时间常显
 
 **目标**：按用户桌面端验收反馈的 7 点重做。
