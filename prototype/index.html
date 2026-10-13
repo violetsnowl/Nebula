@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nebula Player — Phase 1: Bottom Player</title>
+
+  <!-- Inter font -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="css/tokens.css">
+  <link rel="stylesheet" href="css/base.css">
+  <link rel="stylesheet" href="css/bottom-player.css">
+</head>
+<body>
+
+  <!-- Demo Stage Background (simulated Nebula main stage) -->
+  <div class="demo-stage" id="demoStage">
+    <div style="position:absolute;bottom:100px;left:50%;transform:translateX(-50%);text-align:center;color:rgba(255,255,255,0.15);font-size:13px;pointer-events:none;">
+      Nebula Main Stage (demo)<br>
+      <span style="font-size:11px;">点击封面进入 Listening Space · 右键打开菜单</span>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════
+       BOTTOM PLAYER
+       ═══════════════════════════════════════ -->
+  <div class="bp" id="bottomPlayer" oncontextmenu="return false;">
+
+    <!-- Progress Bar (top edge) -->
+    <div class="bp-progress" id="bpProgress">
+      <div class="bp-progress-track">
+        <div class="bp-progress-fill" id="progressFill"></div>
+      </div>
+      <div class="bp-progress-thumb" id="progressThumb"></div>
+      <div class="bp-time-tooltip" id="timeTooltip">0:00</div>
+    </div>
+
+    <div class="bp-inner">
+
+      <!-- ── LEFT: Now Playing Object ── -->
+      <div class="bp-left">
+        <div class="bp-cover" id="bpCover" title="进入 Listening Space">
+          <div class="bp-cover-img" id="coverImg"></div>
+        </div>
+        <div class="bp-meta">
+          <div class="bp-song" id="bpSong" title="查看歌曲详情">未在播放</div>
+          <div class="bp-artist" id="bpArtist" title="查看歌手">点击星云卡片开始播放</div>
+        </div>
+        <div class="bp-quality" id="bpQuality" title="音质">—</div>
+      </div>
+
+      <!-- ── CENTER: Playback Core ── -->
+      <div class="bp-center">
+        <!-- Previous -->
+        <button class="bp-ctrl bp-prev" id="btnPrev" aria-label="上一首" title="上一首">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M6 6h2v12H6zm3.5 6l8.5 6V6z"/>
+          </svg>
+        </button>
+
+        <!-- Play / Pause -->
+        <button class="bp-ctrl bp-play" id="btnPlay" aria-label="播放" title="播放/暂停">
+          <svg viewBox="0 0 24 24" fill="currentColor" id="iconPlay">
+            <path d="M8 5v14l11-7z"/>
+          </svg>
+          <svg viewBox="0 0 24 24" fill="currentColor" id="iconPause" style="display:none;">
+            <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>
+          </svg>
+        </button>
+
+        <!-- Next -->
+        <button class="bp-ctrl bp-next" id="btnNext" aria-label="下一首" title="下一首">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M6 18l8.5-6L6 6v12zM16 6v12h2V6h-2z"/>
+          </svg>
+        </button>
+      </div>
+
+      <!-- ── RIGHT: Utility Cluster ── -->
+      <div class="bp-right">
+
+        <!-- Playback Mode -->
+        <button class="bp-util bp-mode" id="btnMode" aria-label="播放模式" title="顺序播放">
+          <svg viewBox="0 0 24 24" fill="currentColor" id="iconMode">
+            <path d="M7 7h10v3l4-4-4-4v3H5v6h2V7zm10 10H7v-3l-4 4 4 4v-3h12v-6h-2v4z"/>
+          </svg>
+        </button>
+
+        <!-- Volume -->
+        <div class="bp-util bp-volume" id="bpVolume">
+          <svg viewBox="0 0 24 24" fill="currentColor" id="iconVolume">
+            <path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z"/>
+          </svg>
+          <div class="bp-volume-slider-wrap">
+            <input type="range" id="volumeSlider" min="0" max="1" step="0.01" value="0.8">
+          </div>
+        </div>
+
+        <!-- Queue -->
+        <button class="bp-util bp-queue-btn" id="btnQueue" aria-label="播放队列" title="播放队列">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M15 6H3v2h12V6zm0 4H3v2h12v-2zM3 16h8v-2H3v2zM17 6v8.18c-.31-.11-.65-.18-1-.18-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3V8h3V6h-5z"/>
+          </svg>
+        </button>
+
+        <!-- Auto-hide toggle -->
+        <button class="bp-util bp-hide-btn" id="btnHide" aria-label="隐藏播放条" title="自动隐藏">
+          <svg viewBox="0 0 24 24" fill="currentColor">
+            <path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"/>
+          </svg>
+        </button>
+
+      </div>
+    </div>
+
+    <!-- ── Queue Panel (floating) ── -->
+    <div class="bp-queue" id="queuePanel">
+      <div class="bp-queue-header">播放队列</div>
+      <div class="bp-queue-list" id="queueList"></div>
+    </div>
+
+    <!-- ── Quality Selector Panel ── -->
+    <div class="bp-quality-panel" id="qualityPanel"></div>
+
+  </div>
+
+  <!-- ── Context Menu ── -->
+  <div class="context-menu" id="contextMenu">
+    <button class="context-menu-item" data-action="now-playing">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55C7.79 13 6 14.79 6 17s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/></svg>
+      打开播放窗口
+    </button>
+    <div class="context-menu-sep"></div>
+    <button class="context-menu-item" data-action="toggle-hide">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M7.41 15.41L12 10.83l4.59 4.58L18 14l-6-6-6 6z"/></svg>
+      <span id="ctxHideLabel">自动隐藏播放条</span>
+    </button>
+    <div class="context-menu-sep"></div>
+    <button class="context-menu-item" data-action="song-detail">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
+      查看歌曲详情
+    </button>
+    <button class="context-menu-item" data-action="artist">
+      <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+      查看歌手
+    </button>
+  </div>
+
+  <!-- Scripts -->
+  <script src="js/mock-data.js"></script>
+  <script src="js/state.js"></script>
+  <script src="js/app.js"></script>
+
+</body>
+</html>

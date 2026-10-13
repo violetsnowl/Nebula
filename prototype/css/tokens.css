@@ -1,0 +1,148 @@
+/* ============================================================
+   NEBULA PLAYER — CSS Design Tokens
+   Frosted Glass Material System
+   All visual parameters are here. Theme switching = swap this file.
+   ============================================================ */
+
+:root {
+  /* ── Base Surface ── */
+  --ui-bg-a: rgba(20, 22, 36, 0.72);
+  --ui-bg-b: rgba(12, 14, 26, 0.56);
+  --ui-bg-solid: rgb(16, 18, 30);
+
+  /* ── Border Gradient ── */
+  --ui-border-hi: rgba(255, 255, 255, 0.12);
+  --ui-border-lo: rgba(255, 255, 255, 0.03);
+  --ui-border-focus: rgba(160, 180, 255, 0.35);
+
+  /* ── Shadow ── */
+  --ui-shadow-outer: 0 8px 32px rgba(0, 0, 0, 0.45),
+                     0 2px 8px rgba(0, 0, 0, 0.25);
+  --ui-shadow-inner-hi: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  --ui-shadow-inner-lo: inset 0 -1px 0 rgba(0, 0, 0, 0.12);
+  --ui-shadow-float: 0 16px 48px rgba(0, 0, 0, 0.55),
+                     0 4px 16px rgba(0, 0, 0, 0.3);
+
+  /* ── Glass Properties ── */
+  --ui-blur: 24px;
+  --ui-saturate: 1.4;
+  --ui-bg-tint: 0.06;
+
+  /* ── Glow / Accent (dynamically overridden per song) ── */
+  --glow-rgb: 120, 140, 220;
+  --glow-a: 0.10;
+  --ui-hi-color: rgba(var(--glow-rgb), var(--glow-a));
+
+  /* ── Song-derived palette (set by JS) ── */
+  --song-hue1: 220;
+  --song-hue2: 270;
+  --song-accent: hsl(var(--song-hue1) 65% 60%);
+  --song-accent-dim: hsl(var(--song-hue1) 50% 40%);
+  --song-accent-glow: hsla(var(--song-hue1) 65% 60% / 0.25);
+
+  /* ── Text ── */
+  --ui-text-primary: rgba(255, 255, 255, 0.92);
+  --ui-text-secondary: rgba(255, 255, 255, 0.58);
+  --ui-text-tertiary: rgba(255, 255, 255, 0.36);
+  --ui-text-disabled: rgba(255, 255, 255, 0.22);
+
+  /* ── Hover Strength Scale ── */
+  --ui-hover-soft-scale: 1.03;
+  --ui-hover-med-scale: 1.05;
+  --ui-hover-strong-scale: 1.07;
+  --ui-hover-bright: 1.12;
+  --ui-hover-saturate: 1.10;
+  --ui-hover-lift: -2px;
+  --ui-hover-strong-lift: -4px;
+
+  /* ── Focus Ring ── */
+  --ui-focus-ring: 0 0 0 2px rgba(var(--glow-rgb), 0.4);
+
+  /* ── Typography ── */
+  --ui-font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
+  --ui-font-size-xs: 0.6875rem;   /* 11px */
+  --ui-font-size-sm: 0.75rem;     /* 12px */
+  --ui-font-size-base: 0.8125rem; /* 13px */
+  --ui-font-size-md: 0.875rem;    /* 14px */
+  --ui-font-size-lg: 1rem;        /* 16px */
+  --ui-font-size-xl: 1.25rem;     /* 20px */
+
+  /* ── Spacing ── */
+  --ui-space-xs: 4px;
+  --ui-space-sm: 8px;
+  --ui-space-md: 12px;
+  --ui-space-lg: 16px;
+  --ui-space-xl: 24px;
+  --ui-space-2xl: 32px;
+
+  /* ── Radius ── */
+  --ui-radius-sm: 6px;
+  --ui-radius-md: 10px;
+  --ui-radius-lg: 16px;
+  --ui-radius-xl: 20px;
+  --ui-radius-pill: 999px;
+
+  /* ── Animation ── */
+  --ui-duration-fast: 120ms;
+  --ui-duration-micro: 160ms;
+  --ui-duration-base: 220ms;
+  --ui-duration-panel: 350ms;
+  --ui-duration-morph: 420ms;
+  --ui-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ui-ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+  --ui-ease-smooth: cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* ── Bottom Player Geometry ── */
+  --bp-width: 60vw;
+  --bp-min-width: 520px;
+  --bp-max-width: 860px;
+  --bp-height: 68px;
+  --bp-radius: var(--ui-radius-xl);
+  --bp-bottom-gap: 20px;
+  --bp-blur: var(--ui-blur);
+
+  /* ── Bottom Player Zones ── */
+  --bp-left-ratio: 0.35;
+  --bp-center-ratio: 0.25;
+  --bp-right-ratio: 0.40;
+
+  /* ── Cover ── */
+  --cover-size: 48px;
+  --cover-radius: var(--ui-radius-md);
+
+  /* ── Progress ── */
+  --progress-height: 2px;
+  --progress-height-hover: 3px;
+  --progress-color: rgba(255, 255, 255, 0.25);
+  --progress-fill: var(--song-accent);
+  --progress-thumb: #fff;
+
+  /* ── Controls ── */
+  --ctrl-icon-size: 18px;
+  --ctrl-play-size: 26px;
+  --ctrl-gap: var(--ui-space-lg);
+  --ctrl-hit-area: 36px;
+
+  /* ── Volume Slider ── */
+  --vol-slider-width: 100px;
+  --vol-slider-height: 3px;
+
+  /* ── Queue Panel ── */
+  --queue-width: 320px;
+  --queue-max-height: 400px;
+
+  /* ── Utility ── */
+  --util-icon-size: 16px;
+  --util-gap: var(--ui-space-md);
+}
+
+/* ── Reduced Motion ── */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --ui-duration-fast: 0ms;
+    --ui-duration-micro: 0ms;
+    --ui-duration-base: 0ms;
+    --ui-duration-panel: 0ms;
+    --ui-duration-morph: 0ms;
+  }
+}
