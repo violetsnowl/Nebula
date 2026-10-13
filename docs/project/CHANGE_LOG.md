@@ -5,6 +5,23 @@
 
 ---
 
+## 2026-10-13 — UI 分支推送远端备份 + 记录仓库迁移
+
+**目标**：Player P1 与播放器设计母稿此前只存在于本机分支，存在单点丢失风险；用户确认后推送远端备份。
+
+**改动**
+
+- 推送 `ui/nebula-design-deepseek-codex` → `origin/ui/nebula-design-deepseek-codex`（`fed8735`，包含 Player P1 三个提交 + docs 二级分类 / AGENTS.md / 快照刷新三个文档提交）。本地分支已建立跟踪关系；远端仍只有该分支与 `main`，主分支未受影响。
+- 记录仓库迁移：远端由 `github.com/a161858970-ux/nebula` 迁移至 `github.com/violetsnowl/nebula`（旧地址自动重定向）；同步更新 `HANDOFF.md` 中的远端地址引用。
+
+**验证**
+
+- `git ls-remote --heads origin` 确认远端存在 `refs/heads/main`（`c4727ea`）与 `refs/heads/ui/nebula-design-deepseek-codex`（`fed8735`）；推送前工作树干净。
+
+**备注**
+
+- 另一 agent 的分支 `ui/nebula-design` 相对 main 无独有提交，未推送；其工作树内仍有未提交文件（属该 agent 职责范围）。
+
 ## 2026-09-13 — 新增项目 GitHub README（开发期版）+ 冷启动预热刷新
 
 **目标**

@@ -18,12 +18,13 @@
 - 连续性因此分三层：① 线程对话历史（会在压缩中损失细节）；② 仓库文档（本目录 + CHANGE_LOG + 冻结设计规格，人类可读、可无限增长）；③ git 提交历史（事实基准）。
 - **协议**：新会话 / 新 agent / 换模型后按上面「恢复路径」读完再动手；重大里程碑或会话结束时刷新本文件「当前状态」小节。`AGENTS.md` 已配置自动指向这条路径。
 
-## 当前状态（2026-09-13）
+## 当前状态（2026-10-13）
 
 - **目录 / 分支**：
-  - `music-nebula`（main，HEAD `d003798`）— 主项目，本会话直管；已补仓库 README（开发期版）。
-  - `music-nebula-ui Created by deepseek-codex`（`ui/nebula-design-deepseek-codex`，HEAD `d796031`）— UI 设计工作树，本会话直管。
+  - `music-nebula`（main）— 主项目，本会话直管；含仓库 README（开发期版）与文档体系。**分支 HEAD 会随提交变化，需要精确值时用 `git log -1` 取，不要依赖本文档记录。**
+  - `music-nebula-ui Created by deepseek-codex`（`ui/nebula-design-deepseek-codex`）— UI 设计工作树，本会话直管；关键里程碑：`2d18039` / `7e38760` / `f79b65a`（Player P1 三轮）、`bc15d95` 起为文档分类与快照。
   - `music-nebula-ui Created by mimo-hermes`（`ui/nebula-design`）— 另一 agent 的目录，不碰。
+- **远端仓库**：`github.com/violetsnowl/nebula`（2026-10 由 `a161858970-ux/nebula` 迁移，旧地址自动重定向）。远端分支：`main` + `ui/nebula-design-deepseek-codex`（2026-10-13 推送，作为 UI 分支的异地备份；合并进 main 后可按需删除）。
 - **活跃任务**：Nebula Player 重构（8 阶段，见 `docs/design/PLAYER_IMPL_PLAN.md`）。
   - Phase 1（Bottom Player）已实现并两轮打磨：`2d18039`（结构重构）→ `7e38760`（弹层开关/进度条/图标/音量/高度）→ `f79b65a`（音质弹窗重设计、图标按参考图重绘、系统取色、去方框/圆 hover、玻璃通透、时间常显）。**状态：待用户桌面端最终复验**（8-30 后项目搁置）。
   - 下一阶段：**Phase 2** Listening Space shell + Bottom→Listening 连续变形 + 主舞台退场。
