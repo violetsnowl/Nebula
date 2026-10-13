@@ -5,6 +5,25 @@
 
 ---
 
+## 2026-10-13 — 接管 mimo-hermes 停滞工作窗并推送归档分支
+
+**目标**：另一 agent 的工作窗已废弃，其产物需留档；用户确认后由其接管并推送。
+
+**现状核查（与预期不同，需记录）**
+
+- 该工作树（`music-nebula-ui Created by mimo-hermes`，分支 `ui/nebula-design`）**没有任何本地提交**——HEAD 停在 `f60c82c`，相对 main 的独有提交数为 0；工作树里只有未跟踪文件。
+- 未跟踪内容为：`prototype/`（独立 HTML 原型：`index.html` + `css/{tokens,base,bottom-player}.css` + `js/{app,state,mock-data}.js`，约 78KB）与两份设计母稿副本（与 `docs/design/` 版本 SHA256 相同）。
+
+**改动**
+
+- 在原工作树内提交上述产物（`c6add1c`），推送为远端分支 `origin/ui/nebula-design`。
+- 远端现有三条分支：`main`、`ui/nebula-design-deepseek-codex`（活跃）、`ui/nebula-design`（本次归档，不参与迭代）。
+- 本地 `origin` 地址更新为迁移后的 `https://github.com/violetsnowl/nebula.git`。
+
+**备注**
+
+- `prototype/` 为独立 HTML 原型（即后来被否定的"先做独立原型再搬代码"路线），**不作为实现真源**；真源仍是本目录下的两份母稿 + `PLAYER_IMPL_PLAN.md`。
+
 ## 2026-10-13 — UI 分支推送远端备份 + 记录仓库迁移
 
 **目标**：Player P1 与播放器设计母稿此前只存在于本机分支，存在单点丢失风险；用户确认后推送远端备份。
