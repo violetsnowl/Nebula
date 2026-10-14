@@ -15,7 +15,7 @@
 
 - 每步 `pnpm build` + QA 全绿后独立提交；UI 设计每阶段用户亲自 `pnpm build:desktop && pnpm desktop` 桌面端验收。
 - 不交付截图 png（用户明确不需要）。
-- 分支隔离：main 主开发；UI 设计在独立 worktree（`music-nebula-ui Created by deepseek-codex`，分支 `ui/nebula-design-deepseek-codex`）；`music-nebula-ui Created by mimo-hermes` 目录 / 分支不碰。
+- 分支隔离：main 主开发；UI 设计在独立 worktree（`music-nebula-ui Created by deepseek-codex`，分支 `ui/nebula-design-deepseek-codex`）。旧 mimo-hermes 工作树已于 2026-10-13 删除归档（内容存于远端分支 `ui/nebula-design`）——勿重建、勿改动。
 - 文档是事实源：冻结的设计规格 / 执行稿不得自由发挥；实现以文档为准，参数在约束内通过实际界面校准。
 - **收尾 / 交接固定清单**（用户 2026-10 明确要求）：① 先探测验证入口并跑适用的 build / QA / lint；② 检查 `git status`、调试残留、密钥与本地配置；③ 把本窗口真正产生或确认的信息固化进既有文档体系（不新建平行体系）；④ 按既有分支规则提交推送；⑤ 按四问汇报：完成了什么 / 下一步 / 待拍板 / 未决风险。
 - **跨 agent / 跨模型迁移质量优先**：用户会定期更换模型与 harness，要求把有用上下文（进度、决策与原因、踩坑、环境变化、风险）写进文档，**不依赖线程记忆**；巨型上下文窗口收尾时必须完整沉淀。
