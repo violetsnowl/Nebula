@@ -17,4 +17,4 @@
 - Hover 反馈必须由元素自身呈现（文字 / 图标变亮、轻微 scale）；禁止圆形背景、外圈方框、通用发光。
 - 颜色优先系统取色（封面 / 背景采样），禁止硬编码蓝。
 - 不交付截图 png。
-- 分支纪律：main 主开发；UI 设计在独立 worktree `music-nebula-ui Created by deepseek-codex`（分支 `ui/nebula-design-deepseek-codex`）；`music-nebula-ui Created by mimo-hermes` 不碰。
+- 分支纪律：main 主开发；UI 设计在独立 worktree `music-nebula-ui Created by deepseek-codex`（分支 `ui/nebula-design-deepseek-codex`）。旧 `music-nebula-ui Created by mimo-hermes` 工作树已于 2026-10-13 删除归档（内容存于远端分支 `ui/nebula-design`，不参与迭代）——勿重建、勿改动。
