@@ -5,6 +5,30 @@
 
 ---
 
+## 2026-10-14 — 本窗口结项收尾：全量验证 + 交接文档固化
+
+**目标**：巨型上下文窗口结项，为跨 agent / 跨模型接手固化上下文，不依赖线程记忆。
+
+**验证（本轮实跑）**
+
+- main：`pnpm build` ✔、`pnpm qa` ✔（含 `check-arch`，全部通过、控制台错误 0）、`pnpm qa:backend` ✔（26 项后端冒烟全绿）。
+- UI 工作树：`pnpm build` ✔、`pnpm qa` ✔（全部通过）。
+- 卫生检查：两个工作区 `git status` 干净、无未提交改动；无 `debugger` / DEBUG 残留；被跟踪文件无凭证（唯一匹配是源码文件名 `cookieStore.ts`）；`qq-cookie.txt` / `.env` 均未入库；`scripts/` 无临时调试脚本。
+
+**文档固化**
+
+- `docs/meta/CONTEXT_SNAPSHOT.md`：整篇重写「恢复路径 + 当前状态」——工作区拓扑表、远端三分支、预合并基线、Player P1/P2 状态、已废弃项、本窗口小结、产物路径、文档边界。
+- `docs/meta/HANDOFF.md`：新增 §2「工作区拓扑与接手流程」（两目录 / 三分支、共享 `.git` 的坑、五步接手流程）；必读顺序加入 `AGENTS.md` 与「UI 分支另有播放器母稿」；§5 环境速查补产物路径、QA 硬编码路径、Windows 长路径与凭证说明。
+- `docs/project/NOTES.md`：新增「工作区 / 多工作树」「QA 脚本的本机依赖」两节（共享 `.git`、`worktree repair`、长路径删除、删除前确认远端备份、QA 三处硬编码路径）；待办补「等全局 UI 母稿（唯一阻塞项）」与 README 定稿。
+- `docs/project/PROJECT.md`：目录结构补 `docs/`、`AGENTS.md`、`README.md` 与三个验证脚本；命令补 `check:arch` / `qa:live-new` / `qa:qq-live`；新增产物路径与远程仓库说明。
+- `docs/meta/USER_PROFILE.md`：新增「收尾 / 交接固定清单」与「跨 agent 跨模型迁移质量优先」两条稳定偏好。
+
+**遗留 / 风险**
+
+- **唯一阻塞**：等用户的全局 UI 底层重构母稿；之后先做全局底层 UI 重构（验收合格），再回到 Player P2–P8。
+- **挂起决策**：播放模式循环顺序（现「顺序→单曲→随机」vs 母稿「顺序→随机→单曲」）。
+- UI 分支当前是 main 的超集，将来合并零冲突；合并前勿在 main 单方面改 UI 分支同名文档，否则会重新制造分叉。
+
 ## 2026-10-14 — 工作区清理（散落物归档/删除）+ main 文档并入 UI 分支（预合并）
 
 **目标**

@@ -42,10 +42,16 @@ music-nebula/
 │  ├─ backend-smoke.mjs        # 后端冒烟测试（解析/映射/加密/兜底/IPC）
 │  ├─ qa.cjs                   # 前端自动化 QA（无头 Chrome：密度/鱼眼/平移/播放/容错）
 │  ├─ desktop-check.mjs        # 桌面版启动前环境自检
-│  └─ desktop-play-smoke.mjs   # 桌面版播放链路冒烟（需 Playwright）
+│  ├─ desktop-play-smoke.mjs   # 桌面版播放链路冒烟（需 Playwright）
+│  ├─ check-arch.mjs           # 架构依赖守卫（Dependency Rules 机制化执行）
+│  ├─ live-check-new.mjs       # 在线链路验证（转译路由/歌手全曲/评论分页/头像）
+│  └─ qq-live-check.mjs        # QQ 实账号链路验证（需自备 Cookie）
+├─ docs/                       # 项目文档：project / design / meta 三类（入口 docs/README.md）
+├─ AGENTS.md                   # AI 协作者自动加载的恢复入口与硬性约定
+├─ README.md                   # GitHub 展示版（开发期，随进度更新）
 ├─ dist/                       # 桌面版前端构建产物
 ├─ dist-main/                  # 主进程打包产物
-└─ outputs/music-nebula/       # QA/预览产物（pnpm build 输出 + preview.png 等）
+└─ outputs/music-nebula/       # QA/预览产物（在仓库外：wo/outputs/，pnpm build 每次重建）
 ```
 
 ## 3. 常用命令（Windows PowerShell）
@@ -59,10 +65,17 @@ pnpm build:desktop    # 完整桌面构建（dist + dist-main）
 pnpm desktop          # 环境自检后启动 Electron 桌面版
 pnpm qa:backend       # 后端冒烟测试（自动先 build:main）
 pnpm qa               # 前端自动化 QA（无头 Chrome，需本机 Chrome）
+pnpm check:arch       # 架构依赖守卫（pnpm qa 已包含）
+pnpm qa:live-new      # 在线链路验证（跨平台转译 / 歌手全曲 / 评论分页 / 头像）
+pnpm qa:qq-live       # QQ 实账号链路验证（需 --cookie=... 或 scripts/qq-cookie.txt）
 pnpm qa:desktop-play  # 桌面播放链路冒烟
 ```
 
 > Node 运行时：`C:\Users\LIU\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe`
+>
+> 产物路径易踩：`pnpm build` 输出到仓库外的 `wo/outputs/music-nebula/`，桌面版则用 `pnpm build:desktop`（输出到 `dist/` + `dist-main/`）。`pnpm qa` 读取的是 outputs 里那份产物，**先 build 再 qa**；main 与 UI 两个工作区共用该路径、会互相覆盖。
+>
+> 远程仓库：`github.com/violetsnowl/nebula`（2026-10 由 `a161858970-ux/nebula` 迁移，旧地址自动重定向）。
 
 ## 4. 关键架构决策（改动前必读）
 

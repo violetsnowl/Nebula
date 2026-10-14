@@ -19,7 +19,19 @@
 - Windows PowerShell 下 pnpm 必须带 `$env:pnpm_config_verify_deps_before_run='false'`。
 - 后端统一入口是 `dist-main/index.cjs`（由 `src/main/index.ts` 经 esbuild 打包）；改 `src/main` 后必须 `pnpm build:main` 才能让 Electron 和冒烟测试生效。
 - `pnpm build` 会清空并重建 `outputs/music-nebula/`（README 等内容需在构建后重写，见构建脚本说明）。
-- 项目已接入 git（远程 GitHub origin/main）；文档随提交维护（docs/）。
+- **构建产物在仓库外**：`pnpm build` 输出到 `wo/outputs/music-nebula/index.html`；而 `pnpm qa` 正是读取这个文件，所以**必须先 build 再 qa**。两个工作区（main / UI）共用这一个路径、会互相覆盖——一个工作区刚 build 完，另一个若只跑 qa，测的是别人的产物。
+- 项目已接入 git；远程已迁移到 `github.com/violetsnowl/nebula`（旧地址 `a161858970-ux/nebula` 自动重定向，本地 origin 已更新）；文档随提交维护（docs/）。
+
+### 工作区 / 多工作树（2026-10 沉淀）
+
+- **共享 `.git`**：main 与 UI 服务两个工作区属于同一个仓库，在任一处 `git checkout` 会改变另一处的分支状态。现象：切了分支后另一个目录"像被回退到旧版本"。规避：两个目录各自固定在自己的分支上。
+- **工作树目录改名 → 注册失效**：`git worktree list` 显示 `prunable`，旧路径下的 git 操作异常。解决：`git worktree repair <改名后的路径>`。
+- **Windows 长路径导致工作树删不掉**：`git worktree remove --force` 删除含 `node_modules` 的工作树时报 `Filename too long`。解决顺序：① `git config core.longpaths true` 后重试；② 仍失败则用 `robocopy <空目录> <目标> /MIR /NFL /NDL /NJH /NJS /NP /R:0 /W:0` 清空（robocopy 原生支持超长路径），再用非递归方式删除空壳。注意 `Remove-Item -Recurse -Force` 在受管环境可能被安全策略拦截，可改用 `[System.IO.Directory]::Delete($path, $true)`。
+- **删除前先确认远端有备份**：移除工作树或目录前，用 `git ls-remote --heads origin <branch>` 确认分支已推送；本地 `node_modules`、`dist` 都可再生。
+
+### QA 脚本的本机依赖（换机器必改）
+
+- `scripts/qa.cjs` 与 `scripts/desktop-play-smoke.mjs` 顶部硬编码了三处路径：Chrome 可执行文件、Codex runtime 的 `node_modules`（`playwright-core` / `pngjs`）、`wo/outputs/music-nebula` 目录。换机器或换 harness 需先改这三处，否则 QA 直接报错（与业务代码无关）。
 
 ### 平台登录
 
@@ -41,5 +53,7 @@
 - [x] 左右 Dock 重构（小球 → 胶囊 → 窗口已完成并整合主项目，见 `docs/design/UI_SPEC.md` §5.7）。
 - [ ] Nebula Player 重构剩余阶段（P2–P8，见 UI 分支 `docs/design/PLAYER_IMPL_PLAN.md`）；挂起决策：播放模式循环顺序（现「顺序→单曲→随机」vs 文档「顺序→随机→单曲」）。
 - [ ] 未来「液态玻璃」第二套主题（见 `docs/design/UI_SPEC.md` §9，两套主题布局一致、仅材质差异）。
+- [ ] **等用户的全局 UI 底层重构母稿**：母稿到位后先做全局底层 UI 重构（验收合格），再回到 Player P2；这是当前唯一阻塞项。
+- [ ] `README.md` 目前是开发期版本；正式定稿与 CI/CD 流程留到收工阶段。
 
 > 已废弃（不再排期）：Z1 大字号左→右长句「提前检测 + 提前入场」方案（旧第 9/10 点，2026-08-19 用户确认不需要，详见 `docs/design/LYRICS_SYSTEM.md` §8）。
