@@ -1,0 +1,1048 @@
+﻿<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Music Nebula — Dock UI Prototype v3</title>
+<style>
+  * { box-sizing: border-box; }
+  /* 全局滚动条（与主项目一致：深色极简半透明） */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255, 255, 255, 0.22) rgba(255, 255, 255, 0.04);
+  }
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
+  ::-webkit-scrollbar-track {
+    background: rgba(255, 255, 255, 0.04);
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.18);
+    border-radius: 999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.34);
+  }
+  html, body { margin: 0; height: 100%; }
+  :root {
+    /* 果冻弹性（原型可实时调节）：overshoot 系数 1.0–1.8 */
+    --jelly-cap: cubic-bezier(0.34, 1.32, 0.64, 1);
+    --jelly-win: cubic-bezier(0.34, 1.28, 0.64, 1);
+  }
+  body {
+    font-family: "Segoe UI", "Microsoft YaHei", system-ui, sans-serif;
+    background:
+      radial-gradient(120% 90% at 50% 0%, #1a2038 0%, #12152a 45%, #0b0d18 100%);
+    color: #fff;
+    overflow: hidden;
+  }
+
+  .hint {
+    position: fixed;
+    top: 14px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 50;
+    padding: 8px 18px;
+    border-radius: 999px;
+    background: rgba(16, 19, 34, 0.78);
+    backdrop-filter: blur(18px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    box-shadow: 0 12px 32px rgba(0, 0, 0, 0.45);
+    font-size: 12px;
+    color: rgba(255, 255, 255, 0.78);
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+  }
+
+  /* 原型弹性调节面板（临时调试，不入正式版） */
+  .tuner {
+    position: fixed;
+    left: 18px;
+    top: 14px;
+    z-index: 60;
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: rgba(14, 17, 30, 0.78);
+    backdrop-filter: blur(20px) saturate(150%);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.8);
+  }
+  .tuner .tuner-title { font-size: 10.5px; color: rgba(255, 255, 255, 0.45); margin-bottom: 2px; }
+  .tuner label { display: flex; align-items: center; gap: 8px; }
+  .tuner input[type="range"] {
+    -webkit-appearance: none;
+    width: 120px;
+    height: 4px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.16);
+    outline: none;
+  }
+  .tuner input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background: #dfe5ff;
+    box-shadow: 0 0 8px rgba(150, 165, 255, 0.6);
+  }
+  .tuner em { font-style: normal; font-size: 10px; color: rgba(255, 255, 255, 0.5); width: 34px; text-align: right; }
+
+  /* ============================================================
+     球 → 胶囊：单元素自膨胀（curvy-starfish）
+     ============================================================ */
+  .dock {
+    --ball: 42px;
+    --corner: calc(var(--ball) / 2);
+    --cap-w: min(300px, 27vw);
+    position: fixed;
+    top: 20vh;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    z-index: 10;
+    transition: top 0.5s var(--jelly-win);
+  }
+  .dock.has-open { top: 9vh; }
+  /* 仅左侧：开窗时下方球距收拢到 60% */
+  .dock-left.has-open { gap: 7.2px; }
+  .dock-left { left: 18px; }
+  .dock-right { right: 18px; }
+
+  .row {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .dock-right .row { align-items: flex-end; }
+
+  .pill {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 0;
+    width: var(--ball);
+    height: var(--ball);
+    padding: 0 0 0 11px;
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background:
+      radial-gradient(
+        120% 120% at 30% 20%,
+        color-mix(in srgb, var(--brand, #9aa4c8) 34%, transparent),
+        transparent 58%
+      ),
+      linear-gradient(165deg, rgba(39, 44, 68, 0.94), rgba(15, 17, 30, 0.74)) padding-box,
+      linear-gradient(
+          160deg,
+          rgba(255, 255, 255, 0.46),
+          rgba(255, 255, 255, 0.08) 42%,
+          rgba(255, 255, 255, 0.05) 60%,
+          rgba(255, 255, 255, 0.26)
+        )
+        border-box;
+    box-shadow:
+      0 10px 26px rgba(0, 0, 0, 0.42),
+      inset 0 1px 0 rgba(255, 255, 255, 0.18);
+    color: #fff;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    transition:
+      width 0.55s var(--jelly-cap),
+      gap 0.3s ease,
+      padding-right 0.3s ease,
+      border-radius 0.32s ease;
+  }
+
+  .pill .icon {
+    flex: none;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10.5px;
+    font-weight: 700;
+    color: #fff;
+    background: color-mix(in srgb, var(--brand, #9aa4c8) 42%, rgba(255, 255, 255, 0.06));
+    box-shadow:
+      inset 0 0 0 1px rgba(255, 255, 255, 0.28),
+      0 2px 6px rgba(0, 0, 0, 0.35);
+    pointer-events: none;
+  }
+
+  .pill .cap-text {
+    font-size: 0;
+    opacity: 0;
+    transform: translateX(-5px);
+    letter-spacing: 0.2px;
+    transition:
+      font-size 0.3s ease 0.08s,
+      opacity 0.24s ease 0.08s,
+      transform 0.3s ease 0.08s;
+    pointer-events: none;
+  }
+
+  /* 箭头：›（球态隐藏）→ ⌄（胶囊态）→ ⌃（窗口态） */
+  .pill .go {
+    margin-left: auto;
+    font-size: 0;
+    opacity: 0;
+    display: inline-block;
+    transform: rotate(0deg);
+    transition:
+      font-size 0.26s ease 0.12s,
+      opacity 0.2s ease 0.12s,
+      transform 0.34s var(--jelly-cap);
+    pointer-events: none;
+  }
+  .row:hover .pill .go {
+    font-size: 13px;
+    opacity: 0.65;
+    transform: rotate(-90deg);
+  }
+  .row.open .pill .go {
+    font-size: 13px;
+    opacity: 0.85;
+    transform: rotate(90deg);
+  }
+
+  .row:hover .pill,
+  .row.open .pill {
+    width: var(--cap-w);
+    gap: 8px;
+    padding-right: 14px;
+  }
+  .row:hover .pill .cap-text,
+  .row.open .pill .cap-text {
+    font-size: 12.5px;
+    opacity: 1;
+    transform: none;
+  }
+
+  .dock-right .pill {
+    flex-direction: row-reverse;
+    padding: 0 11px 0 0;
+  }
+  /* 右 Dock：设置胶囊文字填充中间，箭头与登录一致贴左 */
+  .dock-right .pill .cap-text {
+    flex: 1;
+  }
+  .dock-right .pill .go {
+    margin-left: 0;
+  }
+  .dock-right .row:hover .pill,
+  .dock-right .row.open .pill {
+    padding-right: 0;
+    padding-left: 14px;
+  }
+
+  /* 登录胶囊：五平台等距（列位与窗口垂直胶囊一一对应） */
+  .pill .dots {
+    flex: 1;
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    align-items: center;
+    height: 100%;
+    min-width: 0;
+  }
+  .pill .dot {
+    justify-self: center;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    font-weight: 700;
+    opacity: 0.42;
+    filter: grayscale(0.75);
+    background: color-mix(in srgb, var(--brand, #9aa4c8) 34%, transparent);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.22);
+    transition: opacity 0.25s ease, filter 0.25s ease;
+  }
+  .pill .dot.is-on { opacity: 1; filter: none; }
+  .row.open .pill .dot { opacity: 0; }
+
+  .pill .badge {
+    position: absolute;
+    bottom: calc(100% + 7px);
+    right: 6px;
+    font-size: 0;
+    opacity: 0;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: rgba(10, 12, 22, 0.72);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    backdrop-filter: blur(8px);
+    white-space: nowrap;
+    transition: font-size 0.26s ease 0.1s, opacity 0.2s ease 0.1s;
+    pointer-events: none;
+  }
+  .row:hover:not(.open) .pill .badge {
+    font-size: 10px;
+    opacity: 0.92;
+  }
+
+  /* ============================================================
+     胶囊 → 窗口：矩形四角圆角，圆角 = 胶囊边缘圆的四分之一
+     ============================================================ */
+  /* 开窗后胶囊本体透明：图标+箭头浮在窗口背景上，整卡一个连续表面，无接缝 */
+  .row.open .pill {
+    z-index: 3;
+    background: transparent;
+    border: none;
+    box-shadow: none;
+  }
+  .row.open .pill .cap-text {
+    opacity: 0;
+    font-size: 0;
+    transform: translateX(-5px);
+  }
+
+  .win {
+    display: grid;
+    grid-template-rows: minmax(0, 0fr);
+    width: var(--cap-w);
+    transition: grid-template-rows 0.55s var(--jelly-cap);
+  }
+  .row.open .win { grid-template-rows: minmax(0, 1fr); }
+
+  /* 左 Dock 开窗：窗口固定高度让整组垂直居中（顶距=底距），内容窗口内滚动 */
+  .dock-left.has-open .row.open .win-inner {
+    height: calc(82vh - 246px);
+    min-height: 0;
+    overflow-y: auto;
+  }
+
+  .win-inner {
+    min-height: 0;
+    overflow: hidden;
+    background:
+      radial-gradient(
+        120% 120% at 30% 20%,
+        color-mix(in srgb, var(--brand, #9aa4c8) 24%, transparent),
+        transparent 60%
+      ),
+      linear-gradient(165deg, rgba(39, 44, 68, 0.9), rgba(15, 17, 30, 0.66)) padding-box,
+      linear-gradient(
+          160deg,
+          rgba(255, 255, 255, 0.4),
+          rgba(255, 255, 255, 0.07) 42%,
+          rgba(255, 255, 255, 0.05) 60%,
+          rgba(255, 255, 255, 0.22)
+        )
+        border-box;
+    backdrop-filter: blur(30px) saturate(160%);
+    border: 1px solid transparent;
+    border-top: none;
+    border-radius: 0 0 var(--corner) var(--corner);
+    box-shadow: 0 24px 60px rgba(0, 0, 0, 0.5);
+    padding: 12px;
+    opacity: 0;
+    transition: opacity 0.25s ease;
+  }
+  .row.open .win-inner {
+    opacity: 1;
+    transition: opacity 0.3s ease 0.22s;
+    margin-top: calc(-1 * var(--ball));
+    padding-top: calc(var(--ball) + 12px);
+    border-top: 1px solid transparent;
+    border-radius: var(--corner) var(--corner) var(--corner) var(--corner);
+  }
+
+  .win-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 2px 2px 10px;
+    font-size: 13px;
+    font-weight: 700;
+    color: rgba(255, 255, 255, 0.92);
+  }
+  .win-title .refresh {
+    font-size: 11px;
+    font-weight: 400;
+    color: rgba(255, 255, 255, 0.65);
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.08);
+    cursor: pointer;
+  }
+
+  /* ---------- 歌单列表（搬自主项目已完工结构） ---------- */
+  .pl {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    width: 100%;
+    padding: 7px 8px;
+    border-radius: 12px;
+    background: transparent;
+    border: none;
+    color: #fff;
+    font-size: 12.5px;
+    text-align: left;
+    cursor: pointer;
+    position: relative;
+  }
+  .pl:hover { background: rgba(255, 255, 255, 0.07); }
+  .pl::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 22%;
+    bottom: 22%;
+    width: 3px;
+    border-radius: 3px;
+    background: transparent;
+    transition: background 0.18s ease, top 0.18s ease, bottom 0.18s ease;
+  }
+  .pl:hover::before { background: rgba(150, 165, 255, 0.65); top: 12%; bottom: 12%; }
+  .pl-cover {
+    flex: none;
+    width: 48px;
+    height: 48px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, rgba(255,255,255,0.14), rgba(255,255,255,0.04));
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.12);
+  }
+  .pl-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pl-count { font-size: 10.5px; color: rgba(255,255,255,0.45); }
+  .pl-tag { font-size: 10px; color: rgba(150, 220, 255, 0.9); }
+  .pl-wrap.is-current .pl { box-shadow: inset 0 0 0 1px rgba(255,255,255,0.18); }
+
+  .pl-detail {
+    margin-top: 6px;
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 12px;
+    background: rgba(8, 10, 20, 0.3);
+    overflow: visible;
+  }
+  .pl-head {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px;
+    background: rgba(8, 10, 20, 0.58);
+    backdrop-filter: blur(14px);
+    border-radius: 12px 12px 0 0;
+  }
+  .pl-head-cover { width: 38px; height: 38px; border-radius: 8px; flex: none; background: linear-gradient(135deg, rgba(255,255,255,0.16), rgba(255,255,255,0.05)); }
+  .pl-head-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+  .pl-head-name { font-size: 12px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pl-head-count { font-size: 10px; color: rgba(255,255,255,0.55); }
+  .pl-head-btn {
+    font-size: 10px;
+    padding: 4px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.16);
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.85);
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .pl-songs { display: flex; flex-direction: column; max-height: none; overflow: visible; }
+  .pl-song {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    cursor: pointer;
+    border-radius: 8px;
+    font-size: 11px;
+  }
+  .pl-song:hover { background: rgba(255,255,255,0.08); }
+  .pl-song-cover { flex: none; width: 30px; height: 30px; border-radius: 6px; background: linear-gradient(135deg, rgba(255,255,255,0.12), rgba(255,255,255,0.03)); }
+  .pl-song-meta { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .pl-song-title { font-size: 11px; color: #fff; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .pl-song-artist { font-size: 10px; color: rgba(255,255,255,0.5); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+  /* ---------- 登录窗口：五个二级球各自向下膨胀成垂直胶囊 ---------- */
+  .login-cards {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 8px;
+    margin: 0 2px 0 27px;
+  }
+  .lc {
+    display: grid;
+    grid-template-rows: 0fr;
+    transition: grid-template-rows 0.5s var(--jelly-cap);
+  }
+  .row.open .lc { grid-template-rows: 1fr; }
+  .lc:nth-child(1) { transition-delay: 0s; }
+  .lc:nth-child(2) { transition-delay: 0.04s; }
+  .lc:nth-child(3) { transition-delay: 0.08s; }
+  .lc:nth-child(4) { transition-delay: 0.12s; }
+  .lc:nth-child(5) { transition-delay: 0.16s; }
+  .lc-inner {
+    min-height: 0;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    background: rgba(8, 10, 20, 0.28);
+    cursor: pointer;
+  }
+  .lc.is-active .lc-inner {
+    border-color: rgba(150, 165, 255, 0.55);
+    background: rgba(150, 165, 255, 0.08);
+  }
+  .lc-head {
+    height: 24px;
+    width: 100%;
+    border-radius: 999px 999px 0 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    opacity: 0.45;
+    filter: grayscale(0.7);
+    background: color-mix(in srgb, var(--brand, #9aa4c8) 34%, transparent);
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.18);
+    transition: opacity 0.25s ease, filter 0.25s ease;
+  }
+  .lc.is-on .lc-head { opacity: 1; filter: none; }
+  .lc-body {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 3px;
+    padding: 5px 2px 8px;
+  }
+  .lc .nm { min-height: 22px; text-align: center; line-height: 1.3; font-size: 9.5px; }
+  .lc .st { font-size: 9px; color: rgba(255,255,255,0.4); }
+
+  .login-detail {
+    margin-top: 12px;
+    padding: 12px;
+    border-radius: 12px;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(8, 10, 20, 0.28);
+    font-size: 11.5px;
+    color: rgba(255,255,255,0.6);
+    text-align: center;
+  }
+  .login-detail .acct-name { color: #fff; font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+  .login-detail .acct-vip { color: rgba(255, 255, 255, 0.55); font-size: 11px; margin-bottom: 10px; }
+  .login-detail .ghost-btn {
+    display: inline-block;
+    font-size: 11px;
+    padding: 6px 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(255,255,255,0.2);
+    background: rgba(255,255,255,0.08);
+    color: #fff;
+    margin: 4px;
+    cursor: pointer;
+  }
+
+  /* ---------- 设置窗口 ---------- */
+  .set-tabs { display: flex; gap: 6px; padding-bottom: 10px; }
+  .set-tabs span {
+    flex: 1;
+    text-align: center;
+    font-size: 11px;
+    padding: 6px 4px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.6);
+    cursor: pointer;
+  }
+  .set-tabs span.active { background: rgba(150, 165, 255, 0.16); color: #fff; }
+  .set-page { display: none; }
+  .set-page.active { display: block; }
+
+  .ls-card {
+    padding: 11px;
+    border-radius: 13px;
+    border: 1px solid rgba(255, 255, 255, 0.09);
+    background: rgba(8, 10, 20, 0.26);
+    margin-bottom: 10px;
+  }
+  .ls-card h4 { margin: 0 0 8px; font-size: 12.5px; font-weight: 600; color: rgba(255,255,255,0.55); }
+  .ls-row { display: flex; align-items: center; gap: 8px; font-size: 11.5px; padding: 5px 0; }
+  .ls-row .val { margin-left: auto; font-size: 10px; color: rgba(255,255,255,0.5); white-space: nowrap; }
+  .ls-seg {
+    margin-left: auto;
+    display: flex;
+    gap: 3px;
+    padding: 2px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+  }
+  .ls-seg span {
+    font-size: 10.5px;
+    padding: 4px 8px;
+    border-radius: 999px;
+    color: rgba(255,255,255,0.55);
+  }
+  .ls-seg span.active { background: rgba(150,165,255,0.18); color: #fff; }
+
+  .bg-scheme {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 12px 14px;
+    margin-bottom: 10px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.12);
+    background: linear-gradient(165deg, rgba(8, 10, 20, 0.3), rgba(8, 10, 20, 0.16));
+    color: #fff;
+    cursor: pointer;
+  }
+  .bg-scheme.is-active { border-color: rgba(150,165,255,0.55); }
+  .bg-scheme .bs-title { font-size: 12.5px; font-weight: 600; }
+  .bg-scheme .bs-desc { font-size: 10.5px; color: rgba(255,255,255,0.5); display: block; margin-top: 3px; }
+  .cover-modes { display: flex; gap: 5px; padding-bottom: 4px; }
+  .cover-modes span {
+    flex: 1;
+    text-align: center;
+    font-size: 9.5px;
+    padding: 6px 2px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.06);
+    border: 1px solid rgba(255,255,255,0.08);
+    color: rgba(255,255,255,0.6);
+  }
+  .cover-modes span.active { background: rgba(150,165,255,0.16); color: #fff; }
+
+  .ui-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 13px;
+    border: 1px solid rgba(255,255,255,0.09);
+    background: rgba(8, 10, 20, 0.26);
+    margin-bottom: 10px;
+  }
+  .ui-row .txt span { font-size: 12px; color: rgba(255,255,255,0.92); }
+  .ui-row .txt em { display: block; font-style: normal; font-size: 10px; color: rgba(255,255,255,0.45); margin-top: 2px; }
+
+  /* ============================================================
+     开关：silent-otter-72 复刻（勾号重画 · 高度压 15% · 边缘灰调）
+     ============================================================ */
+  .switch {
+    font-size: 17px;
+    position: relative;
+    display: inline-block;
+    width: 3.5em;
+    height: 1.7em;
+  }
+  .switch.sm { font-size: 13px; }
+  .switch input {
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+  .slider {
+    position: absolute;
+    cursor: pointer;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background-color: #9a9aa3;
+    border: 1px solid #9a9aa3;
+    transition: 0.4s;
+    border-radius: 32px;
+    outline: none;
+  }
+  .slider:before {
+    position: absolute;
+    content: "";
+    height: calc(1.7em - 2px);
+    width: calc(1.7em - 2px);
+    border-radius: 50%;
+    outline: 2px solid #9a9aa3;
+    left: -1px;
+    top: 50%;
+    transform: translateY(-50%);
+    background-color: #fff;
+    transition: transform 0.25s ease-in-out 0s;
+  }
+  .slider-icon {
+    opacity: 0;
+    height: 0.7em;
+    width: 0.7em;
+    stroke-width: 2.4;
+    position: absolute;
+    z-index: 999;
+    stroke: #222222;
+    right: 2.42em;
+    top: 50%;
+    transform: translateY(-50%);
+    transition: right 0.3s ease-in-out, opacity 0.15s ease-in-out;
+  }
+  input:checked + .slider { background-color: #222222; }
+  input:checked + .slider .slider-icon { opacity: 1; right: 0.62em; }
+  input:checked + .slider:before { transform: translate(1.8em, -50%); outline-color: #181818; }
+
+  .toggle-section {
+    position: fixed;
+    left: 50%;
+    bottom: 26px;
+    transform: translateX(-50%);
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    gap: 28px;
+    padding: 12px 26px;
+    border-radius: 18px;
+    background: rgba(14, 17, 30, 0.72);
+    backdrop-filter: blur(24px) saturate(160%);
+    border: 1px solid rgba(255, 255, 255, 0.14);
+    box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+  }
+  .toggle-section .tag { font-size: 11px; color: rgba(255,255,255,0.55); }
+</style>
+</head>
+<body>
+
+  <div class="hint">UI Prototype v3 · 未合并主项目 · 左右栏完全体预览：悬停看自膨胀胶囊 → 点击窗口上移展开 → 点歌单展开歌曲列表（吸顶/播放/回顶）→ 登录五球各自膨胀成垂直胶囊</div>
+
+  <div class="tuner">
+    <div class="tuner-title">原型弹性调节（临时调试 · 不入正式版）</div>
+    <label>胶囊果冻 <input type="range" id="jelly-cap" min="0" max="100" value="40"><em id="jelly-cap-v">1.32</em></label>
+    <label>窗口弹性 <input type="range" id="jelly-win" min="0" max="100" value="35"><em id="jelly-win-v">1.28</em></label>
+  </div>
+
+  <!-- ================= 左侧 Dock（歌单导入） ================= -->
+  <div class="dock dock-left">
+    <div class="row" data-name="netease" style="--brand:#e60026">
+      <button class="pill">
+        <span class="icon">N</span>
+        <span class="cap-text">网易云音乐 · 歌单 2 个</span>
+        <span class="go">›</span>
+      </button>
+      <div class="win">
+        <div class="win-inner">
+          <div class="win-title"><span>网易云音乐 · 歌单</span><span class="refresh">刷新</span></div>
+          <div class="pl-wrap is-current">
+            <button class="pl">
+              <span class="pl-cover"></span><span class="pl-name">我的最爱</span><span class="pl-count">120 首</span><span class="pl-tag">已导入</span>
+            </button>
+            <div class="pl-detail">
+              <div class="pl-head">
+                <span class="pl-head-cover"></span>
+                <div class="pl-head-info"><span class="pl-head-name">我的最爱</span><span class="pl-head-count">12 首</span></div>
+                <button class="pl-head-btn">▶ 播放歌单</button>
+                <button class="pl-head-btn">⬆ 回到顶部</button>
+              </div>
+              <div class="pl-songs">
+                <div class="pl-song"><span class="pl-song-cover"></span><div class="pl-song-meta"><span class="pl-song-title">Resonance</span><span class="pl-song-artist">HOME</span></div></div>
+                <div class="pl-song"><span class="pl-song-cover"></span><div class="pl-song-meta"><span class="pl-song-title">Cyber Neon</span><span class="pl-song-artist">Kitsune</span></div></div>
+                <div class="pl-song"><span class="pl-song-cover"></span><div class="pl-song-meta"><span class="pl-song-title">Midnight Starlight</span><span class="pl-song-artist">Aero</span></div></div>
+                <div class="pl-song"><span class="pl-song-cover"></span><div class="pl-song-meta"><span class="pl-song-title">Neon City</span><span class="pl-song-artist">Synthwave</span></div></div>
+                <div class="pl-song"><span class="pl-song-cover"></span><div class="pl-song-meta"><span class="pl-song-title">Blinding Lights</span><span class="pl-song-artist">The Weeknd</span></div></div>
+                <div class="pl-song"><span class="pl-song-cover"></span><div class="pl-song-meta"><span class="pl-song-title">Starboy</span><span class="pl-song-artist">The Weeknd</span></div></div>
+                <div class="pl-song"><span class="pl-song-cover"></span><div class="pl-song-meta"><span class="pl-song-title">Faded</span><span class="pl-song-artist">Alan Walker</span></div></div>
+                <div class="pl-song"><span class="pl-song-cover"></span><div class="pl-song-meta"><span class="pl-song-title">Sunflower</span><span class="pl-song-artist">Post Malone</span></div></div>
+                <div class="pl-song"><span class="pl-song-cover"></span><div class="pl-song-meta"><span class="pl-song-title">Rainbow</span><span class="pl-song-artist">Couple N</span></div></div>
+                <div class="pl-song"><span class="pl-song-cover"></span><div class="pl-song-meta"><span class="pl-song-title">Evergreen</span><span class="pl-song-artist">Teeya / Nyamu</span></div></div>
+                <div class="pl-song"><span class="pl-song-cover"></span><div class="pl-song-meta"><span class="pl-song-title">My Darling</span><span class="pl-song-artist">FLAVOREALM / Dyako</span></div></div>
+                <div class="pl-song"><span class="pl-song-cover"></span><div class="pl-song-meta"><span class="pl-song-title">Tropical Love</span><span class="pl-song-artist">Summer Vibe</span></div></div>
+              </div>
+            </div>
+          </div>
+          <div class="pl-wrap">
+            <button class="pl"><span class="pl-cover"></span><span class="pl-name">深夜歌单</span><span class="pl-count">45 首</span></button>
+          </div>
+          <div class="pl-wrap">
+            <button class="pl"><span class="pl-cover"></span><span class="pl-name">通勤节奏</span><span class="pl-count">78 首</span></button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row" data-name="qq" style="--brand:#31c27c">
+      <button class="pill">
+        <span class="icon">Q</span>
+        <span class="cap-text">QQ 音乐 · 歌单 3 个</span>
+        <span class="go">›</span>
+      </button>
+      <div class="win"><div class="win-inner"><div class="win-title"><span>QQ 音乐 · 歌单</span><span class="refresh">刷新</span></div>
+        <div class="pl-wrap"><button class="pl"><span class="pl-cover"></span><span class="pl-name">我喜欢</span><span class="pl-count">320 首</span></button></div>
+        <div class="pl-wrap"><button class="pl"><span class="pl-cover"></span><span class="pl-name">驾车专用</span><span class="pl-count">56 首</span></button></div>
+      </div></div>
+    </div>
+
+    <div class="row" data-name="kugou" style="--brand:#2a9df4">
+      <button class="pill">
+        <span class="icon">K</span>
+        <span class="cap-text">酷狗音乐</span>
+        <span class="cap-text" style="color:rgba(255,255,255,.5)">未登录</span>
+        <span class="go">›</span>
+      </button>
+      <div class="win"><div class="win-inner"><div class="login-detail">酷狗网页登录接口未公开，暂不支持账号登录</div></div></div>
+    </div>
+
+    <div class="row" data-name="qishui" style="--brand:#ff5a79">
+      <button class="pill">
+        <span class="icon">汽</span>
+        <span class="cap-text">汽水音乐</span>
+        <span class="cap-text" style="color:rgba(255,255,255,.5)">未登录</span>
+        <span class="go">›</span>
+      </button>
+      <div class="win"><div class="win-inner"><div class="login-detail">汽水音乐为字节系封闭平台，暂无公开登录/歌单 API</div></div></div>
+    </div>
+
+    <div class="row" data-name="spotify" style="--brand:#1db954">
+      <button class="pill">
+        <span class="icon">S</span>
+        <span class="cap-text">Spotify</span>
+        <span class="cap-text" style="color:rgba(255,255,255,.5)">未登录</span>
+        <span class="go">›</span>
+      </button>
+      <div class="win"><div class="win-inner"><div class="login-detail">未登录 Spotify · 需配置 SPOTIFY_CLIENT_ID</div></div></div>
+    </div>
+
+    <div class="row" data-name="manual" style="--brand:#9aa4c8">
+      <button class="pill" style="border-style:dashed">
+        <span class="icon" style="font-size:14px">＋</span>
+        <span class="cap-text">手动导入 · 粘贴歌单链接（输入框示意）</span>
+        <span class="go">›</span>
+      </button>
+      <div class="win"><div class="win-inner"><div class="login-detail">这里将内嵌歌单链接输入框 + 导入按钮</div></div></div>
+    </div>
+  </div>
+
+  <!-- ================= 右侧 Dock（登录 / 设置） ================= -->
+  <div class="dock dock-right">
+    <div class="row" data-name="login" style="--brand:#8b93b8">
+      <button class="pill">
+        <span class="icon" style="background:linear-gradient(135deg,#5f6c9e,#2c3352)">人</span>
+        <span class="dots">
+          <span class="dot is-on" style="--brand:#e60026">N</span>
+          <span class="dot is-on" style="--brand:#31c27c">Q</span>
+          <span class="dot" style="--brand:#2a9df4">K</span>
+          <span class="dot" style="--brand:#ff5a79">汽</span>
+          <span class="dot" style="--brand:#1db954">S</span>
+        </span>
+        <span class="badge">2/5 已登录</span>
+        <span class="go">›</span>
+      </button>
+      <div class="win">
+        <div class="win-inner">
+          <div class="win-title"><span>账号登录</span><span style="font-size:11px;color:rgba(255,255,255,.45)">2/5 已登录</span></div>
+          <div class="login-cards">
+            <div class="lc is-active is-on" style="--brand:#e60026" data-p="netease"><div class="lc-inner"><span class="lc-head">N</span><div class="lc-body"><span class="nm">网易云音乐</span><span class="st">已登录</span></div></div></div>
+            <div class="lc is-on" style="--brand:#31c27c" data-p="qq"><div class="lc-inner"><span class="lc-head">Q</span><div class="lc-body"><span class="nm">QQ 音乐</span><span class="st">已登录</span></div></div></div>
+            <div class="lc" style="--brand:#2a9df4" data-p="kugou"><div class="lc-inner"><span class="lc-head">K</span><div class="lc-body"><span class="nm">酷狗音乐</span><span class="st">未登录</span></div></div></div>
+            <div class="lc" style="--brand:#ff5a79" data-p="qishui"><div class="lc-inner"><span class="lc-head">汽</span><div class="lc-body"><span class="nm">汽水音乐</span><span class="st">未登录</span></div></div></div>
+            <div class="lc" style="--brand:#1db954" data-p="spotify"><div class="lc-inner"><span class="lc-head">S</span><div class="lc-body"><span class="nm">Spotify</span><span class="st">未登录</span></div></div></div>
+          </div>
+          <div class="login-detail" id="login-detail">
+            <div class="acct-name">测试用户</div>
+            <div class="acct-vip">VIP · 网易云音乐</div>
+            <button class="ghost-btn">退出登录</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="row" data-name="settings" style="--brand:#8b93b8">
+      <button class="pill">
+        <span class="icon" style="font-size:13px">⚙</span>
+        <span class="cap-text">自定义歌词 · 布局 · 背景 · 系统</span>
+        <span class="go">›</span>
+      </button>
+      <div class="win">
+        <div class="win-inner">
+          <div class="win-title"><span>设置</span></div>
+          <div class="set-tabs">
+            <span data-page="lyrics">歌词设置</span>
+            <span data-page="ui">界面设置</span>
+            <span data-page="bg">背景设置</span>
+            <span data-page="system" class="active">系统设置</span>
+          </div>
+
+          <div class="set-page active" data-page="lyrics">
+            <div class="ls-card">
+              <h4>基础文字</h4>
+              <div class="ls-row"><span>字体大小</span><span class="val">──────────● 24px</span></div>
+              <div class="ls-row"><span>歌词加粗</span><span class="val" style="margin-left:auto"><label class="switch sm"><input type="checkbox"><span class="slider"><svg class="slider-icon" viewBox="0 0 12 12" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6.4 5.1 8.5 9 4.2"/></svg></span></label></span></div>
+            </div>
+            <div class="ls-card">
+              <h4>高亮与动效</h4>
+              <div class="ls-row"><span>高亮风格</span><span class="ls-seg"><span class="active">扫光填充</span><span>上浮发光</span></span></div>
+              <div class="ls-row"><span>当前句放大</span><span class="val">1.22×</span></div>
+              <div class="ls-row"><span>逐字上浮</span><span class="val">4px</span></div>
+            </div>
+            <div class="ls-card">
+              <h4>布局与层级</h4>
+              <div class="ls-row"><span>歌词布局</span><span class="ls-seg"><span class="active">上下堆叠</span><span>上下错落</span></span></div>
+              <div class="ls-row"><span>歌词取色</span><span class="ls-seg"><span class="active">封面取色</span><span>自定义</span></span></div>
+              <div class="ls-row"><span>悬浮层次</span><span class="ls-seg"><span class="active">卡片之下</span><span>卡片之上</span></span></div>
+            </div>
+          </div>
+
+          <div class="set-page" data-page="ui">
+            <div class="ui-row"><div class="txt"><span>隐藏主界面歌曲卡片</span><em>沉浸式欣赏壁纸与歌词时隐藏 Z2 卡片云</em></div><label class="switch sm"><input type="checkbox"><span class="slider"><svg class="slider-icon" viewBox="0 0 12 12" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6.4 5.1 8.5 9 4.2"/></svg></span></label></div>
+            <div class="ui-row"><div class="txt"><span>隐藏空域歌词层</span><em>隐藏 Z1 穿梭歌词，仅保留壁纸沉浸效果</em></div><label class="switch sm"><input type="checkbox"><span class="slider"><svg class="slider-icon" viewBox="0 0 12 12" fill="none" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6.4 5.1 8.5 9 4.2"/></svg></span></label></div>
+          </div>
+
+          <div class="set-page" data-page="bg">
+            <button class="bg-scheme is-active"><span class="bs-title">自定义背景</span><span class="bs-desc">上传图片 / 视频作为背景</span></button>
+            <button class="bg-scheme"><span class="bs-title">Wallpaper 壁纸</span><span class="bs-desc">从本机 Wallpaper Engine 库选择</span></button>
+            <button class="bg-scheme"><span class="bs-title">跟随当前播放歌曲封面</span><span class="bs-desc">自动加载正在播放歌曲的封面作为背景</span></button>
+            <div class="cover-modes">
+              <span>原图直铺</span><span>磨砂暗化</span><span class="active">混合层</span><span>纯色纹理</span><span>仅取色</span>
+            </div>
+          </div>
+
+          <div class="set-page" data-page="system">
+            <div class="ui-row"><div class="txt"><span>界面主题</span><em>材质主题切换；液态玻璃开发中</em></div><span class="ls-seg"><span class="active">磨砂玻璃</span><span style="opacity:.4">液态玻璃</span></span></div>
+            <div class="ui-row"><div class="txt"><span>会话记忆</span><em>自动恢复上次导入的歌单与播放歌曲</em></div><span class="val" style="color:#6ee7b7">已启用</span></div>
+            <div class="ui-row"><div class="txt"><span>关于</span><em>Music Nebula v0.1.0 · Electron 桌面音乐播放器</em></div></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- ================= 开关（silent-otter-72 复刻 + 微调） ================= -->
+  <div class="toggle-section">
+    <span class="tag">开关 · silent-otter-72 复刻（勾号重画 · 高度压 15% · 边缘灰调）</span>
+    <label class="switch">
+      <input type="checkbox" checked>
+      <span class="slider">
+        <svg class="slider-icon" viewBox="0 0 12 12" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 6.4 5.1 8.5 9 4.2"/>
+        </svg>
+      </span>
+    </label>
+    <label class="switch">
+      <input type="checkbox">
+      <span class="slider">
+        <svg class="slider-icon" viewBox="0 0 12 12" fill="none" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 6.4 5.1 8.5 9 4.2"/>
+        </svg>
+      </span>
+    </label>
+  </div>
+
+<script>
+  // 点击胶囊 → 开/关窗口；窗口打开时该行 FLIP 上移置顶，dock 整体上移
+  let openedRow = null;
+
+  function flipRow(row, toTop) {
+    const dock = row.closest('.dock');
+    const before = row.getBoundingClientRect().top;
+    if (toTop) {
+      row.style.order = '-1';
+      dock.classList.add('has-open');
+    } else {
+      row.style.order = '';
+      dock.classList.remove('has-open');
+    }
+    const after = row.getBoundingClientRect().top;
+    const dy = before - after;
+    if (Math.abs(dy) < 1) return;
+    row.style.transition = 'none';
+    row.style.transform = 'translateY(' + dy + 'px)';
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        row.style.transition = 'transform 0.55s var(--jelly-win)';
+        row.style.transform = 'translateY(0)';
+      });
+    });
+  }
+
+  document.querySelectorAll('.dock .row .pill').forEach((pill) => {
+    pill.addEventListener('click', () => {
+      const row = pill.closest('.row');
+      const willOpen = !row.classList.contains('open');
+      const prev = openedRow;
+      if (prev && prev !== row) {
+        prev.classList.remove('open');
+        flipRow(prev, false);
+      }
+      row.classList.toggle('open', willOpen);
+      openedRow = willOpen ? row : null;
+      flipRow(row, willOpen);
+    });
+  });
+
+  // 歌单点击 → 展开/收起歌曲列表（已导入歌单，与主项目一致）
+  document.querySelectorAll('.pl-wrap.is-current .pl').forEach((pl) => {
+    pl.addEventListener('click', () => {
+      const detail = pl.parentElement.querySelector('.pl-detail');
+      if (detail) detail.style.display = detail.style.display === 'none' ? '' : 'none';
+    });
+  });
+
+  // 登录窗口：点击垂直胶囊 → 切换高亮 + 切换详情
+  const detailHTML = {
+    netease: '<div class="acct-name">测试用户</div><div class="acct-vip">VIP · 网易云音乐</div><button class="ghost-btn">退出登录</button>',
+    qq: '<div class="acct-name">Violet Snow</div><div class="acct-vip">SVIP · QQ 音乐</div><button class="ghost-btn">退出登录</button>',
+    kugou: '酷狗网页登录接口未公开，暂不支持账号登录',
+    qishui: '汽水音乐为字节系封闭平台，暂无公开登录/歌单 API',
+    spotify: 'Spotify 需配置 SPOTIFY_CLIENT_ID 后授权登录',
+  };
+  document.querySelectorAll('.lc').forEach((lc) => {
+    lc.addEventListener('click', () => {
+      document.querySelectorAll('.lc.is-active').forEach((c) => c.classList.remove('is-active'));
+      lc.classList.add('is-active');
+      const p = lc.getAttribute('data-p');
+      document.getElementById('login-detail').innerHTML = detailHTML[p] || '';
+    });
+  });
+
+  // 设置页签切换
+  document.querySelectorAll('.set-tabs span').forEach((tab) => {
+    tab.addEventListener('click', () => {
+      document.querySelectorAll('.set-tabs span').forEach((t) => t.classList.remove('active'));
+      tab.classList.add('active');
+      const page = tab.getAttribute('data-page');
+      document.querySelectorAll('.set-page').forEach((el) => el.classList.toggle('active', el.getAttribute('data-page') === page));
+    });
+  });
+
+  // 背景方案点击切换
+  document.querySelectorAll('.bg-scheme').forEach((bs) => {
+    bs.addEventListener('click', () => {
+      document.querySelectorAll('.bg-scheme').forEach((b) => b.classList.remove('is-active'));
+      bs.classList.add('is-active');
+    });
+  });
+
+  // 果冻弹性实时调节：overshoot 系数 1.0 – 1.8
+  const rootStyle = document.documentElement.style;
+  const capInput = document.getElementById('jelly-cap');
+  const winInput = document.getElementById('jelly-win');
+  const capV = document.getElementById('jelly-cap-v');
+  const winV = document.getElementById('jelly-win-v');
+  function applyJelly() {
+    const cap = 1 + (Number(capInput.value) / 100) * 0.8;
+    const win = 1 + (Number(winInput.value) / 100) * 0.8;
+    rootStyle.setProperty('--jelly-cap', 'cubic-bezier(0.34, ' + cap.toFixed(3) + ', 0.64, 1)');
+    rootStyle.setProperty('--jelly-win', 'cubic-bezier(0.34, ' + win.toFixed(3) + ', 0.64, 1)');
+    capV.textContent = cap.toFixed(2);
+    winV.textContent = win.toFixed(2);
+  }
+  capInput.addEventListener('input', applyJelly);
+  winInput.addEventListener('input', applyJelly);
+</script>
+</body>
+</html>
