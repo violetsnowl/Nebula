@@ -24,7 +24,8 @@
   - `music-nebula`（main）— 主项目，本会话直管；含仓库 README（开发期版）与文档体系。**分支 HEAD 会随提交变化，需要精确值时用 `git log -1` 取，不要依赖本文档记录。**
   - `music-nebula-ui Created by deepseek-codex`（`ui/nebula-design-deepseek-codex`）— UI 设计工作树，本会话直管；关键里程碑：`2d18039` / `7e38760` / `f79b65a`（Player P1 三轮）、`bc15d95` 起为文档分类与快照。
   - `music-nebula-ui Created by mimo-hermes`（`ui/nebula-design`）— **已废弃的工作窗，2026-10-13 接管并留档**：其产物（独立 HTML 原型 `prototype/` + 设计母稿副本）已提交并推送为远端分支 `origin/ui/nebula-design`（`c6add1c`）。**仅归档：不参与迭代、不合并、不再修改。**
-- **远端仓库**：`github.com/violetsnowl/nebula`（2026-10 由 `a161858970-ux/nebula` 迁移，旧地址自动重定向）。远端分支：`main` + `ui/nebula-design-deepseek-codex`（2026-10-13 推送，作为 UI 分支的异地备份；合并进 main 后可按需删除）。
+- **远端仓库**：`github.com/violetsnowl/nebula`（2026-10 由 `a161858970-ux/nebula` 迁移，旧地址自动重定向）。远端分支三条：`main`、`ui/nebula-design-deepseek-codex`（活跃 UI 线）、`ui/nebula-design`（原型归档，末端 `59ebd9d`）。
+- **工作区（2026-10-14 清理后）**：仅 `music-nebula`（main）与 `music-nebula-ui Created by deepseek-codex` 两个目录；废弃工作树、`wo/prototype`、`wo/outputs`、过期 `qq-cookie.txt`、空 `.opencode/` 均已清理。`pnpm build` 会重建 `wo/outputs`。
 - **活跃任务**：Nebula Player 重构（8 阶段，见 `docs/design/PLAYER_IMPL_PLAN.md`）。
   - Phase 1（Bottom Player）已实现并两轮打磨：`2d18039`（结构重构）→ `7e38760`（弹层开关/进度条/图标/音量/高度）→ `f79b65a`（音质弹窗重设计、图标按参考图重绘、系统取色、去方框/圆 hover、玻璃通透、时间常显）。**状态：待用户桌面端最终复验**（8-30 后项目搁置）。
   - 下一阶段：**Phase 2** Listening Space shell + Bottom→Listening 连续变形 + 主舞台退场。

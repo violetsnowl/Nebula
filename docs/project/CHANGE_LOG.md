@@ -5,6 +5,29 @@
 
 ---
 
+## 2026-10-14 — 工作区清理（散落物归档/删除）+ main 文档并入 UI 分支（预合并）
+
+**目标**
+
+1. 清理搁置期留下的散落物，把工作区收敛到两个工作目录。
+2. 消除 UI 分支与 main 之间的文档分叉，使将来合并只剩一次干净合并。
+
+**清理项**
+
+- `wo/prototype/dock-prototype-v3.html`（2026-08-16 的旧 Dock 独立原型）→ 归档到 `ui/nebula-design` 分支的 `prototype/dock-prototype-v3.html`（提交 `59ebd9d`，已推送），本地删除；同提交新增 `prototype/README.md`，说明两份原型的来源与"独立原型路线已被否定"。
+- `wo/outputs/`（QA / 预览构建产物，628KB）→ 删除（可再生；下次跑 `pnpm qa` 前先 `pnpm build`，本就如此）。
+- `music-nebula/qq-cookie.txt`（2026-08-13 的真实 QQ 账号 Cookie；`.gitignore` 已排除，从未入库）→ 删除；需要实账号链路验证时重新导出。
+- `music-nebula/.opencode/`（另一 harness 留下的空目录）→ 删除。
+- 废弃工作树 `music-nebula-ui Created by mimo-hermes` 已于 2026-10-13 移除，内容保存在 `ui/nebula-design`。
+
+**预合并**
+
+- 将 main 的文档提交并入 `ui/nebula-design-deepseek-codex`（merge，不重写历史）；冲突仅 `docs/project/CHANGE_LOG.md` 一处（双方均在顶部追加条目），按"两条线条目都保留、按日期倒序排列"解决。合并后 UI 分支为 main 的超集。
+
+**验证**
+
+- 两个工作区均无未提交改动；`git worktree list` 只剩 `music-nebula`(main) 与 UI 工作树；远端三条分支（`main` / `ui/nebula-design-deepseek-codex` / `ui/nebula-design`）与本地一致；UI 工作树 `pnpm build` 通过。
+
 ## 2026-10-13 — 接管 mimo-hermes 停滞工作窗并推送归档分支
 
 **目标**：另一 agent 的工作窗已废弃，其产物需留档；用户确认后由其接管并推送。
@@ -12,17 +35,22 @@
 **现状核查（与预期不同，需记录）**
 
 - 该工作树（`music-nebula-ui Created by mimo-hermes`，分支 `ui/nebula-design`）**没有任何本地提交**——HEAD 停在 `f60c82c`，相对 main 的独有提交数为 0；工作树里只有未跟踪文件。
-- 未跟踪内容为：`prototype/`（独立 HTML 原型：`index.html` + `css/{tokens,base,bottom-player}.css` + `js/{app,state,mock-data}.js`，约 78KB）与两份设计母稿副本（与 `docs/design/` 版本 SHA256 相同）。
+- 未跟踪内容为：`prototype/`（独立 HTML 原型：`index.html` + `css/{tokens,base,bottom-player}.css` + `js/{app,state,mock-data}.js`，约 78KB）与两份设计母稿 `docs/NEBULA_PLAYER_DESIGN_SPEC.md`、`docs/PLAYER_AGENT_BRIEF.md`。
+- 两份母稿与 `ui/nebula-design-deepseek-codex` 中已提交的 `docs/design/` 版本**逐字节一致**（SHA256 相同），属重复副本，仅作来源留档。
 
 **改动**
 
-- 在原工作树内提交上述产物（`c6add1c`），推送为远端分支 `origin/ui/nebula-design`。
-- 远端现有三条分支：`main`、`ui/nebula-design-deepseek-codex`（活跃）、`ui/nebula-design`（本次归档，不参与迭代）。
+- 在原工作树内提交上述产物（`c6add1c`），推送为远端分支 `origin/ui/nebula-design`（本地已建立跟踪关系）。
+- 远端现有三条分支：`main`（主线）、`ui/nebula-design-deepseek-codex`（活跃 UI 分支）、`ui/nebula-design`（本次归档，不参与迭代）。
 - 本地 `origin` 地址更新为迁移后的 `https://github.com/violetsnowl/nebula.git`。
+
+**验证**
+
+- `git ls-remote --heads origin` 确认三条分支均在远端；归档提交 `c6add1c` 与本地一致。
 
 **备注**
 
-- `prototype/` 为独立 HTML 原型（即后来被否定的"先做独立原型再搬代码"路线），**不作为实现真源**；真源仍是本目录下的两份母稿 + `PLAYER_IMPL_PLAN.md`。
+- `prototype/` 为独立 HTML 原型（即后来被否定的"先做独立原型再搬代码"路线），**不作为实现真源**；播放器实现的真源仍是 `docs/design/` 下三份母稿。若未来要参考其中某些视觉细节，需先与用户确认。
 
 ## 2026-10-13 — UI 分支推送远端备份 + 记录仓库迁移
 
@@ -30,26 +58,62 @@
 
 **改动**
 
-- 推送 `ui/nebula-design-deepseek-codex` → `origin/ui/nebula-design-deepseek-codex`（含 Player P1 三个提交 + docs 二级分类 / AGENTS.md / 快照刷新三个文档提交）。本地分支已建立跟踪关系；远端仍只有该分支与 `main`，主分支未受影响。
-- 记录仓库迁移：远端由 `github.com/a161858970-ux/nebula` 迁移至 `github.com/violetsnowl/nebula`（旧地址自动重定向）；同步更新 `HANDOFF.md` 远端地址引用与 `CONTEXT_SNAPSHOT.md` 当前状态。
+- 推送 `ui/nebula-design-deepseek-codex` → `origin/ui/nebula-design-deepseek-codex`（`fed8735`，包含 Player P1 三个提交 + docs 二级分类 / AGENTS.md / 快照刷新三个文档提交）。本地分支已建立跟踪关系；远端仍只有该分支与 `main`，主分支未受影响。
+- 记录仓库迁移：远端由 `github.com/a161858970-ux/nebula` 迁移至 `github.com/violetsnowl/nebula`（旧地址自动重定向）；同步更新 `HANDOFF.md` 中的远端地址引用。
 
 **验证**
 
-- `git ls-remote --heads origin` 确认远端存在 `refs/heads/main` 与 `refs/heads/ui/nebula-design-deepseek-codex`；推送前工作树干净。
+- `git ls-remote --heads origin` 确认远端存在 `refs/heads/main`（`c4727ea`）与 `refs/heads/ui/nebula-design-deepseek-codex`（`fed8735`）；推送前工作树干净。
 
-## 2026-08-30 — 文档体系重构：docs 二级分类 + 用户画像/上下文快照（与 main 同步）
+**备注**
 
-**目标**：docs 按二级目录分类；补齐长期用户记忆画像与上下文压缩继承机制。
+- 另一 agent 的分支 `ui/nebula-design` 相对 main 无独有提交，未推送；其工作树内仍有未提交文件（属该 agent 职责范围）。
+
+## 2026-09-13 — 新增项目 GitHub README（开发期版）+ 冷启动预热刷新
+
+**目标**
+
+1. GitHub 仓库此前只有源码、没有项目 README；先补一份开发期展示 README，后续随进度更新，最终版在 CI/CD 阶段定稿。
+2. 换模型后按 `docs/meta/CONTEXT_SNAPSHOT.md` 协议完成冷启动预热（全量 docs 精读）。
 
 **改动**
 
-- 分类：`docs/{project,design,meta}`；播放器三份母稿（NEBULA_PLAYER_DESIGN_SPEC / PLAYER_AGENT_BRIEF / PLAYER_IMPL_PLAN）归入 `docs/design/`。
-- 新增 `docs/meta/USER_PROFILE.md` 与 `docs/meta/CONTEXT_SNAPSHOT.md`（与 main 内容一致）。
-- 更新 HANDOFF / PROJECT / NOTES 内部引用与代码注释中的 docs 路径。
+- 新增仓库根 `README.md`：项目定位与理念、当前状态表、功能一览（播放与队列 / 歌词系统 / 内容浏览 / 背景氛围 / 界面设置）、**平台支持矩阵**（登录 / 歌单 / 取链 / 歌词 / 评论 / 歌手页 / 专辑页）、Z0–Z4 界面层级、技术架构与目录结构、快速开始（含 `SPOTIFY_CLIENT_ID`、`pnpm build` 产物在仓库外等注意事项）、质量保障命令、文档索引、已知限制、路线图、免责声明、License 待定。
+  - 准确性校正：队列面板与「下一首播放 FIFO」属 UI 分支 P1 成果，README 中标注"开发中、未合入 main"，避免与 main 现状不符。
+- `docs/project/NOTES.md`：修正 4 处过时项（酷狗/汽水登录已实现、收藏功能已废弃、播放队列 UI 已完成）。
+- `docs/meta/CONTEXT_SNAPSHOT.md`：刷新当前状态（两仓库 HEAD、P1 待复验、P2 目标、挂起决策），新增「模型迭代与连续性」小节记录本次模型更替与冷启动协议。
+- 新增仓库根 `AGENTS.md`：Codex 自动加载的上下文恢复入口 + 硬性约定（QA 门禁、冻结文档真源、hover 规范、分支纪律）。
 
 **验证**
 
-- 全库 grep `docs/` 引用已核对；文档 + 注释改动，不涉及构建 / QA。
+- 文档类改动，不涉及构建 / QA；已核对 README 中的命令、路径、平台能力矩阵与代码实现一致（各适配器方法清单、`.gitignore` 已排除 `qq-cookie.txt` / `.env`）。
+
+**备注**
+
+- 播放器重构（Player P1 已实现、P2–P8 待开发）与全局 UI 底层重构均未在本条目范围内；P1 结果在分支 `ui/nebula-design-deepseek-codex`。
+
+## 2026-08-30 — 文档体系重构：docs 二级分类 + 用户画像/上下文快照
+
+**目标**
+
+1. docs 内 md 增多，按二级目录分类。
+2. 补齐长期用户记忆画像与上下文压缩继承机制（此前仅有一次性 HANDOFF，无持续维护机制）。
+
+**改动**
+
+- 分类：`docs/{project,design,meta}` 三个二级目录（入口 `docs/README.md`）；`git mv` 保留历史。
+- UI 分支侧：播放器三份母稿（NEBULA_PLAYER_DESIGN_SPEC / PLAYER_AGENT_BRIEF / PLAYER_IMPL_PLAN）归入 `docs/design/`。
+- 新增 `docs/meta/USER_PROFILE.md`（用户画像：沟通/工作流/审美/反模式）与 `docs/meta/CONTEXT_SNAPSHOT.md`（当前状态，供新会话最小 token 恢复上下文）。
+- 更新 HANDOFF / PROJECT / NOTES 内部引用与代码注释中的 docs 路径；HANDOFF 中的远端地址后续同步为迁移后的仓库地址。
+- 维护约定：用户新稳定偏好 → `USER_PROFILE.md`；里程碑 / 会话结束 → 刷新 `CONTEXT_SNAPSHOT.md`。
+
+**验证**
+
+- 全库 grep `docs/` 引用已核对更新；文档 + 注释改动，不涉及构建 / QA。
+
+**遗留**
+
+- CHANGE_LOG 历史条目中的旧路径保持原样（历史记录，不重写）。
 
 ## 2026-08-29 — Player P1 二轮打磨：音质弹窗重设计、模式图标重绘、系统取色、去方框/圆hover、玻璃通透、时间常显
 
@@ -93,7 +157,7 @@
 - `App.tsx`：BottomBar 替换为 PlayerSurface(compact) + BottomPlayer；删除旧 `BottomBar.tsx`。
 - `styles.css`：Balanced Frost 材料变量（`--mat-*`，Liquid 未来只换变量）；播放器从「液态玻璃 V2 渐变边框」组移除（禁止常显边框）；工具弹层触发时播放器 z-index 提到 hover 卡片之上（修复弹层被舞台卡片遮挡）。
 - `scripts/qa.cjs`：选择器同步到新组件；音量/音质/播放/seek 用例适配。
-- 新增 `docs/PLAYER_IMPL_PLAN.md`：grill 决策固化 + 8 阶段跟踪。
+- 新增 `docs/design/PLAYER_IMPL_PLAN.md`：grill 决策固化 + 8 阶段跟踪。
 
 **验证**：`tsc` + `pnpm qa`（含 check-arch）全绿；音质切换/音量展开/队列逻辑通过自动化用例。
 
