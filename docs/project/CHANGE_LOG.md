@@ -5,6 +5,29 @@
 
 ---
 
+## 2026-10-14 — 工作区清理（散落物归档/删除）+ main 文档并入 UI 分支（预合并）
+
+**目标**
+
+1. 清理搁置期留下的散落物，把工作区收敛到两个工作目录。
+2. 消除 UI 分支与 main 之间的文档分叉，使将来合并只剩一次干净合并。
+
+**清理项**
+
+- `wo/prototype/dock-prototype-v3.html`（2026-08-16 的旧 Dock 独立原型）→ 归档到 `ui/nebula-design` 分支的 `prototype/dock-prototype-v3.html`（提交 `59ebd9d`，已推送），本地删除；同提交新增 `prototype/README.md`，说明两份原型的来源与"独立原型路线已被否定"。
+- `wo/outputs/`（QA / 预览构建产物，628KB）→ 删除（可再生；下次跑 `pnpm qa` 前先 `pnpm build`，本就如此）。
+- `music-nebula/qq-cookie.txt`（2026-08-13 的真实 QQ 账号 Cookie；`.gitignore` 已排除，从未入库）→ 删除；需要实账号链路验证时重新导出。
+- `music-nebula/.opencode/`（另一 harness 留下的空目录）→ 删除。
+- 废弃工作树 `music-nebula-ui Created by mimo-hermes` 已于 2026-10-13 移除，内容保存在 `ui/nebula-design`。
+
+**预合并**
+
+- 将 main 的文档提交并入 `ui/nebula-design-deepseek-codex`（merge，不重写历史）；冲突仅 `docs/project/CHANGE_LOG.md` 一处（双方均在顶部追加条目），按"两条线条目都保留、按日期倒序排列"解决。合并后 UI 分支为 main 的超集。
+
+**验证**
+
+- 两个工作区均无未提交改动；`git worktree list` 只剩 `music-nebula`(main) 与 UI 工作树；远端三条分支（`main` / `ui/nebula-design-deepseek-codex` / `ui/nebula-design`）与本地一致；UI 工作树 `pnpm build` 通过。
+
 ## 2026-10-13 — 接管 mimo-hermes 停滞工作窗并推送归档分支
 
 **目标**：另一 agent 的工作窗已废弃，其产物需留档；用户确认后由其接管并推送。
