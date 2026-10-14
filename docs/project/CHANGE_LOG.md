@@ -24,6 +24,11 @@
 
 - 将 main 的文档提交并入 `ui/nebula-design-deepseek-codex`（merge，不重写历史）；冲突仅 `docs/project/CHANGE_LOG.md` 一处（双方均在顶部追加条目），按"两条线条目都保留、按日期倒序排列"解决。合并后 UI 分支为 main 的超集。
 
+**结果**
+
+- 预合并完成：合并提交 `dc8d3b2`（实际冲突为 `CHANGE_LOG.md` 与 `CONTEXT_SNAPSHOT.md` 两处，后者按 main 超集版解决）。
+- `git merge-tree main ui/nebula-design-deepseek-codex` 预演返回 0 —— **后续 branch → main 合并已无冲突**，只差一次合并动作。
+
 **验证**
 
 - 两个工作区均无未提交改动；`git worktree list` 只剩 `music-nebula`(main) 与 UI 工作树；远端三条分支（`main` / `ui/nebula-design-deepseek-codex` / `ui/nebula-design`）与本地一致；UI 工作树 `pnpm build` 通过。

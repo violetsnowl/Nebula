@@ -26,6 +26,7 @@
   - `music-nebula-ui Created by mimo-hermes`（`ui/nebula-design`）— **已废弃的工作窗，2026-10-13 接管并留档**：其产物（独立 HTML 原型 `prototype/` + 设计母稿副本）已提交并推送为远端分支 `origin/ui/nebula-design`（`c6add1c`）。**仅归档：不参与迭代、不合并、不再修改。**
 - **远端仓库**：`github.com/violetsnowl/nebula`（2026-10 由 `a161858970-ux/nebula` 迁移，旧地址自动重定向）。远端分支三条：`main`、`ui/nebula-design-deepseek-codex`（活跃 UI 线）、`ui/nebula-design`（原型归档，末端 `59ebd9d`）。
 - **工作区（2026-10-14 清理后）**：仅 `music-nebula`（main）与 `music-nebula-ui Created by deepseek-codex` 两个目录；废弃工作树、`wo/prototype`、`wo/outputs`、过期 `qq-cookie.txt`、空 `.opencode/` 均已清理。`pnpm build` 会重建 `wo/outputs`。
+- **文档基线（2026-10-14 预合并）**：UI 分支已并入 main 的全部文档提交（合并提交 `dc8d3b2`），成为 main 的超集；`git merge-tree` 预演确认将来 branch → main 合并无冲突。
 - **活跃任务**：Nebula Player 重构（8 阶段，见 `docs/design/PLAYER_IMPL_PLAN.md`）。
   - Phase 1（Bottom Player）已实现并两轮打磨：`2d18039`（结构重构）→ `7e38760`（弹层开关/进度条/图标/音量/高度）→ `f79b65a`（音质弹窗重设计、图标按参考图重绘、系统取色、去方框/圆 hover、玻璃通透、时间常显）。**状态：待用户桌面端最终复验**（8-30 后项目搁置）。
   - 下一阶段：**Phase 2** Listening Space shell + Bottom→Listening 连续变形 + 主舞台退场。
