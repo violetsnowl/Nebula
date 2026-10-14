@@ -7,10 +7,13 @@
 
 ## 恢复路径（按序读完即可动手）
 
-1. `docs/meta/HANDOFF.md` — 协作规则
-2. `docs/meta/USER_PROFILE.md` — 用户画像
-3. 本文件「当前状态」
-4. `docs/project/ARCHITECTURE.md` + `docs/project/CHANGE_LOG.md` 最近 20 条
+1. `AGENTS.md`（仓库根，Codex 自动加载）— 硬性约定与恢复入口
+2. `docs/meta/HANDOFF.md` — 协作规则 + 工作区拓扑
+3. `docs/meta/USER_PROFILE.md` — 用户画像与审美偏好
+4. 本文件「当前状态」
+5. `docs/project/PROJECT.md` + `docs/project/ARCHITECTURE.md`
+6. `docs/design/*`（`UI_SPEC` / `LYRICS_SYSTEM`；UI 分支另有播放器三份母稿）
+7. `docs/project/CHANGE_LOG.md` 最近 20 条 + `docs/project/NOTES.md`
 
 ## 模型迭代与连续性（为什么这份文件存在）
 
@@ -18,21 +21,55 @@
 - 连续性因此分三层：① 线程对话历史（会在压缩中损失细节）；② 仓库文档（本目录 + CHANGE_LOG + 冻结设计规格，人类可读、可无限增长）；③ git 提交历史（事实基准）。
 - **协议**：新会话 / 新 agent / 换模型后按上面「恢复路径」读完再动手；重大里程碑或会话结束时刷新本文件「当前状态」小节。`AGENTS.md` 已配置自动指向这条路径。
 
-## 当前状态（2026-10-13）
+## 当前状态（2026-10-14 · 本窗口结项）
 
-- **目录 / 分支**：
-  - `music-nebula`（main）— 主项目，本会话直管；含仓库 README（开发期版）与文档体系。**分支 HEAD 会随提交变化，需要精确值时用 `git log -1` 取，不要依赖本文档记录。**
-  - `music-nebula-ui Created by deepseek-codex`（`ui/nebula-design-deepseek-codex`）— UI 设计工作树，本会话直管；关键里程碑：`2d18039` / `7e38760` / `f79b65a`（Player P1 三轮）、`bc15d95` 起为文档分类与快照。
-  - `music-nebula-ui Created by mimo-hermes`（`ui/nebula-design`）— **已废弃的工作窗，2026-10-13 接管并留档**：其产物（独立 HTML 原型 `prototype/` + 设计母稿副本）已提交并推送为远端分支 `origin/ui/nebula-design`（`c6add1c`）。**仅归档：不参与迭代、不合并、不再修改。**
-- **远端仓库**：`github.com/violetsnowl/nebula`（2026-10 由 `a161858970-ux/nebula` 迁移，旧地址自动重定向）。远端分支三条：`main`、`ui/nebula-design-deepseek-codex`（活跃 UI 线）、`ui/nebula-design`（原型归档，末端 `59ebd9d`）。
-- **工作区（2026-10-14 清理后）**：仅 `music-nebula`（main）与 `music-nebula-ui Created by deepseek-codex` 两个目录；废弃工作树、`wo/prototype`、`wo/outputs`、过期 `qq-cookie.txt`、空 `.opencode/` 均已清理。`pnpm build` 会重建 `wo/outputs`。
-- **文档基线（2026-10-14 预合并）**：UI 分支已并入 main 的全部文档提交（合并提交 `dc8d3b2`），成为 main 的超集；`git merge-tree` 预演确认将来 branch → main 合并无冲突。
-- **活跃任务**：Nebula Player 重构（8 阶段，见 `docs/design/PLAYER_IMPL_PLAN.md`）。
-  - Phase 1（Bottom Player）已实现并两轮打磨：`2d18039`（结构重构）→ `7e38760`（弹层开关/进度条/图标/音量/高度）→ `f79b65a`（音质弹窗重设计、图标按参考图重绘、系统取色、去方框/圆 hover、玻璃通透、时间常显）。**状态：待用户桌面端最终复验**（8-30 后项目搁置）。
-  - 下一阶段：**Phase 2** Listening Space shell + Bottom→Listening 连续变形 + 主舞台退场。
-  - 挂起决策：播放模式循环顺序（现为 顺序→单曲→随机；文档写 顺序→随机→单曲）待用户拍板。
-- **主项目 main**：功能停在 `f60c82c`（跨平台歌手/专辑转译、专辑点播 VIP 路由、评论分页、歌手全曲、QQ 专辑接口等已上线并推送）；其后为文档体系提交（`b379e24` 二级分类、`f69f13a` AGENTS.md + 连续性协议）。UI 分支暂不合并，UI 完成后统一合并 + 全量 QA。
-- **模型迭代记录**：2026-09-13 用户告知原 deepseek-v4-flash 已下架、现由 v4.1 flash 提供服务；本次按本文件「模型迭代与连续性」协议完成冷启动预热（全量 docs 精读 + 刷新快照 + 修正 NOTES 过时项）。**本轮已确认可继续开发，无需用户重述历史。**
-- **验证命令**：各仓库内 `pnpm build` + `pnpm qa`；UI 桌面验收在 worktree 目录 `pnpm build:desktop && pnpm desktop`。
-- **文档体系**：已重构为 `docs/{project,design,meta}` 三个二级目录，入口 `docs/README.md`。
-- **已知文档边界**：`CHANGE_LOG.md`（92–97KB）按约定只精读「最近 20 条 + 全量条目索引」；历史细节需要时按条目日期定位回读。
+### 工作区拓扑（只有两个，勿再增加）
+
+| 目录 | 分支 | 用途 |
+|---|---|---|
+| `wo/work/music-nebula` | `main` | 主项目 / 生产线 |
+| `wo/work/music-nebula-ui Created by deepseek-codex` | `ui/nebula-design-deepseek-codex` | UI 设计线（Player 重构），**当前是 main 的超集** |
+
+- 两个工作区共享同一个 `.git`：**在任一处切换分支都会改变另一处的分支状态**；不要在两处同时切分支。
+- 精确 HEAD 用 `git log -1` 取，本文件不记录会过期的哈希。
+- 归档工作树（mimo-hermes）及目录已于 2026-10 删除，内容保存在远端分支 `ui/nebula-design`。
+
+### 远端与分支
+
+- 远端：`github.com/violetsnowl/nebula`（由 `a161858970-ux/nebula` 迁移，旧地址自动重定向；本地 `origin` 已更新）。
+- 三条远端分支：`main`（生产线）、`ui/nebula-design-deepseek-codex`（活跃 UI 线）、`ui/nebula-design`（原型归档，仅留档、不再迭代）。
+
+### 基线状态（2026-10-14 预合并）
+
+- UI 分支已并入 main 的全部文档提交，成为 main 的超集；`git merge-tree main ui/nebula-design-deepseek-codex` 预演返回 0 —— **将来 branch → main 合并零冲突**，只差执行一次合并。
+
+### 活跃任务：Nebula Player 重构（8 阶段，见 `docs/design/PLAYER_IMPL_PLAN.md`）
+
+- **P1 Bottom Player**：已实现并两轮打磨（`2d18039` 结构重构 → `7e38760` 打磨 → `f79b65a` 二轮打磨）；**状态：待用户桌面端复验**（8-30 起搁置）。
+- **下一步取决于用户**：用户正在设计**全局 UI 底层重构母稿**；母稿到位后先执行全局底层 UI 重构（验收合格）→ 再回到 **P2 Listening Space shell + Bottom→Listening 连续变形 + 主舞台退场**。
+- **挂起决策**：播放模式循环顺序（现「顺序→单曲→随机」vs 母稿「顺序→随机→单曲」）——留到全局 UI 重构那轮一并拍板。
+
+### 已废弃 / 不再排期
+
+- 汽水音乐取链（服务端按出口 IP 风控）→ 歌单播放走网易云 / QQ 兜底 + 多平台 VIP 路由；
+- 播放器内收藏 / 喜欢功能；
+- "先做独立原型再搬代码"路线（原型归档在 `ui/nebula-design` 分支 `prototype/`，不作为实现真源）。
+
+### 本窗口小结（2026-10-13 ~ 10-14）
+
+1. **换模型后冷启动**：全量精读 docs；修正 NOTES 四处过时项；补 `AGENTS.md`（自动加载的恢复入口）与本文档「模型迭代与连续性」协议。
+2. **main 新增开发期 `README.md`**：GitHub 展示版，含平台能力矩阵、架构、命令、已知限制、路线图与免责声明。
+3. **UI 分支首次推送远端**做异地备份；记录仓库迁移与 origin 地址更新。
+4. **接管并归档另一个 agent 的废弃工作窗**：产物提交为远端分支 `ui/nebula-design`（含独立 HTML 原型），随后删除其工作目录。
+5. **工作区清理**：旧 Dock 原型归档到归档分支后删除本地副本；删除 `wo/outputs`（可再生）、过期 `qq-cookie.txt`、空 `.opencode/`。
+6. **预合并**：main 文档并入 UI 分支，解决 CHANGE_LOG / CONTEXT_SNAPSHOT 冲突，消除将来合并冲突面。
+
+### 验证命令与产物路径（易踩）
+
+- 本仓库：`pnpm build` + `pnpm qa`；后端改动另加 `pnpm qa:backend`。
+- 桌面验收在 UI 工作树：`pnpm build:desktop && pnpm desktop`。
+- `pnpm build` 产物在**仓库外** `wo/outputs/music-nebula/`，**两个工作区共用该路径、会互相覆盖**；`pnpm qa` 读取该产物，所以必须**先 build 再 qa**。
+
+### 文档边界
+
+- `docs/project/CHANGE_LOG.md`（90KB+）按约定只精读「最近 20 条 + 全量条目索引」，历史细节按条目日期回读。
