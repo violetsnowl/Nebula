@@ -15,7 +15,10 @@
 
 > `NEBULA_PLAYER_DESIGN_SPEC.md` / `PLAYER_AGENT_BRIEF.md` / `PLAYER_IMPL_PLAN.md` 目前在 UI 分支（`ui/nebula-design-deepseek-codex`）维护，合入 main 后归入 `docs/design/`。
 >
-> `docs/design/NEBULA_DESIGN_REVIEW.md`（UI 分支）是全局 UI 重构的**设计审查稿（非真源）**：现状诊断、参照分析、对 GPT 母稿与播放器母稿的审查、视觉样张与用户反馈。GPT 母稿 `NEBULA_GLOBAL_UI_MASTER.md` 目前未入库、不作为开工依据。
+> 全局 UI 重构（UI 分支）：
+> - `docs/design/NEBULA_UI_SYSTEM.md` —— **全局 UI 系统定稿 v1.0**（待用户确认冻结；冻结后取代 `UI_SPEC.md`，成为全局 UI 真源）。
+> - `docs/design/NEBULA_DESIGN_REVIEW.md` —— 设计审查稿（非真源）：现状诊断、参照分析、两份母稿的审查、视觉样张与用户反馈，是定稿的推导依据。
+> - `docs/design/archive/NEBULA_GLOBAL_UI_MASTER_GPT.md` —— GPT 母稿归档（非真源，仅参考）。
 
 ---
 
