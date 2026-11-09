@@ -51,7 +51,7 @@ music-nebula/
 ├─ README.md                   # GitHub 展示版（开发期，随进度更新）
 ├─ dist/                       # 桌面版前端构建产物
 ├─ dist-main/                  # 主进程打包产物
-└─ outputs/music-nebula/       # QA/预览产物（在仓库外：wo/outputs/，pnpm build 每次重建）
+└─ ../nebula-outputs/          # QA/预览产物（在仓库外的同级目录，pnpm build 每次重建）
 ```
 
 ## 3. 常用命令（Windows PowerShell）
@@ -59,7 +59,7 @@ music-nebula/
 ```powershell
 $env:pnpm_config_verify_deps_before_run='false'   # pnpm 环境必带
 
-pnpm build            # tsc 类型检查 + vite 构建 -> outputs/music-nebula/index.html
+pnpm build            # tsc 类型检查 + vite 构建 -> ../nebula-outputs/index.html
 pnpm build:main       # 仅打包主进程 -> dist-main/index.cjs
 pnpm build:desktop    # 完整桌面构建（dist + dist-main）
 pnpm desktop          # 环境自检后启动 Electron 桌面版
@@ -73,7 +73,7 @@ pnpm qa:desktop-play  # 桌面播放链路冒烟
 
 > Node 运行时：`C:\Users\LIU\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe`
 >
-> 产物路径易踩：`pnpm build` 输出到仓库外的 `wo/outputs/music-nebula/`，桌面版则用 `pnpm build:desktop`（输出到 `dist/` + `dist-main/`）。`pnpm qa` 读取的是 outputs 里那份产物，**先 build 再 qa**；main 与 UI 两个工作区共用该路径、会互相覆盖。
+> 产物路径易踩：`pnpm build` 输出到仓库外的同级目录 `../nebula-outputs/`（本机 `E:\CUFE\vibecoding\nebula-outputs`），桌面版则用 `pnpm build:desktop`（输出到 `dist/` + `dist-main/`）。`pnpm qa` 读取的是 outputs 里那份产物，**先 build 再 qa**；main 与 UI 两个工作区共用该路径、会互相覆盖。
 >
 > 远程仓库：`github.com/violetsnowl/nebula`（2026-10 由 `a161858970-ux/nebula` 迁移，旧地址自动重定向）。
 

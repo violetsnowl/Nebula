@@ -6,6 +6,28 @@
 
 ---
 
+## #83 — 2026-11-09 — 工作区迁移路径同步（E:\CUFE\vibecoding）+ 快照刷新：全局 UI 重构进入设计审查
+
+**目标**
+
+1. 用户把两个工作区从 `C:\Users\LIU\Documents\Codex\2026-08-10\wo\work\` 迁到 `E:\CUFE\vibecoding\`（`nebula` = main，`nebula-ui` = UI 分支），构建产物迁到同级 `nebula-outputs`。迁移时的构建 / QA 路径适配一直没有提交，文档里的路径索引也随之失效。
+2. 把本窗口用户确认的新阶段固化进交接文档。
+
+**改动**
+
+- 代码（迁移时已在工作区改好，本次提交）：`vite.config.ts` 的 `outDir` 改为 `../nebula-outputs`；`scripts/qa.cjs`、`scripts/desktop-play-smoke.mjs` 的产物路径由写死的绝对路径改为相对仓库的 `../nebula-outputs`，后者头注释同步。
+- 路径索引：`AGENTS.md`、`README.md`、`docs/meta/{HANDOFF,USER_PROFILE,CONTEXT_SNAPSHOT}.md`、`docs/project/{PROJECT,NOTES}.md`、`docs/design/PLAYER_IMPL_PLAN.md`（R1-Q2 只改了路径，决策语义不变）改为新目录；QA 脚本的"三处硬编码路径"更正为两处（Chrome、Codex runtime）。CHANGE_LOG 历史条目里的旧路径按约定不动。
+- 快照刷新：`CONTEXT_SNAPSHOT` 写入新状态——P1 验收时发现旧 UI 遗留问题严重污染新组件，因此停手；主线改为全局 UI 重构。GPT 母稿 `docs/design/NEBULA_GLOBAL_UI_MASTER.md` 已交付，但**不是真源、未入库**；由 Claude 以独立设计师身份重新审视 / 重新设计，用户确认后再定真源。`NOTES` 的待办同步更新。
+
+**验证**
+
+- UI 工作树：`pnpm build` ✔（产物 `../nebula-outputs/index.html`）、`pnpm qa` ✔（含 check-arch，全部通过，控制台错误 0）。
+
+**遗留 / 风险**
+
+- main 工作树（`E:\CUFE\vibecoding\nebula`）里有同样未提交的三处路径适配，外加一份未跟踪的母稿副本，本次没动。等将来 branch → main 合并时，需要先清理 main 的这些本地改动，否则合并会被挡住。
+- `NEBULA_GLOBAL_UI_MASTER.md` 继续保持未跟踪，等设计审查结论出来后再决定是否入库、以什么身份入库。
+
 ## #82 — 2026-10-14 — 交接口径刷新（mimo-hermes 归档表述）+ CHANGE_LOG 条目编号体系
 
 **目标**

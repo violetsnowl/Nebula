@@ -9,7 +9,7 @@ const { PNG } = require('C:/Users/LIU/.cache/codex-runtimes/codex-primary-runtim
 const { chromium } = require('C:/Users/LIU/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core');
 
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
-const OUT_DIR = 'C:/Users/LIU/Documents/Codex/2026-08-10/wo/outputs/music-nebula';
+const OUT_DIR = path.join(__dirname, '..', '..', 'nebula-outputs');
 const HTML_PATH = path.join(OUT_DIR, 'index.html');
 
 function log(label, value) {

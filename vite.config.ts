@@ -6,7 +6,7 @@ export default defineConfig({
   plugins: [react(), viteSingleFile()],
   build: {
     target: 'esnext',
-    outDir: '../../outputs/music-nebula',
+    outDir: '../nebula-outputs',
     emptyOutDir: true,
   },
 });

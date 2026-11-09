@@ -41,8 +41,10 @@
 
 | 目录 | 分支 | 用途 |
 |---|---|---|
-| `wo/work/music-nebula` | `main` | 主项目 / 生产线 |
-| `wo/work/music-nebula-ui Created by deepseek-codex` | `ui/nebula-design-deepseek-codex` | UI 设计线（播放器重构），当前为 main 的超集 |
+| `E:\CUFE\vibecoding\nebula` | `main` | 主项目 / 生产线 |
+| `E:\CUFE\vibecoding\nebula-ui` | `ui/nebula-design-deepseek-codex` | UI 设计线（播放器重构），当前为 main 的超集 |
+
+> 2026-11 用户将两个工作区从旧位置 `C:\Users\LIU\Documents\Codex\2026-08-10\wo\work\` 迁到 `E:\CUFE\vibecoding\`；构建产物同步迁到同级 `nebula-outputs`。路径一律以 `git worktree list` 为准，脚本里尽量用相对路径。
 
 - 因为共享 `.git`，**在任一处 `git checkout` 都会改变另一处的分支**；两个目录各自固定在自己的分支上，不要来回切。
 - 远端三条分支：`main` / `ui/nebula-design-deepseek-codex`（活跃 UI 线）/ `ui/nebula-design`（原型归档，不参与迭代）。
@@ -80,7 +82,7 @@
 - pnpm 需带 `$env:pnpm_config_verify_deps_before_run='false'`（Windows PowerShell）。
 - Node 运行时与 QA 用本机 Chrome 的路径见 `PROJECT.md` §3 与 `scripts/qa.cjs` 顶部。
 - 改动 `src/main`（后端）后必须 `pnpm build:main` 才能让 Electron 与冒烟测试生效。
-- `pnpm build` 产物在**仓库外** `wo/outputs/music-nebula/`，两个工作区共用该路径、会互相覆盖；`pnpm qa` 读取该产物，所以**先 build 再 qa**。
-- **换机器的坑**：`scripts/qa.cjs` 与 `scripts/desktop-play-smoke.mjs` 硬编码了三处本机路径（Chrome 可执行文件、Codex runtime 的 `node_modules`（playwright-core / pngjs）、outputs 目录），跨机器接手需先改这三处。
+- `pnpm build` 产物在**仓库外**的同级目录 `../nebula-outputs/`（本机 `E:\CUFE\vibecoding\nebula-outputs`），两个工作区共用该路径、会互相覆盖；`pnpm qa` 读取该产物，所以**先 build 再 qa**。
+- **换机器的坑**：`scripts/qa.cjs` 与 `scripts/desktop-play-smoke.mjs` 仍硬编码两处本机路径（Chrome 可执行文件、Codex runtime 的 `node_modules`（playwright-core / pngjs））；outputs 目录已改为相对仓库的 `../nebula-outputs`（与 `vite.config.ts` 的 `outDir` 一致）。跨机器接手需先改这两处。
 - **Windows 工作树坑**：删除含 `node_modules` 的工作树可能报 `Filename too long`——先 `git config core.longpaths true`，仍失败则用 robocopy 镜像空目录清空后再删；目录被改名导致注册失效时用 `git worktree repair <新路径>` 修复。
 - 凭证：`qq-cookie.txt` / `.env` 均被 `.gitignore` 排除，切勿提交；仓库内现无任何真实凭证（旧的已过期 `qq-cookie.txt` 已于 2026-10-14 删除，重新做实账号验证需重新导出）。

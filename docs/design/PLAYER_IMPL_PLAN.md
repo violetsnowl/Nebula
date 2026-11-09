@@ -19,7 +19,7 @@
 | # | 决策 | 结论 |
 |---|---|---|
 | R1-Q1 | 改动边界 | 只动 BottomBar / NowPlayingPanel / 播放器新组件与 hooks / styles.css 播放器段 / AudioPlayer（队列+能量输入）/ 设置面板；Z1 歌词层、StageCanvas、InfoModals、dock、搜索、背景层一律不碰 |
-| R1-Q2 | 验收节奏 | 每阶段用户亲自 `cd music-nebula-ui Created by deepseek-codex` + `pnpm build:desktop` + `pnpm desktop` 桌面端验收；不做截图；阶段通过后提交 |
+| R1-Q2 | 验收节奏 | 每阶段用户亲自在 UI 工作树（`E:\CUFE\vibecoding\nebula-ui`）执行 `pnpm build:desktop` + `pnpm desktop` 桌面端验收；不做截图；阶段通过后提交 |
 | R1-Q3 | Listening Space 歌词默认形态 | 默认 Spatial；Spatial/Inner 切换控件置于右下角 |
 | R1-Q4 | Bottom→Listening 变形 | 单一 PlayerSurface 身份 + FLIP 连续变形；**禁止**独立 modal 伪装；主舞台 backdrop 退场（blur/dim/降饱和，保持隐约可感知） |
 | R1-Q5 | 收藏 | **彻底删除**（不做平台写回，也不做内部收藏） |

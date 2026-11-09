@@ -1,16 +1,20 @@
 /* 桌面播放链路端到端模拟：
  * 用真实网易云适配器 + 真实 CDN 直链，注入 window.nebulaAPI，
  * 在无头 Chrome 中验证「导入 → 点击卡片 → <audio> 真实推进」。
- * 前置：pnpm build:main && pnpm build（浏览器产物到 outputs/）
+ * 前置：pnpm build:main && pnpm build（浏览器产物到仓库同级 ../nebula-outputs/）
  */
 import { createRequire } from 'node:module';
+import path from 'node:path';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const require = createRequire(import.meta.url);
 const { CookieStore, HttpClient, createAdapters, SongResolver } = require('../dist-main/index.cjs');
 const { chromium } = require('C:/Users/LIU/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core');
 
 const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
-const HTML = 'file:///C:/Users/LIU/Documents/Codex/2026-08-10/wo/outputs/music-nebula/index.html';
+const HTML = pathToFileURL(path.join(__dirname, '..', '..', 'nebula-outputs', 'index.html')).href;
 
 async function main() {
   const cookies = new CookieStore();

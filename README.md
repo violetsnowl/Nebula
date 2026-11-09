@@ -149,7 +149,7 @@ pnpm dev
 
 **说明**
 
-- `pnpm build` 的产物在仓库外的 `../../outputs/music-nebula/`（QA / 预览用）；桌面版请用 `pnpm build:desktop`；
+- `pnpm build` 的产物在仓库外的同级目录 `../nebula-outputs/`（QA / 预览用）；桌面版请用 `pnpm build:desktop`；
 - 修改 `src/main/` 后必须重新 `pnpm build:main`，否则 Electron 与冒烟测试仍走旧的 `dist-main/index.cjs`；
 - Windows PowerShell 下 pnpm 建议带 `$env:pnpm_config_verify_deps_before_run='false'`；
 - 登录凭证保存在本机 Electron `userData` 目录，**不会**上传到任何第三方。
