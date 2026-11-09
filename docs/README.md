@@ -14,6 +14,8 @@
 | `docs/meta/` | 交接与记忆：接手手册、用户画像、上下文快照 | `HANDOFF.md` · `USER_PROFILE.md` · `CONTEXT_SNAPSHOT.md` |
 
 > `NEBULA_PLAYER_DESIGN_SPEC.md` / `PLAYER_AGENT_BRIEF.md` / `PLAYER_IMPL_PLAN.md` 目前在 UI 分支（`ui/nebula-design-deepseek-codex`）维护，合入 main 后归入 `docs/design/`。
+>
+> `docs/design/NEBULA_DESIGN_REVIEW.md`（UI 分支）是全局 UI 重构的**设计审查稿（非真源）**：现状诊断、参照分析、对 GPT 母稿与播放器母稿的审查、视觉样张与用户反馈。GPT 母稿 `NEBULA_GLOBAL_UI_MASTER.md` 目前未入库、不作为开工依据。
 
 ---
 
