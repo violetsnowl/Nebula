@@ -62,6 +62,8 @@
 
 ## 6. 赋色与视觉层级
 
+> **2026-11-09 更新：字体、字色与强调方式由 `NEBULA_UI_SYSTEM.md` §7 取代**（衬线 Display；未唱 / 已唱 / 正在唱三段，只有波前用封面强调色）。本节的运动、层级比例与设置项语义仍然有效。
+
 - 三色系统 `primary / secondary / highlight`（`lib/coverColors.ts`）：从**当前背景媒体**（封面 / 自定义上传 / Wallpaper）实时采样，非固定按歌曲封面；近单色银蓝兜底（`SILVER_BLUE`）；最低亮度保护（普通句 ≥0.34–0.38、高亮句 ≥0.48）；逐字高亮带轻微发光。
 - 自定义颜色也走同一套 primary/secondary/highlight 生成逻辑，保持同色系双层效果（`lyricColorSource` 设置）。
 - 视觉层级（必须拉开，否则三句糊成一团）：current 最大最亮最实、角度 ±8°–14°；next 中等（opacity 0.62）；nextNext 更小更透（0.42）、角度可稍大；leaving 0.95。

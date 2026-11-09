@@ -13,7 +13,7 @@
 3. `docs/meta/USER_PROFILE.md` — 用户画像与审美偏好
 4. `docs/meta/CONTEXT_SNAPSHOT.md` — 当前状态与活跃任务
 5. `docs/project/PROJECT.md` + `docs/project/ARCHITECTURE.md` — 总览、命令、架构与依赖规则
-6. `docs/design/UI_SPEC.md` — UI 设计语言、Hover 规范、液态玻璃预留
+6. `docs/design/NEBULA_UI_SYSTEM.md` — 全局 UI 真源（2026-11 冻结）：光学材质（液态 / 磨砂）、环境光、token、交互状态、卡片、组件、实施批次。旧的 `UI_SPEC.md` 已被取代
 7. `docs/design/LYRICS_SYSTEM.md` — Z1 穿梭歌词设计规格（参数与已废弃决策）
 8. `docs/project/CHANGE_LOG.md` 最近 20 条 — 了解最近改动脉络与验证方式
 9. `docs/project/NOTES.md` — 踩坑记录与待办
@@ -26,10 +26,10 @@
 
 1. **重大改动先沟通，确认后执行**。用户的惯例是：改动量大、方向性强时要求"先沟通明确项目需求，等我确认之后再做下一步执行"。小改动 / 明确请求直接做，不要反复确认。
 2. **架构与重构：行为零变化**。重构只做结构整理，不改变视觉与行为；每步 `pnpm build` + `pnpm check:arch` + `pnpm qa` 全绿后独立提交，再继续下一步。
-3. **UI 以现有实现为唯一真源**。项目曾发生过"参考 Prototype 重新设计导致整合爆炸"的教训；不允许为了"适配"而改变已确认的视觉结构。审美与参数先查 `UI_SPEC.md`，不要自由发挥。
+3. **UI 以冻结真源为准**。全局 UI 的视觉与参数以 `docs/design/NEBULA_UI_SYSTEM.md` 为唯一真源（2026-11 起，取代"以现有实现为真源"）；其中没写到的，以现有实现为准，不要自由发挥。项目曾发生过"参考 Prototype 重新设计导致整合爆炸"的教训：视觉样张只用于做决定，实现必须在分支里原生编写，不允许为了"适配"而改变已确认的视觉结构。
 4. **不要输出截图 png**。用户明确不需要 output 目录里的截图产物。
 5. **git 每步提交 + 推送**。远程 `origin/main`（`github.com/violetsnowl/nebula.git`；旧地址 `a161858970-ux/nebula` 已迁移，会自动重定向）；文档与代码一起提交。
-6. **文档同步**：每次改动追加 `docs/project/CHANGE_LOG.md`；踩坑更新 `docs/project/NOTES.md`；架构变化更新 `docs/project/ARCHITECTURE.md`；UI 规范变化更新 `docs/design/UI_SPEC.md`。
+6. **文档同步**：每次改动追加 `docs/project/CHANGE_LOG.md`；踩坑更新 `docs/project/NOTES.md`；架构变化更新 `docs/project/ARCHITECTURE.md`；全局 UI 规范变化更新 `docs/design/NEBULA_UI_SYSTEM.md`（已冻结，改动须经用户确认）。
 7. **搜索优先 `rg`**；本项目 Windows PowerShell 下不可用时改用 `Select-String`。
 8. **沟通语言**：中文；结论先行，给可执行步骤。用户自述 git / 工程操作为新手，但产品与审美判断力强——技术细节按新手水平解释，方向性判断尊重用户。
 

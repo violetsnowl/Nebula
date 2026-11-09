@@ -12,7 +12,7 @@
 3. `docs/meta/USER_PROFILE.md` — 用户画像与审美偏好
 4. 本文件「当前状态」
 5. `docs/project/PROJECT.md` + `docs/project/ARCHITECTURE.md`
-6. `docs/design/*`（`UI_SPEC` / `LYRICS_SYSTEM`；UI 分支另有播放器三份母稿）
+6. `docs/design/*`（`NEBULA_UI_SYSTEM`（全局 UI 真源）/ `LYRICS_SYSTEM`；UI 分支另有播放器三份母稿；`UI_SPEC` 已被取代）
 7. `docs/project/CHANGE_LOG.md` 最近 20 条 + `docs/project/NOTES.md`
 
 ## 模型迭代与连续性（为什么这份文件存在）
@@ -60,8 +60,10 @@
   - **A 材质（液态玻璃）**：方向通过，用户评价"第一次把想要的结果做出来了"。参数：用户倾向介于「清透」和「均衡」之间 → 取中间值为液态默认（折射 26px · 色散 5% · 散射 2.25px · 亮边 .52 · 着色 10% · 饱和 1.65，样张 v3），进真实软件后桌面端再微调。
   - **B 星云（无框卡片 + 封面环境光）**：通过。卡片 hover 沿用原有语义（原地转正 + 放大 + 置顶），不位移。
   - **C 歌词（衬线 Display + 正在唱的字用封面强调色）**：通过。
-- **④ 定稿已写成（2026-11-09）**：`docs/design/NEBULA_UI_SYSTEM.md` v1.0，**待用户确认冻结**。冻结后：`AGENTS.md` 真源清单里的 UI_SPEC 换成它；UI_SPEC 标记为已被取代；播放器母稿 §19 / §19.11 / §21 和 LYRICS_SYSTEM §6 各加一行指向它（定稿 §14）。GPT 母稿已归档到 `docs/design/archive/NEBULA_GLOBAL_UI_MASTER_GPT.md`（main 工作树里还留着一份未跟踪的旧副本，可删）。
-- **定稿里尚未定的三项**（§10）：漫游 / 聆听的注意力交接（P3 前做样张）、点卡片是否还自动弹旧二级页（P0 前需用户确认）、播放模式循环顺序（沿用挂起项）。
+- **④ 定稿已冻结（2026-11-09，用户确认）**：`docs/design/NEBULA_UI_SYSTEM.md` v1.0 是全局 UI 唯一真源。已同步：`AGENTS.md` 真源清单、UI_SPEC 标记为已被取代、播放器母稿 §19 / §19.11 / §21 与 LYRICS_SYSTEM §6 加了指向、HANDOFF 协作规则第 3 条。GPT 母稿归档在 `docs/design/archive/NEBULA_GLOBAL_UI_MASTER_GPT.md`；main 工作树里的未跟踪旧副本已删除。
+- **用户已同意（2026-11-09）**：P0 取消"点卡片自动弹旧二级页"，改为只播放。
+- **仍未定的两项**（§10）：漫游 / 聆听的注意力交接（P3 前做样张）、播放模式循环顺序（沿用挂起项）。
+- **下一步：P0 清障**（§13）。
 - **实施批次**（定稿 §13）：P0 清障 → P1 材质与环境（GlassManager）→ P2 星云卡片 → P3 歌词字体 → P4 面板与 Dock → 回到 Player P2。
 - **旧的下一步（已完成）**：用户目测确认 v3 中间值 → ④ 写定稿真源（含参数、组件、签名时刻、双背景验收清单，并提出需改的 `AGENTS.md` 硬性约定，如 hover 规则）→ P0 清障（删全局 hover 光晕规则 `styles.css:3733 / 4035`、删调试面板 `App.tsx:550`、焦点卡片去模糊、卡片点击不再弹旧二级页 `useStage.ts:374`）。
 - **参照结论**：Mineradio 给材质（SVG 位移折射 + RGB 色散 + 近零着色 + 内发光亮边，Chromium 可用）；Folia 给歌词（衬线体动态排版，单一强调色只给正在唱的字）。两者为 GPL / AGPL，只借思路不搬代码。

@@ -10,13 +10,13 @@
 | 目录 | 内容 | 文档 |
 |---|---|---|
 | `docs/project/` | 项目治理：总览、架构、变更日志、踩坑与待办 | `PROJECT.md` · `ARCHITECTURE.md` · `CHANGE_LOG.md` · `NOTES.md` |
-| `docs/design/` | 设计规格：UI 语言、歌词系统、播放器重设计 | `UI_SPEC.md` · `LYRICS_SYSTEM.md` · `NEBULA_PLAYER_DESIGN_SPEC.md` · `PLAYER_AGENT_BRIEF.md` · `PLAYER_IMPL_PLAN.md` |
+| `docs/design/` | 设计规格：全局 UI 系统、歌词系统、播放器重设计 | `NEBULA_UI_SYSTEM.md`（全局 UI 真源）· `LYRICS_SYSTEM.md` · `NEBULA_PLAYER_DESIGN_SPEC.md` · `PLAYER_AGENT_BRIEF.md` · `PLAYER_IMPL_PLAN.md`；历史：`UI_SPEC.md`（已被取代）· `NEBULA_DESIGN_REVIEW.md`（审查记录）· `archive/` |
 | `docs/meta/` | 交接与记忆：接手手册、用户画像、上下文快照 | `HANDOFF.md` · `USER_PROFILE.md` · `CONTEXT_SNAPSHOT.md` |
 
 > `NEBULA_PLAYER_DESIGN_SPEC.md` / `PLAYER_AGENT_BRIEF.md` / `PLAYER_IMPL_PLAN.md` 目前在 UI 分支（`ui/nebula-design-deepseek-codex`）维护，合入 main 后归入 `docs/design/`。
 >
 > 全局 UI 重构（UI 分支）：
-> - `docs/design/NEBULA_UI_SYSTEM.md` —— **全局 UI 系统定稿 v1.0**（待用户确认冻结；冻结后取代 `UI_SPEC.md`，成为全局 UI 真源）。
+> - `docs/design/NEBULA_UI_SYSTEM.md` —— **全局 UI 系统 v1.0（2026-11-09 已冻结）**，全局 UI 唯一真源，取代 `UI_SPEC.md`。
 > - `docs/design/NEBULA_DESIGN_REVIEW.md` —— 设计审查稿（非真源）：现状诊断、参照分析、两份母稿的审查、视觉样张与用户反馈，是定稿的推导依据。
 > - `docs/design/archive/NEBULA_GLOBAL_UI_MASTER_GPT.md` —— GPT 母稿归档（非真源，仅参考）。
 
@@ -34,5 +34,5 @@
 ## 维护约定
 
 - 每次改动追加 `docs/project/CHANGE_LOG.md`（日期、目标、改动、验证、遗留）。
-- 新踩坑/待办 → `docs/project/NOTES.md`；架构变化 → `docs/project/ARCHITECTURE.md`；UI 规范 → `docs/design/UI_SPEC.md`。
+- 新踩坑/待办 → `docs/project/NOTES.md`；架构变化 → `docs/project/ARCHITECTURE.md`；全局 UI 规范 → `docs/design/NEBULA_UI_SYSTEM.md`（已冻结，改动须经用户确认并记 CHANGE_LOG）。
 - 用户的稳定偏好/反模式 → `docs/meta/USER_PROFILE.md`；里程碑或会话结束 → 刷新 `docs/meta/CONTEXT_SNAPSHOT.md`。

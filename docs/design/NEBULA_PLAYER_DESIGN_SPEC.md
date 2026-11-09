@@ -1481,6 +1481,8 @@ This is a focus-state change, not a complete environment shutdown.
 
 # 19. Frosted Material System — Current Implementation
 
+> **2026-11-09 更新：本章（材质）由 `NEBULA_UI_SYSTEM.md` §3 光学材质系统取代**（磨砂 / 液态为同一模型的两组参数，含具体数值与验收清单）。本章其余文字保留作为意图说明。
+
 ## 19.1 Material Personality
 
 Primary baseline:
@@ -1626,6 +1628,8 @@ Avoid “glass inside glass inside glass.”
 
 ## 19.11 Hover
 
+> **2026-11-09 更新：hover 由 `NEBULA_UI_SYSTEM.md` §6 取代**（元素自身提亮 + 图形微放大，无容器底、无光晕、无圆盘）。下文"Play button: light circular surface"不再执行：播放键不加圆形底（见该文 §9.1）。
+
 Hover responses are object-specific.
 
 Examples:
@@ -1659,6 +1663,8 @@ If an environmental light is already strong, the local component response should
 ---
 
 # 21. Liquid Material — Future Only
+
+> **2026-11-09 更新：液态不再是"仅未来"**。Electron（Chromium）已支持 SVG 位移折射，液态为默认主题，参数与实现约定见 `NEBULA_UI_SYSTEM.md` §3。下文"Liquid must not change"的结构约束仍然有效。
 
 Liquid Glass is **not part of the current implementation scope**.
 

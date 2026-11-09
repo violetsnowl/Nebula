@@ -13,7 +13,7 @@
 ## 硬性约定（不可自行放宽）
 
 - 每步改动：`pnpm build` + `pnpm qa`（后端改动加 `pnpm qa:backend`）全绿后独立提交；每次改动追加 `docs/project/CHANGE_LOG.md`。
-- `docs/design/*` 是冻结真源（UI_SPEC / LYRICS_SYSTEM / NEBULA_PLAYER_DESIGN_SPEC / PLAYER_AGENT_BRIEF / PLAYER_IMPL_PLAN）；不得自由发挥，不得静默改交互语义。
+- `docs/design/*` 是冻结真源（NEBULA_UI_SYSTEM / LYRICS_SYSTEM / NEBULA_PLAYER_DESIGN_SPEC / PLAYER_AGENT_BRIEF / PLAYER_IMPL_PLAN）；不得自由发挥，不得静默改交互语义。全局 UI（材质、颜色、字体、hover、层级、组件外观）以 `NEBULA_UI_SYSTEM.md` 为准；`UI_SPEC.md` 已被取代，`NEBULA_DESIGN_REVIEW.md` 是审查记录，`archive/` 下是归档，三者都不是开工依据。
 - Hover 反馈必须由元素自身呈现（文字 / 图标变亮、轻微 scale）；禁止圆形背景、外圈方框、通用发光。
 - 颜色优先系统取色（封面 / 背景采样），禁止硬编码蓝。
 - 不交付截图 png。

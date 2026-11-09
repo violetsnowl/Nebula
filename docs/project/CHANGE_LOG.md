@@ -6,6 +6,35 @@
 
 ---
 
+## #87 — 2026-11-09 — 全局 UI 系统 v1.0 冻结：真源切换 + 各文档指向同步
+
+**目标**：用户确认冻结 `NEBULA_UI_SYSTEM.md`，同意 P0 取消"点卡片自动弹旧二级页"，同意删除 main 工作树里的母稿旧副本。
+
+**改动**
+
+- `docs/design/NEBULA_UI_SYSTEM.md`：
+  - 状态改为"🔒 已冻结 v1.0"；
+  - §10"点卡片自动弹旧二级页"标为已定（点击卡片只播放，从播放条封面进入二级页）；
+  - §13 的 P0 去掉"经确认后"；§14 标为已完成。
+- `AGENTS.md`：真源清单里的 UI_SPEC 换成 NEBULA_UI_SYSTEM，并写明 UI_SPEC、审查稿、`archive/` 都不是开工依据。hover 规则原文不变（与真源 §6 一致）。
+- `docs/design/UI_SPEC.md`：文件头加"已被取代"说明。
+- `docs/design/NEBULA_PLAYER_DESIGN_SPEC.md`：§19（材质）、§19.11（hover，播放键不再加圆形底）、§21（液态不再仅限未来）各加一行指向真源的说明，其余正文不动。
+- `docs/design/LYRICS_SYSTEM.md` §6：加一行指向真源 §7（字体、字色、强调方式）。
+- `docs/meta/HANDOFF.md`：
+  - 必读顺序第 6 项改为 NEBULA_UI_SYSTEM；
+  - 协作规则第 3 条从"UI 以现有实现为唯一真源"改为"以冻结真源为准，真源没写到的以现有实现为准；样张只用于做决定"；
+  - 文档同步规则跟着改。
+- `docs/README.md`、`docs/project/PROJECT.md`、`docs/project/NOTES.md`、`docs/meta/CONTEXT_SNAPSHOT.md`：引用和状态同步，下一步改为 P0 清障。
+- main 工作树：删除未跟踪的 `docs/design/NEBULA_GLOBAL_UI_MASTER.md`（删除前已比对，与归档正文逐字节一致）。
+
+**验证**
+
+- `pnpm build` + `pnpm qa` 全绿（只改了文档）。
+
+**遗留**
+
+- main 工作树里仍有未提交的路径适配改动（`vite.config.ts`、`scripts/qa.cjs`、`scripts/desktop-play-smoke.mjs`）。它们和 UI 分支 `#83` 已提交的内容相同，将来把 UI 分支合并进 main 前，需要先丢弃 main 里的这几处本地改动，否则合并会被挡住。
+
 ## #86 — 2026-11-09 — 全局 UI 系统定稿 v1.0（待冻结）+ GPT 母稿归档
 
 **目标**：样张 A、B、C 都经用户目测通过后，把设计写成执行用的定稿真源（审查流程第 ④ 步）。

@@ -52,8 +52,8 @@
 - [x] 评论弹窗/面板渲染（已完成：底部条评论入口 → 评论页；后端 `fetchComments` 已就绪）。
 - [x] 左右 Dock 重构（小球 → 胶囊 → 窗口已完成并整合主项目，见 `docs/design/UI_SPEC.md` §5.7）。
 - [ ] Nebula Player 重构剩余阶段（P2–P8，见 UI 分支 `docs/design/PLAYER_IMPL_PLAN.md`）；挂起决策：播放模式循环顺序（现「顺序→单曲→随机」vs 文档「顺序→随机→单曲」）。
-- [ ] 未来「液态玻璃」第二套主题（见 `docs/design/UI_SPEC.md` §9，两套主题布局一致、仅材质差异）。
-- [ ] **全局 UI 重构（当前主线）**：定稿 `docs/design/NEBULA_UI_SYSTEM.md` v1.0 已写成，待用户确认冻结；之后按其 §13 分批实施（P0 清障先行），全局重构验收合格后回到 Player P2。GPT 母稿已归档（`docs/design/archive/`，非真源）。
+- [ ] 「液态玻璃」主题：已定为默认主题（`docs/design/NEBULA_UI_SYSTEM.md` §3，磨砂 / 液态为同一模型两组参数），随全局重构 P1 实施。
+- [ ] **全局 UI 重构（当前主线）**：真源 `docs/design/NEBULA_UI_SYSTEM.md` v1.0 已于 2026-11-09 冻结；按其 §13 分批实施（P0 清障 → P1 材质与环境 → P2 星云卡片 → P3 歌词字体 → P4 面板与 Dock），全局重构验收合格后回到 Player P2。GPT 母稿已归档（`docs/design/archive/`，非真源）。
 - [ ] `README.md` 目前是开发期版本；正式定稿与 CI/CD 流程留到收工阶段。
 
 > 已废弃（不再排期）：Z1 大字号左→右长句「提前检测 + 提前入场」方案（旧第 9/10 点，2026-08-19 用户确认不需要，详见 `docs/design/LYRICS_SYSTEM.md` §8）。
