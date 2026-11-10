@@ -43,7 +43,7 @@ export const VolumeControl = memo(function VolumeControl({ state }: { state: Aud
         <IconVolume muted={state.muted} />
       </button>
       {open && (
-        <div className="vol-pop" onMouseEnter={keepOpen} onMouseLeave={scheduleClose}>
+        <div className="vol-pop glass-g3" onMouseEnter={keepOpen} onMouseLeave={scheduleClose}>
           <input
             className="vol-slider"
             type="range"

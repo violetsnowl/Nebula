@@ -4,6 +4,7 @@ import type { DesktopLoginPlatform } from '../lib/playlist/ipcClient';
 import type { AccountState } from '../lib/accounts';
 import type { BackgroundSetting } from '../lib/backgrounds';
 import type { CoverBgMode } from '../lib/backgrounds';
+import type { GlassTheme } from '../lib/glass';
 import type { LyricVisualSettings } from '../lib/lyricSettings';
 import { DOCK_PLATFORM_ORDER, platformMeta } from './platforms';
 
@@ -40,6 +41,9 @@ interface AccountDockProps {
   onLyricBold: (b: boolean) => void;
   onToggleHideCards: () => void;
   onToggleHideLyrics: () => void;
+  /** 材质主题（液态 / 磨砂，NEBULA_UI_SYSTEM §3.2）。 */
+  glassTheme: GlassTheme;
+  onGlassTheme: (theme: GlassTheme) => void;
 }
 
 /** 开关：silent-otter-72 复刻（原型原样）。 */
@@ -457,6 +461,7 @@ function QishuiLogin({ onSuccess }: { onSuccess: () => void }) {
 
 
 const COVER_MODES: Array<{ id: CoverBgMode; name: string }> = [
+  { id: 'nebula', name: '环境光' },
   { id: 'fill', name: '原图直铺' },
   { id: 'frosted', name: '磨砂暗化' },
   { id: 'blend', name: '混合层' },
@@ -498,6 +503,8 @@ export const AccountDock = memo(function AccountDock({
   onLyricBold,
   onToggleHideCards,
   onToggleHideLyrics,
+  glassTheme,
+  onGlassTheme,
 }: AccountDockProps) {
   const [openRow, setOpenRow] = useState<'login' | 'settings' | null>(null);
   const [activePlatform, setActivePlatform] = useState(selectedPlatform);
@@ -824,18 +831,16 @@ export const AccountDock = memo(function AccountDock({
         <div className="ui-row">
           <div className="txt">
             <span>界面主题</span>
-            <em>材质主题切换；液态玻璃开发中</em>
+            <em>液态：边缘折射与轻微色散；磨砂：更柔、更安静</em>
           </div>
           <GlassRadioGroup
             name="theme"
             options={[
+              { value: 'liquid', label: '液态玻璃' },
               { value: 'frost', label: '磨砂玻璃' },
-              { value: 'liquid', label: '液态玻璃', disabled: true },
             ]}
-            value="frost"
-            onChange={() => {
-              /* 液态开发中，仅磨砂可选 */
-            }}
+            value={glassTheme}
+            onChange={(v) => onGlassTheme(v === 'frost' ? 'frost' : 'liquid')}
           />
         </div>
         <div className="ui-row">

@@ -43,6 +43,154 @@ body {
   background: #0a0b15;
 }
 
+/* ============================================================
+   光学材质 + 环境光（docs/design/NEBULA_UI_SYSTEM.md §3 / §4 / §5）
+   环境变量由 lib/environment.ts 写入，材质档位由 lib/glass 写入；组件只引用变量。
+   ============================================================ */
+@property --e1 { syntax: '<color>'; inherits: true; initial-value: rgb(120 124 133); }
+@property --e2 { syntax: '<color>'; inherits: true; initial-value: rgb(96 99 107); }
+@property --e3 { syntax: '<color>'; inherits: true; initial-value: rgb(77 80 86); }
+@property --ebase { syntax: '<color>'; inherits: true; initial-value: rgb(6 7 8); }
+@property --acc { syntax: '<color>'; inherits: true; initial-value: rgb(201 207 219); }
+@property --tint-adapt { syntax: '<number>'; inherits: true; initial-value: 0; }
+
+:root {
+  /* 文字（§5.1） */
+  --fg: #eceef1;
+  --fg-2: rgba(236, 238, 241, 0.64);
+  --fg-3: rgba(236, 238, 241, 0.4);
+  --fg-disabled: rgba(236, 238, 241, 0.28);
+  /* 动效（§5.4） */
+  --ease-std: cubic-bezier(0.2, 0, 0, 1);
+  --ease-jelly: cubic-bezier(0.3, 1.5, 0.5, 1);
+  /* 材质档位默认值 = 液态主题；applyGlassTheme 会按主题覆盖 */
+  --g1-blur: 2.25px;
+  --g1-tint: 0.1;
+  --g1-rim: 0.52;
+  --g1-sat: 1.65;
+  --g2-blur: 1px;
+  --g2-tint: 0.1;
+  --g2-rim: 0.52;
+  --g2-sat: 1.65;
+  --g3-blur: 18px;
+  --g3-tint: 0.28;
+  --g3-rim: 0.4;
+  --g3-sat: 1.4;
+  /* 换歌时环境换色 1.4s，亮背景自适应加深 0.8s */
+  transition:
+    --e1 1.4s ease,
+    --e2 1.4s ease,
+    --e3 1.4s ease,
+    --ebase 1.4s ease,
+    --acc 1.4s ease,
+    --tint-adapt 0.8s ease;
+}
+
+/* G1 主玻璃：中性压暗 + 散射 + 边缘折射（--glass-filter 由 GlassManager 写入）+ 内侧亮边。
+   材质画在 ::before 上：带 backdrop-filter 的元素会成为其子元素的"背景采样边界"，
+   若直接画在元素本身，嵌在里面的弹层（队列 / 音质 / 音量）伸出边界的部分就采不到背后画面、模糊失效。
+   元素本身须是定位元素且建立层叠上下文（播放条为 fixed + z-index）。 */
+.glass-g1::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border-radius: inherit;
+  pointer-events: none;
+  background: rgba(0, 0, 0, calc(var(--g1-tint) + var(--tint-adapt)));
+  -webkit-backdrop-filter: blur(var(--g1-blur)) saturate(var(--g1-sat)) brightness(1.05);
+  backdrop-filter: blur(var(--g1-blur)) var(--glass-filter, blur(0px)) saturate(var(--g1-sat)) brightness(1.05);
+  box-shadow:
+    inset 0 0 1.5px 1px rgba(255, 255, 255, calc(var(--g1-rim) * 0.62)),
+    inset 0 0 14px 3px rgba(255, 255, 255, calc(var(--g1-rim) * 0.16)),
+    inset 0 1px 0 rgba(255, 255, 255, calc(var(--g1-rim) * 0.35)),
+    0 2px 6px rgba(0, 0, 0, 0.22),
+    0 22px 56px rgba(0, 0, 0, 0.34);
+}
+
+/* G3 浓玻璃：不折射，优先可读（弹层 / 菜单 / 弹窗） */
+.glass-g3 {
+  background: rgba(0, 0, 0, calc(var(--g3-tint) + var(--tint-adapt) * 0.5));
+  -webkit-backdrop-filter: blur(var(--g3-blur)) saturate(var(--g3-sat)) brightness(1.05);
+  backdrop-filter: blur(var(--g3-blur)) saturate(var(--g3-sat)) brightness(1.05);
+  box-shadow:
+    inset 0 0 1.5px 1px rgba(255, 255, 255, calc(var(--g3-rim) * 0.62)),
+    inset 0 0 14px 3px rgba(255, 255, 255, calc(var(--g3-rim) * 0.16)),
+    0 12px 32px rgba(0, 0, 0, 0.4);
+}
+
+/* 环境光背景（封面模式「环境光」）：底色 + 三团光 + 胶片颗粒 + 暗角，全部是渐变，不用 filter */
+.bg-env {
+  background: var(--ebase);
+}
+
+.bg-env .env-blob {
+  position: absolute;
+  width: 78%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  will-change: transform;
+}
+
+.bg-env .env-blob.b1 {
+  left: -14%;
+  top: -30%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--e1) 72%, transparent), transparent);
+  animation: env-drift-a 34s ease-in-out infinite alternate;
+}
+
+.bg-env .env-blob.b2 {
+  right: -18%;
+  top: 10%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--e2) 60%, transparent), transparent);
+  animation: env-drift-b 41s ease-in-out infinite alternate;
+}
+
+.bg-env .env-blob.b3 {
+  left: 20%;
+  bottom: -55%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--e3) 52%, transparent), transparent);
+  animation: env-drift-c 47s ease-in-out infinite alternate;
+}
+
+@keyframes env-drift-a {
+  to {
+    transform: translate(14%, 10%) scale(1.08);
+  }
+}
+
+@keyframes env-drift-b {
+  to {
+    transform: translate(-12%, 8%) scale(0.94);
+  }
+}
+
+@keyframes env-drift-c {
+  to {
+    transform: translate(10%, -12%) scale(1.06);
+  }
+}
+
+.bg-env .env-grain {
+  position: absolute;
+  inset: 0;
+  opacity: 0.07;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160'><filter id='n'><feTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23n)'/></svg>");
+}
+
+.bg-env .env-vignette {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(120% 90% at 50% 45%, transparent 55%, rgba(0, 0, 0, 0.55));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bg-env .env-blob {
+    animation: none;
+  }
+}
+
 /* ---------- 背景系统 ---------- */
 
 .bg-layer {
@@ -1230,14 +1378,7 @@ body {
 /* ---------- Nebula Player Surface（Bottom Player / Listening Space 单一身份） ---------- */
 
 .player-surface {
-  /* Balanced Frost 材料参数：Liquid 未来只换这组变量，不动结构 */
-  --mat-bg: rgba(26, 30, 50, 0.34);
-  --mat-bg-top: rgba(56, 62, 94, 0.24);
-  --mat-blur: 28px;
-  --mat-saturate: 170%;
-  --mat-edge: rgba(255, 255, 255, 0.08);
-  --mat-shadow-contact: 0 2px 8px rgba(0, 0, 0, 0.28);
-  --mat-shadow-ambient: 0 18px 44px rgba(0, 0, 0, 0.38);
+  /* 材质：G1 主玻璃（.glass-g1，NEBULA_UI_SYSTEM §3），这里只管几何与定位 */
   position: fixed;
   left: 50%;
   transform: translateX(-50%);
@@ -1248,21 +1389,13 @@ body {
 .player-surface.is-compact {
   bottom: 22px;
   width: clamp(540px, 62vw, 1000px);
-  border-radius: 22px;
-  background: linear-gradient(168deg, var(--mat-bg-top), var(--mat-bg));
-  box-shadow:
-    var(--mat-shadow-contact),
-    var(--mat-shadow-ambient),
-    inset 0 1px 0 var(--mat-edge),
-    inset 0 -10px 24px rgba(255, 255, 255, 0.018);
-  backdrop-filter: blur(var(--mat-blur)) saturate(var(--mat-saturate));
-  -webkit-backdrop-filter: blur(var(--mat-blur)) saturate(var(--mat-saturate));
+  border-radius: 26px;
 }
 
 .bp-shell {
   position: relative;
-  /* 上内边距加倍：进度线在「播放器顶边↔封面顶边」之间垂直居中（距离相等），整体高度略增 */
-  padding: 24px 18px 12px;
+  /* 高 80：上 22 + 封面 46 + 下 12；进度线在「顶边 ↔ 封面顶边」之间居中 */
+  padding: 22px 22px 12px;
 }
 
 .bp-error {
@@ -1292,24 +1425,19 @@ body {
 
 .bp-cover {
   flex: none;
-  width: 54px;
-  height: 54px;
-  border-radius: 13px;
+  width: 46px;
+  height: 46px;
+  border-radius: 10px;
   border: none;
   padding: 0;
   cursor: pointer;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.05),
-    0 6px 16px rgba(0, 0, 0, 0.32);
-  transition: transform 0.18s ease, filter 0.18s ease, box-shadow 0.18s ease;
+  box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+  transition: transform 0.22s var(--ease-jelly);
 }
 
 .bp-cover:hover:not(:disabled) {
-  transform: scale(1.03);
-  filter: brightness(1.07);
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.09),
-    0 8px 20px rgba(0, 0, 0, 0.38);
+  transform: scale(1.04);
+  filter: none;
 }
 
 .bp-cover:disabled {
@@ -1326,9 +1454,9 @@ body {
   background: none;
   border: none;
   padding: 0;
-  font-size: 13.5px;
-  font-weight: 650;
-  color: rgba(255, 255, 255, 0.92);
+  font-size: 14px;
+  font-weight: 500;
+  color: rgba(236, 238, 241, 0.92);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1353,8 +1481,8 @@ body {
   background: none;
   border: none;
   padding: 0;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.5);
+  font-size: 12px;
+  color: var(--fg-2);
   cursor: pointer;
   transition: color 0.18s ease;
   white-space: nowrap;
@@ -1362,7 +1490,12 @@ body {
 }
 
 .bp-artist:hover:not(:disabled) {
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--fg);
+  filter: none;
+}
+
+.bp-title:hover:not(:disabled) {
+  filter: none;
 }
 
 .bp-artist:disabled {
@@ -1376,91 +1509,117 @@ body {
 
 .bp-artist-src {
   flex: none;
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.34);
+  font-size: 11px;
+  color: var(--fg-3);
 }
 
 /* 中：Playback Core */
 .bp-core {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 18px;
   justify-self: center;
+}
+
+/* 状态语言（NEBULA_UI_SYSTEM §6）：图形自身提亮 + 图形微放大；无容器底、无光晕、无圆盘 */
+.bp-ctrl,
+.bp-play {
+  border: none;
+  background: none;
+  padding: 0;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: color 0.12s ease;
 }
 
 .bp-ctrl {
   width: 34px;
   height: 34px;
-  border-radius: 50%;
-  border: none;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.72);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background 0.18s ease, color 0.18s ease, transform 0.18s ease;
+  color: rgba(236, 238, 241, 0.66);
 }
 
-.bp-ctrl:hover:not(:disabled) {
+.bp-ctrl svg,
+.bp-play svg {
+  transition: transform 0.22s var(--ease-jelly);
+}
+
+.bp-core .bp-ctrl svg {
+  width: 20px;
+  height: 20px;
+}
+
+.bp-tools .bp-ctrl svg {
+  width: 18px;
+  height: 18px;
+}
+
+.bp-ctrl:hover:not(:disabled),
+.bp-play:hover:not(:disabled) {
   color: #fff;
+  filter: none;
+}
+
+.bp-ctrl:hover:not(:disabled) svg,
+.bp-play:hover:not(:disabled) svg {
   transform: scale(1.07);
 }
 
-.bp-ctrl:active:not(:disabled) {
-  transform: scale(0.96);
+.bp-ctrl:active:not(:disabled) svg,
+.bp-play:active:not(:disabled) svg {
+  transform: scale(0.93);
 }
 
-.bp-ctrl:disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
-.bp-ctrl.is-active {
-  color: rgba(150, 205, 255, 0.9);
-}
-
-.bp-ctrl--ghost {
-  color: rgba(255, 255, 255, 0.5);
-}
-
-.bp-play {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  border: none;
-  color: #fff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: background 0.18s ease, transform 0.18s ease;
-}
-
-.bp-play:hover:not(:disabled) {
-  transform: scale(1.06);
-  filter: brightness(1.18);
-}
-
-.bp-play:active:not(:disabled) {
-  transform: scale(0.96);
-}
-
+.bp-ctrl:disabled,
 .bp-play:disabled {
   opacity: 0.45;
   cursor: default;
 }
 
-/* 播放器内所有按钮：禁止默认焦点方框（hover/激活反馈由图标与文字自身呈现） */
-.bp-title:focus,
-.bp-artist:focus,
-.bp-cover:focus,
-.bp-ctrl:focus,
-.bp-play:focus,
-.quality-item:focus,
-.queue-row:focus,
-.queue-remove:focus {
+.bp-ctrl.is-active {
+  color: var(--acc);
+}
+
+.bp-ctrl--ghost {
+  color: rgba(236, 238, 241, 0.5);
+}
+
+/* 播放键：只有图形，不加圆形底（取代播放器母稿 §19.11） */
+.bp-play {
+  width: 44px;
+  height: 44px;
+  color: rgba(255, 255, 255, 0.96);
+}
+
+.bp-play svg {
+  width: 30px;
+  height: 30px;
+}
+
+/* 焦点：只有键盘焦点显示描边（§6），鼠标点击不出现方框 */
+.bp-title:focus:not(:focus-visible),
+.bp-artist:focus:not(:focus-visible),
+.bp-cover:focus:not(:focus-visible),
+.bp-ctrl:focus:not(:focus-visible),
+.bp-play:focus:not(:focus-visible),
+.quality-item:focus:not(:focus-visible),
+.queue-row:focus:not(:focus-visible),
+.queue-remove:focus:not(:focus-visible) {
   outline: none;
+}
+
+.bp-title:focus-visible,
+.bp-artist:focus-visible,
+.bp-cover:focus-visible,
+.bp-ctrl:focus-visible,
+.bp-play:focus-visible,
+.quality-item:focus-visible,
+.queue-row:focus-visible,
+.queue-remove:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.55);
+  outline-offset: 2px;
 }
 
 /* 右：Utility Cluster（按视觉权重） */
@@ -1471,24 +1630,33 @@ body {
   justify-self: end;
 }
 
+/* 音质：纯文字标签，不加胶囊、不加边框，完整显示中文标签（§9.1） */
 .bp-quality {
   width: auto;
-  padding: 0 11px;
-  border-radius: 999px;
+  padding: 0 6px;
 }
 
 .bp-quality .quality-badge {
-  font-size: 10.5px;
-  color: rgba(255, 255, 255, 0.62);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+  color: var(--fg-3);
+  transition: color 0.12s ease;
+}
+
+.bp-quality:hover:not(:disabled) .quality-badge,
+.bp-quality.is-active .quality-badge {
+  color: var(--fg);
 }
 
 /* 进度：极细常显，hover 显示时间与交互态 */
 .bp-progress {
   position: absolute;
   top: 0;
-  left: 16px;
-  right: 16px;
-  height: 24px;
+  left: 22px;
+  right: 22px;
+  height: 22px;
   display: flex;
   align-items: center;
   cursor: pointer;
@@ -1503,24 +1671,25 @@ body {
 .bp-progress-track {
   position: relative;
   width: 100%;
-  height: 3px;
+  height: 2px;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.14);
   transition: height 0.18s ease, background 0.18s ease;
 }
 
 .bp-progress:hover .bp-progress-track {
-  height: 4px;
-  background: rgba(255, 255, 255, 0.17);
+  height: 3px;
+  background: rgba(255, 255, 255, 0.2);
 }
 
+/* 进度填充：环境强调色（来自封面，§4.2） */
 .bp-progress-fill {
   position: absolute;
   left: 0;
   top: 0;
   height: 100%;
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.48);
+  background: var(--acc);
 }
 
 .bp-progress-thumb {
@@ -1565,13 +1734,10 @@ body {
   transform: translateX(-50%);
   display: flex;
   align-items: center;
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: rgba(14, 16, 28, 0.72);
-  backdrop-filter: blur(20px) saturate(160%);
-  -webkit-backdrop-filter: blur(20px) saturate(160%);
-  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.4);
-  animation: popFade 0.14s ease;
+  padding: 10px 14px;
+  /* 材质：.glass-g3（浓玻璃，§3.3） */
+  border-radius: 20px;
+  animation: popFade 0.16s var(--ease-std);
 }
 
 .vol-pop .vol-slider {
@@ -1596,13 +1762,10 @@ body {
   flex-direction: column;
   gap: 2px;
   padding: 10px;
-  border-radius: 16px;
-  background: rgba(14, 16, 28, 0.74);
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  /* 材质：.glass-g3 */
+  border-radius: 20px;
   overflow-y: auto;
-  animation: popFade 0.14s ease;
+  animation: popFade 0.16s var(--ease-std);
 }
 
 /* 音质：低权重文字徽章按钮 + 点击开关弹层（水平居中于按钮） */
@@ -1617,41 +1780,41 @@ body {
   bottom: calc(100% + 10px);
   left: 50%;
   transform: translateX(-50%);
-  min-width: 160px;
+  min-width: 168px;
   display: flex;
   flex-direction: column;
   gap: 2px;
   padding: 10px;
-  border-radius: 16px;
-  background: rgba(14, 16, 28, 0.74);
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
-  box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
-  animation: popFade 0.14s ease;
+  /* 材质：.glass-g3 */
+  border-radius: 20px;
+  animation: popFade 0.16s var(--ease-std);
 }
 
+/* 列表行（§6）：hover = 文字提亮 + 整行极淡底色（无描边）；当前项 = 强调色 */
 .quality-pop .quality-item {
   display: flex;
   align-items: center;
+  min-height: 36px;
   text-align: left;
-  font-size: 12px;
-  padding: 7px 10px;
+  font-size: 13px;
+  padding: 0 12px;
   border: none;
-  border-radius: 9px;
+  border-radius: 10px;
   background: transparent;
-  color: rgba(255, 255, 255, 0.72);
+  color: var(--fg-2);
   cursor: pointer;
-  transition: color 0.15s ease, transform 0.15s ease;
+  transition: color 0.12s ease, background 0.12s ease;
 }
 
 .quality-pop .quality-item:hover {
-  color: #fff;
-  transform: translateX(2px);
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.05);
+  filter: none;
 }
 
 .quality-pop .quality-item.is-current {
-  color: rgba(150, 205, 255, 0.9);
-  font-weight: 600;
+  color: var(--acc);
+  font-weight: 500;
 }
 
 @keyframes popFade {
@@ -1667,21 +1830,22 @@ body {
 
 .queue-pop-title {
   font-size: 11px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.6);
-  padding: 2px 4px 6px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  color: var(--fg-3);
+  padding: 4px 12px 6px;
 }
 
 .queue-pop-sub {
-  font-size: 10.5px;
-  color: rgba(255, 255, 255, 0.4);
-  padding: 6px 4px 4px;
+  font-size: 11px;
+  color: var(--fg-3);
+  padding: 8px 12px 4px;
 }
 
 .queue-empty {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.4);
-  padding: 8px 4px;
+  font-size: 12px;
+  color: var(--fg-3);
+  padding: 8px 12px;
 }
 
 .queue-row {
@@ -1689,33 +1853,37 @@ body {
   align-items: center;
   gap: 8px;
   width: 100%;
+  min-height: 36px;
   text-align: left;
-  padding: 7px 8px;
+  padding: 0 10px;
   border: none;
   background: transparent;
-  border-radius: 9px;
+  border-radius: 10px;
   cursor: pointer;
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--fg-2);
   min-width: 0;
+  transition: color 0.12s ease, background 0.12s ease;
 }
 
 .queue-row:hover {
-  background: rgba(255, 255, 255, 0.07);
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.05);
+  filter: none;
 }
 
 .queue-row.is-current {
-  color: rgba(150, 205, 255, 0.95);
+  color: var(--acc);
 }
 
 .queue-row-wrap {
   display: flex;
   align-items: center;
   gap: 2px;
-  border-radius: 9px;
+  border-radius: 10px;
 }
 
 .queue-row-wrap:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .queue-row-wrap .queue-row {
@@ -1889,14 +2057,6 @@ body {
   text-align: center;
 }
 
-.quality-badge {
-  font-size: 10px;
-  padding: 2px 7px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-}
-
 .up-panel {
   position: relative;
 }
@@ -1925,26 +2085,6 @@ body {
   font-size: 11px;
   color: rgba(255, 255, 255, 0.55);
   padding: 2px 6px;
-}
-
-.quality-item {
-  text-align: left;
-  font-size: 12px;
-  padding: 7px 10px;
-  border: none;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.85);
-  border-radius: 9px;
-  cursor: pointer;
-}
-
-.quality-item:hover {
-  background: rgba(255, 255, 255, 0.1);
-}
-
-.quality-item.is-current {
-  color: rgba(160, 210, 255, 0.95);
-  background: rgba(120, 160, 255, 0.12);
 }
 
 .vol-slider {
@@ -3062,54 +3202,6 @@ body {
   border-color: rgba(255, 255, 255, 0.55);
   background: rgba(255, 255, 255, 0.14);
   color: #fff;
-}
-
-/* 底部播放条音质选择菜单 */
-.quality-menu {
-  position: relative;
-}
-
-.quality-pop {
-  position: absolute;
-  bottom: calc(100% + 12px);
-  right: -6px;
-  z-index: 70;
-  min-width: 148px;
-  padding: 6px;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  border-radius: 14px;
-  background: rgba(18, 20, 34, 0.82);
-  backdrop-filter: blur(24px) saturate(170%);
-  -webkit-backdrop-filter: blur(24px) saturate(170%);
-  box-shadow:
-    0 18px 44px rgba(0, 0, 0, 0.55),
-    inset 0 1px 0 rgba(255, 255, 255, 0.14);
-}
-
-.quality-item {
-  padding: 8px 10px;
-  border: 0;
-  border-radius: 9px;
-  background: transparent;
-  color: rgba(255, 255, 255, 0.78);
-  font-size: 12.5px;
-  text-align: left;
-  cursor: pointer;
-  transition:
-    background 0.2s ease-out,
-    color 0.2s ease-out;
-}
-
-.quality-item:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: #fff;
-}
-
-.quality-item.is-current {
-  color: #fff;
-  background: rgba(255, 255, 255, 0.16);
 }
 
 /* QQ 音乐登录：官方页 + 粘贴 Cookie */

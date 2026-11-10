@@ -310,7 +310,7 @@ async function main() {
   // 跟随当前播放歌曲封面（底部第三张方案卡）；无歌单时回退隐藏的午夜星空
   await page.locator('.bg-scheme').nth(2).click();
   await page.waitForTimeout(400);
-  log('封面背景(无封面→午夜备用)', await page.evaluate(() => !!document.querySelector('.bg-layer.bg-midnight')));
+  log('封面背景(无封面→环境光中性兜底)', await page.evaluate(() => !!document.querySelector('.bg-layer.bg-env, .bg-layer.bg-midnight')));
 
   await page.waitForTimeout(200);
   await page.setInputFiles('input[type="file"]', testPng);

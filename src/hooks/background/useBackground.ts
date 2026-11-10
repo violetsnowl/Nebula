@@ -13,6 +13,9 @@ import {
 import { hasDesktopAPI } from '../../lib/playlist/ipcClient';
 import type { DesktopWallpaperSetResult } from '../../lib/playlist/ipcClient';
 import type { VisualAtmosphere } from '../../lib/atmosphere';
+import { NEUTRAL_ENV, applyEnvironment, environmentFromUrl, extractEnvironment, type EnvPalette } from '../../lib/environment';
+
+const COVER_MODE_KEY = 'music-nebula.bg-cover-mode.v2';
 
 interface UseBackgroundOptions {
   /** 主窗口才订阅壁纸应用事件（wallpaper view 关闭）。 */
@@ -31,12 +34,25 @@ interface UseBackgroundOptions {
 export function useBackground({ enabled, onApplied, coverKey }: UseBackgroundOptions) {
   const [bgSetting, setBgSetting] = useState<BackgroundSetting>(() => loadBackground());
   const [bgCoverMode, setBgCoverMode] = useState<CoverBgMode>(() => {
-    const m = typeof localStorage !== 'undefined' ? localStorage.getItem('music-nebula.bg-cover-mode') : null;
-    if (m === 'fill' || m === 'frosted' || m === 'color' || m === 'palette' || m === 'blend' || m === 'prism') {
+    // v2：全局 UI 重构后默认「环境光」（NEBULA_UI_SYSTEM §4.3）。旧 key 的选择不再沿用，旧模式仍可在设置里手动选。
+    let m: string | null = null;
+    try {
+      m = typeof localStorage !== 'undefined' ? localStorage.getItem(COVER_MODE_KEY) : null;
+    } catch {
+      m = null;
+    }
+    if (
+      m === 'nebula' ||
+      m === 'fill' ||
+      m === 'frosted' ||
+      m === 'color' ||
+      m === 'palette' ||
+      m === 'blend' ||
+      m === 'prism'
+    ) {
       return m;
     }
-    if (m === 'cinematic') return 'blend';
-    return 'blend';
+    return 'nebula';
   });
   const [atmosphere, setAtmosphere] = useState<VisualAtmosphere>({ palette: null, sample: null });
 
@@ -48,7 +64,7 @@ export function useBackground({ enabled, onApplied, coverKey }: UseBackgroundOpt
   const handleCoverMode = useCallback((m: CoverBgMode) => {
     setBgCoverMode(m);
     try {
-      localStorage.setItem('music-nebula.bg-cover-mode', m);
+      localStorage.setItem(COVER_MODE_KEY, m);
     } catch {
       /* ignore */
     }
@@ -90,8 +106,46 @@ export function useBackground({ enabled, onApplied, coverKey }: UseBackgroundOpt
     return off;
   }, [enabled, onApplied]);
 
-  // 环境光：背景自有输出（--glow-rgb 等 CSS 变量）
+  const envMode = bgSetting.type === 'cover' && bgCoverMode === 'nebula';
+
+  // 环境光取色（NEBULA_UI_SYSTEM §4）：所有背景模式都产出 --acc 等变量（进度条、当前项等要用），
+  // 「环境光」模式下背景层直接由这些变量绘制，并顺带写旧的 ambient 变量（--glow-rgb / 歌词明暗）。
   useEffect(() => {
+    let cancelled = false;
+    const apply = (env: EnvPalette) => {
+      if (cancelled) return;
+      applyEnvironment(env, envMode);
+      // 环境光模式下背景始终是深色空间：歌词明暗按渲染出来的环境亮度判断，不被白色封面误导
+      if (envMode) applyAmbient({ luma: env.bgLum, sat: env.sat, hue: env.hue });
+    };
+    if (bgSetting.type === 'video') {
+      const media = document.querySelector<HTMLVideoElement>('video.bg-media');
+      if (!media) {
+        apply(NEUTRAL_ENV);
+        return;
+      }
+      const sample = () => apply(extractEnvironment(media) ?? NEUTRAL_ENV);
+      if (media.readyState >= 2) sample();
+      media.addEventListener('loadeddata', sample);
+      return () => {
+        cancelled = true;
+        media.removeEventListener('loadeddata', sample);
+      };
+    }
+    const src = bgSetting.type === 'cover' ? coverKey : bgSetting.type === 'image' ? bgSetting.url : '';
+    if (!src) {
+      apply(NEUTRAL_ENV);
+    } else {
+      environmentFromUrl(src).then((env) => apply(env ?? NEUTRAL_ENV));
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [bgSetting, coverKey, envMode]);
+
+  // 环境光：背景自有输出（--glow-rgb 等 CSS 变量）；「环境光」模式由上面的取色统一写入
+  useEffect(() => {
+    if (envMode) return;
     if (bgSetting.type === 'preset') {
       applyAmbient(PRESET_AMBIENT[bgSetting.id] ?? DEFAULT_AMBIENT);
       return;
@@ -114,7 +168,7 @@ export function useBackground({ enabled, onApplied, coverKey }: UseBackgroundOpt
       media.removeEventListener('load', onLoad);
       if (iv) window.clearInterval(iv);
     };
-  }, [bgSetting, coverKey]);
+  }, [bgSetting, coverKey, envMode]);
 
   // 歌词色板采样：只产出 atmosphere 数据，不写任何歌词 CSS 变量
   useEffect(() => {

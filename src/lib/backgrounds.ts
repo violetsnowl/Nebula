@@ -20,7 +20,7 @@ export type BackgroundSetting =
   | { type: 'cover' };
 
 /** 封面背景渲染模式（docs/project/ARCHITECTURE.md：共享类型，BackgroundLayer 从 lib 取）。 */
-export type CoverBgMode = 'fill' | 'frosted' | 'color' | 'palette' | 'blend' | 'prism';
+export type CoverBgMode = 'nebula' | 'fill' | 'frosted' | 'color' | 'palette' | 'blend' | 'prism';
 
 const STORAGE_KEY = 'music-nebula.bg';
 

@@ -28,6 +28,10 @@
 - **卡片滤镜会让卡片发虚**：只要 `filter` 不是 `none`（哪怕 `blur(0.3px)`），卡片就会先按原尺寸栅格化再放大。焦点圈内必须是 `filter: none`，不能是 `blur(0)`。
 - **舞台状态别用 class 做命令式开关**：MusicCard 由 React 渲染，舞台帧循环又会命令式地改 DOM。React 重新渲染时会用自己（可能过期）的计算结果整串覆盖 `className`。景深一类随位置变化的状态，一律写成 CSS 变量（`--card-filter` / `--blur` / `--scale`），由帧循环统一写入。
 - **舞台 `.stage-3d` 本身就是层叠上下文**（`position:absolute; z-index:10`）：hover 卡片的 `z-index:10000` 只在舞台内部比较，盖不住播放条。
+- **backdrop-filter 嵌套会失效**：带 `backdrop-filter`（以及 filter、opacity<1、mask 等）的元素是它内部元素的"背景采样边界"，嵌在里面的弹层采不到边界外的画面。玻璃材质一律画在 `::before` 上（`.glass-g1::before`），元素本身不带 backdrop-filter。
+- **`-webkit-backdrop-filter` 在 Chromium 里是 `backdrop-filter` 的别名**：两者都写时，后写的生效。带 `url(#滤镜)` 的无前缀写法必须放在最后，否则折射会被覆盖掉。
+- **`<button>` 不写 `background` 会露出浏览器默认灰底**：旧播放键的"灰色实心圆"就是这样来的。所有自定义按钮都要显式写 `background: none`。
+- **测试数据里的歌曲直链会过期**（网易云直链有效期约数小时，过期返回 403），真实数据截图前要先重新取数据。
 
 ### 工作区 / 多工作树（2026-10 沉淀）
 

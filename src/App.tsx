@@ -166,7 +166,7 @@ export default function App() {
     handleBgFile,
   } = background;
   const interfaceSettings = useInterfaceSettings();
-  const { uiHideCards, uiHideLyrics, toggleHideCards, toggleHideLyrics } = interfaceSettings;
+  const { uiHideCards, uiHideLyrics, toggleHideCards, toggleHideLyrics, glassTheme, setGlassTheme } = interfaceSettings;
 
   // ---------- 搜索聚簇 + 舞台（useSearchCluster 先声明 refs，useStage 渲染时填充） ----------
   const controllerRef = useRef<PanController | null>(null);
@@ -521,6 +521,8 @@ export default function App() {
         onToggleHideCards={toggleHideCards}
         onToggleHideLyrics={toggleHideLyrics}
         onOpenWallpapers={openWallpapers}
+        glassTheme={glassTheme}
+        onGlassTheme={setGlassTheme}
       />
 
       <PlaylistDock

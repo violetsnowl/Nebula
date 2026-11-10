@@ -1,7 +1,6 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { audioPlayer } from '../../lib/audio/AudioPlayer';
 import { useAudioPlayer } from '../../lib/audio/useAudioPlayer';
-import { useVisualAtmosphere } from '../../hooks/background/VisualAtmosphereContext';
 import { IconQueue } from './icons';
 
 /**
@@ -13,9 +12,7 @@ export const QueueControl = memo(function QueueControl() {
   useAudioPlayer();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const { palette } = useVisualAtmosphere();
   const snap = audioPlayer.getQueueSnapshot();
-  const accent = palette?.primary;
 
   useEffect(() => {
     if (!open) return;
@@ -44,12 +41,11 @@ export const QueueControl = memo(function QueueControl() {
         <IconQueue />
       </button>
       {open && (
-        <div className="queue-pop" onMouseEnter={() => setOpen(true)}>
+        <div className="queue-pop glass-g3" onMouseEnter={() => setOpen(true)}>
           <div className="queue-pop-title">播放队列</div>
           {snap.current && (
             <button
               className="queue-row is-current"
-              style={accent ? { color: accent } : undefined}
               onClick={() => audioPlayer.playQueueItem(snap.current!.id)}
             >
               <span className="queue-row-idx">▶</span>
