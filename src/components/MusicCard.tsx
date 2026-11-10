@@ -2,7 +2,7 @@ import { memo, useState, type MouseEvent } from 'react';
 import type { CSSProperties } from 'react';
 import { cardScreenPos } from '../lib/layout';
 import type { CardSpec, LayoutMetrics } from '../lib/layout';
-import { fisheyeBlur, fisheyeBrightness, fisheyeScale, fisheyeZIndex } from '../lib/fisheye';
+import { fisheyeBlur, fisheyeBrightness, fisheyeFilter, fisheyeScale, fisheyeZIndex } from '../lib/fisheye';
 
 interface MusicCardProps {
   card: CardSpec;
@@ -44,8 +44,9 @@ function MusicCardImpl({
     '--y': `${pos?.y ?? 0}px`,
     '--rz': `${card.rotateZ}deg`,
     '--scale': pos ? Math.min(3.4, fisheyeScale(pos.dist, maxDist) * zoom) : 1,
-    '--blur': pos ? `${fisheyeBlur(pos.dist)}px` : '0px',
+    '--blur': pos ? `${fisheyeBlur(pos.dist, maxDist)}px` : '0px',
     '--brightness': pos ? fisheyeBrightness(pos.dist) : 1,
+    '--card-filter': pos ? fisheyeFilter(pos.dist, maxDist) : 'none',
     zIndex: pos ? fisheyeZIndex(pos.dist, maxDist) : 1,
   } as CSSProperties;
 

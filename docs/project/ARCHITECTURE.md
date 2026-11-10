@@ -77,6 +77,7 @@ view blocks（同层互不依赖，组合只由 App 完成）
 | Z3 | `BottomBar` + 回中按钮 | BottomBar 已有 |
 | HUD | `TopBar` / `AccountDock` / `PlaylistDock` | 三者独立，**不合体** |
 | Z4 | `OverlayStack` | NowPlaying + InfoModals + 右键菜单 + toast |
+| Dev | `LyricSourceProbe` | 开发者工具：歌词来源 / 逐字覆盖面板（默认隐藏，Ctrl+Shift+L）；只读 `useLyrics` 的 `lyricDebugInfo`，不参与正式界面 |
 
 ## 6. Dependency Rules（check-arch 强制）
 

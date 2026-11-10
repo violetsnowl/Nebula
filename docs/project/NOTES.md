@@ -22,6 +22,13 @@
 - **构建产物在仓库外**：`pnpm build` 输出到同级目录 `../nebula-outputs/index.html`（本机 `E:\CUFE\vibecoding\nebula-outputs`）；而 `pnpm qa` 正是读取这个文件，所以**必须先 build 再 qa**。两个工作区（main / UI）共用这一个路径、会互相覆盖——一个工作区刚 build 完，另一个若只跑 qa，测的是别人的产物。
 - 项目已接入 git；远程已迁移到 `github.com/violetsnowl/nebula`（旧地址 `a161858970-ux/nebula` 自动重定向，本地 origin 已更新）；文档随提交维护（docs/）。
 
+### 前端样式与舞台渲染（2026-11 沉淀）
+
+- **全局元素选择器会污染新组件**：`button:hover` 这类全局规则会层叠到所有按钮上（P1 播放条的"乱发光"就是这样来的）。新组件的状态写在组件自己的类上，不要依赖全局规则兜底。
+- **卡片滤镜会让卡片发虚**：只要 `filter` 不是 `none`（哪怕 `blur(0.3px)`），卡片就会先按原尺寸栅格化再放大。焦点圈内必须是 `filter: none`，不能是 `blur(0)`。
+- **舞台状态别用 class 做命令式开关**：MusicCard 由 React 渲染，舞台帧循环又会命令式地改 DOM。React 重新渲染时会用自己（可能过期）的计算结果整串覆盖 `className`。景深一类随位置变化的状态，一律写成 CSS 变量（`--card-filter` / `--blur` / `--scale`），由帧循环统一写入。
+- **舞台 `.stage-3d` 本身就是层叠上下文**（`position:absolute; z-index:10`）：hover 卡片的 `z-index:10000` 只在舞台内部比较，盖不住播放条。
+
 ### 工作区 / 多工作树（2026-10 沉淀）
 
 - **共享 `.git`**：main 与 UI 服务两个工作区属于同一个仓库，在任一处 `git checkout` 会改变另一处的分支状态。现象：切了分支后另一个目录"像被回退到旧版本"。规避：两个目录各自固定在自己的分支上。

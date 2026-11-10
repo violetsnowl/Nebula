@@ -11,7 +11,7 @@ import {
   type CardSpec,
   type LayoutMetrics,
 } from '../../lib/layout';
-import { fisheyeBlur, fisheyeBrightness, fisheyeScale, fisheyeZIndex } from '../../lib/fisheye';
+import { fisheyeBlur, fisheyeBrightness, fisheyeFilter, fisheyeScale, fisheyeZIndex } from '../../lib/fisheye';
 import { buildSpatialIndex, queryVisibleIds } from '../../lib/spatial';
 import { CULL_BUFFER, type FrameBus } from '../../lib/stage';
 import { initGlassGlow, registerProximity, unregisterProximity } from '../../lib/glassGlow';
@@ -48,8 +48,6 @@ interface UseStageOptions {
   completeImport: (status: ImportStatus, message: string) => void;
   /** 当前播放歌曲 id（低频 context 注入，避免 stage 依赖 playback hook）。 */
   currentSongId: number | null;
-  /** 卡片点播后打开二级播放窗。 */
-  setNowPlayingOpen: (open: boolean) => void;
   /** 由 App 声明并传给 useSearchCluster 的布局 refs（useStage 渲染时写入）。 */
   metricsRef: MutableRefObject<LayoutMetrics>;
   effectiveCardsRef: MutableRefObject<CardSpec[]>;
@@ -68,7 +66,6 @@ export function useStage({
   contextMenuRef,
   completeImport,
   currentSongId,
-  setNowPlayingOpen,
   metricsRef,
   effectiveCardsRef,
 }: UseStageOptions) {
@@ -205,6 +202,7 @@ export function useStage({
         el.style.setProperty('--scale', '0.9');
         el.style.setProperty('--blur', '0px');
         el.style.setProperty('--brightness', '1');
+        el.style.setProperty('--card-filter', 'none');
         el.style.zIndex = '1';
         spawnSet.delete(id);
         continue;
@@ -212,8 +210,9 @@ export function useStage({
       el.style.setProperty('--x', `${pos.x}px`);
       el.style.setProperty('--y', `${pos.y}px`);
       el.style.setProperty('--scale', String(Math.min(3.4, fisheyeScale(pos.dist, maxDist) * frame.zoom)));
-      el.style.setProperty('--blur', `${fisheyeBlur(pos.dist)}px`);
+      el.style.setProperty('--blur', `${fisheyeBlur(pos.dist, maxDist)}px`);
       el.style.setProperty('--brightness', String(fisheyeBrightness(pos.dist)));
+      el.style.setProperty('--card-filter', fisheyeFilter(pos.dist, maxDist));
       el.style.zIndex = String(fisheyeZIndex(pos.dist, maxDist));
     }
   }, []);
@@ -353,7 +352,8 @@ export function useStage({
     setLikedIds(new Set());
   }, []);
 
-  /** 卡片点播：解析（桌面取链）→ 播放 → 打开二级页。 */
+  /** 卡片点播：解析（桌面取链）→ 播放。不再自动打开二级页（NEBULA_UI_SYSTEM §10，用户 2026-11-09 确认）；
+   *  二级页从底部播放条封面进入。 */
   const handleCardPlay = useCallback(async (songId: number) => {
     const song = songsRef.current[songId];
     if (!song) return;
@@ -371,8 +371,7 @@ export function useStage({
       }
     }
     audioPlayer.playSong(target, songsRef.current);
-    setNowPlayingOpen(true);
-  }, [setNowPlayingOpen]);
+  }, []);
 
   /** 回到中心：当前歌曲卡片居中，无则重置视角。 */
   const handleReset = useCallback(() => {

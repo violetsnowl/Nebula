@@ -298,7 +298,8 @@ body {
   transform: translate3d(var(--x, 0px), var(--y, 0px), var(--near-z, 0px))
     rotateZ(var(--rz, 0deg))
     scale(calc(var(--scale, 1) * var(--near-s, 1)));
-  filter: blur(var(--blur, 0px)) brightness(var(--brightness, 1));
+  /* 景深滤镜整条由舞台每帧写入：焦点圈内为 none，其余为 blur + brightness（NEBULA_UI_SYSTEM §8.2） */
+  filter: var(--card-filter, blur(var(--blur, 0px)) brightness(var(--brightness, 1)));
   will-change: transform;
   transition:
     transform 0.5s cubic-bezier(0.16, 0.84, 0.44, 1),
@@ -1256,19 +1257,6 @@ body {
     inset 0 -10px 24px rgba(255, 255, 255, 0.018);
   backdrop-filter: blur(var(--mat-blur)) saturate(var(--mat-saturate));
   -webkit-backdrop-filter: blur(var(--mat-blur)) saturate(var(--mat-saturate));
-}
-
-/* 交互聚焦：悬停/打开任一工具弹层触发点时，把播放器提到 hover 卡片(z10000)之上，
-   否则向上展开的弹层会被舞台卡片盖住无法交互 */
-.player-surface.is-compact:has(
-    .vol-ctl:hover,
-    .vol-ctl:focus-within,
-    .bp-quality:hover,
-    .bp-quality:focus-within,
-    .queue-ctl:hover,
-    .queue-ctl:focus-within
-  ) {
-  z-index: 10100;
 }
 
 .bp-shell {
@@ -3717,7 +3705,9 @@ body {
 }
 
 /* ============================================================
-   全局按钮 hover 顶层高光
+   全局按钮 hover 兜底（P0 清障，NEBULA_UI_SYSTEM §6）
+   原来的全局光晕（box-shadow 外发光 + 内描边）已删除：它会层叠到所有新组件上，
+   造成"乱发光"。这里只保留元素自身轻微提亮作为临时兜底；P4 各组件换上自己的状态后删除本段。
    ============================================================ */
 button,
 .glass-btn,
@@ -3733,10 +3723,7 @@ button,
 button:hover:not(:disabled),
 .glass-btn:hover:not(:disabled),
 [role='button']:hover {
-  filter: brightness(1.16);
-  box-shadow:
-    0 0 18px rgba(var(--glow-rgb, 120, 140, 220), 0.32),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+  filter: brightness(1.12);
 }
 
 /* ============================================================
@@ -4031,15 +4018,6 @@ button:hover:not(:disabled),
   border-radius: 0;
 }
 
-/* 全局 hover 高光柔和化（避免廉价发光环） */
-button:hover:not(:disabled),
-.glass-btn:hover:not(:disabled),
-[role='button']:hover {
-  box-shadow:
-    0 0 14px rgba(var(--glow-rgb, 120, 140, 220), 0.22),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.1);
-}
-
 .sidebar-tabs {
   display: flex;
   flex-wrap: wrap;
@@ -4146,6 +4124,34 @@ button:hover:not(:disabled),
   backdrop-filter: none;
   border: 0;
   box-shadow: none;
+}
+
+/* ---------- 开发者工具：歌词来源面板（默认隐藏，Ctrl+Shift+L；不属于正式界面） ---------- */
+.lyric-probe {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 100;
+  pointer-events: none;
+  min-width: 176px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.62);
+  color: rgba(255, 255, 255, 0.82);
+  font: 11px/1.6 ui-monospace, Consolas, monospace;
+}
+
+.lyric-probe-title {
+  color: rgba(255, 255, 255, 0.45);
+  margin-bottom: 2px;
+}
+
+.lyric-probe .ok {
+  color: #34d399;
+}
+
+.lyric-probe .no {
+  color: #ff6b6b;
 }
 
 /* ---------- 常驻“回到中心” ---------- */

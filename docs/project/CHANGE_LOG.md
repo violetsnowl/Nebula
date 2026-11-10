@@ -6,6 +6,45 @@
 
 ---
 
+## #88 — 2026-11-09 — 全局 UI 重构 P0 清障：去全局光晕、焦点卡片清晰、点卡片只播放、调试面板改为开发者工具
+
+**目标**：按 `NEBULA_UI_SYSTEM.md` §13 先清掉污染源，不换新外观。
+
+**改动**
+
+- `src/styles.css`：
+  - 删除两条全局 `button / .glass-btn / [role=button]:hover` 光晕规则（外发光 + 内描边），这是"乱发光"的来源。临时保留 `filter: brightness(1.12)` 作兜底，避免没有自己 hover 样式的旧按钮完全失去反馈，P4 删除。
+  - 删除播放器 `:has(...)` 把 z-index 提到 10100 的补丁。舞台 `.stage-3d` 本身就是层叠上下文，hover 卡片盖不住播放条，已用实测验证。
+  - 卡片滤镜改为 `filter: var(--card-filter, …)`。
+  - 新增 `.lyric-probe` 样式。
+- `src/lib/fisheye.ts`：新增焦点圈 `FISHEYE_FOCUS_T = 0.32`、`fisheyeFocal`、`fisheyeFilter`。焦点圈内的滤镜是 `none`；模糊曲线从焦点圈边缘起算，整体外移、连续，上限仍为 4px。
+- `src/hooks/stage/useStage.ts`、`src/components/MusicCard.tsx`：每帧写入整条 `--card-filter`。一开始用的是 `is-focal` class，发现 React 重新渲染会用过期的计算结果覆盖 className，改成了 CSS 变量。
+- `src/hooks/stage/useStage.ts`、`src/App.tsx`：卡片点播不再 `setNowPlayingOpen(true)`；`useStage` 去掉 `setNowPlayingOpen` 参数。二级页仍可从播放条封面进入。
+- 新增 `src/components/LyricSourceProbe.tsx`：按用户要求，原右下角的绿色调试面板改为开发者工具。
+  - 默认隐藏，`Ctrl+Shift+L` 开关，开关状态记在 localStorage；
+  - 位置在左上角，不拦截鼠标；
+  - 多了一行"级别：逐字 / 行级（LRC）"。
+  - `App.tsx` 里原来的内联面板删除。
+- 文档：
+  - `NEBULA_UI_SYSTEM.md` §5.5 加开发者工具例外（用户确认），§13 的 P0 行改为实际做法：重复的 `.glass-btn` 合并移到 P4，因为单独合并会改变现有外观；
+  - `NOTES.md` 新增"前端样式与舞台渲染"四条踩坑；
+  - `ARCHITECTURE.md` 视图区块加 Dev 行；
+  - `CONTEXT_SNAPSHOT.md` 同步。
+
+**验证**
+
+- `pnpm build` ✔；`pnpm qa` ✔（check-arch 通过）。
+  - 中心卡片模糊 0.00px（之前 0.25），边缘卡片 2.37px（QA 要求 ≥1.5）。
+  - 空闲帧耗时 6.8 → 4.6ms，平移帧耗时 13.2 → 5.8ms。
+- 真实网易云数据无头验证（`p0-verify`），以下全部为真：
+  - 默认不显示调试面板；点卡片不弹二级页；
+  - 焦点圈内卡片无滤镜，外圈 26 张都有模糊；
+  - hover 音质、下一首的 box-shadow 为 none；
+  - hover 底部卡片时，音质弹层仍在最上层；
+  - `Ctrl+Shift+L` 能打开面板，刷新后保持，再按一次关闭；控制台错误 0。
+
+**遗留**：待用户桌面端验收（`pnpm build:desktop` + `pnpm desktop`）。
+
 ## #87 — 2026-11-09 — 全局 UI 系统 v1.0 冻结：真源切换 + 各文档指向同步
 
 **目标**：用户确认冻结 `NEBULA_UI_SYSTEM.md`，同意 P0 取消"点卡片自动弹旧二级页"，同意删除 main 工作树里的母稿旧副本。
