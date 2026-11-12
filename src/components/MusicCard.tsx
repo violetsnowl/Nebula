@@ -73,6 +73,18 @@ function MusicCardImpl({
       onPointerLeave={() => onHoverChange(card.id, false)}
       onContextMenu={(e) => onContextMenu?.(e, track)}
     >
+      {/* 正在播放：封面自身的模糊提亮副本垫在下方，像封面把光投在空间里（NEBULA_UI_SYSTEM §8.4）；只给当前卡片渲染 */}
+      {isCurrent && (
+        <span
+          className="cover-glow"
+          aria-hidden="true"
+          style={
+            track.cover && !coverError
+              ? { backgroundImage: `url("${track.cover}")` }
+              : { background: `linear-gradient(135deg, hsl(${track.hue1} 70% 58%), hsl(${track.hue2} 72% 34%))` }
+          }
+        />
+      )}
       <div
         className="cover"
         style={

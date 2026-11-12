@@ -464,19 +464,48 @@ body {
   box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
 }
 
-/* 正在播放（§8.4）：封面下方一圈由它自己的颜色（--acc）形成的光；删除白色光晕 */
+/* 正在播放（§8.4，2026-11-12 按用户反馈加强）：封面自身的模糊 + 增饱和 + 提亮副本垫在封面下方，
+   光的颜色就是封面本身的颜色，比环境更亮，同色系环境里也看得见。原来的单色 --acc 投影在同色环境中几乎不可见。
+   卡片有 transform，是独立层叠上下文，z-index:-1 只会落在封面之下、不会掉到舞台背后。 */
+/* 封面模糊后边缘往往偏暗，与同色环境几乎一样；所以光要比封面更大、更亮，才能在边缘溢出可见的光晕 */
+.music-card .cover-glow {
+  position: absolute;
+  left: -8%;
+  right: -8%;
+  top: -6%;
+  aspect-ratio: 1;
+  border-radius: 28px;
+  background-size: cover;
+  background-position: center;
+  z-index: -1;
+  filter: blur(46px) saturate(2.2) brightness(1.95);
+  opacity: 1;
+  /* 以封面为中心向四周溢出，只略微偏下；不沉到标题下面，免得把标题冲淡 */
+  transform: translateY(5%) scale(1.1);
+  pointer-events: none;
+  animation: cover-glow-in 0.9s ease both;
+}
+
+@keyframes cover-glow-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 当前卡片的投影收轻，免得深色投影把下方的光压暗 */
 .music-card.is-current .cover {
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.08),
-    0 30px 90px -18px color-mix(in srgb, var(--acc) 70%, transparent),
-    0 16px 38px rgba(0, 0, 0, 0.5);
+    0 10px 24px rgba(0, 0, 0, 0.32);
 }
 
 .music-card.is-current.is-hovered .cover {
   box-shadow:
     0 0 0 1px rgba(255, 255, 255, 0.08),
-    0 30px 90px -18px color-mix(in srgb, var(--acc) 70%, transparent),
-    0 24px 60px rgba(0, 0, 0, 0.6);
+    0 18px 40px rgba(0, 0, 0, 0.4);
 }
 
 /* 黑胶只出现在无封面的占位卡上 */
@@ -651,6 +680,13 @@ body {
 
 .music-card.is-hovered .meta {
   opacity: 1;
+}
+
+/* 正在播放的卡片周围有封面光，标题阴影加深一点保证可读 */
+.music-card.is-current .meta {
+  text-shadow:
+    0 1px 2px rgba(0, 0, 0, 0.6),
+    0 0 14px rgba(0, 0, 0, 0.45);
 }
 
 .music-card .title {
