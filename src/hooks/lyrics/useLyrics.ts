@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { audioPlayer } from '../../lib/audio/AudioPlayer';
 import { hasDesktopAPI, toBackendTrack } from '../../lib/playlist/ipcClient';
 import { alignWordsToText, filterCreditLines, mergeWordLyrics, type LyricLineUI } from '../../lib/lyrics';
-import type { LyricVisualSettings } from '../../lib/lyricSettings';
+import type { ListenSettingsPatch, LyricVisualSettings } from '../../lib/lyricSettings';
 import type { Track } from '../../lib/catalog';
 
 /** 开发调试：当前歌曲歌词来源信息。 */
@@ -53,6 +53,11 @@ function loadLyricSettings(): LyricVisualSettings {
   let lyricColorSource: LyricVisualSettings['lyricColorSource'] = 'cover';
   let customColor = '#3aa0ff';
   let bold = false;
+  // 漫游 / 聆听交接（NEBULA_UI_SYSTEM §7.1）：默认打开、6 秒、沉降、播放条跟着变淡
+  let listenHandoff = true;
+  let listenDelay = 6;
+  let listenStyle: LyricVisualSettings['listenStyle'] = 'sink';
+  let listenDimBar = true;
   try {
     const s = typeof localStorage !== 'undefined' ? localStorage.getItem('music-nebula.lyric-settings') : null;
     if (s) {
@@ -68,11 +73,29 @@ function loadLyricSettings(): LyricVisualSettings {
       if (p.lyricColorSource === 'cover' || p.lyricColorSource === 'custom') lyricColorSource = p.lyricColorSource;
       if (typeof p.customColor === 'string' && /^#?[0-9a-f]{6}$/i.test(p.customColor)) customColor = p.customColor;
       if (p.bold === true) bold = true;
+      if (typeof p.listenHandoff === 'boolean') listenHandoff = p.listenHandoff;
+      if (p.listenDelay === 3 || p.listenDelay === 6 || p.listenDelay === 10) listenDelay = p.listenDelay;
+      if (p.listenStyle === 'sink' || p.listenStyle === 'part' || p.listenStyle === 'ebb') listenStyle = p.listenStyle;
+      if (typeof p.listenDimBar === 'boolean') listenDimBar = p.listenDimBar;
     }
   } catch {
     /* 用默认值 */
   }
-  return { fontSize, highlightStyle, layerMode, currentScale, wordRise, lyricLayout, lyricColorSource, customColor, bold };
+  return {
+    fontSize,
+    highlightStyle,
+    layerMode,
+    currentScale,
+    wordRise,
+    lyricLayout,
+    lyricColorSource,
+    customColor,
+    bold,
+    listenHandoff,
+    listenDelay,
+    listenStyle,
+    listenDimBar,
+  };
 }
 
 /**
@@ -170,6 +193,7 @@ export function useLyrics() {
   );
   const handleCustomColor = useCallback((c: string) => patchSettings({ customColor: c }), [patchSettings]);
   const handleLyricBold = useCallback((b: boolean) => patchSettings({ bold: b }), [patchSettings]);
+  const handleListenSettings = useCallback((patch: ListenSettingsPatch) => patchSettings(patch), [patchSettings]);
 
   const toggleTranslation = useCallback(() => {
     setLyricTranslationEnabled((v) => {
@@ -197,6 +221,7 @@ export function useLyrics() {
     handleLyricColorSource,
     handleCustomColor,
     handleLyricBold,
+    handleListenSettings,
     toggleTranslation,
   };
 }

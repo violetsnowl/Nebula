@@ -32,6 +32,9 @@
 - **`-webkit-backdrop-filter` 在 Chromium 里是 `backdrop-filter` 的别名**：两者都写时，后写的生效。带 `url(#滤镜)` 的无前缀写法必须放在最后，否则折射会被覆盖掉。
 - **`<button>` 不写 `background` 会露出浏览器默认灰底**：旧播放键的"灰色实心圆"就是这样来的。所有自定义按钮都要显式写 `background: none`。
 - **渐变填字（`background-clip:text` + `color:transparent`）时，`text-shadow` 画在字形上面**：深色阴影会给字蒙一层灰。中性描边或羽化用父元素的 `filter: drop-shadow()`；`text-shadow` 只留给有意要叠在字上的彩色柔光。
+- **收起的面板里，输入框可能还留着焦点**：比如手动导入后左 Dock 收起，`document.activeElement` 仍是那个输入框。判断"用户是否正在打字"时，要同时检查输入框可见（`getClientRects().length > 0`），并且可操作（computed `pointer-events` 不是 `none`）。否则静止检测会被一直挡住。
+- **根元素上命令式加的状态用 `data-*`，不用 class**：`.app` 的 `className` 由 React 管理，重新渲染时会被整串覆盖。交接引擎写的是 `data-listen-*` 属性和 `--lk` 这类 CSS 变量。
+- **右 Dock 窗口没有高度上限**：原型块只给左 Dock 做了「固定高度 + 窗口内滚动」。设置页内容变高后，在 900px 高的窗口里会超出屏幕。已在文件末尾加覆盖规则（`max-height: calc(100vh - 180px)` 加内部滚动），原型块本身没改。
 - **QA 的帧耗时受本机负载影响很大**：同一个构建，不同时间跑可能从 4ms 变成 9ms。判断某个改动有没有拖慢性能，要在同一时间段把改动前后的构建各跑一遍对比。
 - **舞台卡片不要带 backdrop-filter**：旧卡片每张都有 `backdrop-filter: blur(14px)`，几十张同时渲染开销很大。P2 去掉后，空闲帧耗时从 6.6ms 降到 4.4ms。需要玻璃的只有 hover 时那颗播放球，而且只在 hover 时注册折射滤镜。
 - **测试数据里的歌曲直链会过期**（网易云直链有效期约数小时，过期返回 403），真实数据截图前要先重新取数据。

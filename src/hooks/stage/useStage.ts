@@ -19,6 +19,7 @@ import type { Track } from '../../lib/catalog';
 import { mulberry32 } from '../../lib/rng';
 import { buildClusterPositions, matchSongs, panForCentering, type SearchMatch } from '../../lib/search';
 import { PanController } from '../../lib/panEngine';
+import { listenBus, onListenFrame, partOffset } from '../../lib/listenMode';
 import type { PanFrame } from '../../lib/panEngine';
 import { hasDesktopAPI, toBackendTrack, toFrontendTrack } from '../../lib/playlist/ipcClient';
 import type { DesktopTrack } from '../../lib/playlist/ipcClient';
@@ -126,6 +127,9 @@ export function useStage({
     vh: typeof window !== 'undefined' ? window.innerHeight : 800,
   });
 
+  /** 「散开」是否正在推卡片（交接结束时还要再刷新一次，把卡片放回原位）。 */
+  const partActiveRef = useRef(false);
+
   const registerEl = useCallback((id: number, el: HTMLElement | null) => {
     if (el) {
       cardEls.current.set(id, el);
@@ -160,6 +164,9 @@ export function useStage({
     );
     const maxDist = Math.hypot(frame.vw, frame.vh) / 2;
     const spawnSet = spawnFromCenterRef.current;
+    // 漫游 / 聆听交接「散开」（NEBULA_UI_SYSTEM §7.1）：卡片中心按离歌词区的远近向外推，景深按推开后的位置算
+    const partK = listenBus.style === 'part' ? listenBus.k : 0;
+    partActiveRef.current = partK > 0;
 
     const cur = visibleRef.current;
     let changed = ids.length !== cur.size;
@@ -206,12 +213,31 @@ export function useStage({
         spawnSet.delete(id);
         continue;
       }
-      el.style.setProperty('--x', `${pos.x}px`);
-      el.style.setProperty('--y', `${pos.y}px`);
-      el.style.setProperty('--scale', String(Math.min(3.4, fisheyeScale(pos.dist, maxDist) * frame.zoom)));
-      el.style.setProperty('--card-filter', fisheyeFilter(pos.dist, maxDist));
-      el.style.setProperty('--meta-a', String(fisheyeMetaAlpha(pos.dist, maxDist)));
-      el.style.zIndex = String(fisheyeZIndex(pos.dist, maxDist));
+      let x = pos.x;
+      let y = pos.y;
+      let dist = pos.dist;
+      let pushDim = 0;
+      if (partK > 0) {
+        const cx = pos.x + CARD_WIDTH / 2;
+        const cy = pos.y + CARD_HEIGHT / 2;
+        const p = partOffset(cx, cy, frame.vw, frame.vh, partK, listenBus.layout, id * 2.399);
+        x += p.x - cx;
+        y += p.y - cy;
+        dist = Math.hypot(p.x - frame.vw / 2, p.y - frame.vh / 2);
+        pushDim = p.push;
+      }
+      const depthFilter = fisheyeFilter(dist, maxDist);
+      el.style.setProperty('--x', `${x}px`);
+      el.style.setProperty('--y', `${y}px`);
+      el.style.setProperty('--scale', String(Math.min(3.4, fisheyeScale(dist, maxDist) * frame.zoom)));
+      el.style.setProperty(
+        '--card-filter',
+        pushDim > 0.01
+          ? `${depthFilter === 'none' ? '' : `${depthFilter} `}brightness(${(1 - 0.42 * pushDim).toFixed(3)})`
+          : depthFilter,
+      );
+      el.style.setProperty('--meta-a', String(fisheyeMetaAlpha(dist, maxDist)));
+      el.style.zIndex = String(fisheyeZIndex(dist, maxDist));
     }
   }, []);
 
@@ -281,6 +307,15 @@ export function useStage({
   );
 
   useEffect(() => initGlassGlow(), []);
+
+  // 交接进行中每帧刷新一次卡片位置（只有「散开」会移动卡片；切走「散开」时再刷新一次把卡片放回原位）
+  useEffect(
+    () =>
+      onListenFrame(() => {
+        if (listenBus.style === 'part' || partActiveRef.current) controllerRef.current?.refresh();
+      }),
+    [controllerRef],
+  );
 
   // 会话记忆恢复：上次导入歌单 + 上次播放歌曲（只跑一次）
   useEffect(() => {

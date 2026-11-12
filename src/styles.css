@@ -4491,6 +4491,68 @@ button:hover:not(:disabled),
   font-weight: var(--lyric-weight, 600);
 }
 
+/* ============================================================
+   漫游 / 聆听交接（NEBULA_UI_SYSTEM §7.1）
+   lib/listenMode 写在根元素 .app 上：--lk（0 漫游 → 1 聆听）、--lo（歌词层亮度）、--ls（歌词层缩放）；
+   data-listen-style（交接启用时）、data-lk（交接进行中或聆听中）、data-listen（聆听中）、data-lyr-top、data-listen-bar
+   ============================================================ */
+
+/* 歌词层：漫游 .82 → 聆听 1，略微放大。交接停用时没有 data-listen-style，歌词层保持原样 */
+.app[data-listen-style] .lyrics-layer {
+  opacity: var(--lo, 1);
+  transform: scale(var(--ls, 1));
+  transform-origin: 50% 45%;
+}
+
+/* 沉降：歌词换到卡片之上（与「卡片之上」图层同级） */
+.app[data-lyr-top] .lyrics-layer {
+  z-index: 11;
+}
+
+/* 聆听时环境光略微提亮 */
+.app[data-lk] .bg-layer {
+  filter: brightness(calc(1 + 0.12 * var(--lk))) saturate(calc(1 + 0.08 * var(--lk)));
+}
+
+/* 沉降：整片星云后退、压暗 */
+.app[data-listen-style='sink'][data-lk] .stage-3d {
+  transform: scale(calc(1 - 0.14 * var(--lk)));
+  transform-origin: 50% 45%;
+  filter: brightness(calc(1 - 0.62 * var(--lk))) saturate(calc(1 - 0.45 * var(--lk)));
+}
+
+/* 散开：卡片位移由舞台帧循环计算；交接进行中关掉位移过渡，免得卡片拖在曲线后面 */
+.app[data-listen-style='part'][data-lk] .stage-3d {
+  filter: brightness(calc(1 - 0.16 * var(--lk)));
+}
+
+.app[data-listen-style='part'][data-lk] .music-card {
+  transition: filter 0.45s ease;
+}
+
+/* 退潮：整片星云变淡 */
+.app[data-listen-style='ebb'][data-lk] .stage-3d {
+  opacity: calc(1 - 0.86 * var(--lk));
+}
+
+/* 播放条变淡：只降材质（::before）和内容。不能给 .player-surface 本身设 opacity，
+   否则它会成为 ::before 的背景采样边界，玻璃采不到背后的画面 */
+.app[data-listen-bar='dim'][data-lk] .player-surface::before,
+.app[data-listen-bar='dim'][data-lk] .player-surface > *,
+.app[data-listen-bar='dim'][data-lk] .center-btn {
+  opacity: calc(1 - 0.5 * var(--lk));
+}
+
+/* 聆听中：隐藏指针；卡片不响应悬停和点击（第一下移动先把界面叫回来） */
+.app[data-listen],
+.app[data-listen] * {
+  cursor: none !important;
+}
+
+.app[data-listen] .music-card {
+  pointer-events: none;
+}
+
 /* 沉浸模式：隐藏 Z2 卡片云（保持舞台挂载，避免破坏 pan 控制器） */
 .stage-3d.is-cards-hidden {
   opacity: 0;
@@ -6538,3 +6600,13 @@ button:hover:not(:disabled),
   }
   .toggle-section .tag { font-size: 11px; color: rgba(255,255,255,0.55); }
 
+
+/* ============================================================
+   右侧 Dock 窗口高度上限（2026-11-12，漫游 / 聆听交接设置加入后歌词设置页变高）
+   原型块只给左 Dock 做了「固定高度 + 窗口内滚动」；右 Dock 的设置窗口在 900px 高的窗口里会超出屏幕底部。
+   这里只加上限和内部滚动，不改原型块的视觉定义。
+   ============================================================ */
+.dock-right.has-open .row.open .win-inner {
+  max-height: calc(100vh - 180px);
+  overflow-y: auto;
+}

@@ -16,4 +16,17 @@ export interface LyricVisualSettings {
   customColor: string;
   /** 歌词加粗开关（Z1 穿梭歌词）。 */
   bold?: boolean;
+  /** 静止时让歌词成为主角（漫游 / 聆听交接，NEBULA_UI_SYSTEM §7.1）。 */
+  listenHandoff: boolean;
+  /** 静止多久进入聆听（秒）：3 / 6 / 10。 */
+  listenDelay: number;
+  /** 星云让开的方式：sink = 沉降（默认）；part = 散开；ebb = 退潮。 */
+  listenStyle: 'sink' | 'part' | 'ebb';
+  /** 聆听时播放条一起变淡。 */
+  listenDimBar: boolean;
 }
+
+/** 交接相关的设置项（设置页一次改一项）。 */
+export type ListenSettingsPatch = Partial<
+  Pick<LyricVisualSettings, 'listenHandoff' | 'listenDelay' | 'listenStyle' | 'listenDimBar'>
+>;

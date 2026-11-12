@@ -35,6 +35,7 @@ import { VisualAtmosphereProvider } from './hooks/background/VisualAtmosphereCon
 import { useEdgePanels } from './hooks/edgePanels/useEdgePanels';
 import { useSearchCluster } from './hooks/searchCluster/useSearchCluster';
 import { useStage } from './hooks/stage/useStage';
+import { useListenMode } from './hooks/listen/useListenMode';
 import { libraryService } from './lib/library';
 
 /** 初始曲库量：渲染成本与它无关，仅影响数据生成与空间索引（线性）。 */
@@ -139,6 +140,7 @@ export default function App() {
     handleLyricColorSource,
     handleCustomColor,
     handleLyricBold,
+    handleListenSettings,
     toggleTranslation,
     lyricDebugInfo,
   } = lyrics;
@@ -213,6 +215,32 @@ export default function App() {
     beginImport,
     resetImportState,
   } = stage;
+
+  // ---------- 漫游 / 聆听交接（useListenMode，NEBULA_UI_SYSTEM §7.1） ----------
+  const appRef = useRef<HTMLElement>(null);
+  const listenConfig = useMemo(
+    () => ({
+      enabled: lyricSettings.listenHandoff && !uiHideCards && !uiHideLyrics,
+      delayMs: lyricSettings.listenDelay * 1000,
+      style: lyricSettings.listenStyle,
+      dimBar: lyricSettings.listenDimBar,
+      lyricsUnder: lyricSettings.layerMode === 'under',
+      layout: lyricSettings.lyricLayout,
+    }),
+    [lyricSettings, uiHideCards, uiHideLyrics],
+  );
+  // 正在操作时不进入聆听：悬停卡片、右键菜单、弹窗、二级播放页、壁纸、Dock / 顶部面板、导入中
+  const listenBlocked =
+    hoveredId !== null ||
+    !!contextMenu ||
+    !!infoModal ||
+    nowPlayingOpen ||
+    wallpaperOpen ||
+    edge.top ||
+    edge.left ||
+    edge.right ||
+    importing;
+  useListenMode(appRef, listenConfig, listenBlocked);
 
   /** 全网搜索点播：仅播放该曲，不影响当前队列；播完自动接回歌单（playTransient）。 */
   const handlePlayNetworkSong = useCallback((track: Track) => {
@@ -446,7 +474,7 @@ export default function App() {
   return (
     <InterfaceSettingsProvider value={interfaceSettingsValue}>
       <VisualAtmosphereProvider value={atmosphereValue}>
-        <main className="app">
+        <main className="app" ref={appRef}>
       <BackgroundLayer setting={effectiveBgSetting} coverMode={bgSetting.type === 'cover' ? bgCoverMode : undefined} />
 
       {!uiHideLyrics && (
@@ -518,6 +546,7 @@ export default function App() {
         onLyricColorSource={handleLyricColorSource}
         onCustomColor={handleCustomColor}
         onLyricBold={handleLyricBold}
+        onListenSettings={handleListenSettings}
         onToggleHideCards={toggleHideCards}
         onToggleHideLyrics={toggleHideLyrics}
         onOpenWallpapers={openWallpapers}

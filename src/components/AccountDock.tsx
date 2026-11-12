@@ -5,7 +5,7 @@ import type { AccountState } from '../lib/accounts';
 import type { BackgroundSetting } from '../lib/backgrounds';
 import type { CoverBgMode } from '../lib/backgrounds';
 import type { GlassTheme } from '../lib/glass';
-import type { LyricVisualSettings } from '../lib/lyricSettings';
+import type { ListenSettingsPatch, LyricVisualSettings } from '../lib/lyricSettings';
 import { DOCK_PLATFORM_ORDER, platformMeta } from './platforms';
 
 export type DockSettingsPage = 'lyrics' | 'ui' | 'bg' | 'system';
@@ -39,6 +39,8 @@ interface AccountDockProps {
   onLyricColorSource: (s: LyricVisualSettings['lyricColorSource']) => void;
   onCustomColor: (c: string) => void;
   onLyricBold: (b: boolean) => void;
+  /** 漫游 / 聆听交接设置（NEBULA_UI_SYSTEM §7.1）。 */
+  onListenSettings: (patch: ListenSettingsPatch) => void;
   onToggleHideCards: () => void;
   onToggleHideLyrics: () => void;
   /** 材质主题（液态 / 磨砂，NEBULA_UI_SYSTEM §3.2）。 */
@@ -501,6 +503,7 @@ export const AccountDock = memo(function AccountDock({
   onLyricColorSource,
   onCustomColor,
   onLyricBold,
+  onListenSettings,
   onToggleHideCards,
   onToggleHideLyrics,
   glassTheme,
@@ -753,6 +756,61 @@ export const AccountDock = memo(function AccountDock({
               onChange={(v) => onLayerMode(v as LyricVisualSettings['layerMode'])}
             />
           </div>
+        </div>
+        <div className="ls-card">
+          <h4>静止时</h4>
+          <div className="ls-row">
+            <span>让歌词成为主角</span>
+            <span className="val" style={{ marginLeft: 'auto' }}>
+              <Toggle
+                small
+                checked={lyricSettings.listenHandoff}
+                onChange={(b) => onListenSettings({ listenHandoff: b })}
+                label="静止时让歌词成为主角"
+              />
+            </span>
+          </div>
+          {lyricSettings.listenHandoff && (
+            <>
+              <div className="ls-row">
+                <span>方式</span>
+                <GlassRadioGroup
+                  name="listenStyle"
+                  options={[
+                    { value: 'sink', label: '沉降' },
+                    { value: 'part', label: '散开' },
+                    { value: 'ebb', label: '退潮' },
+                  ]}
+                  value={lyricSettings.listenStyle}
+                  onChange={(v) => onListenSettings({ listenStyle: v as LyricVisualSettings['listenStyle'] })}
+                />
+              </div>
+              <div className="ls-row">
+                <span>时长</span>
+                <GlassRadioGroup
+                  name="listenDelay"
+                  options={[
+                    { value: '3', label: '3 秒' },
+                    { value: '6', label: '6 秒' },
+                    { value: '10', label: '10 秒' },
+                  ]}
+                  value={String(lyricSettings.listenDelay)}
+                  onChange={(v) => onListenSettings({ listenDelay: Number(v) })}
+                />
+              </div>
+              <div className="ls-row">
+                <span>播放条变淡</span>
+                <span className="val" style={{ marginLeft: 'auto' }}>
+                  <Toggle
+                    small
+                    checked={lyricSettings.listenDimBar}
+                    onChange={(b) => onListenSettings({ listenDimBar: b })}
+                    label="聆听时播放条变淡"
+                  />
+                </span>
+              </div>
+            </>
+          )}
         </div>
       </div>
 
