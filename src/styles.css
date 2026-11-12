@@ -2676,6 +2676,14 @@ body {
   --fl-hi: rgb(var(--lyric-highlight-rgb, 238, 247, 255));
   --fl-dim: rgb(var(--lyric-primary-rgb, 216, 241, 255));
   --fl-glow: rgb(var(--lyric-glow-rgb, 157, 184, 207));
+  /* 字的设计（NEBULA_UI_SYSTEM §7）：衬线 Display；已唱白 / 正在唱用强调色 / 未唱淡白。
+     --ly-sung / --ly-now 在「自定义颜色」时由 LyricsLayer 覆盖（主色 → 已唱，高亮色 → 正在唱）。 */
+  --lyric-font: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
+  --ly-sung: rgba(255, 255, 255, 0.96);
+  --ly-now: var(--acc);
+  --ly-unsung: rgba(255, 255, 255, 0.34);
+  /* 中性外羽化：浅色背景下也清楚，不给字形内部染灰 */
+  --ly-feather-shadow: 0 1px 2.4px rgba(4, 6, 12, 0.58), 0 0 4.8px rgba(4, 6, 12, 0.3);
 }
 
 .flow-lyric {
@@ -2686,8 +2694,9 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 3px;
+  font-family: var(--lyric-font);
   font-size: var(--lyric-size);
-  letter-spacing: 0.6px;
+  letter-spacing: 0.05em;
   white-space: nowrap;
   will-change: transform, opacity;
 }
@@ -2696,8 +2705,13 @@ body {
   display: flex;
   flex-wrap: nowrap;
   align-items: baseline;
-  font-weight: 600;
+  font-weight: var(--lyric-weight, 600);
   line-height: 1.25;
+}
+
+/* 候句（下一句 / 下下句）与离场句：未唱部分用亮白，层级由飞行系统的透明度（.62 / .42）表达 */
+.flow-lyric:not(.is-current) {
+  --ly-unsung: rgba(255, 255, 255, 0.92);
 }
 
 /* ????????????? + ????????????? */
@@ -2705,21 +2719,37 @@ body {
   position: relative;
   display: inline-block;
   white-space: pre;
-  /* --wp 是无单位数字（0~1），必须经 calc 转成百分比，否则渐变失效导致文字隐形 */
-  /* 软羽化扫字：--feather 控制过渡带宽度，多段渐变近似 smoothstep 柔边 */
+  /* 三段扫字（§7）：已唱白 → 波前强调色 → 未唱淡白。
+     --wp 是这个字（词）自己的演唱进度 0~1；--now-k = 4·wp·(1−wp) 在唱到一半时为 1、开始和唱完时为 0，
+     所以"正在唱的那个字"带强调色和柔光，唱完后回到白色。整句（无逐字时间轴）的行用 --acc-k:0 关掉强调。 */
+  --now-k: calc(var(--wp, 0) * (1 - var(--wp, 0)) * 4 * var(--acc-k, 1));
+  --sung-col: color-mix(in srgb, var(--ly-now) calc(var(--now-k) * 100%), var(--ly-sung));
+  /* --wp 是无单位数字，必须经 calc 转成百分比，否则渐变失效导致文字隐形 */
   background: linear-gradient(
     90deg,
-    var(--fl-hi) calc((var(--wp, 0) - var(--feather, 0.045)) * 100%),
-    var(--fl-hi) calc((var(--wp, 0) - var(--feather, 0.045) * 0.4) * 100%),
-    color-mix(in srgb, var(--fl-hi) 72%, var(--fl-dim)) calc(var(--wp, 0) * 100%),
-    color-mix(in srgb, var(--fl-hi) 38%, var(--fl-dim)) calc((var(--wp, 0) + var(--feather, 0.045) * 0.55) * 100%),
-    var(--fl-dim) calc((var(--wp, 0) + var(--feather, 0.045) * 1.1) * 100%)
+    var(--sung-col) calc((var(--wp, 0) - var(--feather, 0.045)) * 100%),
+    var(--sung-col) calc((var(--wp, 0) - var(--feather, 0.045) * 0.4) * 100%),
+    color-mix(in srgb, var(--sung-col) 60%, var(--ly-unsung)) calc(var(--wp, 0) * 100%),
+    var(--ly-unsung) calc((var(--wp, 0) + var(--feather, 0.045) * 1.1) * 100%)
   );
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
+  /* 只有正在唱的字带强调色柔光（发光授权：§6）。
+     注意：渐变填字（background-clip: text）时 text-shadow 会画在字形"上面"，
+     所以中性外羽化不能放这里（会给字蒙一层灰），改在 .fl-text 上用 drop-shadow。 */
+  text-shadow: 0 0 22px color-mix(in srgb, var(--ly-now) calc(var(--now-k) * 55%), transparent);
   transform: translateZ(0);
   will-change: background;
+}
+
+/* 中性外羽化（§7）：drop-shadow 画在字形之后，浅色背景下也清楚，且不给字形内部染灰 */
+.flow-lyric .fl-text {
+  filter: drop-shadow(0 1px 2.4px rgba(4, 6, 12, 0.58)) drop-shadow(0 0 4.8px rgba(4, 6, 12, 0.3));
+}
+
+.fl-text.is-whole .fl-word {
+  --acc-k: 0;
 }
 
 .flow-lyric .fl-tr {
@@ -2734,10 +2764,10 @@ body {
   background: none;
   -webkit-background-clip: initial;
   background-clip: initial;
-  color: var(--fl-hi);
+  color: var(--sung-col);
   opacity: calc(0.3 + 0.7 * var(--wp, 0));
   transform: translateZ(0) translateY(calc((1 - var(--wp, 0)) * var(--lyric-rise, 4px)));
-  text-shadow: 0 0 14px rgba(var(--lyric-glow-rgb, 157, 184, 207), 0.5);
+  text-shadow: 0 0 22px color-mix(in srgb, var(--ly-now) calc(var(--now-k) * 55%), transparent);
 }
 
 
@@ -2772,24 +2802,27 @@ body {
   white-space: nowrap;
 }
 
+/* 前奏 / 纯音乐时居中的歌名：同样用衬线 Display，不发光（§6 发光授权只给正在唱的字） */
 .lyrics-intro .li-title {
-  font-size: calc(var(--lyric-size, 24px) * 1.35);
-  font-weight: 700;
-  letter-spacing: 1px;
-  color: var(--fl-hi);
-  text-shadow: 0 0 22px rgba(var(--lyric-glow-rgb, 157, 184, 207), 0.5);
+  font-family: var(--lyric-font);
+  font-size: calc(var(--lyric-size, 24px) * 1.2);
+  font-weight: 600;
+  letter-spacing: 0.05em;
+  color: var(--ly-sung);
+  text-shadow: var(--ly-feather-shadow);
 }
 
 .lyrics-intro .li-artist {
-  font-size: calc(var(--lyric-size, 24px) * 0.72);
-  color: var(--fl-dim);
-  letter-spacing: 0.6px;
+  font-size: calc(var(--lyric-size, 24px) * 0.42);
+  color: rgba(255, 255, 255, 0.64);
+  letter-spacing: 0.1em;
+  text-shadow: var(--ly-feather-shadow);
 }
 
 .lyrics-intro .li-note {
   margin-top: 6px;
-  font-size: calc(var(--lyric-size, 24px) * 0.5);
-  color: var(--fl-dim);
+  font-size: calc(var(--lyric-size, 24px) * 0.34);
+  color: rgba(255, 255, 255, 0.4);
 }
 
 /* ============================================================

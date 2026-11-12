@@ -599,6 +599,10 @@ export function LyricsLayer({
           '--lyric-rise': `${settings.wordRise}px`,
           '--lyric-weight': settings.bold ? 700 : 600,
           ...lyricPaletteCssVars(palette),
+          // 自定义颜色（NEBULA_UI_SYSTEM §7）：主色 → 已唱，高亮色 → 正在唱；封面取色时用默认（白 + 环境强调色 --acc）
+          ...(settings.lyricColorSource === 'custom'
+            ? { '--ly-sung': 'rgb(var(--lyric-primary-rgb))', '--ly-now': 'rgb(var(--lyric-highlight-rgb))' }
+            : {}),
         } as CSSProperties
       }
       aria-hidden="true"

@@ -38,9 +38,13 @@ function normalizeLyricLines(data: unknown, title?: string, artist?: string): Ly
   return filterCreditLines(alignWordsToText(mergeWordLyrics(out, yrc || qrc)), title, artist);
 }
 
+const DEFAULT_LYRIC_FONT_SIZE = 44;
+const LEGACY_LYRIC_FONT_SIZE = 24;
+
 function loadLyricSettings(): LyricVisualSettings {
   const maxFont = Math.max(28, Math.round((typeof window !== 'undefined' ? window.innerHeight : 900) / 4));
-  let fontSize = 24;
+  // 衬线 Display 歌词（NEBULA_UI_SYSTEM §7）默认 44px；旧默认 24 视为"从没调过"，自动迁移到新默认，用户自己调过的值保留
+  let fontSize = DEFAULT_LYRIC_FONT_SIZE;
   let highlightStyle: LyricVisualSettings['highlightStyle'] = 'sweep';
   let layerMode: LyricVisualSettings['layerMode'] = 'under';
   let currentScale = 1.22;
@@ -53,7 +57,9 @@ function loadLyricSettings(): LyricVisualSettings {
     const s = typeof localStorage !== 'undefined' ? localStorage.getItem('music-nebula.lyric-settings') : null;
     if (s) {
       const p = JSON.parse(s) as Partial<LyricVisualSettings>;
-      if (typeof p.fontSize === 'number' && p.fontSize >= 14 && p.fontSize <= maxFont) fontSize = p.fontSize;
+      if (typeof p.fontSize === 'number' && p.fontSize >= 14 && p.fontSize <= maxFont && p.fontSize !== LEGACY_LYRIC_FONT_SIZE) {
+        fontSize = p.fontSize;
+      }
       if (p.highlightStyle === 'sweep' || p.highlightStyle === 'float') highlightStyle = p.highlightStyle;
       if (p.layerMode === 'under' || p.layerMode === 'over') layerMode = p.layerMode;
       if (typeof p.currentScale === 'number' && p.currentScale >= 1 && p.currentScale <= 1.6) currentScale = p.currentScale;
