@@ -632,8 +632,9 @@ async function main() {
     farthest.scale > 0.7 ||
     nearest.scale - farthest.scale < 1.0 ||
     nearest.z <= farthest.z ||
-    nearest.blur > 1 ||
-    farthest.blur < 1.5 ||
+    // 景深（NEBULA_UI_SYSTEM §8.2）：焦点卡片完全不模糊；只有最外圈有微模糊（最大约 1.1px）
+    nearest.blur > 0 ||
+    farthest.blur < 0.5 ||
     idleFrameMs > 150 ||
     !hoverState ||
     hoverDeg === null ||
@@ -667,7 +668,7 @@ async function main() {
     onScreen: stats.onScreen < 8 || stats.onScreen > 30,
     fisheyeScale: nearest.scale < 1.7 || farthest.scale > 0.7 || nearest.scale - farthest.scale < 1.0,
     fisheyeZ: nearest.z <= farthest.z,
-    fisheyeBlur: nearest.blur > 1 || farthest.blur < 1.5,
+    fisheyeBlur: nearest.blur > 0 || farthest.blur < 0.5,
     idleMs: idleFrameMs > 150,
     hover: !hoverState || hoverDeg === null || Math.abs(hoverDeg) > 1 || hoverBlur !== 0 || hoverState.z !== '10000',
     drag: beforeDrag.pan.x === afterDrag.pan.x,

@@ -108,6 +108,17 @@ body {
     0 22px 56px rgba(0, 0, 0, 0.34);
 }
 
+/* G2 透镜球（≤48px 圆形按钮）：材质直接画在元素上（它内部没有需要采样背景的弹层） */
+.glass-g2 {
+  background: rgba(0, 0, 0, calc(var(--g2-tint) + 0.08 + var(--tint-adapt)));
+  -webkit-backdrop-filter: blur(var(--g2-blur)) saturate(var(--g2-sat)) brightness(1.05);
+  backdrop-filter: blur(var(--g2-blur)) var(--glass-filter, blur(0px)) saturate(var(--g2-sat)) brightness(1.05);
+  box-shadow:
+    inset 0 0 1px 1px rgba(255, 255, 255, calc(var(--g2-rim) * 0.7)),
+    inset 0 0 8px 2px rgba(255, 255, 255, calc(var(--g2-rim) * 0.18)),
+    0 6px 16px rgba(0, 0, 0, 0.35);
+}
+
 /* G3 浓玻璃：不折射，优先可读（弹层 / 菜单 / 弹窗） */
 .glass-g3 {
   background: rgba(0, 0, 0, calc(var(--g3-tint) + var(--tint-adapt) * 0.5));
@@ -415,46 +426,23 @@ body {
 
 /* ---------- 液态玻璃音乐卡片 ---------- */
 
+/* 封面即卡片（NEBULA_UI_SYSTEM §8.1）：没有相框、边框、底板；卡片宽度不变（原相框占的位置给了封面） */
 .music-card {
   position: absolute;
   left: 0;
   top: 0;
   width: 172px;
-  padding: 10px;
-  /* 液态玻璃基底：渐变细边框 + 双层内外阴影；hover 不修改模糊与底色 */
-  background:
-    linear-gradient(160deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.04)) padding-box,
-    linear-gradient(
-        160deg,
-        rgba(255, 255, 255, 0.55),
-        rgba(255, 255, 255, 0.1) 36%,
-        rgba(255, 255, 255, 0.04) 62%,
-        rgba(255, 255, 255, 0.34)
-      )
-      border-box;
-  border: 1px solid transparent;
-  backdrop-filter: blur(14px) saturate(160%);
-  -webkit-backdrop-filter: blur(14px) saturate(160%);
-  border-radius: 18px;
-  box-shadow:
-    0 18px 44px rgba(0, 0, 0, 0.5),
-    0 8px 0 -5px rgba(0, 0, 0, 0.32),
-    inset 0 1px 0 rgba(255, 255, 255, 0.2),
-    inset 0 -10px 26px rgba(255, 255, 255, 0.035);
-  transform-style: preserve-3d;
   transform-origin: 50% 50%;
+  /* 位移在前、缩放在后：hover 放大是原地放大，不会把位移一起放大 */
   transform: translate3d(var(--x, 0px), var(--y, 0px), var(--near-z, 0px))
     rotateZ(var(--rz, 0deg))
     scale(calc(var(--scale, 1) * var(--near-s, 1)));
-  /* 景深滤镜整条由舞台每帧写入：焦点圈内为 none，其余为 blur + brightness（NEBULA_UI_SYSTEM §8.2） */
-  filter: var(--card-filter, blur(var(--blur, 0px)) brightness(var(--brightness, 1)));
+  /* 景深滤镜整条由舞台每帧写入：焦点圈内为 none，中圈空气透视，外圈再加微模糊（§8.2） */
+  filter: var(--card-filter, none);
   will-change: transform;
   transition:
-    transform 0.5s cubic-bezier(0.16, 0.84, 0.44, 1),
-    filter 0.45s ease,
-    box-shadow 0.45s ease,
-    border-color 0.45s ease,
-    background 0.45s ease;
+    transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
+    filter 0.45s ease;
   cursor: pointer;
 }
 
@@ -463,58 +451,35 @@ body {
   visibility: hidden;
 }
 
-/* 厚度：背面错层基座，拉近时可见卡片侧面纵深 */
-.music-card::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: 18px;
-  background: linear-gradient(165deg, rgba(255, 255, 255, 0.05), rgba(10, 12, 22, 0.3));
-  transform: translate3d(0, 3px, -12px);
-  box-shadow: 0 14px 22px rgba(0, 0, 0, 0.4);
-  pointer-events: none;
-}
-
-/* 顶层遮罩：液体浸润柔光（不改变布局，仅动态高光；颜色随背景 --glow-rgb 自适应） */
-.music-card::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  background:
-    radial-gradient(
-      250px circle at var(--gx, 50%) var(--gy, 50%),
-      rgba(var(--glow-rgb, 255, 255, 255), 0.18),
-      transparent 68%
-    ),
-    linear-gradient(140deg, rgba(255, 255, 255, 0.09), transparent 44%);
-  opacity: var(--glow-a, 0);
-  transition: opacity 0.4s ease-out;
-  pointer-events: none;
-}
-
-/* 悬浮焦点：转正、放大、拉近、去模糊、置顶 */
+/* 悬浮焦点（§8.3，沿用原语义）：原地转正、放大、拉近、去模糊、置顶；不加白边、白色光晕和提亮 */
 .music-card.is-hovered {
   transform: translate3d(var(--x), var(--y), 130px)
     rotateZ(0deg)
     scale(max(calc(var(--scale) * 1.3), 0.95));
   z-index: 10000 !important;
-  filter: blur(0px) brightness(1.18);
-  border-color: rgba(255, 255, 255, 0.85);
-  box-shadow:
-    0 30px 70px rgba(0, 0, 0, 0.65),
-    0 0 36px rgba(255, 255, 255, 0.22),
-    inset 0 1px 0 rgba(255, 255, 255, 0.26);
+  filter: none;
 }
 
-/* 当前播放卡片：高亮边框 + 黑胶转动 */
-.music-card.is-current {
-  border-color: rgba(255, 255, 255, 0.65);
-  box-shadow:
-    0 0 26px rgba(255, 255, 255, 0.18),
-    0 14px 34px rgba(0, 0, 0, 0.42);
+.music-card.is-hovered .cover {
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.6);
 }
 
+/* 正在播放（§8.4）：封面下方一圈由它自己的颜色（--acc）形成的光；删除白色光晕 */
+.music-card.is-current .cover {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 30px 90px -18px color-mix(in srgb, var(--acc) 70%, transparent),
+    0 16px 38px rgba(0, 0, 0, 0.5);
+}
+
+.music-card.is-current.is-hovered .cover {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.08),
+    0 30px 90px -18px color-mix(in srgb, var(--acc) 70%, transparent),
+    0 24px 60px rgba(0, 0, 0, 0.6);
+}
+
+/* 黑胶只出现在无封面的占位卡上 */
 .music-card.is-current .vinyl {
   animation: vinyl-spin 5s linear infinite;
 }
@@ -561,11 +526,10 @@ body {
   position: relative;
   width: 100%;
   aspect-ratio: 1;
-  border-radius: 12px;
+  border-radius: 14px;
   overflow: hidden;
-  box-shadow:
-    inset 0 0 0 1px rgba(255, 255, 255, 0.14),
-    0 8px 20px rgba(0, 0, 0, 0.35);
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.5);
+  transition: box-shadow 0.5s ease;
   pointer-events: none;
 }
 
@@ -650,21 +614,19 @@ body {
   box-shadow: 0 0 0 1.5px rgba(255, 255, 255, 0.28);
 }
 
+/* hover 播放球：G2 透镜玻璃 36px + 白色播放图形（§8.3；材质见 .glass-g2） */
 .play-chip {
   position: absolute;
   right: 10px;
   bottom: 10px;
-  width: 34px;
-  height: 34px;
+  width: 36px;
+  height: 36px;
   border-radius: 50%;
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(255, 255, 255, 0.92);
-  color: #0b0c16;
-  font-size: 13px;
+  color: rgba(255, 255, 255, 0.96);
   padding-left: 2px;
-  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.35);
   opacity: 0;
   transform: translateY(6px) scale(0.7);
   transition:
@@ -678,15 +640,23 @@ body {
   transform: translateY(0) scale(1);
 }
 
+/* 标题 / 歌手：封面下方、无底板（§8.1）；只在焦点圈内（--meta-a，由舞台每帧写入）或 hover 时显示 */
 .music-card .meta {
-  padding: 8px 2px 2px;
+  padding: 10px 2px 0;
   pointer-events: none;
+  opacity: var(--meta-a, 1);
+  transition: opacity 0.3s ease;
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+}
+
+.music-card.is-hovered .meta {
+  opacity: 1;
 }
 
 .music-card .title {
   font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.2px;
+  font-weight: 500;
+  color: rgba(236, 238, 241, 0.92);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -694,8 +664,8 @@ body {
 
 .music-card .artist {
   margin-top: 2px;
-  font-size: 10.5px;
-  color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+  color: var(--fg-2);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

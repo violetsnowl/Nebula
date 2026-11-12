@@ -31,6 +31,7 @@
 - **backdrop-filter 嵌套会失效**：带 `backdrop-filter`（以及 filter、opacity<1、mask 等）的元素是它内部元素的"背景采样边界"，嵌在里面的弹层采不到边界外的画面。玻璃材质一律画在 `::before` 上（`.glass-g1::before`），元素本身不带 backdrop-filter。
 - **`-webkit-backdrop-filter` 在 Chromium 里是 `backdrop-filter` 的别名**：两者都写时，后写的生效。带 `url(#滤镜)` 的无前缀写法必须放在最后，否则折射会被覆盖掉。
 - **`<button>` 不写 `background` 会露出浏览器默认灰底**：旧播放键的"灰色实心圆"就是这样来的。所有自定义按钮都要显式写 `background: none`。
+- **舞台卡片不要带 backdrop-filter**：旧卡片每张都有 `backdrop-filter: blur(14px)`，几十张同时渲染开销很大。P2 去掉后，空闲帧耗时从 6.6ms 降到 4.4ms。需要玻璃的只有 hover 时那颗播放球，而且只在 hover 时注册折射滤镜。
 - **测试数据里的歌曲直链会过期**（网易云直链有效期约数小时，过期返回 403），真实数据截图前要先重新取数据。
 
 ### 工作区 / 多工作树（2026-10 沉淀）

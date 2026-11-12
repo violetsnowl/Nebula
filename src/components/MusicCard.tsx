@@ -1,8 +1,9 @@
-import { memo, useState, type MouseEvent } from 'react';
+import { memo, useEffect, useRef, useState, type MouseEvent } from 'react';
 import type { CSSProperties } from 'react';
 import { cardScreenPos } from '../lib/layout';
 import type { CardSpec, LayoutMetrics } from '../lib/layout';
-import { fisheyeBlur, fisheyeBrightness, fisheyeFilter, fisheyeScale, fisheyeZIndex } from '../lib/fisheye';
+import { fisheyeFilter, fisheyeMetaAlpha, fisheyeScale, fisheyeZIndex } from '../lib/fisheye';
+import { registerGlass } from '../lib/glass';
 
 interface MusicCardProps {
   card: CardSpec;
@@ -34,6 +35,12 @@ function MusicCardImpl({
   registerEl,
 }: MusicCardProps) {
   const [coverError, setCoverError] = useState(false);
+  const chipRef = useRef<HTMLSpanElement>(null);
+  // hover 播放球：G2 透镜玻璃（NEBULA_UI_SYSTEM §8.3），只在 hover 时注册折射滤镜，避免每张卡常驻一个滤镜
+  useEffect(() => {
+    if (!hovered || !chipRef.current) return;
+    return registerGlass(chipRef.current, 'g2');
+  }, [hovered]);
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
   const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
   const pos = cardScreenPos(card, pan, metrics.tileWidth, metrics.tileHeight, vw, vh, buffer, zoom);
@@ -44,9 +51,8 @@ function MusicCardImpl({
     '--y': `${pos?.y ?? 0}px`,
     '--rz': `${card.rotateZ}deg`,
     '--scale': pos ? Math.min(3.4, fisheyeScale(pos.dist, maxDist) * zoom) : 1,
-    '--blur': pos ? `${fisheyeBlur(pos.dist, maxDist)}px` : '0px',
-    '--brightness': pos ? fisheyeBrightness(pos.dist) : 1,
     '--card-filter': pos ? fisheyeFilter(pos.dist, maxDist) : 'none',
+    '--meta-a': pos ? fisheyeMetaAlpha(pos.dist, maxDist) : 1,
     zIndex: pos ? fisheyeZIndex(pos.dist, maxDist) : 1,
   } as CSSProperties;
 
@@ -90,8 +96,10 @@ function MusicCardImpl({
             <span className="vinyl" style={{ '--vinyl-hue': track.hue2 } as CSSProperties} />
           </>
         )}
-        <span className="play-chip" aria-hidden="true">
-          ▶
+        <span ref={chipRef} className="play-chip glass-g2" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="14" height="14" fill="currentColor">
+            <path d="M8 5.3v13.4c0 .8.9 1.3 1.6.8l10-6.7a1 1 0 0 0 0-1.6l-10-6.7C8.9 4 8 4.5 8 5.3z" />
+          </svg>
         </span>
       </div>
       <div className="meta">

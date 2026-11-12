@@ -6,6 +6,41 @@
 
 ---
 
+## #90 — 2026-11-10 — 全局 UI 重构 P2：星云卡片（封面即卡片、空气透视景深、hover 换材质、正在播放的封面光）
+
+**目标**：按 `NEBULA_UI_SYSTEM.md` §8 改造星云卡片。P1 已于同日通过用户桌面验收，用户同时认可了浅色封面底色保持近黑的修正。
+
+**改动**
+
+- `src/styles.css`（卡片段）：
+  - 去掉相框：删除 10px 内边距、渐变边框、底板、`backdrop-filter`、背面基座（`::before`）、柔光遮罩（`::after`）和多层投影。卡片宽度不变，原相框占的位置给了封面。
+  - 封面圆角 14px，阴影 `0 16px 38px rgba(0,0,0,.5)`。
+  - 标题和歌手放在封面下方，不加底板：13/500 和 12，带极轻的文字阴影保证浅色背景上可读；透明度由 `--meta-a` 控制，hover 时总是显示。
+  - hover 沿用原语义（原地转正 + 放大 ×1.3 + 拉近 + 置顶），滤镜改为 none，去掉白边、白色光晕和 `brightness(1.18)`，阴影加深。
+  - 正在播放：封面下方 `--acc` 环境光，删除白色光晕。
+  - 播放球改为 36px 的 `.glass-g2` 透镜玻璃加 SVG 播放图形。
+  - 新增 `.glass-g2` 材质。
+- `src/lib/fisheye.ts`：景深曲线按 §8.2 重写。
+  - 焦点圈 t < 0.32 无滤镜；
+  - 中圈亮度 `1 − .5 × far`、饱和度 `1 − .35 × far`；
+  - 外圈 t > 0.82 叠加 `(t − .82) × 6px` 模糊，最大约 1.1px；
+  - 中心亮度不再超过 1；
+  - 新增 `fisheyeSaturate`、`fisheyeMetaAlpha`；缩放曲线不变。
+- `src/hooks/stage/useStage.ts`、`src/components/MusicCard.tsx`：
+  - 每帧写 `--card-filter` 和 `--meta-a`，不再写多余的 `--blur` / `--brightness`；
+  - MusicCard 只在 hover 时为播放球注册 G2 折射滤镜（`registerGlass`），离开即注销，不会让每张卡常驻一个滤镜。
+- `scripts/qa.cjs`：景深断言对齐新曲线，改为"中心卡片模糊 = 0、边缘卡片模糊 ≥ 0.5px"。原来的"边缘 ≥ 1.5px"是旧曲线（边缘约 3.5px）的阈值，按冻结真源，外圈最大约 1.1px。
+- 文档：真源 §8.3 补充实现说明（单条 transform、位移在缩放之前，等价于三者分开写），§13 的 P2 标为完成；NOTES 加一条"舞台卡片不要带 backdrop-filter"；CONTEXT_SNAPSHOT 同步。
+
+**验证**
+
+- `pnpm build` ✔；`pnpm qa` ✔（check-arch 通过）。
+  - 中心卡片模糊 0.00px，边缘卡片 1.03px；hover 无模糊、转正、z-index 10000。
+  - 空闲帧耗时 6.6 → 4.4ms，平移 7.6 → 6.0ms：去掉每张卡的 backdrop-filter 后明显变轻。
+- 真实网易云数据无头自查（`p2-shoot`）：深色（「左转灯」）和浅色（「如果呢」）封面下，卡片都无框、焦点清晰、标题只在中心附近显示；hover 卡片的播放球 backdrop-filter 为 `blur(1px) url(#nebula-glass-2) saturate(1.65) brightness(1.05)`；控制台错误 0。
+
+**遗留**：待用户桌面端验收。
+
 ## #89 — 2026-11-10 — 全局 UI 重构 P1：光学材质系统（液态 / 磨砂）+ 环境光 + 底部播放条换装
 
 **目标**：按 `NEBULA_UI_SYSTEM.md` §13 的 P1：建立材质与环境两个底层系统，让底部播放条成为第一个用上新材质的组件。P0 已于同日通过用户桌面验收。

@@ -11,7 +11,7 @@ import {
   type CardSpec,
   type LayoutMetrics,
 } from '../../lib/layout';
-import { fisheyeBlur, fisheyeBrightness, fisheyeFilter, fisheyeScale, fisheyeZIndex } from '../../lib/fisheye';
+import { fisheyeFilter, fisheyeMetaAlpha, fisheyeScale, fisheyeZIndex } from '../../lib/fisheye';
 import { buildSpatialIndex, queryVisibleIds } from '../../lib/spatial';
 import { CULL_BUFFER, type FrameBus } from '../../lib/stage';
 import { initGlassGlow, registerProximity, unregisterProximity } from '../../lib/glassGlow';
@@ -200,9 +200,8 @@ export function useStage({
         el.style.setProperty('--x', `${frame.vw / 2 - CARD_WIDTH / 2}px`);
         el.style.setProperty('--y', `${frame.vh / 2 - CARD_HEIGHT / 2}px`);
         el.style.setProperty('--scale', '0.9');
-        el.style.setProperty('--blur', '0px');
-        el.style.setProperty('--brightness', '1');
         el.style.setProperty('--card-filter', 'none');
+        el.style.setProperty('--meta-a', '1');
         el.style.zIndex = '1';
         spawnSet.delete(id);
         continue;
@@ -210,9 +209,8 @@ export function useStage({
       el.style.setProperty('--x', `${pos.x}px`);
       el.style.setProperty('--y', `${pos.y}px`);
       el.style.setProperty('--scale', String(Math.min(3.4, fisheyeScale(pos.dist, maxDist) * frame.zoom)));
-      el.style.setProperty('--blur', `${fisheyeBlur(pos.dist, maxDist)}px`);
-      el.style.setProperty('--brightness', String(fisheyeBrightness(pos.dist)));
       el.style.setProperty('--card-filter', fisheyeFilter(pos.dist, maxDist));
+      el.style.setProperty('--meta-a', String(fisheyeMetaAlpha(pos.dist, maxDist)));
       el.style.zIndex = String(fisheyeZIndex(pos.dist, maxDist));
     }
   }, []);
