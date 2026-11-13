@@ -1,4 +1,5 @@
-﻿import { Fragment, memo, useCallback, useEffect, useRef, useState } from 'react';
+﻿import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import type { KeyboardEvent, ReactNode } from 'react';
 import QRCode from 'qrcode';
 import type { DesktopLoginPlatform } from '../lib/playlist/ipcClient';
 import type { AccountState } from '../lib/accounts';
@@ -8,15 +9,16 @@ import type { GlassTheme } from '../lib/glass';
 import type { ListenSettingsPatch, LyricVisualSettings } from '../lib/lyricSettings';
 import { SideDock } from './dock/SideDock';
 import { DOCK_PLATFORM_ORDER, platformMeta } from './platforms';
+import './dock/right-panel.css';
 
-export type DockSettingsPage = 'lyrics' | 'ui' | 'bg' | 'system';
+export type DockSettingsPage = 'lyrics' | 'bg' | 'look';
 
 interface AccountDockProps {
   visible: boolean;
   platforms: DesktopLoginPlatform[];
   accounts: Record<string, AccountState>;
   selectedPlatform: string;
-  /** 外部「去登录」请求计数：变化时打开登录胶囊并选中对应平台。 */
+  /** 外部「去登录」请求计数：变化时打开账号面板并推入对应平台的详情。 */
   loginNonce: number;
   bgSetting: BackgroundSetting;
   coverMode: CoverBgMode;
@@ -54,74 +56,115 @@ interface AccountDockProps {
   perfAutoLevel: number;
   /** 鼠标靠近右边缘（提示光痕变亮）。 */
   near: boolean;
-  /** 当前播放歌曲的封面（背景页「雾中封面」预览用；没有歌曲时为空）。 */
+  /** 当前播放歌曲的封面（背景页「雾中封面」、外观页材质预览用；没有歌曲时为空）。 */
   coverUrl: string;
   /** 面板开 / 关：通知边缘感应钉住或解除。 */
   onPinChange: (open: boolean) => void;
 }
 
-/** 开关：silent-otter-72 复刻（原型原样）。 */
-function Toggle({
-  checked,
+/* ---------- 面板内的小控件（样式在 dock/panel-kit.css） ---------- */
+
+/** 分段控件（§9.5）。 */
+function Seg<T extends string>({
+  value,
+  options,
   onChange,
   label,
-  small,
+  wide,
 }: {
-  checked: boolean;
-  onChange: (v: boolean) => void;
-  label: string;
-  small?: boolean;
+  value: T;
+  options: Array<{ value: T; label: string }>;
+  onChange: (v: T) => void;
+  label?: string;
+  wide?: boolean;
 }) {
   return (
-    <label className={`switch${small ? ' sm' : ''}`}>
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        aria-label={label}
-      />
-      <span className="slider">
-        <svg className="slider-icon" viewBox="0 0 12 12" fill="none" strokeLinecap="round" strokeLinejoin="round">
-          <path d="M3 6.4 5.1 8.5 9 4.2" />
-        </svg>
-      </span>
-    </label>
-  );
-}
-
-/** 单选组 = 分段控件（NEBULA_UI_SYSTEM §9.5）：选中段滑块按选项个数定宽（--n），按选中位置平移（--i）。 */
-function GlassRadioGroup({
-  name,
-  options,
-  value,
-  onChange,
-}: {
-  name: string;
-  options: Array<{ value: string; label: React.ReactNode; disabled?: boolean }>;
-  value: string;
-  onChange: (v: string) => void;
-}) {
-  const safe = name.replace(/[^a-z0-9]/gi, '');
-  const idx = Math.max(0, options.findIndex((o) => o.value === value));
-  return (
-    <div className="glass-radio-group" style={{ '--n': options.length, '--i': idx } as React.CSSProperties}>
+    <div className={`seg${wide ? ' wide' : ''}${wide ? ' rp-tabs' : ''}`} role="group" aria-label={label}>
       {options.map((o) => (
-        <Fragment key={o.value}>
-          <input
-            type="radio"
-            name={safe}
-            id={`${safe}-${o.value}`}
-            checked={value === o.value}
-            disabled={o.disabled}
-            onChange={() => onChange(o.value)}
-          />
-          <label htmlFor={`${safe}-${o.value}`}>{o.label}</label>
-        </Fragment>
+        <button key={o.value} type="button" aria-pressed={value === o.value} onClick={() => onChange(o.value)}>
+          {o.label}
+        </button>
       ))}
-      <div className="glass-glider" />
     </div>
   );
 }
+
+/** 开关（§9.5：开启态 --acc）。 */
+function Tg({ checked, onChange, label }: { checked: boolean; onChange: (v: boolean) => void; label: string }) {
+  return (
+    <button
+      type="button"
+      className="tg"
+      role="switch"
+      aria-checked={checked}
+      aria-label={label}
+      onClick={() => onChange(!checked)}
+    >
+      <i />
+    </button>
+  );
+}
+
+/** 整行滑杆：名称 + 数值在上，滑杆铺满下面一行。 */
+function Slider({
+  label,
+  value,
+  min,
+  max,
+  step,
+  format,
+  onChange,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  format: (v: number) => string;
+  onChange: (v: number) => void;
+}) {
+  const pct = Math.min(100, Math.max(0, ((value - min) / Math.max(1e-6, max - min)) * 100));
+  return (
+    <div className="row-col">
+      <div className="head">
+        <span className="lbl">{label}</span>
+        <span className="val">{format(value)}</span>
+      </div>
+      <input
+        className="rng"
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        style={{ '--p': `${pct}%` } as React.CSSProperties}
+        aria-label={label}
+        onChange={(e) => onChange(Number(e.target.value))}
+      />
+    </div>
+  );
+}
+
+/** 可点的行（role=button，回车 / 空格也能触发）。 */
+function RowButton({ onClick, children }: { onClick: () => void; children: ReactNode }) {
+  const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
+    if (e.key === 'Enter' || e.key === ' ') {
+      e.preventDefault();
+      onClick();
+    }
+  };
+  return (
+    <div className="row btn-row" role="button" tabIndex={0} onClick={onClick} onKeyDown={onKeyDown}>
+      {children}
+    </div>
+  );
+}
+
+function vipText(a: AccountState | undefined): string {
+  return a?.isSvip ? 'SVIP' : a?.isVip ? 'VIP' : '普通用户';
+}
+
+/* ---------- 登录流程（逻辑 / IPC 与原来一致，外观换成新语言） ---------- */
 
 /** 网易云：官方库二维码登录（主项目既有实现）。 */
 function NeteaseLogin({ onSuccess }: { onSuccess: () => void }) {
@@ -153,7 +196,7 @@ function NeteaseLogin({ onSuccess }: { onSuccess: () => void }) {
       setQr(res.data.imageDataUrl);
     } else {
       try {
-        setQr(await QRCode.toDataURL(res.data.payload, { width: 180, margin: 1 }));
+        setQr(await QRCode.toDataURL(res.data.payload, { width: 296, margin: 1 }));
       } catch {
         setStatus('二维码生成失败，请刷新重试');
         return;
@@ -192,10 +235,10 @@ function NeteaseLogin({ onSuccess }: { onSuccess: () => void }) {
   useEffect(() => stopPoll, [stopPoll]);
 
   return (
-    <div className="pf-flow">
-      <div className="pf-status">{status || '未登录网易云'}</div>
-      {qr ? <img className="pf-qr" src={qr} alt="网易云登录二维码" /> : <div className="pf-qr is-empty" />}
-      <button className="glass-btn" onClick={start}>
+    <div className="rp-flow">
+      {qr ? <img className="rp-qr" src={qr} alt="网易云登录二维码" /> : <div className="rp-qr is-empty" />}
+      <div className="rp-flow-status">{status || '未登录网易云'}</div>
+      <button type="button" className="btn primary full" onClick={start}>
         {qr ? '刷新二维码' : '开始扫码登录'}
       </button>
     </div>
@@ -246,13 +289,13 @@ function QqLogin({ onSuccess }: { onSuccess: () => void }) {
   }, [cookieText, onSuccess]);
 
   return (
-    <div className="pf-flow">
-      <div className="pf-status">{status || '未登录 QQ 音乐'}</div>
-      <button className="glass-btn" disabled={busy} onClick={openWindow}>
+    <div className="rp-flow">
+      <button type="button" className="btn primary full" disabled={busy} onClick={openWindow}>
         {busy ? '等待官方页登录…' : '打开官方登录页（扫码）'}
       </button>
       <button
-        className="glass-btn"
+        type="button"
+        className="btn text"
         onClick={() => {
           setCookieMode((v) => !v);
           setStatus('粘贴 QQ 音乐 Cookie（需含 uin 与 music_key / p_skey / skey）');
@@ -261,20 +304,21 @@ function QqLogin({ onSuccess }: { onSuccess: () => void }) {
         {cookieMode ? '收起 Cookie 粘贴' : '粘贴 Cookie 登录'}
       </button>
       {cookieMode && (
-        <div className="pf-cookie">
+        <>
           <textarea
-            className="pf-cookie-input"
+            className="rp-cookie-input"
             rows={4}
             value={cookieText}
             onChange={(e) => setCookieText(e.target.value)}
             placeholder="粘贴 Cookie…"
             spellCheck={false}
           />
-          <button className="glass-btn" disabled={busy || !cookieText.trim()} onClick={importCookie}>
+          <button type="button" className="btn sec full" disabled={busy || !cookieText.trim()} onClick={importCookie}>
             导入并验证
           </button>
-        </div>
+        </>
       )}
+      <div className="rp-flow-status">{status || '未登录 QQ 音乐'}</div>
     </div>
   );
 }
@@ -293,63 +337,15 @@ function SpotifyLogin({ onSuccess }: { onSuccess: () => void }) {
     onSuccess();
   }, [onSuccess]);
   return (
-    <div className="pf-flow">
-      <div className="pf-status">{status || '未登录 Spotify'}</div>
-      <button className="glass-btn" onClick={start}>
+    <div className="rp-flow">
+      <button type="button" className="btn primary full" onClick={start}>
         使用 Spotify 授权登录
       </button>
+      <div className="rp-flow-status">{status || '未登录 Spotify'}</div>
     </div>
   );
 }
 
-function PlatformLogin({
-  platform,
-  info,
-  account,
-  onRefresh,
-}: {
-  platform: string;
-  info: DesktopLoginPlatform;
-  account: AccountState | undefined;
-  onRefresh: (platform: string) => void;
-}) {
-  if (info.kind === 'unavailable') {
-    return (
-      <div className="pf-flow">
-        <div className="pf-status">{info.unavailableReason ?? '暂不支持'}</div>
-      </div>
-    );
-  }
-  if (account?.loggedIn) {
-    return (
-      <div className="acct-card">
-        {account.avatarUrl ? (
-          <img className="acct-avatar" src={account.avatarUrl} alt="" />
-        ) : (
-          <span className="acct-avatar is-ph" />
-        )}
-        <div className="acct-name">{account.nickname ?? '已登录'}</div>
-        <div className="acct-vip">
-          {account.isSvip ? 'SVIP' : account.isVip ? 'VIP' : '普通用户'}
-        </div>
-        <div className="acct-actions">
-          <button
-            className="glass-btn"
-            onClick={() => window.nebulaAPI?.clearCookie(platform).then(() => onRefresh(platform))}
-          >
-            退出登录
-          </button>
-        </div>
-      </div>
-    );
-  }
-  if (platform === 'netease') return <NeteaseLogin onSuccess={() => onRefresh('netease')} />;
-  if (platform === 'qq') return <QqLogin onSuccess={() => onRefresh('qq')} />;
-  if (platform === 'kugou') return <KugouLogin onSuccess={() => onRefresh('kugou')} />;
-  if (platform === 'qishui') return <QishuiLogin onSuccess={() => onRefresh('qishui')} />;
-  if (platform === 'spotify') return <SpotifyLogin onSuccess={() => onRefresh('spotify')} />;
-  return <div className="pf-flow"><div className="pf-status">暂不支持该平台登录</div></div>;
-}
 /** 酷狗音乐：官方登录页（BrowserWindow）。 */
 function KugouLogin({ onSuccess }: { onSuccess: () => void }) {
   const [busy, setBusy] = useState(false);
@@ -405,38 +401,38 @@ function KugouLogin({ onSuccess }: { onSuccess: () => void }) {
     }
   }, [onSuccess, cookieText]);
 
-
   return (
-    <div className="pf-flow">
+    <div className="rp-flow">
       {!cookieMode ? (
         <>
-          <button className="glass-btn" disabled={busy} onClick={openWindow}>
+          <button type="button" className="btn primary full" disabled={busy} onClick={openWindow}>
             {busy ? '等待确认…' : '打开酷狗登录页'}
           </button>
-          <button className="glass-btn is-ghost" onClick={() => setCookieMode(true)}>
+          <button type="button" className="btn text" onClick={() => setCookieMode(true)}>
             粘贴 Cookie 登录
           </button>
         </>
       ) : (
         <>
           <textarea
-            className="pf-cookie-input"
+            className="rp-cookie-input"
             placeholder="粘贴酷狗 Cookie（F12 → Network → 任意请求 → Cookie 头）"
             rows={3}
             value={cookieText}
             onChange={(e) => setCookieText(e.target.value)}
+            spellCheck={false}
           />
-          <div className="pf-cookie-actions">
-            <button className="glass-btn" disabled={busy || !cookieText.trim()} onClick={importCookie}>
+          <div className="rp-flow-actions">
+            <button type="button" className="btn sec" disabled={busy || !cookieText.trim()} onClick={importCookie}>
               确认导入
             </button>
-            <button className="glass-btn is-ghost" onClick={() => setCookieMode(false)}>
+            <button type="button" className="btn text" onClick={() => setCookieMode(false)}>
               返回
             </button>
           </div>
         </>
       )}
-      {status && <div className="pf-status">{status}</div>}
+      {status && <div className="rp-flow-status">{status}</div>}
     </div>
   );
 }
@@ -465,24 +461,206 @@ function QishuiLogin({ onSuccess }: { onSuccess: () => void }) {
   }, [onSuccess]);
 
   return (
-    <div className="pf-flow">
-      <div className="pf-status">{status || '未登录汽水音乐'}</div>
-      <button className="glass-btn" disabled={busy} onClick={openWindow}>
+    <div className="rp-flow">
+      <button type="button" className="btn primary full" disabled={busy} onClick={openWindow}>
         {busy ? '正在初始化…' : '打开汽水登录页'}
       </button>
+      <div className="rp-flow-status">{status || '未登录汽水音乐'}</div>
     </div>
   );
 }
 
+function PlatformLogin({ platform, info, onRefresh }: { platform: string; info: DesktopLoginPlatform; onRefresh: (platform: string) => void }) {
+  if (info.kind === 'unavailable') {
+    return (
+      <div className="rp-flow">
+        <div className="rp-flow-status">{info.unavailableReason ?? '暂不支持'}</div>
+      </div>
+    );
+  }
+  if (platform === 'netease') return <NeteaseLogin onSuccess={() => onRefresh('netease')} />;
+  if (platform === 'qq') return <QqLogin onSuccess={() => onRefresh('qq')} />;
+  if (platform === 'kugou') return <KugouLogin onSuccess={() => onRefresh('kugou')} />;
+  if (platform === 'qishui') return <QishuiLogin onSuccess={() => onRefresh('qishui')} />;
+  if (platform === 'spotify') return <SpotifyLogin onSuccess={() => onRefresh('spotify')} />;
+  return (
+    <div className="rp-flow">
+      <div className="rp-flow-status">暂不支持该平台登录</div>
+    </div>
+  );
+}
 
-const COVER_MODES: Array<{ id: CoverBgMode; name: string }> = [
-  { id: 'nebula', name: '环境光' },
-  { id: 'blend', name: '雾中封面' },
-];
+/** 各平台详情页顶部的一句话说明。 */
+const LOGIN_HOW: Record<string, string> = {
+  netease: '用网易云音乐 App 扫码登录',
+  qq: '在官方登录页用手机 QQ 扫码，登录后自动回到这里',
+  kugou: '在官方登录页扫码或输入账号，登录后自动回到这里',
+  qishui: '在官方登录页扫码，登录后自动回到这里',
+  spotify: '在浏览器里授权，授权完成后自动回到这里',
+};
+
+/** 账号详情：已登录 = 账号信息 + 刷新 / 退出；未登录 = 该平台既有的登录流程。 */
+function AccountDetail({
+  platform,
+  info,
+  account,
+  onRefresh,
+}: {
+  platform: string;
+  info: DesktopLoginPlatform | undefined;
+  account: AccountState | undefined;
+  onRefresh: (platform: string) => void;
+}) {
+  const meta = platformMeta(platform);
+  if (account?.loggedIn) {
+    const nick = account.nickname ?? '已登录';
+    return (
+      <div className="rp-detail">
+        <span className="rp-acct-av">
+          {account.avatarUrl ? <img src={account.avatarUrl} alt="" draggable={false} /> : nick.slice(0, 1)}
+        </span>
+        <h3>{nick}</h3>
+        <div className="rp-acct-meta">
+          {meta.name} · {vipText(account)} · 歌单 {account.playlists.length} 个
+        </div>
+        <div className="group">
+          <RowButton onClick={() => onRefresh(platform)}>
+            <span className="lbl">
+              刷新账号信息<small>会员状态、歌单数量</small>
+            </span>
+            <span className="chev">›</span>
+          </RowButton>
+        </div>
+        <button
+          type="button"
+          className="btn danger"
+          onClick={() => window.nebulaAPI?.clearCookie(platform).then(() => onRefresh(platform))}
+        >
+          退出登录
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="rp-detail">
+      <span className="rp-big-logo">
+        <img src={meta.logo} alt="" draggable={false} />
+      </span>
+      <h3>{meta.name}</h3>
+      <p className="rp-how">{LOGIN_HOW[platform] ?? '登录后可以导入这个平台的歌单'}</p>
+      {info ? <PlatformLogin platform={platform} info={info} onRefresh={onRefresh} /> : null}
+    </div>
+  );
+}
+
+/* ---------- 设置：歌词实时预览 ---------- */
+
+const PREVIEW_LINE = '风经过的地方，都亮了';
+const PREVIEW_NEXT = '路灯一盏一盏替我数着心跳';
+const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 
 /**
- * 右侧 Dock（登录 / 设置）—— 原型 dock-prototype-v3.html 的逐行移植。
- * 视觉真源：prototype/dock-prototype-v3.html（用户已验证定稿，勿改结构/类名）。
+ * 小窗里用当前封面的环境光和三段扫字唱一句，随歌词设置实时变化。
+ * active=false（面板收起 / 不在歌词页）时停掉 rAF；减少动效时只画静止的半唱状态。
+ */
+function LyricPreview({ settings, maxFont, active }: { settings: LyricVisualSettings; maxFont: number; active: boolean }) {
+  const curRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!active) return;
+    const chars = Array.from(curRef.current?.querySelectorAll<HTMLElement>('.rp-ch') ?? []);
+    const n = chars.length;
+    const setProgress = (t: number) => {
+      chars.forEach((c, j) => c.style.setProperty('--wp', clamp(t * n - j, 0, 1).toFixed(3)));
+    };
+    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
+      setProgress(0.5);
+      return;
+    }
+    const t0 = performance.now();
+    let raf = 0;
+    const tick = (now: number) => {
+      setProgress((((now - t0) % 4200) / 4200) / 0.82);
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [active]);
+
+  // 预览窗只有 104px 高：把软件里的字号（14…maxFont）按比例缩到 13–30px，再乘当前句放大
+  const ratio = clamp((settings.fontSize - 14) / Math.max(1, maxFont - 14), 0, 1);
+  const fs = 13 + ratio * 17;
+  return (
+    <div
+      className={`rp-preview${settings.highlightStyle === 'float' ? ' float' : ''}`}
+      style={
+        { '--ly-now': settings.lyricColorSource === 'custom' ? settings.customColor : 'var(--acc)' } as React.CSSProperties
+      }
+    >
+      <div className="rp-pb" />
+      <div className="rp-pv" />
+      <div className="rp-next">{PREVIEW_NEXT}</div>
+      <div
+        ref={curRef}
+        className="rp-cur"
+        style={
+          {
+            fontSize: `${fs.toFixed(1)}px`,
+            transform: `scale(${settings.currentScale / 1.22})`,
+            fontWeight: settings.bold ? 700 : 600,
+            '--rise': `${((settings.wordRise * fs) / 44).toFixed(2)}px`,
+          } as React.CSSProperties
+        }
+      >
+        {[...PREVIEW_LINE].map((c, i) => (
+          <span key={i} className="rp-ch">
+            {c}
+          </span>
+        ))}
+      </div>
+      <span className="rp-tag">实时预览</span>
+    </div>
+  );
+}
+
+/* ---------- 设置：背景 / 材质 预览块 ---------- */
+
+type BgChoice = 'env' | 'fog' | 'custom' | 'wallpaper';
+
+const BG_DESC: Record<BgChoice, string> = {
+  env: '颜色取自正在播放的封面：深色底上三团缓慢漂移的光，换歌时整个空间一起换色。',
+  fog: '环境光里隐约浮着一层雾化的封面原图，缓慢地若隐若现；浅色封面会自动更淡。',
+  custom: '用你自己的图片或视频铺满背景，强调色从画面里取。',
+  wallpaper: '从本机 Wallpaper Engine 的壁纸库里选一张（支持动态壁纸）。',
+};
+
+function Tile({
+  name,
+  selected,
+  onClick,
+  data,
+  children,
+}: {
+  name: string;
+  selected: boolean;
+  onClick: () => void;
+  data: { 'data-bg': string } | { 'data-theme': string };
+  children: ReactNode;
+}) {
+  return (
+    <button type="button" className="rp-tile" aria-pressed={selected} onClick={onClick} {...data}>
+      <span className="rp-art">
+        {children}
+        <span className="rp-check">✓</span>
+      </span>
+      <span className="rp-name">{name}</span>
+    </button>
+  );
+}
+
+/**
+ * 右侧 Dock（账号 / 设置）内容（样张 E，2026-11-12 定稿）。
+ * 外壳与开合机制在 dock/SideDock.tsx；通用件样式在 dock/panel-kit.css，右侧专用样式在 dock/right-panel.css。
  */
 export const AccountDock = memo(function AccountDock({
   visible,
@@ -524,403 +702,458 @@ export const AccountDock = memo(function AccountDock({
   coverUrl,
   onPinChange,
 }: AccountDockProps) {
-  void coverUrl; // 过渡：背景页「雾中封面」预览在面板内容重做时使用
   const [openRow, setOpenRow] = useState<'login' | 'settings' | null>(null);
-  const [activePlatform, setActivePlatform] = useState(selectedPlatform);
-  const [settingsPage, setSettingsPage] = useState<DockSettingsPage>('system');
+  const [settingsPage, setSettingsPage] = useState<DockSettingsPage>('lyrics');
   const [bgScheme, setBgScheme] = useState<'custom' | 'wallpaper' | 'cover'>(
     bgSetting.type === 'cover' ? 'cover' : 'custom',
   );
   const bgInputRef = useRef<HTMLInputElement>(null);
 
+  // 账号面板的「列表 ↔ 详情」推入：detailPf = 详情里的平台（退出动画结束后才清掉），detailIn = 详情已滑入
+  const [detailPf, setDetailPf] = useState<string | null>(null);
+  const [detailIn, setDetailIn] = useState(false);
+  const navTimers = useRef<{ raf: number[]; hide: number | null }>({ raf: [], hide: null });
+
+  const clearNavTimers = useCallback(() => {
+    navTimers.current.raf.forEach((id) => cancelAnimationFrame(id));
+    navTimers.current.raf = [];
+    if (navTimers.current.hide !== null) {
+      window.clearTimeout(navTimers.current.hide);
+      navTimers.current.hide = null;
+    }
+  }, []);
+
+  const openDetail = useCallback(
+    (p: string) => {
+      clearNavTimers();
+      setDetailPf(p);
+      if (detailIn) return; // 已在详情里：只换内容
+      const r1 = requestAnimationFrame(() => {
+        const r2 = requestAnimationFrame(() => setDetailIn(true));
+        navTimers.current.raf.push(r2);
+      });
+      navTimers.current.raf = [r1];
+    },
+    [clearNavTimers, detailIn],
+  );
+
+  const closeDetail = useCallback(() => {
+    clearNavTimers();
+    setDetailIn(false);
+    navTimers.current.hide = window.setTimeout(() => {
+      navTimers.current.hide = null;
+      setDetailPf(null);
+    }, 300);
+  }, [clearNavTimers]);
+
+  useEffect(() => clearNavTimers, [clearNavTimers]);
+
   const loggedCount = DOCK_PLATFORM_ORDER.filter((p) => accounts[p]?.loggedIn).length;
   const avatarUrl =
     DOCK_PLATFORM_ORDER.map((p) => accounts[p]).find((a) => a?.loggedIn && a.avatarUrl)?.avatarUrl ?? null;
 
-  // 外部「去登录」：打开登录胶囊并选中对应平台
+  // 外部「去登录」：打开账号面板并推入对应平台的详情
+  const handledNonce = useRef(0);
   useEffect(() => {
-    if (!loginNonce) return;
-    setActivePlatform(selectedPlatform);
+    if (!loginNonce || loginNonce === handledNonce.current) return;
+    handledNonce.current = loginNonce;
     setOpenRow('login');
-  }, [loginNonce, selectedPlatform]);
+    openDetail(selectedPlatform);
+  }, [loginNonce, selectedPlatform, openDetail]);
 
   // 面板关闭动画期间保留上一次的内容，避免淡出时窗口先变空
   const lastRowRef = useRef<'login' | 'settings'>('settings');
   if (openRow) lastRowRef.current = openRow;
   const shownRow = openRow ?? lastRowRef.current;
 
-  const info = platforms.find((p) => p.platform === activePlatform);
-  const activeAccount = accounts[activePlatform];
-
-  const loginDetail = activeAccount?.loggedIn ? (
-    <>
-      <div className="acct-name">{activeAccount.nickname ?? '已登录'}</div>
-      <div className="acct-vip">
-        {activeAccount.isSvip ? 'SVIP' : activeAccount.isVip ? 'VIP' : '普通用户'} · {platformMeta(activePlatform).name}
-      </div>
-      <button
-        className="ghost-btn"
-        onClick={() => window.nebulaAPI?.clearCookie(activePlatform).then(() => onRefreshAccount(activePlatform))}
-      >
-        退出登录
-      </button>
-    </>
-  ) : info ? (
-    <PlatformLogin
-      platform={info.platform}
-      info={info}
-      account={accounts[info.platform]}
-      onRefresh={onRefreshAccount}
-    />
-  ) : null;
-
   const maxFont = Math.max(28, Math.round((typeof window !== 'undefined' ? window.innerHeight : 900) / 4));
+
+  /* ---------- 账号 ---------- */
   const loginWindow = (
-    <>
-      <div className="win-title">
-        <span>账号登录</span>
-        <span style={{ fontSize: 11, color: 'rgba(255,255,255,.45)' }}>
-          {loggedCount}/{DOCK_PLATFORM_ORDER.length} 已登录
-        </span>
-      </div>
-      <div className="login-cards">
-        {DOCK_PLATFORM_ORDER.map((p) => {
-          const meta = platformMeta(p);
-          const on = !!accounts[p]?.loggedIn;
-          return (
-            <div
-              key={p}
-              className={`lc${activePlatform === p ? ' is-active' : ''}${on ? ' is-on' : ''}`}
-              style={{ '--brand': meta.brand } as React.CSSProperties}
-              onClick={() => {
-                setActivePlatform(p);
-                onSelectPlatform(p);
-              }}
-            >
-              <div className="lc-inner">
-                <span className="lc-head">
+    <div className="nav">
+      <div className={`view${detailIn ? ' hidden-left' : ''}`} aria-hidden={detailIn}>
+        <div className="win-head">
+          <h2>账号</h2>
+          <span className="sub">
+            已连接 {loggedCount} / {DOCK_PLATFORM_ORDER.length}
+          </span>
+        </div>
+        <div className="group">
+          {DOCK_PLATFORM_ORDER.map((p) => {
+            const meta = platformMeta(p);
+            const acc = accounts[p];
+            const on = !!acc?.loggedIn;
+            const reason = platforms.find((x) => x.platform === p)?.unavailableReason ?? null;
+            const nick = acc?.nickname ?? '已登录';
+            return (
+              <RowButton
+                key={p}
+                onClick={() => {
+                  onSelectPlatform(p);
+                  openDetail(p);
+                }}
+              >
+                <span className="rp-logo">
                   <img src={meta.logo} alt="" draggable={false} />
                 </span>
-                <div className="lc-body">
-                  <span className="nm">{meta.name}</span>
-                  <span className="st">{on ? '已登录' : '未登录'}</span>
-                </div>
-              </div>
-            </div>
-          );
-        })}
+                <span className="lbl">
+                  {meta.name}
+                  <small className="rp-status">
+                    <i className={`rp-dot${on ? ' on' : ''}`} />
+                    {on ? `${nick} · ${vipText(acc)}` : (reason ?? '未登录')}
+                  </small>
+                </span>
+                {on && (
+                  <span className="rp-av">
+                    {acc?.avatarUrl ? <img src={acc.avatarUrl} alt="" draggable={false} /> : nick.slice(0, 1)}
+                  </span>
+                )}
+                <span className="chev">›</span>
+              </RowButton>
+            );
+          })}
+        </div>
+        <p className="hint-line">
+          登录后，这个平台的歌单会出现在左侧「歌单」里；取歌链接时会按会员情况自动挑选平台。
+        </p>
       </div>
-      <div className="login-detail">{loginDetail}</div>
+      {detailPf !== null && (
+        <div className={`view${detailIn ? '' : ' hidden-right'}`} aria-hidden={!detailIn}>
+          <button type="button" className="back" onClick={closeDetail}>
+            ‹ 账号
+          </button>
+          <AccountDetail
+            platform={detailPf}
+            info={platforms.find((x) => x.platform === detailPf)}
+            account={accounts[detailPf]}
+            onRefresh={onRefreshAccount}
+          />
+        </div>
+      )}
+    </div>
+  );
+
+  /* ---------- 设置 ---------- */
+  const bgChoice: BgChoice =
+    bgScheme === 'cover' ? (coverMode === 'blend' ? 'fog' : 'env') : bgScheme === 'custom' ? 'custom' : 'wallpaper';
+  const selectCover = (mode: CoverBgMode) => {
+    setBgScheme('cover');
+    onSelectBg({ type: 'cover' });
+    onCoverMode(mode);
+  };
+  const customPhoto = bgScheme === 'custom' && bgSetting.type === 'image' ? bgSetting.url : null;
+
+  const lyricsPage = (
+    <>
+      <div className="g-title">预览</div>
+      <LyricPreview settings={lyricSettings} maxFont={maxFont} active={openRow === 'settings'} />
+      <div className="g-title">文字</div>
+      <div className="group">
+        <Slider
+          label="字号"
+          value={lyricSettings.fontSize}
+          min={14}
+          max={maxFont}
+          step={1}
+          format={(v) => `${v}px`}
+          onChange={onFontSize}
+        />
+        <div className="row">
+          <span className="lbl">加粗</span>
+          <Tg checked={!!lyricSettings.bold} onChange={onLyricBold} label="歌词加粗" />
+        </div>
+      </div>
+      <div className="g-title">高亮与动效</div>
+      <div className="group">
+        <div className="row">
+          <span className="lbl">高亮风格</span>
+          <Seg
+            label="高亮风格"
+            value={lyricSettings.highlightStyle}
+            options={[
+              { value: 'sweep', label: '扫光填充' },
+              { value: 'float', label: '上浮发光' },
+            ]}
+            onChange={onHighlightStyle}
+          />
+        </div>
+        <Slider
+          label="当前句放大"
+          value={lyricSettings.currentScale}
+          min={1}
+          max={1.6}
+          step={0.02}
+          format={(v) => `${v.toFixed(2)}×`}
+          onChange={onCurrentScale}
+        />
+        <Slider
+          label="逐字上浮"
+          value={lyricSettings.wordRise}
+          min={0}
+          max={12}
+          step={1}
+          format={(v) => `${v}px`}
+          onChange={onWordRise}
+        />
+      </div>
+      <div className="g-title">布局与颜色</div>
+      <div className="group">
+        <div className="row">
+          <span className="lbl">三句布局</span>
+          <Seg
+            label="三句布局"
+            value={lyricSettings.lyricLayout}
+            options={[
+              { value: 'stacked', label: '上下堆叠' },
+              { value: 'offset', label: '上下错落' },
+            ]}
+            onChange={onLyricLayout}
+          />
+        </div>
+        <div className="row">
+          <span className="lbl">
+            歌词层次<small>相对星云卡片</small>
+          </span>
+          <Seg
+            label="歌词层次"
+            value={lyricSettings.layerMode}
+            options={[
+              { value: 'under', label: '卡片之下' },
+              { value: 'over', label: '卡片之上' },
+            ]}
+            onChange={onLayerMode}
+          />
+        </div>
+        <div className="row">
+          <span className="lbl">歌词颜色</span>
+          <Seg
+            label="歌词颜色"
+            value={lyricSettings.lyricColorSource}
+            options={[
+              { value: 'cover', label: '跟随封面' },
+              { value: 'custom', label: '自定义' },
+            ]}
+            onChange={onLyricColorSource}
+          />
+        </div>
+        {lyricSettings.lyricColorSource === 'custom' && (
+          <div className="row">
+            <span className="lbl">正在唱的字</span>
+            <input
+              className="rp-swatch"
+              type="color"
+              value={lyricSettings.customColor}
+              aria-label="正在唱的字的颜色"
+              onChange={(e) => onCustomColor(e.target.value)}
+            />
+          </div>
+        )}
+      </div>
+      <div className="g-title">静止时</div>
+      <div className="group">
+        <div className="row">
+          <span className="lbl">
+            让歌词成为主角<small>音乐在播放、鼠标静止一会儿，星云让开</small>
+          </span>
+          <Tg
+            checked={lyricSettings.listenHandoff}
+            onChange={(b) => onListenSettings({ listenHandoff: b })}
+            label="静止时让歌词成为主角"
+          />
+        </div>
+        {lyricSettings.listenHandoff && (
+          <>
+            <div className="row">
+              <span className="lbl">让开方式</span>
+              <Seg
+                label="让开方式"
+                value={lyricSettings.listenStyle}
+                options={[
+                  { value: 'sink', label: '沉降' },
+                  { value: 'part', label: '散开' },
+                  { value: 'ebb', label: '退潮' },
+                ]}
+                onChange={(v) => onListenSettings({ listenStyle: v })}
+              />
+            </div>
+            <div className="row">
+              <span className="lbl">静止多久</span>
+              <Seg
+                label="静止多久"
+                value={String(lyricSettings.listenDelay)}
+                options={[
+                  { value: '3', label: '3 秒' },
+                  { value: '6', label: '6 秒' },
+                  { value: '10', label: '10 秒' },
+                ]}
+                onChange={(v) => onListenSettings({ listenDelay: Number(v) })}
+              />
+            </div>
+            <div className="row">
+              <span className="lbl">播放条一起变淡</span>
+              <Tg
+                checked={lyricSettings.listenDimBar}
+                onChange={(b) => onListenSettings({ listenDimBar: b })}
+                label="聆听时播放条一起变淡"
+              />
+            </div>
+          </>
+        )}
+      </div>
     </>
   );
 
-  const settingsWindow = (
+  const bgPage = (
     <>
-      <div className="win-title">
-        <span>设置</span>
+      <div className="g-title">跟随正在播放的封面</div>
+      <div className="rp-tiles">
+        <Tile name="环境光" selected={bgChoice === 'env'} data={{ 'data-bg': 'env' }} onClick={() => selectCover('nebula')}>
+          <span className="rp-envbg" />
+        </Tile>
+        <Tile name="雾中封面" selected={bgChoice === 'fog'} data={{ 'data-bg': 'fog' }} onClick={() => selectCover('blend')}>
+          <span className="rp-envbg" />
+          {coverUrl && <span className="rp-ghost" style={{ backgroundImage: `url(${JSON.stringify(coverUrl)})` }} />}
+        </Tile>
       </div>
-      <div className="set-tabs">
-        <span className={settingsPage === 'lyrics' ? 'active' : ''} onClick={() => setSettingsPage('lyrics')}>
-          歌词设置
-        </span>
-        <span className={settingsPage === 'ui' ? 'active' : ''} onClick={() => setSettingsPage('ui')}>
-          界面设置
-        </span>
-        <span className={settingsPage === 'bg' ? 'active' : ''} onClick={() => setSettingsPage('bg')}>
-          背景设置
-        </span>
-        <span className={settingsPage === 'system' ? 'active' : ''} onClick={() => setSettingsPage('system')}>
-          系统设置
-        </span>
-      </div>
-
-      <div className={`set-page${settingsPage === 'lyrics' ? ' active' : ''}`}>
-        <div className="ls-card">
-          <h4>基础文字</h4>
-          <div className="ls-row">
-            <span>字体大小</span>
-            <input
-              type="range"
-              min={14}
-              max={maxFont}
-              step={1}
-              value={lyricSettings.fontSize}
-              style={{ '--p': `${((lyricSettings.fontSize - 14) / Math.max(1, maxFont - 14)) * 100}%` } as React.CSSProperties}
-              onChange={(e) => onFontSize(Number(e.target.value))}
-            />
-            <span className="val">{lyricSettings.fontSize}px</span>
-          </div>
-          <div className="ls-row">
-            <span>歌词加粗</span>
-            <span className="val" style={{ marginLeft: 'auto' }}>
-              <Toggle small checked={!!lyricSettings.bold} onChange={onLyricBold} label="歌词加粗" />
-            </span>
-          </div>
-        </div>
-        <div className="ls-card">
-          <h4>高亮与动效</h4>
-          <div className="ls-row">
-            <span>高亮风格</span>
-            <GlassRadioGroup
-              name="highlight"
-              options={[
-                { value: 'sweep', label: '扫光填充' },
-                { value: 'float', label: '上浮发光' },
-              ]}
-              value={lyricSettings.highlightStyle}
-              onChange={(v) => onHighlightStyle(v as LyricVisualSettings['highlightStyle'])}
-            />
-          </div>
-          <div className="ls-row">
-            <span>当前句放大</span>
-            <input
-              type="range"
-              min={1}
-              max={1.6}
-              step={0.02}
-              value={lyricSettings.currentScale}
-              style={{ '--p': `${((lyricSettings.currentScale - 1) / 0.6) * 100}%` } as React.CSSProperties}
-              onChange={(e) => onCurrentScale(Number(e.target.value))}
-            />
-            <span className="val">{lyricSettings.currentScale.toFixed(2)}×</span>
-          </div>
-          <div className="ls-row">
-            <span>逐字上浮</span>
-            <input
-              type="range"
-              min={0}
-              max={12}
-              step={1}
-              value={lyricSettings.wordRise}
-              style={{ '--p': `${(lyricSettings.wordRise / 12) * 100}%` } as React.CSSProperties}
-              onChange={(e) => onWordRise(Number(e.target.value))}
-            />
-            <span className="val">{lyricSettings.wordRise}px</span>
-          </div>
-        </div>
-        <div className="ls-card">
-          <h4>布局与层级</h4>
-          <div className="ls-row">
-            <span>歌词布局</span>
-            <GlassRadioGroup
-              name="layout"
-              options={[
-                { value: 'stacked', label: '上下堆叠' },
-                { value: 'offset', label: '上下错落' },
-              ]}
-              value={lyricSettings.lyricLayout}
-              onChange={(v) => onLyricLayout(v as LyricVisualSettings['lyricLayout'])}
-            />
-          </div>
-          <div className="ls-row">
-            <span>歌词取色</span>
-            <GlassRadioGroup
-              name="color"
-              options={[
-                { value: 'cover', label: '封面取色' },
-                { value: 'custom', label: '自定义' },
-              ]}
-              value={lyricSettings.lyricColorSource}
-              onChange={(v) => onLyricColorSource(v as LyricVisualSettings['lyricColorSource'])}
-            />
-          </div>
-          {lyricSettings.lyricColorSource === 'custom' && (
-            <div className="ls-row">
-              <span>基色</span>
-              <input
-                type="color"
-                value={lyricSettings.customColor}
-                onChange={(e) => onCustomColor(e.target.value)}
-                style={{ width: 42, height: 24, border: 'none', background: 'none', cursor: 'pointer' }}
-              />
-            </div>
-          )}
-          <div className="ls-row">
-            <span>悬浮层次</span>
-            <GlassRadioGroup
-              name="layer"
-              options={[
-                { value: 'under', label: '卡片之下' },
-                { value: 'over', label: '卡片之上' },
-              ]}
-              value={lyricSettings.layerMode}
-              onChange={(v) => onLayerMode(v as LyricVisualSettings['layerMode'])}
-            />
-          </div>
-        </div>
-        <div className="ls-card">
-          <h4>静止时</h4>
-          <div className="ls-row">
-            <span>让歌词成为主角</span>
-            <span className="val" style={{ marginLeft: 'auto' }}>
-              <Toggle
-                small
-                checked={lyricSettings.listenHandoff}
-                onChange={(b) => onListenSettings({ listenHandoff: b })}
-                label="静止时让歌词成为主角"
-              />
-            </span>
-          </div>
-          {lyricSettings.listenHandoff && (
-            <>
-              <div className="ls-row">
-                <span>方式</span>
-                <GlassRadioGroup
-                  name="listenStyle"
-                  options={[
-                    { value: 'sink', label: '沉降' },
-                    { value: 'part', label: '散开' },
-                    { value: 'ebb', label: '退潮' },
-                  ]}
-                  value={lyricSettings.listenStyle}
-                  onChange={(v) => onListenSettings({ listenStyle: v as LyricVisualSettings['listenStyle'] })}
-                />
-              </div>
-              <div className="ls-row">
-                <span>时长</span>
-                <GlassRadioGroup
-                  name="listenDelay"
-                  options={[
-                    { value: '3', label: '3 秒' },
-                    { value: '6', label: '6 秒' },
-                    { value: '10', label: '10 秒' },
-                  ]}
-                  value={String(lyricSettings.listenDelay)}
-                  onChange={(v) => onListenSettings({ listenDelay: Number(v) })}
-                />
-              </div>
-              <div className="ls-row">
-                <span>播放条变淡</span>
-                <span className="val" style={{ marginLeft: 'auto' }}>
-                  <Toggle
-                    small
-                    checked={lyricSettings.listenDimBar}
-                    onChange={(b) => onListenSettings({ listenDimBar: b })}
-                    label="聆听时播放条变淡"
-                  />
-                </span>
-              </div>
-            </>
-          )}
-        </div>
-      </div>
-
-      <div className={`set-page${settingsPage === 'ui' ? ' active' : ''}`}>
-        <div className="ui-row">
-          <div className="txt">
-            <span>隐藏主界面歌曲卡片</span>
-            <em>沉浸式欣赏壁纸与歌词时隐藏 Z2 卡片云</em>
-          </div>
-          <Toggle small checked={uiHideCards} onChange={onToggleHideCards} label="隐藏主界面歌曲卡片" />
-        </div>
-        <div className="ui-row">
-          <div className="txt">
-            <span>隐藏空域歌词层</span>
-            <em>隐藏 Z1 穿梭歌词，仅保留壁纸沉浸效果</em>
-          </div>
-          <Toggle small checked={uiHideLyrics} onChange={onToggleHideLyrics} label="隐藏空域歌词层" />
-        </div>
-      </div>
-
-      <div className={`set-page${settingsPage === 'bg' ? ' active' : ''}`}>
-        <button
-          type="button"
-          className={`bg-scheme${bgScheme === 'custom' ? ' is-active' : ''}`}
+      <div className="g-title">自己的画面</div>
+      <div className="rp-tiles">
+        <Tile
+          name="自定义图片 / 视频"
+          selected={bgChoice === 'custom'}
+          data={{ 'data-bg': 'custom' }}
           onClick={() => {
             setBgScheme('custom');
             bgInputRef.current?.click();
           }}
         >
-          <span className="bs-title">自定义背景</span>
-          <span className="bs-desc">上传图片 / 视频作为背景</span>
-        </button>
-        <button
-          type="button"
-          className={`bg-scheme${bgScheme === 'wallpaper' ? ' is-active' : ''}`}
+          {customPhoto ? (
+            <>
+              <span className="rp-photo" style={{ backgroundImage: `url(${JSON.stringify(customPhoto)})` }} />
+              <span className="rp-badge">我的图片</span>
+            </>
+          ) : (
+            <span className="rp-plain">
+              <b>+</b>选择图片或视频
+            </span>
+          )}
+        </Tile>
+        <Tile
+          name="Wallpaper"
+          selected={bgChoice === 'wallpaper'}
+          data={{ 'data-bg': 'wallpaper' }}
           onClick={() => {
             setBgScheme('wallpaper');
             onOpenWallpapers();
           }}
         >
-          <span className="bs-title">Wallpaper 壁纸</span>
-          <span className="bs-desc">从本机 Wallpaper Engine 库选择</span>
-        </button>
-        <button
-          type="button"
-          className={`bg-scheme${bgScheme === 'cover' ? ' is-active' : ''}`}
-          onClick={() => {
-            setBgScheme('cover');
-            onSelectBg({ type: 'cover' });
-          }}
-        >
-          <span className="bs-title">跟随当前播放歌曲封面</span>
-          <span className="bs-desc">自动加载正在播放歌曲的封面作为背景</span>
-        </button>
-        <div className="cover-modes">
-          {COVER_MODES.map((m) => (
-            <span key={m.id} className={coverMode === m.id ? 'active' : ''} onClick={() => onCoverMode(m.id)}>
-              {m.name}
-            </span>
-          ))}
-        </div>
-        <input
-          ref={bgInputRef}
-          type="file"
-          accept="image/*,video/*"
-          style={{ display: 'none' }}
-          onChange={(e) => {
-            const f = e.target.files?.[0];
-            if (f) onFile(f);
-            e.target.value = '';
-          }}
-        />
+          <span className="rp-plain">Wallpaper Engine</span>
+        </Tile>
       </div>
-
-      <div className={`set-page${settingsPage === 'system' ? ' active' : ''}`}>
-        <div className="ui-row">
-          <div className="txt">
-            <span>界面主题</span>
-            <em>液态：边缘折射与轻微色散；磨砂：更柔、更安静</em>
-          </div>
-          <GlassRadioGroup
-            name="theme"
-            options={[
-              { value: 'liquid', label: '液态玻璃' },
-              { value: 'frost', label: '磨砂玻璃' },
-            ]}
-            value={glassTheme}
-            onChange={(v) => onGlassTheme(v === 'frost' ? 'frost' : 'liquid')}
-          />
+      <p className="hint-line">{BG_DESC[bgChoice]}</p>
+      {bgChoice === 'custom' && (
+        <div className="group rp-group-gap">
+          <RowButton onClick={() => bgInputRef.current?.click()}>
+            <span className="lbl">
+              选择图片或视频…<small>2.5MB 以内的图片会被记住，大文件只在本次使用</small>
+            </span>
+            <span className="chev">›</span>
+          </RowButton>
         </div>
-        <div className="ui-row">
-          <div className="txt">
-            <span>性能优先</span>
-            <em>
+      )}
+      {bgChoice === 'wallpaper' && (
+        <div className="group rp-group-gap">
+          <RowButton onClick={onOpenWallpapers}>
+            <span className="lbl">打开壁纸库…</span>
+            <span className="chev">›</span>
+          </RowButton>
+        </div>
+      )}
+    </>
+  );
+
+  const materialTile = (v: GlassTheme, name: string, desc: string) => (
+    <Tile name={desc} selected={glassTheme === v} data={{ 'data-theme': v }} onClick={() => onGlassTheme(v)}>
+      <span className="rp-envbg" />
+      {coverUrl && <span className="rp-mosaic" style={{ backgroundImage: `url(${JSON.stringify(coverUrl)})` }} />}
+      <span className={`rp-mat ${v}`}>{name}</span>
+    </Tile>
+  );
+
+  const lookPage = (
+    <>
+      <div className="g-title">材质</div>
+      <div className="rp-tiles">
+        {materialTile('liquid', '液态', '液态 · 边缘折射、轻微色散')}
+        {materialTile('frost', '磨砂', '磨砂 · 更柔、更安静')}
+      </div>
+      <div className="g-title">画面</div>
+      <div className="group">
+        <div className="row">
+          <span className="lbl">
+            隐藏歌曲卡片<small>只留背景和歌词</small>
+          </span>
+          <Tg checked={uiHideCards} onChange={onToggleHideCards} label="隐藏歌曲卡片" />
+        </div>
+        <div className="row">
+          <span className="lbl">
+            隐藏歌词层<small>只留背景和星云</small>
+          </span>
+          <Tg checked={uiHideLyrics} onChange={onToggleHideLyrics} label="隐藏歌词层" />
+        </div>
+      </div>
+      <div className="g-title">性能</div>
+      <div className="group">
+        <div className="row">
+          <span className="lbl">
+            性能优先
+            <small>
               {perfPriority
                 ? '已关闭折射、色散和背景漂移'
                 : perfAutoLevel > 0
                   ? `检测到卡顿，已自动降低 ${perfAutoLevel} 级效果`
                   : '关闭折射、色散和背景漂移；卡顿时也会自动逐级降低'}
-            </em>
-          </div>
-          <Toggle small checked={perfPriority} onChange={onPerfPriority} label="性能优先" />
-        </div>
-        <div className="ui-row">
-          <div className="txt">
-            <span>会话记忆</span>
-            <em>自动恢复上次导入的歌单与播放歌曲</em>
-          </div>
-          <span className="val" style={{ color: '#6ee7b7' }}>
-            已启用
+            </small>
           </span>
-        </div>
-        <div className="ui-row">
-          <div className="txt">
-            <span>关于</span>
-            <em>Music Nebula v0.1.0 · Electron 桌面音乐播放器</em>
-          </div>
+          <Tg checked={perfPriority} onChange={onPerfPriority} label="性能优先" />
         </div>
       </div>
+      <p className="rp-foot">
+        会话记忆已开启 · 下次打开自动恢复歌单和正在播放的歌
+        <br />
+        Music Nebula v0.1.0
+      </p>
+    </>
+  );
+
+  const settingsWindow = (
+    <>
+      <div className="win-head">
+        <h2>设置</h2>
+      </div>
+      <Seg<DockSettingsPage>
+        wide
+        label="设置分类"
+        value={settingsPage}
+        options={[
+          { value: 'lyrics', label: '歌词' },
+          { value: 'bg', label: '背景' },
+          { value: 'look', label: '外观' },
+        ]}
+        onChange={setSettingsPage}
+      />
+      {settingsPage === 'lyrics' ? lyricsPage : settingsPage === 'bg' ? bgPage : lookPage}
+      {/* 始终在 DOM 里（qa 脚本直接对它 setInputFiles），由「自定义」块和「选择图片或视频…」打开 */}
+      <input
+        ref={bgInputRef}
+        type="file"
+        accept="image/*,video/*"
+        style={{ display: 'none' }}
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) onFile(f);
+          e.target.value = '';
+        }}
+      />
     </>
   );
 

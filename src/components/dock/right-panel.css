@@ -1,0 +1,548 @@
+/* ============================================================
+   右侧面板（账号 / 设置）专用样式（NEBULA_UI_SYSTEM §6 / §9.2 / §9.5，样张 E）
+   通用件（.win-head / .group / .row / .seg / .tg / .rng / .btn …）在 panel-kit.css；
+   这里只放右侧独有的：账号列表与详情、登录流程、歌词预览、背景 / 材质预览块。
+   一律限定在 .sd-panel 内；类名统一 rp- 前缀，避免和旧的全局类名互相影响。
+   ============================================================ */
+
+/* ---------- 账号：列表 ---------- */
+.sd-panel .rp-logo {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  overflow: hidden;
+  flex: none;
+  background: #fff;
+  display: grid;
+  place-items: center;
+}
+
+.sd-panel .rp-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.sd-panel .lbl small.rp-status {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sd-panel .rp-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--fg-disabled);
+  flex: none;
+}
+
+.sd-panel .rp-dot.on {
+  background: var(--success);
+}
+
+.sd-panel .rp-av {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  flex: none;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  font-size: 11px;
+  font-weight: 600;
+  color: #0b0c10;
+  background: var(--acc);
+}
+
+.sd-panel .rp-av img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.sd-panel .btn-row:hover .lbl {
+  color: var(--fg);
+}
+
+/* ---------- 账号：详情 ---------- */
+.sd-panel .rp-detail {
+  display: grid;
+  justify-items: center;
+  gap: 12px;
+  text-align: center;
+  padding: 6px 4px 4px;
+}
+
+.sd-panel .rp-detail .group {
+  width: 100%;
+  text-align: left;
+}
+
+.sd-panel .rp-big-logo {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  overflow: hidden;
+  background: #fff;
+}
+
+.sd-panel .rp-big-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.sd-panel .rp-detail h3 {
+  margin: 0;
+  font-family: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
+  font-weight: 600;
+  font-size: 22px;
+  letter-spacing: 0.02em;
+  color: var(--fg);
+}
+
+.sd-panel .rp-how {
+  margin: -4px 0 0;
+  font-size: 12px;
+  color: var(--fg-3);
+  max-width: 26ch;
+}
+
+.sd-panel .rp-acct-av {
+  width: 68px;
+  height: 68px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  font-size: 26px;
+  font-weight: 600;
+  color: #0b0c10;
+  background: var(--acc);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.4);
+}
+
+.sd-panel .rp-acct-av img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.sd-panel .rp-acct-meta {
+  font-size: 12px;
+  color: var(--fg-3);
+  margin-top: -6px;
+}
+
+/* ---------- 账号：登录流程 ---------- */
+.sd-panel .rp-flow {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 10px;
+}
+
+.sd-panel .rp-flow-status {
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--fg-2);
+  text-align: center;
+}
+
+.sd-panel .rp-qr {
+  align-self: center;
+  width: 172px;
+  height: 172px;
+  border-radius: 14px;
+  background: #fff;
+  padding: 12px;
+  display: grid;
+  place-items: center;
+}
+
+.sd-panel .rp-qr img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+}
+
+.sd-panel .rp-qr.is-empty {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.sd-panel .rp-cookie-input {
+  width: 100%;
+  min-height: 72px;
+  resize: vertical;
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 10px;
+  background: rgba(0, 0, 0, 0.25);
+  box-shadow: inset 0 0 0 1px var(--hair);
+  color: var(--fg);
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: left;
+  outline: none;
+  transition: box-shadow 0.12s ease;
+}
+
+.sd-panel .rp-cookie-input::placeholder {
+  color: var(--fg-3);
+}
+
+.sd-panel .rp-cookie-input:focus {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+}
+
+.sd-panel .rp-flow-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sd-panel .rp-flow-actions .btn.sec {
+  flex: 1;
+}
+
+/* ---------- 设置：页签 ---------- */
+.sd-panel .rp-tabs {
+  margin: 0 0 4px;
+}
+
+/* ---------- 设置：歌词实时预览 ---------- */
+.sd-panel .rp-preview {
+  position: relative;
+  height: 104px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--ebase);
+}
+
+.sd-panel .rp-preview .rp-pb {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(70% 90% at 20% 20%, color-mix(in srgb, var(--e1) 70%, transparent), transparent 70%),
+    radial-gradient(60% 80% at 85% 70%, color-mix(in srgb, var(--e2) 60%, transparent), transparent 70%);
+}
+
+.sd-panel .rp-preview .rp-pv {
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(120% 100% at 50% 50%, transparent 50%, rgba(0, 0, 0, 0.5));
+}
+
+.sd-panel .rp-preview .rp-next {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 18px;
+  text-align: center;
+  font-family: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
+  font-weight: 600;
+  font-size: 12px;
+  letter-spacing: 0.05em;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.sd-panel .rp-preview .rp-cur {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 46px;
+  text-align: center;
+  font-family: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+  transform-origin: 50% 50%;
+  filter: drop-shadow(0 1px 2px rgba(4, 6, 12, 0.55));
+}
+
+.sd-panel .rp-preview .rp-tag {
+  position: absolute;
+  right: 8px;
+  bottom: 6px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.4);
+  letter-spacing: 0.08em;
+}
+
+/* 三段扫字：和真实歌词层同一套算法（--wp = 这个字唱到的比例） */
+.sd-panel .rp-ch {
+  display: inline-block;
+  white-space: pre;
+  --now-k: calc(var(--wp, 0) * (1 - var(--wp, 0)) * 4);
+  --sung-col: color-mix(in srgb, var(--ly-now) calc(var(--now-k) * 100%), rgba(255, 255, 255, 0.96));
+  background: linear-gradient(
+    90deg,
+    var(--sung-col) calc((var(--wp, 0) - 0.045) * 100%),
+    var(--sung-col) calc((var(--wp, 0) - 0.018) * 100%),
+    color-mix(in srgb, var(--sung-col) 60%, rgba(255, 255, 255, 0.34)) calc(var(--wp, 0) * 100%),
+    rgba(255, 255, 255, 0.34) calc((var(--wp, 0) + 0.05) * 100%)
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  text-shadow: 0 0 14px color-mix(in srgb, var(--ly-now) calc(var(--now-k) * 55%), transparent);
+  transform: translateY(calc(-1 * var(--wp, 0) * var(--rise, 2px)));
+}
+
+.sd-panel .rp-preview.float .rp-ch {
+  background: none;
+  -webkit-background-clip: initial;
+  background-clip: initial;
+  color: var(--sung-col);
+  opacity: calc(0.3 + 0.7 * var(--wp, 0));
+}
+
+/* 自定义歌词颜色：原生取色器画成 24px 圆形色块 */
+.sd-panel .rp-swatch {
+  appearance: none;
+  -webkit-appearance: none;
+  flex: none;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: none;
+  cursor: pointer;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22);
+  transition: transform 0.22s var(--ease-jelly);
+}
+
+.sd-panel .rp-swatch:hover {
+  transform: scale(1.07);
+}
+
+.sd-panel .rp-swatch::-webkit-color-swatch-wrapper {
+  padding: 0;
+}
+
+.sd-panel .rp-swatch::-webkit-color-swatch {
+  border: 0;
+  border-radius: 50%;
+}
+
+/* ---------- 设置：背景 / 材质 预览块 ---------- */
+.sd-panel .rp-tiles {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.sd-panel .rp-tile {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.sd-panel .rp-tile .rp-art {
+  position: relative;
+  height: 92px;
+  border-radius: 12px;
+  overflow: hidden;
+  isolation: isolate;
+  background: var(--ebase);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.06);
+  transition: box-shadow 0.16s ease;
+}
+
+.sd-panel .rp-tile .rp-name {
+  font-size: 12px;
+  color: var(--fg-2);
+  padding-left: 2px;
+  transition: color 0.12s ease;
+}
+
+.sd-panel .rp-tile:hover .rp-name {
+  color: var(--fg);
+}
+
+.sd-panel .rp-tile[aria-pressed='true'] .rp-art {
+  box-shadow: inset 0 0 0 2px rgba(255, 255, 255, 0.82);
+}
+
+.sd-panel .rp-tile[aria-pressed='true'] .rp-name {
+  color: var(--fg);
+}
+
+.sd-panel .rp-tile .rp-check {
+  position: absolute;
+  z-index: 2;
+  right: 7px;
+  top: 7px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.92);
+  color: #0b0c10;
+  font-size: 11px;
+  font-weight: 700;
+  display: none;
+  place-items: center;
+}
+
+.sd-panel .rp-tile[aria-pressed='true'] .rp-check {
+  display: grid;
+}
+
+.sd-panel .rp-envbg {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(70% 90% at 15% 15%, color-mix(in srgb, var(--e1) 75%, transparent), transparent 70%),
+    radial-gradient(60% 80% at 90% 60%, color-mix(in srgb, var(--e2) 65%, transparent), transparent 70%),
+    radial-gradient(60% 70% at 40% 120%, color-mix(in srgb, var(--e3) 60%, transparent), transparent 70%);
+}
+
+.sd-panel .rp-ghost {
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  width: 86px;
+  aspect-ratio: 1;
+  translate: -50% -50%;
+  background-size: cover;
+  background-position: center;
+  opacity: 0.55;
+  filter: blur(2px) saturate(0.85);
+  -webkit-mask-image: radial-gradient(closest-side, #000 30%, transparent 100%);
+  mask-image: radial-gradient(closest-side, #000 30%, transparent 100%);
+  mix-blend-mode: luminosity;
+}
+
+.sd-panel .rp-photo {
+  position: absolute;
+  inset: 0;
+  background-size: cover;
+  background-position: center;
+}
+
+.sd-panel .rp-photo::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(transparent 40%, rgba(0, 0, 0, 0.45));
+}
+
+.sd-panel .rp-plain {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--fg-3);
+  font-size: 11px;
+  text-align: center;
+  transition: color 0.12s ease;
+}
+
+.sd-panel .rp-plain b {
+  font-size: 22px;
+  font-weight: 300;
+  line-height: 1;
+}
+
+.sd-panel .rp-tile:hover .rp-plain {
+  color: var(--fg-2);
+}
+
+.sd-panel .rp-badge {
+  position: absolute;
+  z-index: 1;
+  left: 8px;
+  bottom: 6px;
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.75);
+  letter-spacing: 0.04em;
+}
+
+.sd-panel .rp-mosaic {
+  position: absolute;
+  inset: -12%;
+  background-size: 46px 46px;
+  background-position: center;
+  transform: rotate(-8deg);
+}
+
+.sd-panel .rp-mat {
+  position: absolute;
+  z-index: 1;
+  left: 50%;
+  top: 50%;
+  translate: -50% -50%;
+  width: 92px;
+  height: 30px;
+  border-radius: 15px;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  color: var(--fg);
+  background: rgba(0, 0, 0, 0.08);
+}
+
+.sd-panel .rp-mat.liquid {
+  -webkit-backdrop-filter: blur(1.5px) saturate(1.6);
+  backdrop-filter: blur(1.5px) saturate(1.6);
+  box-shadow:
+    inset 0 0 1.5px 1px rgba(255, 255, 255, 0.4),
+    inset 0 0 10px 2px rgba(255, 255, 255, 0.08),
+    0 6px 14px rgba(0, 0, 0, 0.3);
+}
+
+.sd-panel .rp-mat.frost {
+  -webkit-backdrop-filter: blur(12px) saturate(1.4);
+  backdrop-filter: blur(12px) saturate(1.4);
+  box-shadow:
+    inset 0 0 1.5px 1px rgba(255, 255, 255, 0.3),
+    0 6px 14px rgba(0, 0, 0, 0.3);
+}
+
+.sd-panel .rp-group-gap {
+  margin-top: 10px;
+}
+
+.sd-panel .rp-foot {
+  font-size: 11px;
+  color: var(--fg-3);
+  text-align: center;
+  margin: 14px 0 0;
+  line-height: 1.6;
+}
+
+.sd-panel .rp-tile:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.55);
+  outline-offset: 2px;
+}
+
+.sd-panel .btn-row:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.55);
+  outline-offset: -2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sd-panel .rp-tile .rp-art,
+  .sd-panel .rp-swatch {
+    transition: none !important;
+  }
+}

@@ -305,10 +305,10 @@ async function main() {
   // 点「设置」小球滑出右侧面板（样张 F：小球 → 固定侧面板）→ 切到背景设置
   await page.locator('.sd-rail.sd-right .sd-orb[aria-label="设置"]').click();
   await page.waitForTimeout(600);
-  await page.locator('.set-tabs span', { hasText: '背景设置' }).click();
+  await page.locator('.sd-panel.sd-right .seg.wide button', { hasText: '背景' }).click();
   await page.waitForTimeout(400);
   // 跟随当前播放歌曲封面（底部第三张方案卡）；无歌单时回退隐藏的午夜星空
-  await page.locator('.bg-scheme').nth(2).click();
+  await page.locator('.sd-panel.sd-right [data-bg="env"]').click();
   await page.waitForTimeout(400);
   log('封面背景(无封面→环境光中性兜底)', await page.evaluate(() => !!document.querySelector('.bg-layer.bg-env, .bg-layer.bg-midnight')));
 

@@ -1,0 +1,379 @@
+/* ============================================================
+   左侧面板专用样式（样张 F：歌单 / 导入；NEBULA_UI_SYSTEM §6 / §9.2）
+   通用件（win-head / group / row / btn / back …）在 panel-kit.css。
+   这里的规则一律限定在 .sd-panel 内——旧的全局样式里还有 .pl-head 等同名类。
+   hover 只让元素自身提亮；当前项 = --acc 文字 + 左侧 2px 指示条；无发光。
+   ============================================================ */
+
+/* 标题行右侧：数量 + 「刷新」，保持低调 */
+.sd-panel .win-side {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 2px;
+}
+
+.sd-panel .win-head .btn.text {
+  height: 22px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--fg-3);
+}
+
+.sd-panel .win-head .btn.text:hover:not(:disabled) {
+  color: var(--fg);
+}
+
+/* ---------- 平台筛选 ---------- */
+.sd-panel .chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 0 0 4px;
+}
+
+.sd-panel .chip-f {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 15px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  color: var(--fg-2);
+  background: rgba(255, 255, 255, 0.05);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+  transition:
+    background 0.12s ease,
+    color 0.12s ease;
+}
+
+.sd-panel .chip-f:hover {
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.sd-panel .chip-f[aria-pressed='true'] {
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.12);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
+}
+
+.sd-panel .chip-f img {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  object-fit: cover;
+}
+
+/* ---------- 歌单列表 ---------- */
+.sd-panel .pl-row {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 56px;
+  padding: 8px 12px;
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.sd-panel .pl-row + .pl-row::before,
+.sd-panel .pl-row + .pl-loading::before {
+  content: '';
+  position: absolute;
+  left: 64px;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: var(--sep);
+}
+
+.sd-panel .pl-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.sd-panel .pl-row .cv,
+.sd-panel .pl-head .cv,
+.sd-panel .song .cv {
+  display: block;
+  flex: none;
+  background-size: cover;
+  background-position: center;
+}
+
+/* 没有封面：中性占位，不取色 */
+.sd-panel .cv.ph {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.sd-panel .pl-row .cv {
+  width: 40px;
+  height: 40px;
+  border-radius: 8px;
+}
+
+.sd-panel .pl-row .lbl {
+  color: var(--fg-row);
+}
+
+.sd-panel .pl-row:hover .lbl {
+  color: var(--fg);
+}
+
+.sd-panel .pl-row .lbl .nm {
+  display: block;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sd-panel .pl-row .lbl small {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.sd-panel .pl-row .lbl small img {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #fff;
+  object-fit: cover;
+}
+
+.sd-panel .pl-row:hover .chev {
+  transform: translateX(2px);
+  color: var(--fg-2);
+}
+
+/* 当前项（§6）：--acc 文字 + 左侧 2px 指示条 */
+.sd-panel .pl-row.is-cur::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 14px;
+  bottom: 14px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--acc);
+}
+
+.sd-panel .pl-row.is-cur .lbl {
+  color: var(--acc);
+}
+
+.sd-panel .now {
+  font-size: 11px;
+  color: var(--acc);
+  white-space: nowrap;
+}
+
+/* 正在获取某平台的歌单：弱文字，不可点 */
+.sd-panel .pl-loading {
+  position: relative;
+}
+
+.sd-panel .pl-loading .lbl {
+  font-size: 12px;
+  color: var(--fg-3);
+}
+
+.sd-panel .empty-act {
+  margin: 12px 4px 0;
+}
+
+/* ---------- 歌单详情 ---------- */
+/* 重置旧全局 .pl-head（吸顶 + 毛玻璃底）：这里是普通的页头 */
+.sd-panel .pl-head {
+  position: static;
+  z-index: auto;
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 14px;
+  align-items: end;
+  padding: 2px 4px 14px;
+  background: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  border-radius: 0;
+}
+
+.sd-panel .pl-head .cv {
+  width: 96px;
+  height: 96px;
+  border-radius: 12px;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.4);
+}
+
+.sd-panel .pl-info {
+  min-width: 0;
+}
+
+.sd-panel .pl-head h3 {
+  margin: 0 0 4px;
+  font-family: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
+  font-weight: 600;
+  font-size: 22px;
+  line-height: 1.25;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+
+.sd-panel .pl-head .meta {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--fg-3);
+}
+
+.sd-panel .pl-head .meta img {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  object-fit: cover;
+}
+
+.sd-panel .pl-actions {
+  display: flex;
+  gap: 8px;
+  margin: 0 4px 12px;
+}
+
+/* 歌曲行：歌单可能上千首，离屏的行不参与布局和绘制 */
+.sd-panel .song {
+  position: relative;
+  display: grid;
+  grid-template-columns: 22px 34px 1fr;
+  gap: 10px;
+  align-items: center;
+  min-height: 48px;
+  padding: 6px 12px;
+  cursor: pointer;
+  content-visibility: auto;
+  contain-intrinsic-size: 48px;
+  transition: background 0.12s ease;
+}
+
+.sd-panel .song + .song::before {
+  content: '';
+  position: absolute;
+  left: 78px;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: var(--sep);
+}
+
+.sd-panel .song:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.sd-panel .song .idx {
+  font-size: 11px;
+  color: var(--fg-3);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+.sd-panel .song .cv {
+  width: 34px;
+  height: 34px;
+  border-radius: 6px;
+}
+
+.sd-panel .song .t {
+  min-width: 0;
+  font-size: 13px;
+  color: var(--fg-row);
+  line-height: 1.3;
+}
+
+.sd-panel .song .t b {
+  display: block;
+  font-weight: 400;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sd-panel .song .t small {
+  display: block;
+  font-size: 11px;
+  color: var(--fg-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sd-panel .song:hover .t {
+  color: var(--fg);
+}
+
+.sd-panel .song.is-cur::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 2px;
+  border-radius: 2px;
+  background: var(--acc);
+}
+
+.sd-panel .song.is-cur .t b,
+.sd-panel .song.is-cur .idx {
+  color: var(--acc);
+}
+
+/* ---------- 导入 ---------- */
+.sd-panel .field {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+}
+
+/* 覆盖旧的 .manual-import 全局样式（40px 高 + 左侧搜索图标留白） */
+.sd-panel .manual-import .input {
+  flex: 1;
+  min-width: 0;
+  width: auto;
+  height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--fg);
+  background: rgba(0, 0, 0, 0.25);
+  box-shadow: inset 0 0 0 1px var(--hair);
+  outline: none;
+  transition: box-shadow 0.12s ease;
+}
+
+.sd-panel .manual-import .input::placeholder {
+  color: var(--fg-3);
+}
+
+.sd-panel .manual-import .input:hover {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.sd-panel .manual-import .input:focus {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+}
+
+.sd-panel .ok-line {
+  font-size: 12px;
+  color: var(--fg-2);
+  padding: 0 12px 12px;
+}
