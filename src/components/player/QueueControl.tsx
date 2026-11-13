@@ -35,7 +35,7 @@ export const QueueControl = memo(function QueueControl() {
       <button
         className={`bp-ctrl${open ? ' is-active' : ''}`}
         aria-label="播放队列"
-        title="播放队列"
+        data-tip="播放队列"
         onClick={() => setOpen((o) => !o)}
       >
         <IconQueue />
@@ -65,7 +65,7 @@ export const QueueControl = memo(function QueueControl() {
               <button
                 className="queue-remove"
                 aria-label={`移除《${t.title}》`}
-                title="从队列移除"
+                data-tip="从队列移除"
                 onClick={() => audioPlayer.removeUpcoming(t.id)}
               >
                 ×

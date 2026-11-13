@@ -225,7 +225,7 @@ function SongDetailPanel({
                   ))}
                 </div>
                 {albumName && (
-                  <button className="sd-album sd-album-link" onClick={openAlbumClick} title="查看专辑">
+                  <button className="sd-album sd-album-link" onClick={openAlbumClick} data-tip="查看专辑">
                     专辑：{albumName}
                   </button>
                 )}
@@ -361,7 +361,7 @@ function ArtistPanel({
               key={a.id}
               className="ar-album"
               onClick={() => onOpenAlbum(platform, a.id, a.name)}
-              title={`查看专辑《${a.name}》`}
+              data-tip={`查看专辑《${a.name}》`}
             >
               {a.cover ? <img className="ar-album-cover" src={a.cover} alt="" loading="lazy" /> : <span className="ar-album-cover is-ph" />}
               <div className="ar-album-meta">

@@ -6461,3 +6461,24 @@ body {
   max-height: calc(100vh - 180px);
   overflow-y: auto;
 }
+
+/* Tooltip（NEBULA_UI_SYSTEM §9.6）：G3，圆角 r-sm，12px，延迟 400ms（TooltipLayer） */
+.tooltip-bubble {
+  position: fixed; left: 0; top: 0; z-index: 1000; pointer-events: none;
+  max-width: 260px; padding: 5px 9px; border-radius: 10px;
+  font-size: 12px; line-height: 1.4; color: var(--fg); white-space: nowrap;
+  background: rgba(0, 0, 0, calc(var(--g3-tint) + var(--tint-adapt) * 0.5));
+  -webkit-backdrop-filter: blur(var(--g3-blur)) saturate(var(--g3-sat));
+  backdrop-filter: blur(var(--g3-blur)) saturate(var(--g3-sat));
+  box-shadow: inset 0 0 1.5px 1px rgba(255,255,255, calc(var(--g3-rim) * 0.62)), 0 8px 24px rgba(0,0,0,.35);
+  opacity: 0; transform: translateY(2px);
+  transition: opacity 0.12s ease, transform 0.12s ease;
+}
+.tooltip-bubble.is-visible { opacity: 1; transform: none; }
+@media (prefers-reduced-motion: reduce) { .tooltip-bubble { transition: opacity 0.12s ease; transform: none; } }
+
+/* 性能降级第 4 级（NEBULA_UI_SYSTEM §3.7）：停掉环境光漂移和雾中封面的呼吸（lib/perf 写根节点 data-perf） */
+[data-perf='4'] .bg-env .env-blob,
+[data-perf='4'] .bg-env .env-ghost .ghost-near {
+  animation: none;
+}

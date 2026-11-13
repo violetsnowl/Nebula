@@ -1,5 +1,5 @@
 import { displacementMapUrl } from './displacement';
-import { GLASS_THEMES, glassThemeCssVars, type GlassTheme, type GlassTier } from './materials';
+import { effectiveTierParams, glassThemeCssVars, type GlassTheme, type GlassTier, type PerfLevel } from './materials';
 
 /**
  * GlassManager（docs/design/NEBULA_UI_SYSTEM.md §3.6）：
@@ -33,6 +33,8 @@ interface Surface {
 let defs: SVGDefsElement | null = null;
 let seq = 0;
 let currentTheme: GlassTheme = 'liquid';
+/** 性能降级档位（§3.7）：由 setGlassPerfLevel 写入。 */
+let perfLevel: PerfLevel = 0;
 const surfaces = new Set<Surface>();
 
 function svgEl<K extends keyof SVGElementTagNameMap>(tag: K, attrs: Record<string, string>): SVGElementTagNameMap[K] {
@@ -90,7 +92,10 @@ function createFilter(id: string): FilterNodes {
 }
 
 function applyScales(s: Surface): void {
-  const p = GLASS_THEMES[currentTheme][s.tier];
+  const p = effectiveTierParams(currentTheme, s.tier, perfLevel);
+  // 折射被降级关掉时，backdrop-filter 里干脆不挂 SVG 滤镜（scale = 0 的滤镜仍要跑一遍）
+  if (p.refraction <= 0) s.el.style.setProperty('--glass-filter', 'blur(0px)');
+  else s.el.style.setProperty('--glass-filter', `url(#${s.nodes.filter.id})`);
   const scale = s.ready ? p.refraction * 2 : 0;
   s.nodes.r.setAttribute('scale', String(scale));
   s.nodes.g.setAttribute('scale', String(scale * (1 - p.dispersion)));
@@ -130,7 +135,6 @@ export function registerGlass(el: HTMLElement, tier: GlassTier): () => void {
   surfaces.add(s);
   applyScales(s);
   rebuild(s);
-  el.style.setProperty('--glass-filter', `url(#${id})`);
   const ro = new ResizeObserver(() => {
     window.clearTimeout(s.timer);
     s.timer = window.setTimeout(() => rebuild(s), RESIZE_DEBOUNCE_MS);
@@ -148,9 +152,19 @@ export function registerGlass(el: HTMLElement, tier: GlassTier): () => void {
 /** 切换材质主题：写根节点档位变量 + data-glass 属性 + 更新所有折射滤镜。 */
 export function applyGlassTheme(theme: GlassTheme): void {
   currentTheme = theme;
+  applyAll();
+}
+
+/** 性能降级（§3.7）：按档位关色散 / G2 折射 / G1 折射并退回磨砂参数。 */
+export function setGlassPerfLevel(level: PerfLevel): void {
+  perfLevel = level;
+  applyAll();
+}
+
+function applyAll(): void {
   if (typeof document === 'undefined') return;
   const root = document.documentElement;
-  Object.entries(glassThemeCssVars(theme)).forEach(([k, v]) => root.style.setProperty(k, v));
-  root.dataset.glass = theme;
+  Object.entries(glassThemeCssVars(currentTheme, perfLevel)).forEach(([k, v]) => root.style.setProperty(k, v));
+  root.dataset.glass = currentTheme;
   surfaces.forEach(applyScales);
 }

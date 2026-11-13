@@ -37,7 +37,7 @@ export const VolumeControl = memo(function VolumeControl({ state }: { state: Aud
       <button
         className="bp-ctrl"
         aria-label={state.muted ? '取消静音' : '静音'}
-        title="音量（滚轮调节）"
+        data-tip="音量（滚轮调节）"
         onClick={() => audioPlayer.toggleMute()}
       >
         <IconVolume muted={state.muted} />

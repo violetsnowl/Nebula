@@ -35,7 +35,8 @@ export const TopBar = memo(function TopBar({
         <button
           ref={localRef}
           className="local-btn glass-g2"
-          title="导入本地音乐（选择文件夹，自动解析 ID3 标签）"
+          data-tip="导入本地音乐（选择文件夹，自动解析 ID3 标签）"
+          aria-label="导入本地音乐"
           disabled={localBusy}
           onClick={onOpenLocal}
         >

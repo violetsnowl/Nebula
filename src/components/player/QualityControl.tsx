@@ -39,7 +39,7 @@ export const QualityControl = memo(function QualityControl({
     <div className="quality-ctl" ref={rootRef}>
       <button
         className={`bp-ctrl bp-quality${open ? ' is-active' : ''}`}
-        title="音质"
+        data-tip="音质"
         onClick={() => setOpen((o) => !o)}
       >
         {/* 完整显示中文标签，不截断（NEBULA_UI_SYSTEM §9.1） */}

@@ -159,7 +159,7 @@ export function NowPlayingPanel({
               <button
                 className={`ctrl-btn${translateOn ? ' is-active' : ''}`}
                 aria-label="歌词翻译"
-                title="外文歌词翻译开关"
+                data-tip="外文歌词翻译开关"
                 onClick={onToggleTranslate}
               >
                 译

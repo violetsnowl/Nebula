@@ -129,7 +129,7 @@ export function WallpaperPicker({ onClose, onApply, standalone }: WallpaperPicke
               key={item.id}
               className="wp-card"
               onClick={() => void apply(item)}
-              title={item.playable ? '点击设为背景' : kindLabel(item)}
+              data-tip={item.playable ? '点击设为背景' : kindLabel(item)}
             >
               <div className="wp-preview">
                 {item.playable && item.mediaType === 'video' && item.mediaUrl ? (

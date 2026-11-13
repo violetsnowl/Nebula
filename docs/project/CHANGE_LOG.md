@@ -6,6 +6,39 @@
 
 ---
 
+## #97 — 2026-11-12 — 全局 UI 重构 P4（四）：性能自动降级 + 自绘提示气泡（P4 完成）
+
+**目标**：§3.7 性能降级（P1 起推迟到 P4）与 §9.6 Tooltip，完成 P4 全部内容。
+
+**改动**
+- `src/lib/perf.ts`（新）：帧监测。
+  - 每 10 秒采样一次、每次 2 秒，只在窗口可见时进行；两次采样之间不占用帧。
+  - 平均帧耗时 > 20ms 且过半的帧 > 20ms 记为"慢"，连续两次都慢才降一级。
+  - 本次运行内只降不升。
+  - `applyPerfLevel` 写根节点 `data-perf`。
+- `src/lib/glass/materials.ts` / `manager.ts`：
+  - 新增降级档位 `PerfLevel`（0 完整 → 1 关色散 → 2 关 G2 折射 → 3 关 G1 折射并退回磨砂参数 → 4 停环境光漂移）；
+  - `effectiveTierParams` 计算各档实际参数；
+  - `setGlassPerfLevel` 与主题切换共用 `applyAll`；
+  - 折射关掉时 `--glass-filter` 直接换成 `blur(0px)`，不再挂 SVG 滤镜。
+- `src/hooks/interfaceSettings/useInterfaceSettings.ts`：「性能优先」开关（持久化），以及帧监测得到的自动档位。
+- `src/components/AccountDock.tsx`：设置 → 系统设置新增「性能优先」开关；自动降级后，说明文字显示已降几级。
+- `src/styles.css`：第 4 级停掉环境光漂移和雾中封面的呼吸。
+- 提示气泡（由 implementer 子代理实现，主对话抽查并补上 Dock 登录小点的提示）：
+  - `src/components/TooltipLayer.tsx`（新）：全局委托，元素用 `data-tip` 声明文字；悬停 400ms 出现，G3，圆角 10px，12px 文字；默认在元素上方，放不下时翻到下方，贴边时收进视口；按下、滚轮、按键、失焦或元素被移除时收起；不响应触摸。
+  - 13 处原生 `title` 全部换成 `data-tip`；只靠 title 提供可访问名称的两处补了 `aria-label`。
+- 真源 §3.7 写入实现细节，§9.6 标注 Tooltip 已实现，§13 P4 行更新状态；ARCHITECTURE 登记 `lib/perf.ts`；CONTEXT_SNAPSHOT 同步。
+
+**验证**
+- `tsc` ✔；check-arch ✔；`pnpm build` ✔；`pnpm qa` ✔（控制台错误 0，空闲帧 6.8ms）。
+- 无头自查：
+  - 打开「性能优先」后：`data-perf=4`，`--g1-blur` 2.25px → 16px（退回磨砂），播放条 `--glass-filter` 变为 `blur(0px)`，环境光动画停止；
+  - 关掉后完全恢复；
+  - 悬停「回到中心」约 0.6s 后，提示气泡出现在按钮上方。
+- 已知小问题：在两个都有提示的相邻元素之间移动时，会重新等 400ms，没有做到"已显示时直接切换"。不影响使用。
+
+**遗留**：P4 整批待用户桌面验收。
+
 ## #96 — 2026-11-12 — 全局 UI 重构 P4（三）：搜索、弹窗、右键菜单、Toast 换装 + 清理发光与兜底
 
 **目标**：§9.3 / §9.4 / §9.6，同时完成 P0 遗留的两项清理：删除全局提亮兜底，合并重复的 `.glass-btn`。

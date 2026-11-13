@@ -47,6 +47,11 @@ interface AccountDockProps {
   /** 材质主题（液态 / 磨砂，NEBULA_UI_SYSTEM §3.2）。 */
   glassTheme: GlassTheme;
   onGlassTheme: (theme: GlassTheme) => void;
+  /** 性能优先（NEBULA_UI_SYSTEM §3.7）：关掉折射、色散与环境光漂移。 */
+  perfPriority: boolean;
+  onPerfPriority: (on: boolean) => void;
+  /** 帧监测自动降到的档位（0 = 未降级）。 */
+  perfAutoLevel: number;
 }
 
 /** 开关：silent-otter-72 复刻（原型原样）。 */
@@ -506,6 +511,9 @@ export const AccountDock = memo(function AccountDock({
   onToggleHideLyrics,
   glassTheme,
   onGlassTheme,
+  perfPriority,
+  onPerfPriority,
+  perfAutoLevel,
 }: AccountDockProps) {
   const [openRow, setOpenRow] = useState<'login' | 'settings' | null>(null);
   const [activePlatform, setActivePlatform] = useState(selectedPlatform);
@@ -904,6 +912,19 @@ export const AccountDock = memo(function AccountDock({
         </div>
         <div className="ui-row">
           <div className="txt">
+            <span>性能优先</span>
+            <em>
+              {perfPriority
+                ? '已关闭折射、色散和背景漂移'
+                : perfAutoLevel > 0
+                  ? `检测到卡顿，已自动降低 ${perfAutoLevel} 级效果`
+                  : '关闭折射、色散和背景漂移；卡顿时也会自动逐级降低'}
+            </em>
+          </div>
+          <Toggle small checked={perfPriority} onChange={onPerfPriority} label="性能优先" />
+        </div>
+        <div className="ui-row">
+          <div className="txt">
             <span>会话记忆</span>
             <em>自动恢复上次导入的歌单与播放歌曲</em>
           </div>
@@ -951,7 +972,7 @@ export const AccountDock = memo(function AccountDock({
                   key={p}
                   className={`dot${on ? ' is-on' : ''}`}
                   style={{ '--brand': meta.brand } as React.CSSProperties}
-                  title={`${meta.name}${on ? ' · 已登录' : ' · 未登录'}`}
+                  data-tip={`${meta.name}${on ? ' · 已登录' : ' · 未登录'}`}
                 >
                   <img src={meta.logo} alt="" draggable={false} />
                 </span>

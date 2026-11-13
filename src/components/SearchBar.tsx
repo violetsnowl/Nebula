@@ -235,7 +235,8 @@ export function SearchBar({
             type="button"
             className={`gooey-pill glass-g1${isExpanded ? '' : ' is-collapsed'}`}
             onClick={handleExpand}
-            title={isExpanded ? undefined : '搜索歌曲 / 歌手'}
+            data-tip={isExpanded ? undefined : '搜索歌曲 / 歌手'}
+            aria-label={isExpanded ? undefined : '搜索歌曲 / 歌手'}
           >
             {!isExpanded && <SearchIcon layoutId={iconLayoutId} />}
             <motion.input

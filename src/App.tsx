@@ -10,6 +10,7 @@ import { AccountDock } from './components/AccountDock';
 import { PlaylistDock } from './components/PlaylistDock';
 import { WallpaperPicker } from './components/WallpaperPicker';
 import { OverlayStack } from './components/OverlayStack';
+import { TooltipLayer } from './components/TooltipLayer';
 import { LyricSourceProbe } from './components/LyricSourceProbe';
 import { audioPlayer } from './lib/audio/AudioPlayer';
 import type { PanController } from './lib/panEngine';
@@ -169,7 +170,17 @@ export default function App() {
     handleBgFile,
   } = background;
   const interfaceSettings = useInterfaceSettings();
-  const { uiHideCards, uiHideLyrics, toggleHideCards, toggleHideLyrics, glassTheme, setGlassTheme } = interfaceSettings;
+  const {
+    uiHideCards,
+    uiHideLyrics,
+    toggleHideCards,
+    toggleHideLyrics,
+    glassTheme,
+    setGlassTheme,
+    perfPriority,
+    setPerfPriority,
+    perfAutoLevel,
+  } = interfaceSettings;
 
   // ---------- 搜索聚簇 + 舞台（useSearchCluster 先声明 refs，useStage 渲染时填充） ----------
   const controllerRef = useRef<PanController | null>(null);
@@ -556,6 +567,9 @@ export default function App() {
         onOpenWallpapers={openWallpapers}
         glassTheme={glassTheme}
         onGlassTheme={setGlassTheme}
+        perfPriority={perfPriority}
+        onPerfPriority={setPerfPriority}
+        perfAutoLevel={perfAutoLevel}
       />
 
       <PlaylistDock
@@ -576,7 +590,7 @@ export default function App() {
         onSongContextMenu={openContextMenu}
       />
 
-      <button ref={centerRef} className="center-btn glass-g2" onClick={handleReset} aria-label="回到中心" title="回到中心">
+      <button ref={centerRef} className="center-btn glass-g2" onClick={handleReset} aria-label="回到中心" data-tip="回到中心">
         <span>⌖</span>
       </button>
 
@@ -622,6 +636,7 @@ export default function App() {
         onCloseContextMenu={closeContextMenu}
         onInsertNext={insertNextSong}
       />
+      <TooltipLayer />
         </main>
       </VisualAtmosphereProvider>
     </InterfaceSettingsProvider>

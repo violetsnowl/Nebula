@@ -76,19 +76,19 @@ export const BottomPlayer = memo(function BottomPlayer({
             className="bp-cover"
             style={coverStyle}
             aria-label="进入听音空间"
-            title="进入听音空间"
+            data-tip="进入听音空间"
             disabled={!hasSong}
             onClick={onOpenNowPlaying}
           />
           <div className="bp-meta">
-            <button className="bp-title" disabled={!hasSong} onClick={onOpenSongDetail} title="查看歌曲详情">
+            <button className="bp-title" disabled={!hasSong} onClick={onOpenSongDetail} data-tip="查看歌曲详情">
               {state.song?.title ?? '未在播放'}
             </button>
             <button
               className="bp-artist"
               disabled={!hasSong || !state.song?.artist}
               onClick={() => state.song && onOpenArtist(state.song.artist)}
-              title="查看歌手"
+              data-tip="查看歌手"
             >
               {state.song ? (
                 <>
@@ -125,7 +125,7 @@ export const BottomPlayer = memo(function BottomPlayer({
           <button
             className={`bp-ctrl${mode !== 'sequential' ? ' is-active' : ''}`}
             aria-label="播放模式"
-            title="切换播放模式"
+            data-tip="切换播放模式"
             disabled={!hasSong}
             onClick={onCycleMode}
           >
@@ -134,7 +134,7 @@ export const BottomPlayer = memo(function BottomPlayer({
           <VolumeControl state={state} />
           <QueueControl />
           <QualityControl qualities={qualities} quality={quality} onSelectQuality={onSelectQuality} />
-          <button className="bp-ctrl bp-ctrl--ghost" aria-label="评论" title="查看评论" disabled={!hasSong} onClick={onOpenComments}>
+          <button className="bp-ctrl bp-ctrl--ghost" aria-label="评论" data-tip="查看评论" disabled={!hasSong} onClick={onOpenComments}>
             <IconComments />
           </button>
         </div>
