@@ -35,6 +35,109 @@ export function bezelWidth(height: number): number {
   return Math.min(height * 0.46, 30);
 }
 
+/** 单个像素的位移编码（R/G，B 恒 128）。所有贴图都用它，保证九宫格拼出来和整张图逐像素一致。 */
+function encodePixel(px: number, py: number, hx: number, hy: number, r: number, bezel: number): [number, number] {
+  const qx = Math.abs(px) - hx;
+  const qy = Math.abs(py) - hy;
+  const sd = Math.hypot(Math.max(qx, 0), Math.max(qy, 0)) + Math.min(Math.max(qx, qy), 0) - r;
+  let nx = 0;
+  let ny = 0;
+  let m = 0;
+  if (sd < 0) {
+    const t = Math.min(-sd / bezel, 1);
+    m = LUT[Math.round(t * LUT_SIZE)]!;
+    if (qx > 0 && qy > 0) {
+      const len = Math.hypot(qx, qy) || 1;
+      nx = (qx / len) * Math.sign(px);
+      ny = (qy / len) * Math.sign(py);
+    } else if (qx > qy) {
+      nx = Math.sign(px);
+    } else {
+      ny = Math.sign(py);
+    }
+  }
+  return [128 - nx * m * 127, 128 - ny * m * 127];
+}
+
+function canvasUrl(w: number, h: number, fill: (d: Uint8ClampedArray) => void): string {
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return '';
+  const img = ctx.createImageData(w, h);
+  fill(img.data);
+  ctx.putImageData(img, 0, 0);
+  return canvas.toDataURL('image/png');
+}
+
+/** 九宫格贴图：4 个角 R×R + 4 条边（1 像素宽 / 高，拉伸使用）。中间区域是中性色，由 feFlood 填。 */
+export interface DisplacementTiles {
+  /** 角块边长：max(圆角, bezel)。元素宽高都 ≥ 2R 时九宫格成立。 */
+  R: number;
+  tl: string;
+  tr: string;
+  bl: string;
+  br: string;
+  top: string;
+  bottom: string;
+  left: string;
+  right: string;
+}
+
+const tileCache = new Map<string, DisplacementTiles>();
+
+/**
+ * 生成九宫格位移贴图（NEBULA_UI_SYSTEM §3.6，P4 修正）。
+ * 圆角矩形的位移只取决于"离最近边或角的几何关系"：角块只和圆角、bezel 有关，边条只和离边距离有关，与元素宽度无关。
+ * 所以元素宽度变化（Dock 小球展开成胶囊、搜索胶囊展开）时只需移动这些块的位置，不用重画贴图，每一帧都和真实形状对齐。
+ * 只依赖高度和圆角：height / radius 不变就复用缓存。
+ */
+export function displacementTiles(height: number, radius: number): DisplacementTiles | null {
+  const h = Math.max(2, Math.round(height));
+  const r = Math.max(0, Math.min(radius, h / 2));
+  const bezel = bezelWidth(h);
+  const R = Math.ceil(Math.min(Math.max(r, bezel), h / 2));
+  if (R < 1) return null;
+  const key = `${h}x${r.toFixed(1)}`;
+  const hit = tileCache.get(key);
+  if (hit) return hit;
+
+  // 在一个 (2R+1)² 的虚拟圆角矩形上逐像素计算，再切成角块和中线条：与真实元素对应位置的数值完全相同
+  const S = 2 * R + 1;
+  const hx = S / 2 - r;
+  const hy = S / 2 - r;
+  const at = (x: number, y: number) => encodePixel(x + 0.5 - S / 2, y + 0.5 - S / 2, hx, hy, r, bezel);
+  const region = (x0: number, y0: number, w: number, hh: number) =>
+    canvasUrl(w, hh, (d) => {
+      for (let y = 0; y < hh; y++) {
+        for (let x = 0; x < w; x++) {
+          const [cr, cg] = at(x0 + x, y0 + y);
+          const i = (y * w + x) * 4;
+          d[i] = cr;
+          d[i + 1] = cg;
+          d[i + 2] = 128;
+          d[i + 3] = 255;
+        }
+      }
+    });
+  const tiles: DisplacementTiles = {
+    R,
+    tl: region(0, 0, R, R),
+    tr: region(S - R, 0, R, R),
+    bl: region(0, S - R, R, R),
+    br: region(S - R, S - R, R, R),
+    top: region(R, 0, 1, R),
+    bottom: region(R, S - R, 1, R),
+    left: region(0, R, R, 1),
+    right: region(S - R, R, R, 1),
+  };
+  if (!tiles.tl) return null;
+  if (tileCache.size > 24) tileCache.clear();
+  tileCache.set(key, tiles);
+  return tiles;
+}
+
 /**
  * 生成圆角矩形（含正圆）的位移贴图 data URL；同尺寸结果缓存复用。
  * @param radius 圆角（会被限制在宽高一半以内）

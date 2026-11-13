@@ -1,9 +1,11 @@
-import { displacementMapUrl } from './displacement';
+import { displacementTiles } from './displacement';
 import { effectiveTierParams, glassThemeCssVars, type GlassTheme, type GlassTier, type PerfLevel } from './materials';
 
 /**
  * GlassManager（docs/design/NEBULA_UI_SYSTEM.md §3.6）：
- * 为每个 G1 / G2 玻璃面创建一个 SVG 滤镜（位移贴图 + RGB 三通道色散），尺寸变化时重建贴图；
+ * 为每个 G1 / G2 玻璃面创建一个 SVG 滤镜（位移贴图 + RGB 三通道色散）。
+ * 位移贴图是九宫格（4 角 + 4 边 + 中性底，P4 修正）：尺寸变化时每一帧只移动这些块，不重画贴图，
+ * 所以宽度动画（Dock 小球展开成胶囊、搜索胶囊展开）全程折射都和真实形状对齐，不会出现"拉出一个球头、最后猛地一变"。
  * 通过元素上的 `--glass-filter: url(#id)` 交给 CSS 的 backdrop-filter 使用。G3 不折射，不注册滤镜。
  *
  * 主题切换：applyGlassTheme 写根节点档位变量 + 更新所有滤镜的折射 scale（只改 scale 不需要重建贴图）。
@@ -11,11 +13,13 @@ import { effectiveTierParams, glassThemeCssVars, type GlassTheme, type GlassTier
 
 const SVG_NS = 'http://www.w3.org/2000/svg';
 const XLINK_NS = 'http://www.w3.org/1999/xlink';
-const RESIZE_DEBOUNCE_MS = 120;
+
+type TileName = 'tl' | 'tr' | 'bl' | 'br' | 'top' | 'bottom' | 'left' | 'right';
+const TILE_NAMES: TileName[] = ['tl', 'tr', 'bl', 'br', 'top', 'bottom', 'left', 'right'];
 
 interface FilterNodes {
   filter: SVGFilterElement;
-  map: SVGFEImageElement;
+  tiles: Record<TileName, SVGFEImageElement>;
   r: SVGFEDisplacementMapElement;
   g: SVGFEDisplacementMapElement;
   b: SVGFEDisplacementMapElement;
@@ -25,9 +29,11 @@ interface Surface {
   el: HTMLElement;
   tier: GlassTier;
   nodes: FilterNodes;
-  key: string;
+  /** 当前九宫格贴图对应的 高度 × 圆角（变了才换图）。 */
+  tileKey: string;
+  /** 角块边长。 */
+  R: number;
   ready: boolean;
-  timer: number;
 }
 
 let defs: SVGDefsElement | null = null;
@@ -68,8 +74,18 @@ function createFilter(id: string): FilterNodes {
     height: '100%',
     'color-interpolation-filters': 'sRGB',
   });
-  const map = svgEl('feImage', { x: '0', y: '0', width: '1', height: '1', preserveAspectRatio: 'none', result: 'map' });
-  filter.appendChild(map);
+  // 九宫格位移贴图：中性底（128 = 不位移）+ 4 角 + 4 边，合成为 map
+  filter.appendChild(svgEl('feFlood', { 'flood-color': 'rgb(128,128,128)', 'flood-opacity': '1', result: 'base' }));
+  const tiles = {} as Record<TileName, SVGFEImageElement>;
+  TILE_NAMES.forEach((name) => {
+    const img = svgEl('feImage', { x: '0', y: '0', width: '0', height: '0', preserveAspectRatio: 'none', result: `t-${name}` });
+    filter.appendChild(img);
+    tiles[name] = img;
+  });
+  const merge = svgEl('feMerge', { result: 'map' });
+  merge.appendChild(svgEl('feMergeNode', { in: 'base' }));
+  TILE_NAMES.forEach((name) => merge.appendChild(svgEl('feMergeNode', { in: `t-${name}` })));
+  filter.appendChild(merge);
   const channel = (c: 'r' | 'g' | 'b') => {
     const dm = svgEl('feDisplacementMap', {
       in: 'SourceGraphic',
@@ -88,7 +104,7 @@ function createFilter(id: string): FilterNodes {
   const b = channel('b');
   filter.appendChild(svgEl('feBlend', { in: 'r', in2: 'g', mode: 'screen', result: 'rg' }));
   filter.appendChild(svgEl('feBlend', { in: 'rg', in2: 'b', mode: 'screen' }));
-  return { filter, map, r, g, b };
+  return { filter, tiles, r, g, b };
 }
 
 function applyScales(s: Surface): void {
@@ -102,20 +118,40 @@ function applyScales(s: Surface): void {
   s.nodes.b.setAttribute('scale', String(scale * (1 - 2 * p.dispersion)));
 }
 
+function setRect(img: SVGFEImageElement, x: number, y: number, w: number, h: number): void {
+  img.setAttribute('x', String(x));
+  img.setAttribute('y', String(y));
+  img.setAttribute('width', String(Math.max(0, w)));
+  img.setAttribute('height', String(Math.max(0, h)));
+}
+
+/** 按当前尺寸摆放九宫格（每次尺寸变化都调用，只改属性，很便宜）；高度或圆角变了才换贴图。 */
 function rebuild(s: Surface): void {
   const w = Math.round(s.el.offsetWidth);
   const h = Math.round(s.el.offsetHeight);
   if (w < 8 || h < 8) return;
-  const radius = parseFloat(getComputedStyle(s.el).borderTopLeftRadius) || 0;
-  const key = `${w}x${h}x${radius}`;
-  if (key === s.key) return;
-  s.key = key;
-  const url = displacementMapUrl(w, h, radius);
-  if (!url) return;
-  s.nodes.map.setAttribute('href', url);
-  s.nodes.map.setAttributeNS(XLINK_NS, 'xlink:href', url);
-  s.nodes.map.setAttribute('width', String(w));
-  s.nodes.map.setAttribute('height', String(h));
+  const radius = Math.min(parseFloat(getComputedStyle(s.el).borderTopLeftRadius) || 0, w / 2, h / 2);
+  const key = `${h}x${radius.toFixed(1)}`;
+  if (key !== s.tileKey) {
+    const t = displacementTiles(h, radius);
+    if (!t) return;
+    s.tileKey = key;
+    s.R = t.R;
+    TILE_NAMES.forEach((name) => {
+      s.nodes.tiles[name].setAttribute('href', t[name]);
+      s.nodes.tiles[name].setAttributeNS(XLINK_NS, 'xlink:href', t[name]);
+    });
+  }
+  const R = Math.min(s.R, Math.floor(w / 2), Math.floor(h / 2));
+  const T = s.nodes.tiles;
+  setRect(T.tl, 0, 0, R, R);
+  setRect(T.tr, w - R, 0, R, R);
+  setRect(T.bl, 0, h - R, R, R);
+  setRect(T.br, w - R, h - R, R, R);
+  setRect(T.top, R, 0, w - 2 * R, R);
+  setRect(T.bottom, R, h - R, w - 2 * R, R);
+  setRect(T.left, 0, R, R, h - 2 * R);
+  setRect(T.right, w - R, R, R, h - 2 * R);
   if (!s.ready) {
     s.ready = true;
     applyScales(s);
@@ -131,18 +167,15 @@ export function registerGlass(el: HTMLElement, tier: GlassTier): () => void {
   const id = `nebula-glass-${++seq}`;
   const nodes = createFilter(id);
   ensureDefs().appendChild(nodes.filter);
-  const s: Surface = { el, tier, nodes, key: '', ready: false, timer: 0 };
+  const s: Surface = { el, tier, nodes, tileKey: '', R: 0, ready: false };
   surfaces.add(s);
   applyScales(s);
   rebuild(s);
-  const ro = new ResizeObserver(() => {
-    window.clearTimeout(s.timer);
-    s.timer = window.setTimeout(() => rebuild(s), RESIZE_DEBOUNCE_MS);
-  });
+  // 不防抖：每一帧尺寸变化都立即重新摆放九宫格（只改属性），宽度动画全程折射连续
+  const ro = new ResizeObserver(() => rebuild(s));
   ro.observe(el);
   return () => {
     ro.disconnect();
-    window.clearTimeout(s.timer);
     nodes.filter.remove();
     surfaces.delete(s);
     el.style.removeProperty('--glass-filter');

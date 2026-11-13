@@ -13,7 +13,14 @@ import {
 import { hasDesktopAPI } from '../../lib/playlist/ipcClient';
 import type { DesktopWallpaperSetResult } from '../../lib/playlist/ipcClient';
 import type { VisualAtmosphere } from '../../lib/atmosphere';
-import { NEUTRAL_ENV, applyEnvironment, environmentFromUrl, extractEnvironment, type EnvPalette } from '../../lib/environment';
+import {
+  NEUTRAL_ENV,
+  applyCoverStats,
+  applyEnvironment,
+  environmentFromUrl,
+  extractEnvironment,
+  type EnvPalette,
+} from '../../lib/environment';
 
 const COVER_MODE_KEY = 'music-nebula.bg-cover-mode.v2';
 
@@ -97,6 +104,27 @@ export function useBackground({ enabled, onApplied, coverKey }: UseBackgroundOpt
 
   // 环境光和雾中封面都以环境光为底（雾中封面只是在环境光里多一层封面残影）
   const envMode = bgSetting.type === 'cover';
+
+  // 背景种类写在根节点：env = 环境光 / 雾中封面；media = 自定义图片、视频、壁纸、预设。
+  // 正在播放卡片的封面光据此调整：实景背景上收紧成贴着封面的一圈，不在照片上铺开一团雾
+  useEffect(() => {
+    document.documentElement.dataset.bgKind = envMode ? 'env' : 'media';
+  }, [envMode]);
+
+  // 当前封面自身的亮度 / 饱和度（壁纸模式下取色来源是壁纸，这里单独按封面再算一次）
+  useEffect(() => {
+    let cancelled = false;
+    if (!coverKey) {
+      applyCoverStats(NEUTRAL_ENV);
+      return;
+    }
+    environmentFromUrl(coverKey).then((env) => {
+      if (!cancelled) applyCoverStats(env ?? NEUTRAL_ENV);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [coverKey]);
 
   // 环境光取色（NEBULA_UI_SYSTEM §4）：所有背景模式都产出 --acc 等变量（进度条、当前项等要用），
   // 「环境光」模式下背景层直接由这些变量绘制，并顺带写旧的 ambient 变量（--glow-rgb / 歌词明暗）。

@@ -541,20 +541,31 @@ body {
   background-size: cover;
   background-position: center;
   z-index: -1;
-  filter: blur(46px) saturate(2.2) brightness(1.95);
-  opacity: 1;
+  /* 强弱随封面本身（useBackground 写 --cover-sat / --cover-lum，P4 验收后修正）：
+     灰白封面没有颜色可表达，光就淡（否则是一团白雾）；亮封面不再额外提亮 */
+  filter: blur(46px) saturate(2.2) brightness(calc(1.95 - 0.7 * var(--cover-lum, 0.3)));
+  opacity: clamp(0.45, calc(var(--cover-sat, 0.4) * 3), 1);
   /* 以封面为中心向四周溢出，只略微偏下；不沉到标题下面，免得把标题冲淡 */
   transform: translateY(5%) scale(1.1);
   pointer-events: none;
   animation: cover-glow-in 0.9s ease both;
 }
 
+/* 自定义图片 / 视频 / 壁纸背景上：光收紧成贴着封面的一圈、更淡更暗。
+   在实景照片上铺开的一大团光像一块污渍，还会染到旁边的卡片上 */
+[data-bg-kind='media'] .music-card .cover-glow {
+  left: -3%;
+  right: -3%;
+  top: -2%;
+  filter: blur(26px) saturate(1.8) brightness(calc(1.3 - 0.35 * var(--cover-lum, 0.3)));
+  opacity: clamp(0.1, calc(var(--cover-sat, 0.4) * 1.6), 0.55);
+  transform: translateY(3%);
+}
+
+/* 只写起点：淡入到元素自己的不透明度（随封面强弱变化），fill-mode both 不会把它锁成 1 */
 @keyframes cover-glow-in {
   from {
     opacity: 0;
-  }
-  to {
-    opacity: 1;
   }
 }
 

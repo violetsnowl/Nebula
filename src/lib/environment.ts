@@ -188,6 +188,18 @@ export function backgroundLuminance(env: EnvPalette, envMode: boolean): number {
  * 写根节点环境变量。亮背景时玻璃自动加深：tintAdapt = 0.22 × smoothstep(.45, .70, 实际背景亮度)。
  * @param envMode 当前背景是否为「环境光」模式（决定用哪种亮度判断明暗）
  */
+/**
+ * 当前封面自身的亮度与饱和度（与背景模式无关，壁纸模式下也按封面算）：
+ * --cover-lum 给雾中封面调淡浅色封面；--cover-lum / --cover-sat 给正在播放卡片的封面光定强弱
+ * （灰白封面没有颜色可表达，光就很淡；亮封面不再额外提亮）。
+ */
+export function applyCoverStats(cover: EnvPalette): void {
+  if (typeof document === 'undefined') return;
+  const root = document.documentElement.style;
+  root.setProperty('--cover-lum', cover.lum.toFixed(3));
+  root.setProperty('--cover-sat', cover.sat.toFixed(3));
+}
+
 export function applyEnvironment(env: EnvPalette, envMode: boolean): void {
   if (typeof document === 'undefined') return;
   const root = document.documentElement.style;
@@ -198,7 +210,5 @@ export function applyEnvironment(env: EnvPalette, envMode: boolean): void {
   root.setProperty('--ebase', css(env.base));
   root.setProperty('--acc', css(env.acc));
   root.setProperty('--env-lum', lum.toFixed(3));
-  // 封面本身的亮度：雾中封面据此调淡（浅色封面的残影更淡，保证深色空间和白字）
-  root.setProperty('--cover-lum', env.lum.toFixed(3));
   root.setProperty('--tint-adapt', (0.22 * smoothstep(0.45, 0.7, lum)).toFixed(3));
 }
