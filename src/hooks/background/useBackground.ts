@@ -34,25 +34,14 @@ interface UseBackgroundOptions {
 export function useBackground({ enabled, onApplied, coverKey }: UseBackgroundOptions) {
   const [bgSetting, setBgSetting] = useState<BackgroundSetting>(() => loadBackground());
   const [bgCoverMode, setBgCoverMode] = useState<CoverBgMode>(() => {
-    // v2：全局 UI 重构后默认「环境光」（NEBULA_UI_SYSTEM §4.3）。旧 key 的选择不再沿用，旧模式仍可在设置里手动选。
+    // v2：全局 UI 重构后默认「环境光」（NEBULA_UI_SYSTEM §4.3）。只剩环境光和雾中封面两种，已删除的旧模式迁移到环境光。
     let m: string | null = null;
     try {
       m = typeof localStorage !== 'undefined' ? localStorage.getItem(COVER_MODE_KEY) : null;
     } catch {
       m = null;
     }
-    if (
-      m === 'nebula' ||
-      m === 'fill' ||
-      m === 'frosted' ||
-      m === 'color' ||
-      m === 'palette' ||
-      m === 'blend' ||
-      m === 'prism'
-    ) {
-      return m;
-    }
-    return 'nebula';
+    return m === 'blend' ? 'blend' : 'nebula';
   });
   const [atmosphere, setAtmosphere] = useState<VisualAtmosphere>({ palette: null, sample: null });
 
@@ -106,7 +95,8 @@ export function useBackground({ enabled, onApplied, coverKey }: UseBackgroundOpt
     return off;
   }, [enabled, onApplied]);
 
-  const envMode = bgSetting.type === 'cover' && bgCoverMode === 'nebula';
+  // 环境光和雾中封面都以环境光为底（雾中封面只是在环境光里多一层封面残影）
+  const envMode = bgSetting.type === 'cover';
 
   // 环境光取色（NEBULA_UI_SYSTEM §4）：所有背景模式都产出 --acc 等变量（进度条、当前项等要用），
   // 「环境光」模式下背景层直接由这些变量绘制，并顺带写旧的 ambient 变量（--glow-rgb / 歌词明暗）。

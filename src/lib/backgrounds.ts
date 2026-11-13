@@ -20,7 +20,9 @@ export type BackgroundSetting =
   | { type: 'cover' };
 
 /** 封面背景渲染模式（docs/project/ARCHITECTURE.md：共享类型，BackgroundLayer 从 lib 取）。 */
-export type CoverBgMode = 'nebula' | 'fill' | 'frosted' | 'color' | 'palette' | 'blend' | 'prism';
+/** nebula = 环境光（默认）；blend = 雾中封面（环境光里多一层雾化的封面原图，NEBULA_UI_SYSTEM §4.3）。
+ *  原图直铺 / 磨砂暗化 / 纯色纹理 / 仅取色 / 棱镜已于 2026-11-12 删除（不符合 §2 原则），存储里的旧值迁移到 nebula。 */
+export type CoverBgMode = 'nebula' | 'blend';
 
 const STORAGE_KEY = 'music-nebula.bg';
 

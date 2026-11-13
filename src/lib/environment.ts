@@ -198,5 +198,7 @@ export function applyEnvironment(env: EnvPalette, envMode: boolean): void {
   root.setProperty('--ebase', css(env.base));
   root.setProperty('--acc', css(env.acc));
   root.setProperty('--env-lum', lum.toFixed(3));
+  // 封面本身的亮度：雾中封面据此调淡（浅色封面的残影更淡，保证深色空间和白字）
+  root.setProperty('--cover-lum', env.lum.toFixed(3));
   root.setProperty('--tint-adapt', (0.22 * smoothstep(0.45, 0.7, lum)).toFixed(3));
 }

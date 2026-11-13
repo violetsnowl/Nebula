@@ -464,11 +464,7 @@ function QishuiLogin({ onSuccess }: { onSuccess: () => void }) {
 
 const COVER_MODES: Array<{ id: CoverBgMode; name: string }> = [
   { id: 'nebula', name: '环境光' },
-  { id: 'fill', name: '原图直铺' },
-  { id: 'frosted', name: '磨砂暗化' },
-  { id: 'blend', name: '混合层' },
-  { id: 'color', name: '纯色纹理' },
-  { id: 'palette', name: '仅取色' },
+  { id: 'blend', name: '雾中封面' },
 ];
 
 /**
