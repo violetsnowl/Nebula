@@ -3,6 +3,7 @@ import type { AccountState } from '../lib/accounts';
 import type { Track } from '../lib/catalog';
 import type { ImportStatus } from './ImportBar';
 import { DOCK_PLATFORM_ORDER, platformMeta } from './platforms';
+import { GlassPill } from './dock/GlassPill';
 
 interface PlaylistDockProps {
   visible: boolean;
@@ -266,11 +267,7 @@ export const PlaylistDock = memo(function PlaylistDock({
             data-name={id}
             style={{ '--brand': isManual ? '#9aa4c8' : meta.brand } as React.CSSProperties}
           >
-            <button
-              type="button"
-              className="pill"
-              onClick={() => handlePillClick(id)}
-            >
+            <GlassPill visible={visible} onClick={() => handlePillClick(id)}>
               <span className="icon" style={isManual ? { fontSize: 14 } : undefined}>
                 {isManual ? (
                   '＋'
@@ -293,7 +290,7 @@ export const PlaylistDock = memo(function PlaylistDock({
                 </>
               )}
               <span className="go">›</span>
-            </button>
+            </GlassPill>
             <div className="win">
               <div className="win-inner" ref={isOpen ? listRef : undefined}>
                 <div className="win-pad" />

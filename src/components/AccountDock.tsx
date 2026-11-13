@@ -6,6 +6,7 @@ import type { BackgroundSetting } from '../lib/backgrounds';
 import type { CoverBgMode } from '../lib/backgrounds';
 import type { GlassTheme } from '../lib/glass';
 import type { ListenSettingsPatch, LyricVisualSettings } from '../lib/lyricSettings';
+import { GlassPill } from './dock/GlassPill';
 import { DOCK_PLATFORM_ORDER, platformMeta } from './platforms';
 
 export type DockSettingsPage = 'lyrics' | 'ui' | 'bg' | 'system';
@@ -77,7 +78,7 @@ function Toggle({
   );
 }
 
-/** 单选组：slimy-chipmunk-97 复刻（双栏玻璃滑轨，双银色）。 */
+/** 单选组 = 分段控件（NEBULA_UI_SYSTEM §9.5）：选中段滑块按选项个数定宽（--n），按选中位置平移（--i）。 */
 function GlassRadioGroup({
   name,
   options,
@@ -90,8 +91,9 @@ function GlassRadioGroup({
   onChange: (v: string) => void;
 }) {
   const safe = name.replace(/[^a-z0-9]/gi, '');
+  const idx = Math.max(0, options.findIndex((o) => o.value === value));
   return (
-    <div className="glass-radio-group">
+    <div className="glass-radio-group" style={{ '--n': options.length, '--i': idx } as React.CSSProperties}>
       {options.map((o) => (
         <Fragment key={o.value}>
           <input
@@ -653,6 +655,7 @@ export const AccountDock = memo(function AccountDock({
               max={maxFont}
               step={1}
               value={lyricSettings.fontSize}
+              style={{ '--p': `${((lyricSettings.fontSize - 14) / Math.max(1, maxFont - 14)) * 100}%` } as React.CSSProperties}
               onChange={(e) => onFontSize(Number(e.target.value))}
             />
             <span className="val">{lyricSettings.fontSize}px</span>
@@ -686,6 +689,7 @@ export const AccountDock = memo(function AccountDock({
               max={1.6}
               step={0.02}
               value={lyricSettings.currentScale}
+              style={{ '--p': `${((lyricSettings.currentScale - 1) / 0.6) * 100}%` } as React.CSSProperties}
               onChange={(e) => onCurrentScale(Number(e.target.value))}
             />
             <span className="val">{lyricSettings.currentScale.toFixed(2)}×</span>
@@ -698,6 +702,7 @@ export const AccountDock = memo(function AccountDock({
               max={12}
               step={1}
               value={lyricSettings.wordRise}
+              style={{ '--p': `${(lyricSettings.wordRise / 12) * 100}%` } as React.CSSProperties}
               onChange={(e) => onWordRise(Number(e.target.value))}
             />
             <span className="val">{lyricSettings.wordRise}px</span>
@@ -830,7 +835,7 @@ export const AccountDock = memo(function AccountDock({
       <div className={`set-page${settingsPage === 'bg' ? ' active' : ''}`}>
         <button
           type="button"
-          className={`bg-scheme fx-medium${bgScheme === 'custom' ? ' is-active' : ''}`}
+          className={`bg-scheme${bgScheme === 'custom' ? ' is-active' : ''}`}
           onClick={() => {
             setBgScheme('custom');
             bgInputRef.current?.click();
@@ -841,7 +846,7 @@ export const AccountDock = memo(function AccountDock({
         </button>
         <button
           type="button"
-          className={`bg-scheme fx-medium${bgScheme === 'wallpaper' ? ' is-active' : ''}`}
+          className={`bg-scheme${bgScheme === 'wallpaper' ? ' is-active' : ''}`}
           onClick={() => {
             setBgScheme('wallpaper');
             onOpenWallpapers();
@@ -852,7 +857,7 @@ export const AccountDock = memo(function AccountDock({
         </button>
         <button
           type="button"
-          className={`bg-scheme fx-medium${bgScheme === 'cover' ? ' is-active' : ''}`}
+          className={`bg-scheme${bgScheme === 'cover' ? ' is-active' : ''}`}
           onClick={() => {
             setBgScheme('cover');
             onSelectBg({ type: 'cover' });
@@ -931,10 +936,9 @@ export const AccountDock = memo(function AccountDock({
         data-name="login"
         style={{ '--brand': '#8b93b8' } as React.CSSProperties}
       >
-        <button type="button" className="pill" onClick={() => handleRowClick('login')}>
+        <GlassPill visible={visible} onClick={() => handleRowClick('login')}>
           <span
             className="icon"
-            style={avatarUrl ? undefined : { background: 'linear-gradient(135deg,#5f6c9e,#2c3352)' }}
           >
             {avatarUrl ? <img src={avatarUrl} alt="" draggable={false} /> : '人'}
           </span>
@@ -958,7 +962,7 @@ export const AccountDock = memo(function AccountDock({
             {loggedCount}/{DOCK_PLATFORM_ORDER.length} 已登录
           </span>
           <span className="go">›</span>
-        </button>
+        </GlassPill>
         <div className="win">
           <div className="win-inner">
             <div className="win-pad" />
@@ -976,13 +980,13 @@ export const AccountDock = memo(function AccountDock({
         data-name="settings"
         style={{ '--brand': '#8b93b8' } as React.CSSProperties}
       >
-        <button type="button" className="pill" onClick={() => handleRowClick('settings')}>
+        <GlassPill visible={visible} onClick={() => handleRowClick('settings')}>
           <span className="icon" style={{ fontSize: 13 }}>
             ⚙
           </span>
           <span className="cap-text">自定义歌词 · 布局 · 背景 · 系统</span>
           <span className="go">›</span>
-        </button>
+        </GlassPill>
         <div className="win">
           <div className="win-inner">
             <div className="win-pad" />
