@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useGlass } from '../../lib/glass';
 import './panel-kit.css';
 
@@ -6,7 +6,7 @@ import './panel-kit.css';
  * 两侧 Dock（NEBULA_UI_SYSTEM §9.2，样张 F，2026-11-12 定稿）：
  *   平时：两侧中段各一道极淡的提示光痕（鼠标靠近边缘 120px 内变亮）；
  *   浮出：鼠标到边缘，玻璃小球（G2）从边缘滑入；悬停只让图标自身提亮放大，旁边出名称提示；
- *   打开：点小球，同一侧滑出位置固定的侧面板（G3）；小球留在外侧当页签，当前那颗点亮；
+ *   打开：点小球，同一侧滑出位置固定的侧面板（G3；液态主题下边缘折射，样张 G）；小球留在外侧当页签，当前那颗点亮；
  *   切换：点同侧另一颗小球只换内容，面板不动；
  *   关闭：点面板外面（落在星云 / 背景上时这一下只用来关闭，不穿透）、按 Esc、或再点当前小球。鼠标移开不关闭。
  * 只负责机制和外壳；面板里的内容由 PlaylistDock / AccountDock 提供。
@@ -92,6 +92,20 @@ export function SideDock({
   const shown = visible || active !== null;
   const cls = side === 'left' ? 'sd-left' : 'sd-right';
 
+  // 面板 = G3 大面：液态主题下边缘一圈折射（磨砂 / 降级时折射为 0，滤镜自动摘掉）。
+  // 只在打开时注册；关闭后等收起动画（280ms）走完再注销，避免折射在淡出途中突然消失
+  const panelRef = useRef<HTMLElement>(null);
+  const [lensOn, setLensOn] = useState(false);
+  useEffect(() => {
+    if (active !== null) {
+      setLensOn(true);
+      return;
+    }
+    const t = window.setTimeout(() => setLensOn(false), 320);
+    return () => window.clearTimeout(t);
+  }, [active]);
+  useGlass(panelRef, 'g3', lensOn);
+
   useEffect(() => {
     onPinChange(active !== null);
   }, [active, onPinChange]);
@@ -144,6 +158,7 @@ export function SideDock({
         ))}
       </nav>
       <section
+        ref={panelRef}
         className={`side-dock sd-panel ${cls} glass-g3${active ? ' is-open' : ''}${panelClass ? ` ${panelClass}` : ''}`}
         aria-hidden={!active}
         onPointerEnter={onEnter}

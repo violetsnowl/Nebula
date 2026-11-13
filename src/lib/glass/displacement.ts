@@ -30,7 +30,7 @@ const LUT: Float32Array = (() => {
 
 const cache = new Map<string, string>();
 
-/** bezel 宽度：min(高度 × 0.46, 30px)。 */
+/** 默认 bezel 宽度：min(高度 × 0.46, 30px)（G1 / G2；G3 用 materials.tierBezel 的固定值）。 */
 export function bezelWidth(height: number): number {
   return Math.min(height * 0.46, 30);
 }
@@ -91,15 +91,15 @@ const tileCache = new Map<string, DisplacementTiles>();
  * 生成九宫格位移贴图（NEBULA_UI_SYSTEM §3.6，P4 修正）。
  * 圆角矩形的位移只取决于"离最近边或角的几何关系"：角块只和圆角、bezel 有关，边条只和离边距离有关，与元素宽度无关。
  * 所以元素宽度变化（Dock 小球展开成胶囊、搜索胶囊展开）时只需移动这些块的位置，不用重画贴图，每一帧都和真实形状对齐。
- * 只依赖高度和圆角：height / radius 不变就复用缓存。
+ * 贴图只取决于 角块边长 R、圆角、bezel：三者不变就复用缓存（G3 的 bezel 固定，面板 / 弹窗高度变化不会重画）。
  */
-export function displacementTiles(height: number, radius: number): DisplacementTiles | null {
+export function displacementTiles(height: number, radius: number, bezelPx?: number): DisplacementTiles | null {
   const h = Math.max(2, Math.round(height));
   const r = Math.max(0, Math.min(radius, h / 2));
-  const bezel = bezelWidth(h);
+  const bezel = bezelPx ?? bezelWidth(h);
   const R = Math.ceil(Math.min(Math.max(r, bezel), h / 2));
   if (R < 1) return null;
-  const key = `${h}x${r.toFixed(1)}`;
+  const key = `${R}x${r.toFixed(1)}x${bezel.toFixed(1)}`;
   const hit = tileCache.get(key);
   if (hit) return hit;
 

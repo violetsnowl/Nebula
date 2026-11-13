@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { useGlass } from '../lib/glass';
 import type { Track } from '../lib/catalog';
 import { hasDesktopAPI, toBackendTrack } from '../lib/playlist/ipcClient';
 import type {
@@ -11,6 +12,9 @@ import type {
 } from '../lib/playlist/ipcClient';
 
 function ModalShell({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  // 弹窗 = G3 大面：液态主题下边缘一圈折射（样张 G）
+  const modalRef = useRef<HTMLDivElement>(null);
+  useGlass(modalRef, 'g3');
   // §9.4：Esc 关闭；关闭后焦点回到打开它的元素
   useEffect(() => {
     const opener = document.activeElement as HTMLElement | null;
@@ -27,7 +31,7 @@ function ModalShell({ children, onClose }: { children: React.ReactNode; onClose:
     <div className="info-overlay">
       {/* 遮罩独立一层（NEBULA_UI_SYSTEM §9.4）：点它关闭；面板不以它为祖先，G3 玻璃才能采到背后画面 */}
       <div className="info-veil" onPointerDown={onClose} />
-      <div className="info-modal glass-g3" onPointerDown={(e) => e.stopPropagation()}>
+      <div ref={modalRef} className="info-modal glass-g3" onPointerDown={(e) => e.stopPropagation()}>
         {children}
       </div>
     </div>

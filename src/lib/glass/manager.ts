@@ -1,12 +1,13 @@
-import { displacementTiles } from './displacement';
-import { effectiveTierParams, glassThemeCssVars, type GlassTheme, type GlassTier, type PerfLevel } from './materials';
+import { displacementTiles, type DisplacementTiles } from './displacement';
+import { effectiveTierParams, glassThemeCssVars, tierBezel, type GlassTheme, type GlassTier, type PerfLevel } from './materials';
 
 /**
  * GlassManager（docs/design/NEBULA_UI_SYSTEM.md §3.6）：
- * 为每个 G1 / G2 玻璃面创建一个 SVG 滤镜（位移贴图 + RGB 三通道色散）。
+ * 为每个注册的玻璃面创建一个 SVG 滤镜（位移贴图 + RGB 三通道色散）：G1、G2，以及 G3 的大面（两侧面板、弹窗）。
  * 位移贴图是九宫格（4 角 + 4 边 + 中性底，P4 修正）：尺寸变化时每一帧只移动这些块，不重画贴图，
  * 所以宽度动画（Dock 小球展开成胶囊、搜索胶囊展开）全程折射都和真实形状对齐，不会出现"拉出一个球头、最后猛地一变"。
- * 通过元素上的 `--glass-filter: url(#id)` 交给 CSS 的 backdrop-filter 使用。G3 不折射，不注册滤镜。
+ * 通过元素上的 `--glass-filter: url(#id)` 交给 CSS 的 backdrop-filter 使用（材质画在 ::before 上）。
+ * G3 的小弹层（菜单、气泡、播放条弹层）不注册：太小，折射只会显脏；磨砂主题或降级后 G3 的折射为 0，滤镜自动摘掉。
  *
  * 主题切换：applyGlassTheme 写根节点档位变量 + 更新所有滤镜的折射 scale（只改 scale 不需要重建贴图）。
  */
@@ -29,8 +30,8 @@ interface Surface {
   el: HTMLElement;
   tier: GlassTier;
   nodes: FilterNodes;
-  /** 当前九宫格贴图对应的 高度 × 圆角（变了才换图）。 */
-  tileKey: string;
+  /** 当前使用的九宫格贴图（缓存对象变了才换图）。 */
+  tileSet: DisplacementTiles | null;
   /** 角块边长。 */
   R: number;
   ready: boolean;
@@ -131,11 +132,10 @@ function rebuild(s: Surface): void {
   const h = Math.round(s.el.offsetHeight);
   if (w < 8 || h < 8) return;
   const radius = Math.min(parseFloat(getComputedStyle(s.el).borderTopLeftRadius) || 0, w / 2, h / 2);
-  const key = `${h}x${radius.toFixed(1)}`;
-  if (key !== s.tileKey) {
-    const t = displacementTiles(h, radius);
-    if (!t) return;
-    s.tileKey = key;
+  const t = displacementTiles(h, radius, tierBezel(s.tier, h));
+  if (!t) return;
+  if (t !== s.tileSet) {
+    s.tileSet = t;
     s.R = t.R;
     TILE_NAMES.forEach((name) => {
       s.nodes.tiles[name].setAttribute('href', t[name]);
@@ -159,15 +159,15 @@ function rebuild(s: Surface): void {
 }
 
 /**
- * 注册一个玻璃面；返回注销函数。G3 只返回空注销（不折射）。
+ * 注册一个玻璃面；返回注销函数。
  * 贴图生成前折射 scale 保持 0，避免首帧用空贴图造成整体偏移。
  */
 export function registerGlass(el: HTMLElement, tier: GlassTier): () => void {
-  if (tier === 'g3' || typeof document === 'undefined') return () => {};
+  if (typeof document === 'undefined') return () => {};
   const id = `nebula-glass-${++seq}`;
   const nodes = createFilter(id);
   ensureDefs().appendChild(nodes.filter);
-  const s: Surface = { el, tier, nodes, tileKey: '', R: 0, ready: false };
+  const s: Surface = { el, tier, nodes, tileSet: null, R: 0, ready: false };
   surfaces.add(s);
   applyScales(s);
   rebuild(s);

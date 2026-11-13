@@ -4,7 +4,10 @@
  */
 
 export type GlassTheme = 'liquid' | 'frost';
-/** G1 主玻璃（播放条 / Dock 窗口 / 搜索）· G2 透镜球（≤48px 圆形按钮）· G3 浓玻璃（弹层 / 菜单 / 弹窗，不折射）。 */
+/**
+ * G1 主玻璃（播放条 / 搜索）· G2 透镜球（≤48px 圆形按钮）· G3 浓玻璃（两侧面板 / 弹窗 / 弹层 / 菜单）。
+ * G3 在液态主题下：大面（两侧面板、弹窗）只在边缘一圈折射，中间保持足够模糊；小弹层不注册折射，只跟随底色和受光边（样张 G，2026-11-13）。
+ */
 export type GlassTier = 'g1' | 'g2' | 'g3';
 
 export interface TierParams {
@@ -20,17 +23,28 @@ export interface TierParams {
   tint: number;
   /** 透射增饱和。 */
   sat: number;
+  /** 边缘受光高光（0 = 无，1 = 有）；只有 G3 用，写成 --g3-spec。 */
+  spec?: number;
 }
 
 const LIQUID_G1: TierParams = { refraction: 26, dispersion: 0.05, blur: 2.25, rim: 0.52, tint: 0.1, sat: 1.65 };
 const FROST_G1: TierParams = { refraction: 6, dispersion: 0, blur: 16, rim: 0.4, tint: 0.08, sat: 1.4 };
-const DENSE_G3: TierParams = { refraction: 0, dispersion: 0, blur: 18, rim: 0.4, tint: 0.28, sat: 1.4 };
+const DENSE_G3: TierParams = { refraction: 0, dispersion: 0, blur: 18, rim: 0.4, tint: 0.28, sat: 1.4, spec: 0 };
+/** 液态 G3：散射不低于 14px 保证可读（§3.2 可读性底线）；只在边缘 24px 一圈折射；底色更淡、透色更鲜艳；边缘受光高光。 */
+const LIQUID_G3: TierParams = { refraction: 16, dispersion: 0.03, blur: 14, rim: 0.55, tint: 0.22, sat: 1.6, spec: 1 };
+
+/** 各档的折射带宽度（px）。不写 = 按高度 min(h × 0.46, 30)；G3 是大面，固定 24px，不随面板高度变宽。 */
+const TIER_BEZEL: Partial<Record<GlassTier, number>> = { g3: 24 };
+
+export function tierBezel(tier: GlassTier, height: number): number {
+  return TIER_BEZEL[tier] ?? Math.min(height * 0.46, 30);
+}
 
 export const GLASS_THEMES: Record<GlassTheme, Record<GlassTier, TierParams>> = {
   liquid: {
     g1: LIQUID_G1,
     g2: { ...LIQUID_G1, refraction: LIQUID_G1.refraction * 0.6, dispersion: LIQUID_G1.dispersion * 0.6, blur: 1 },
-    g3: DENSE_G3,
+    g3: LIQUID_G3,
   },
   frost: {
     g1: FROST_G1,
@@ -60,13 +74,15 @@ export function saveGlassTheme(theme: GlassTheme): void {
 
 /**
  * 性能降级档位（NEBULA_UI_SYSTEM §3.7），依次叠加：
- * 0 = 完整；1 = 关色散；2 = 再关 G2 折射；3 = 再关 G1 折射，G1 / G2 退回磨砂参数；4 = 再停环境光漂移（由 CSS 处理）。
+ * 0 = 完整；1 = 关色散 + 关 G3 折射（G3 整体退回磨砂参数，面板折射面积最大、最先关）；
+ * 2 = 再关 G2 折射；3 = 再关 G1 折射，G1 / G2 退回磨砂参数；4 = 再停环境光漂移（由 CSS 处理）。
  */
 export type PerfLevel = 0 | 1 | 2 | 3 | 4;
 
 /** 某个主题、某个档位在当前降级档位下实际使用的参数。 */
 export function effectiveTierParams(theme: GlassTheme, tier: GlassTier, level: PerfLevel = 0): TierParams {
   let p = GLASS_THEMES[theme][tier];
+  if (level >= 1 && tier === 'g3') p = DENSE_G3;
   if (level >= 3 && tier !== 'g3') p = { ...FROST_G1, refraction: 0 };
   if (level >= 2 && tier === 'g2') p = { ...p, refraction: 0 };
   if (level >= 1) p = { ...p, dispersion: 0 };
@@ -82,6 +98,7 @@ export function glassThemeCssVars(theme: GlassTheme, level: PerfLevel = 0): Reco
     out[`--${tier}-tint`] = String(p.tint);
     out[`--${tier}-rim`] = String(p.rim);
     out[`--${tier}-sat`] = String(p.sat);
+    if (p.spec !== undefined) out[`--${tier}-spec`] = String(p.spec);
   });
   return out;
 }

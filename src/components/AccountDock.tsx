@@ -1269,6 +1269,7 @@ export const AccountDock = memo(function AccountDock({
         {materialTile('liquid', '液态', '液态 · 边缘折射、轻微色散')}
         {materialTile('frost', '磨砂', '磨砂 · 更柔、更安静')}
       </div>
+      <p className="hint-line">播放条、两侧小球、面板、弹窗和菜单一起切换。</p>
       <div className="g-title">画面</div>
       <div className="group">
         <div className="row">

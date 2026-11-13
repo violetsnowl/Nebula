@@ -75,10 +75,11 @@ body {
   --g2-tint: 0.1;
   --g2-rim: 0.52;
   --g2-sat: 1.65;
-  --g3-blur: 18px;
-  --g3-tint: 0.28;
-  --g3-rim: 0.4;
-  --g3-sat: 1.4;
+  --g3-blur: 14px;
+  --g3-tint: 0.22;
+  --g3-rim: 0.55;
+  --g3-sat: 1.6;
+  --g3-spec: 1;
   /* 换歌时环境换色 1.4s，亮背景自适应加深 0.8s */
   transition:
     --e1 1.4s ease,
@@ -122,15 +123,53 @@ body {
     0 6px 16px rgba(0, 0, 0, 0.35);
 }
 
-/* G3 浓玻璃：不折射，优先可读（弹层 / 菜单 / 弹窗） */
+/* G3 浓玻璃：两侧面板 / 弹窗 / 弹层 / 菜单（样张 G，2026-11-13）。
+   - 磨砂：散射 18px、不折射、哑光边（即原来的样子）；
+   - 液态：散射 14px（可读性底线），大面（两侧面板、弹窗，useGlass 注册）只在边缘 24px 一圈折射（--glass-filter），
+     底色更淡、透色更鲜艳，边缘一圈受光高光（::after，强度 --g3-spec）；小弹层不注册折射，只跟随底色和受光边。
+   - 浅色背景自适应加深按全额（原来是一半）：浅色壁纸下面板小字也要清楚。
+   材质直接画在元素上（不像 G1 画在 ::before）：播放队列弹层本身是滚动容器，画在伪元素上会跟着内容滚走。 */
 .glass-g3 {
-  background: rgba(0, 0, 0, calc(var(--g3-tint) + var(--tint-adapt) * 0.5));
+  background: rgba(0, 0, 0, calc(var(--g3-tint) + var(--tint-adapt)));
   -webkit-backdrop-filter: blur(var(--g3-blur)) saturate(var(--g3-sat)) brightness(1.05);
-  backdrop-filter: blur(var(--g3-blur)) saturate(var(--g3-sat)) brightness(1.05);
+  backdrop-filter: blur(var(--g3-blur)) var(--glass-filter, blur(0px)) saturate(var(--g3-sat)) brightness(1.05);
   box-shadow:
-    inset 0 0 1.5px 1px rgba(255, 255, 255, calc(var(--g3-rim) * 0.62)),
-    inset 0 0 14px 3px rgba(255, 255, 255, calc(var(--g3-rim) * 0.16)),
+    inset 0 0 1.5px 1px rgba(255, 255, 255, calc(var(--g3-rim) * (0.62 - 0.12 * var(--g3-spec)))),
+    inset 0 1px 0 rgba(255, 255, 255, calc(var(--g3-rim) * 0.4 * var(--g3-spec))),
+    inset 0 0 calc(14px + 8px * var(--g3-spec)) calc(3px + 1px * var(--g3-spec)) rgba(255, 255, 255, calc(var(--g3-rim) * (0.16 - 0.04 * var(--g3-spec)))),
     0 12px 32px rgba(0, 0, 0, 0.4);
+}
+
+/* 液态受光边：1px 渐变描边，左上亮、右下弱（光从左上来）；磨砂 / 降级时 --g3-spec = 0 */
+.glass-g3::after,
+.tooltip-bubble::after,
+.mode-toast::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  padding: 1px;
+  border-radius: inherit;
+  pointer-events: none;
+  background: linear-gradient(
+    155deg,
+    rgba(255, 255, 255, 0.5),
+    rgba(255, 255, 255, 0.1) 22%,
+    rgba(255, 255, 255, 0) 48%,
+    rgba(255, 255, 255, 0.05) 78%,
+    rgba(255, 255, 255, 0.24)
+  );
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+  mask:
+    linear-gradient(#000 0 0) content-box exclude,
+    linear-gradient(#000 0 0);
+  opacity: var(--g3-spec, 0);
+}
+
+/* 播放队列弹层自己会滚动：伪元素描边会跟着内容滚走，不画 */
+.queue-pop.glass-g3::after {
+  content: none;
 }
 
 /* 环境光背景（封面模式「环境光」）：底色 + 三团光 + 胶片颗粒 + 暗角，全部是渐变，不用 filter */
@@ -884,7 +923,7 @@ body {
   overflow: hidden auto;
   padding: 8px;
   /* §9.3：结果下拉 = G3，圆角 r-lg */
-  background: rgba(0, 0, 0, calc(var(--g3-tint) + var(--tint-adapt) * 0.5));
+  background: rgba(0, 0, 0, calc(var(--g3-tint) + var(--tint-adapt)));
   -webkit-backdrop-filter: blur(var(--g3-blur)) saturate(var(--g3-sat)) brightness(1.05);
   backdrop-filter: blur(var(--g3-blur)) saturate(var(--g3-sat)) brightness(1.05);
   border: none;
@@ -2225,7 +2264,7 @@ body {
   z-index: 400;
   padding: 8px 16px;
   border-radius: 999px;
-  background: rgba(0, 0, 0, calc(var(--g3-tint) + var(--tint-adapt) * 0.5));
+  background: rgba(0, 0, 0, calc(var(--g3-tint) + var(--tint-adapt)));
   -webkit-backdrop-filter: blur(var(--g3-blur)) saturate(var(--g3-sat));
   backdrop-filter: blur(var(--g3-blur)) saturate(var(--g3-sat));
   border: none;
@@ -4444,7 +4483,7 @@ body {
   position: fixed; left: 0; top: 0; z-index: 1000; pointer-events: none;
   max-width: 260px; padding: 5px 9px; border-radius: 10px;
   font-size: 12px; line-height: 1.4; color: var(--fg); white-space: nowrap;
-  background: rgba(0, 0, 0, calc(var(--g3-tint) + var(--tint-adapt) * 0.5));
+  background: rgba(0, 0, 0, calc(var(--g3-tint) + var(--tint-adapt)));
   -webkit-backdrop-filter: blur(var(--g3-blur)) saturate(var(--g3-sat));
   backdrop-filter: blur(var(--g3-blur)) saturate(var(--g3-sat));
   box-shadow: inset 0 0 1.5px 1px rgba(255,255,255, calc(var(--g3-rim) * 0.62)), 0 8px 24px rgba(0,0,0,.35);
