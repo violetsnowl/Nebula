@@ -6493,3 +6493,206 @@ body {
 [data-perf='4'] .bg-env .env-ghost .ghost-near {
   animation: none;
 }
+
+/* ============================================================
+   两侧 Dock（NEBULA_UI_SYSTEM §9.2，样张 F，2026-11-12）：SideDock
+   提示光痕 → 边缘浮出玻璃小球（G2）→ 点击滑出位置固定的侧面板（G3），小球留在外侧当页签
+   ============================================================ */
+
+/* 提示光痕：两侧中段一道极淡的细光，鼠标靠近边缘 120px 内变亮；小球浮出后隐去 */
+.sd-seam {
+  position: fixed;
+  top: 50%;
+  z-index: 79;
+  width: 2px;
+  height: 64px;
+  border-radius: 2px;
+  transform: translateY(-50%);
+  pointer-events: none;
+  background: linear-gradient(transparent, rgba(255, 255, 255, 0.7), transparent);
+  opacity: 0.22;
+  transition:
+    opacity 0.3s ease,
+    height 0.3s var(--ease-std);
+}
+
+.sd-seam.sd-left {
+  left: 5px;
+}
+
+.sd-seam.sd-right {
+  right: 5px;
+}
+
+.sd-seam.is-near {
+  opacity: 0.75;
+  height: 96px;
+}
+
+.sd-seam.is-hidden,
+.app[data-listen] .sd-seam {
+  opacity: 0;
+}
+
+/* 小球列：从边缘滑入（220ms） */
+.sd-rail {
+  position: fixed;
+  top: 50%;
+  z-index: 82;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  transform: translateY(-50%);
+  transition:
+    transform 0.22s var(--ease-std),
+    opacity 0.22s var(--ease-std);
+}
+
+.sd-rail.sd-left {
+  left: 18px;
+}
+
+.sd-rail.sd-right {
+  right: 18px;
+}
+
+.sd-rail.sd-left:not(.is-shown) {
+  transform: translate(-140%, -50%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sd-rail.sd-right:not(.is-shown) {
+  transform: translate(140%, -50%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* 小球 = G2 透镜（材质来自 .glass-g2）；悬停只让图标自身提亮放大（§6） */
+.sd-orb {
+  position: relative;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: rgba(236, 238, 241, 0.78);
+  cursor: pointer;
+  transition:
+    color 0.12s ease,
+    background 0.2s ease,
+    box-shadow 0.2s ease;
+}
+
+.sd-orb-icon {
+  display: grid;
+  place-items: center;
+  transition: transform 0.22s var(--ease-jelly);
+}
+
+.sd-orb svg {
+  width: 20px;
+  height: 20px;
+}
+
+.sd-orb img {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  object-fit: cover;
+  display: block;
+}
+
+.sd-orb:hover {
+  color: var(--fg);
+}
+
+.sd-orb:hover .sd-orb-icon {
+  transform: scale(1.07);
+}
+
+.sd-orb:active .sd-orb-icon {
+  transform: scale(0.93);
+}
+
+/* 当前页签：小球"点亮"——更实的玻璃 + 更亮的内缘，不加外发光 */
+.sd-orb.is-active {
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.16);
+  box-shadow:
+    inset 0 0 1px 1px rgba(255, 255, 255, 0.6),
+    inset 0 0 10px 2px rgba(255, 255, 255, 0.14),
+    0 6px 16px rgba(0, 0, 0, 0.35);
+}
+
+.sd-orb:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.55);
+  outline-offset: 2px;
+}
+
+/* 侧面板：位置固定——上边距 16px，下边到播放条上方（播放条距底 22px、高 80px，再留 14px）；
+   左侧 380px（歌单要放封面和长列表），右侧 340px；从小球所在一侧滑出（280ms） */
+.sd-panel {
+  position: fixed;
+  top: 16px;
+  bottom: calc(22px + 80px + 14px);
+  z-index: 81;
+  display: flex;
+  flex-direction: column;
+  border-radius: 22px;
+  overflow: hidden;
+  transition:
+    transform 0.28s var(--ease-std),
+    opacity 0.28s var(--ease-std),
+    visibility 0s linear 0.28s;
+}
+
+.sd-panel.sd-left {
+  left: 72px;
+  width: min(380px, calc(100vw - 96px));
+}
+
+.sd-panel.sd-right {
+  right: 72px;
+  width: min(340px, calc(100vw - 96px));
+}
+
+.sd-panel:not(.is-open) {
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.sd-panel.sd-left:not(.is-open) {
+  transform: translateX(-28px);
+}
+
+.sd-panel.sd-right:not(.is-open) {
+  transform: translateX(28px);
+}
+
+.sd-panel.is-open {
+  transition:
+    transform 0.28s var(--ease-std),
+    opacity 0.28s var(--ease-std),
+    visibility 0s;
+}
+
+.sd-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding: 16px 12px 14px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sd-rail,
+  .sd-panel,
+  .sd-seam,
+  .sd-orb-icon {
+    transition: none !important;
+  }
+}

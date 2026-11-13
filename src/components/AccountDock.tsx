@@ -1,4 +1,4 @@
-﻿import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
+﻿import { Fragment, memo, useCallback, useEffect, useRef, useState } from 'react';
 import QRCode from 'qrcode';
 import type { DesktopLoginPlatform } from '../lib/playlist/ipcClient';
 import type { AccountState } from '../lib/accounts';
@@ -6,7 +6,7 @@ import type { BackgroundSetting } from '../lib/backgrounds';
 import type { CoverBgMode } from '../lib/backgrounds';
 import type { GlassTheme } from '../lib/glass';
 import type { ListenSettingsPatch, LyricVisualSettings } from '../lib/lyricSettings';
-import { GlassPill } from './dock/GlassPill';
+import { SideDock } from './dock/SideDock';
 import { DOCK_PLATFORM_ORDER, platformMeta } from './platforms';
 
 export type DockSettingsPage = 'lyrics' | 'ui' | 'bg' | 'system';
@@ -52,6 +52,10 @@ interface AccountDockProps {
   onPerfPriority: (on: boolean) => void;
   /** 帧监测自动降到的档位（0 = 未降级）。 */
   perfAutoLevel: number;
+  /** 鼠标靠近右边缘（提示光痕变亮）。 */
+  near: boolean;
+  /** 面板开 / 关：通知边缘感应钉住或解除。 */
+  onPinChange: (open: boolean) => void;
 }
 
 /** 开关：silent-otter-72 复刻（原型原样）。 */
@@ -514,6 +518,8 @@ export const AccountDock = memo(function AccountDock({
   perfPriority,
   onPerfPriority,
   perfAutoLevel,
+  near,
+  onPinChange,
 }: AccountDockProps) {
   const [openRow, setOpenRow] = useState<'login' | 'settings' | null>(null);
   const [activePlatform, setActivePlatform] = useState(selectedPlatform);
@@ -521,8 +527,6 @@ export const AccountDock = memo(function AccountDock({
   const [bgScheme, setBgScheme] = useState<'custom' | 'wallpaper' | 'cover'>(
     bgSetting.type === 'cover' ? 'cover' : 'custom',
   );
-  const rowRefs = useRef(new Map<string, HTMLDivElement>());
-  const flipRef = useRef<{ id: string; from: number } | null>(null);
   const bgInputRef = useRef<HTMLInputElement>(null);
 
   const loggedCount = DOCK_PLATFORM_ORDER.filter((p) => accounts[p]?.loggedIn).length;
@@ -536,36 +540,10 @@ export const AccountDock = memo(function AccountDock({
     setOpenRow('login');
   }, [loginNonce, selectedPlatform]);
 
-  // 面板收回时复位
-  useEffect(() => {
-    if (!visible) setOpenRow(null);
-  }, [visible]);
-
-  // 原型 flipRow：开/关窗口时该行 FLIP 上移置顶，dock 整体上移
-  useLayoutEffect(() => {
-    const f = flipRef.current;
-    flipRef.current = null;
-    if (!f) return;
-    const row = rowRefs.current.get(f.id);
-    if (!row) return;
-    const to = row.getBoundingClientRect().top;
-    const dy = f.from - to;
-    if (Math.abs(dy) < 1) return;
-    row.style.transition = 'none';
-    row.style.transform = `translateY(${dy}px)`;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        row.style.transition = 'transform 0.55s var(--jelly-win)';
-        row.style.transform = 'translateY(0)';
-      });
-    });
-  }, [openRow]);
-
-  const handleRowClick = (id: 'login' | 'settings') => {
-    const row = rowRefs.current.get(id);
-    flipRef.current = { id, from: row ? row.getBoundingClientRect().top : 0 };
-    setOpenRow((v) => (v === id ? null : id));
-  };
+  // 面板关闭动画期间保留上一次的内容，避免淡出时窗口先变空
+  const lastRowRef = useRef<'login' | 'settings'>('settings');
+  if (openRow) lastRowRef.current = openRow;
+  const shownRow = openRow ?? lastRowRef.current;
 
   const info = platforms.find((p) => p.platform === activePlatform);
   const activeAccount = accounts[activePlatform];
@@ -943,78 +921,41 @@ export const AccountDock = memo(function AccountDock({
   );
 
   return (
-    <div
-      className={`dock dock-right${visible ? ' is-open' : ''}${openRow ? ' has-open' : ''}`}
-      onPointerEnter={onEnter}
-      onPointerLeave={onLeave}
+    <SideDock
+      side="right"
+      visible={visible}
+      near={near}
+      active={openRow}
+      onActiveChange={(id) => setOpenRow(id === 'login' || id === 'settings' ? id : null)}
+      onPinChange={onPinChange}
+      onEnter={onEnter}
+      onLeave={onLeave}
+      items={[
+        {
+          id: 'login',
+          label: loggedCount ? `账号 · 已连接 ${loggedCount} 个平台` : '账号',
+          icon: avatarUrl ? (
+            <img src={avatarUrl} alt="" draggable={false} />
+          ) : (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="12" cy="8.5" r="3.5" />
+              <path d="M5 20c.9-3.6 3.7-5.5 7-5.5s6.1 1.9 7 5.5" />
+            </svg>
+          ),
+        },
+        {
+          id: 'settings',
+          label: '设置',
+          icon: (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <circle cx="12" cy="12" r="3" />
+              <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33h0a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51h0a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82v0a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+            </svg>
+          ),
+        },
+      ]}
     >
-      <div
-        ref={(el) => {
-          if (el) rowRefs.current.set('login', el);
-          else rowRefs.current.delete('login');
-        }}
-        className={`row${openRow === 'login' ? ' open' : ''}`}
-        data-name="login"
-        style={{ '--brand': '#8b93b8' } as React.CSSProperties}
-      >
-        <GlassPill visible={visible} onClick={() => handleRowClick('login')}>
-          <span
-            className="icon"
-          >
-            {avatarUrl ? <img src={avatarUrl} alt="" draggable={false} /> : '人'}
-          </span>
-          <span className="dots">
-            {DOCK_PLATFORM_ORDER.map((p) => {
-              const meta = platformMeta(p);
-              const on = !!accounts[p]?.loggedIn;
-              return (
-                <span
-                  key={p}
-                  className={`dot${on ? ' is-on' : ''}`}
-                  style={{ '--brand': meta.brand } as React.CSSProperties}
-                  data-tip={`${meta.name}${on ? ' · 已登录' : ' · 未登录'}`}
-                >
-                  <img src={meta.logo} alt="" draggable={false} />
-                </span>
-              );
-            })}
-          </span>
-          <span className="badge">
-            {loggedCount}/{DOCK_PLATFORM_ORDER.length} 已登录
-          </span>
-          <span className="go">›</span>
-        </GlassPill>
-        <div className="win">
-          <div className="win-inner">
-            <div className="win-pad" />
-            {loginWindow}
-          </div>
-        </div>
-      </div>
-
-      <div
-        ref={(el) => {
-          if (el) rowRefs.current.set('settings', el);
-          else rowRefs.current.delete('settings');
-        }}
-        className={`row${openRow === 'settings' ? ' open' : ''}`}
-        data-name="settings"
-        style={{ '--brand': '#8b93b8' } as React.CSSProperties}
-      >
-        <GlassPill visible={visible} onClick={() => handleRowClick('settings')}>
-          <span className="icon" style={{ fontSize: 13 }}>
-            ⚙
-          </span>
-          <span className="cap-text">自定义歌词 · 布局 · 背景 · 系统</span>
-          <span className="go">›</span>
-        </GlassPill>
-        <div className="win">
-          <div className="win-inner">
-            <div className="win-pad" />
-            {settingsWindow}
-          </div>
-        </div>
-      </div>
-    </div>
+      {shownRow === 'login' ? loginWindow : settingsWindow}
+    </SideDock>
   );
 });

@@ -149,7 +149,8 @@ export default function App() {
 
   // ---------- 边缘感应面板（useEdgePanels） ----------
   const edgePanels = useEdgePanels({ contextMenuRef });
-  const { edge, showPanel, enterTop, leaveTop, enterRight, leaveRight, enterLeft, leaveLeft } = edgePanels;
+  const { edge, near, showPanel, enterTop, leaveTop, enterRight, leaveRight, enterLeft, leaveLeft, pinLeft, pinRight } =
+    edgePanels;
 
   // 低频播放状态（不含 currentTime/duration；高频值由叶子组件订阅）
   const playerState = usePlayback();
@@ -570,6 +571,8 @@ export default function App() {
         perfPriority={perfPriority}
         onPerfPriority={setPerfPriority}
         perfAutoLevel={perfAutoLevel}
+        near={near.right}
+        onPinChange={pinRight}
       />
 
       <PlaylistDock
@@ -588,6 +591,9 @@ export default function App() {
         onPlaySongFromList={playSongFromList}
         onPlayPlaylist={playPlaylistFromStart}
         onSongContextMenu={openContextMenu}
+        onOpenLocal={importer.openLocal}
+        near={near.left}
+        onPinChange={pinLeft}
       />
 
       <button ref={centerRef} className="center-btn glass-g2" onClick={handleReset} aria-label="回到中心" data-tip="回到中心">

@@ -5,8 +5,11 @@ export type EdgeKey = 'top' | 'right' | 'left';
 
 /** 边缘热点宽度。 */
 const EDGE_HOTSPOT = 16;
-/** 移出面板后的收起延迟（防抖）。 */
+/** 移出面板后的收起延迟（防抖）。左右侧按样张 F 用 600ms，顶部沿用 300ms。 */
 const EDGE_HIDE_DELAY = 300;
+const SIDE_HIDE_DELAY = 600;
+/** 提示光痕变亮的距离（NEBULA_UI_SYSTEM §9.2，样张 F）。 */
+const SEAM_NEAR = 120;
 
 interface UseEdgePanelsOptions {
   /** 右键菜单打开时暂停边缘隐藏（useOverlays.contextMenuRef）。 */
@@ -22,6 +25,10 @@ export function useEdgePanels({ contextMenuRef }: UseEdgePanelsOptions) {
   const [edge, setEdge] = useState<Record<EdgeKey, boolean>>({ top: false, right: false, left: false });
   const edgeHoverRef = useRef<Record<EdgeKey, boolean>>({ top: false, right: false, left: false });
   const edgeTimerRef = useRef<Record<EdgeKey, number>>({ top: 0, right: 0, left: 0 });
+  /** 钉住：侧面板点开后常驻，鼠标离开也不收起（样张 F：点外面 / Esc / 再点小球才关）。 */
+  const pinnedRef = useRef<Record<EdgeKey, boolean>>({ top: false, right: false, left: false });
+  /** 鼠标是否靠近左右边缘（提示光痕变亮）。 */
+  const [near, setNear] = useState<{ left: boolean; right: boolean }>({ left: false, right: false });
 
   const showPanel = useCallback((k: EdgeKey) => {
     if (edgeTimerRef.current[k]) {
@@ -39,11 +46,12 @@ export function useEdgePanels({ contextMenuRef }: UseEdgePanelsOptions) {
         const active = document.activeElement as HTMLElement | null;
         if (active?.closest?.('.topbar')) return;
       }
-      if (edgeHoverRef.current[k] || edgeTimerRef.current[k]) return;
+      if (pinnedRef.current[k] || edgeHoverRef.current[k] || edgeTimerRef.current[k]) return;
       edgeTimerRef.current[k] = window.setTimeout(() => {
         edgeTimerRef.current[k] = 0;
+        if (pinnedRef.current[k]) return;
         setEdge((prev) => (prev[k] ? { ...prev, [k]: false } : prev));
-      }, EDGE_HIDE_DELAY);
+      }, k === 'top' ? EDGE_HIDE_DELAY : SIDE_HIDE_DELAY);
     },
     [contextMenuRef],
   );
@@ -69,9 +77,12 @@ export function useEdgePanels({ contextMenuRef }: UseEdgePanelsOptions) {
     const onMove = (e: PointerEvent) => {
       if (contextMenuRef.current) return;
       const t = e.target as HTMLElement | null;
-      if (t?.closest('.edge-panel') || t?.closest('.dock')) return;
+      if (t?.closest('.edge-panel') || t?.closest('.dock') || t?.closest('.side-dock')) return;
       const x = e.clientX;
       const y = e.clientY;
+      const nl = x <= SEAM_NEAR;
+      const nr = x >= window.innerWidth - SEAM_NEAR;
+      setNear((prev) => (prev.left === nl && prev.right === nr ? prev : { left: nl, right: nr }));
       if (y <= EDGE_HOTSPOT) showPanel('top');
       else scheduleHidePanel('top');
       if (x >= window.innerWidth - EDGE_HOTSPOT) showPanel('right');
@@ -83,6 +94,18 @@ export function useEdgePanels({ contextMenuRef }: UseEdgePanelsOptions) {
     return () => document.removeEventListener('pointermove', onMove);
   }, [showPanel, scheduleHidePanel, contextMenuRef]);
 
+  /** 侧面板开 / 关时调用：打开 = 钉住并保持显示；关闭 = 解除钉住，鼠标不在上面就按延迟收起。 */
+  const setPinned = useCallback(
+    (k: EdgeKey, on: boolean) => {
+      pinnedRef.current[k] = on;
+      if (on) showPanel(k);
+      else scheduleHidePanel(k);
+    },
+    [showPanel, scheduleHidePanel],
+  );
+  const pinLeft = useCallback((on: boolean) => setPinned('left', on), [setPinned]);
+  const pinRight = useCallback((on: boolean) => setPinned('right', on), [setPinned]);
+
   const enterTop = useCallback(() => enterPanel('top'), [enterPanel]);
   const leaveTop = useCallback(() => leavePanel('top'), [leavePanel]);
   const enterRight = useCallback(() => enterPanel('right'), [enterPanel]);
@@ -90,5 +113,5 @@ export function useEdgePanels({ contextMenuRef }: UseEdgePanelsOptions) {
   const enterLeft = useCallback(() => enterPanel('left'), [enterPanel]);
   const leaveLeft = useCallback(() => leavePanel('left'), [leavePanel]);
 
-  return { edge, showPanel, enterTop, leaveTop, enterRight, leaveRight, enterLeft, leaveLeft };
+  return { edge, near, showPanel, enterTop, leaveTop, enterRight, leaveRight, enterLeft, leaveLeft, pinLeft, pinRight };
 }

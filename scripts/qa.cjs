@@ -302,8 +302,8 @@ async function main() {
   // 右侧 Dock 由边缘感应触发：先移到右边缘
   await page.mouse.move(1596, 420);
   await page.waitForTimeout(600);
-  // 打开「设置」球窗口（默认系统设置页）→ 切到背景设置
-  await page.locator('.dock .row[data-name="settings"] .pill').click();
+  // 点「设置」小球滑出右侧面板（样张 F：小球 → 固定侧面板）→ 切到背景设置
+  await page.locator('.sd-rail.sd-right .sd-orb[aria-label="设置"]').click();
   await page.waitForTimeout(600);
   await page.locator('.set-tabs span', { hasText: '背景设置' }).click();
   await page.waitForTimeout(400);
@@ -330,14 +330,11 @@ async function main() {
 
   // ---------- 10) 歌单导入与播放器 ----------
   // 10a. 导入演示歌单（输入留空）
-  // 左侧歌单 Dock 由边缘感应触发；先悬浮「手动导入」球展开胶囊
+  // 左侧 Dock 由边缘感应触发：小球浮出后点「导入」，滑出左侧面板
   await page.mouse.move(4, 420);
   await page.waitForTimeout(600);
-  await page.locator('.dock .row[data-name="manual"] .pill').hover();
+  await page.locator('.sd-rail.sd-left .sd-orb[aria-label="导入"]').click();
   await page.waitForTimeout(500);
-  // 手动导入输入框位于手动球展开的窗口内（与原型一致）
-  await page.locator('.dock .row[data-name="manual"] .pill').click();
-  await page.waitForTimeout(700);
   await page.locator('.manual-import .input').fill('');
   await page.locator('.manual-import .input').press('Enter');
   await page.waitForFunction(() => window.__nebula && window.__nebula.total === 16, null, {
@@ -353,13 +350,17 @@ async function main() {
   log('导入后曲库数(应为16)', importTotal);
   log('导入后挂载卡片数', mountedAfterImport);
 
-  // 10a+. 边缘收回防抖：移出左侧面板后应自动收起
+  // 10a+. 侧面板点开后常驻（样张 F）：鼠标移开不收起；Esc 关闭后小球列按延迟收回
   await page.mouse.move(800, 450);
-  await page.waitForTimeout(700);
+  await page.waitForTimeout(800);
+  const panelStays = await page.evaluate(() => !!document.querySelector('.sd-panel.sd-left.is-open'));
+  log('左侧面板移开后保持打开', panelStays);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(900);
   const edgeHideOk = await page.evaluate(
-    () => !document.querySelector('.dock-left')?.classList.contains('is-open'),
+    () => !document.querySelector('.sd-panel.sd-left.is-open') && !document.querySelector('.sd-rail.sd-left.is-shown'),
   );
-  log('左侧面板移出自动收回', edgeHideOk);
+  log('Esc 关闭后左侧收回', edgeHideOk);
 
   // 10a++. 播放模式：顺序 → 单曲循环 → 随机（Fisher-Yates 全歌单洗牌）
   const modeCycle = await page.evaluate(() => {
@@ -655,6 +656,7 @@ async function main() {
     !qualityState.quality ||
     !qualityState.switched ||
     !edgeHideOk ||
+    !panelStays ||
     !shuffleOk ||
     !volOk ||
     !localOk.title ||
@@ -680,6 +682,7 @@ async function main() {
     failedCard: failedCount < 1,
     qualityMenu: qualityItems < 3 || !qualityState.quality || !qualityState.switched,
     edgeHide: !edgeHideOk,
+    panelStays: !panelStays,
     shuffle: !shuffleOk,
     volHover: !volOk,
     localImport: !localOk.title || !localOk.source || !localOk.audio,

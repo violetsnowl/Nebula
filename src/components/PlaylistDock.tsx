@@ -1,9 +1,9 @@
-import { memo, useLayoutEffect, useRef, useState } from 'react';
+import { memo, useRef, useState } from 'react';
 import type { AccountState } from '../lib/accounts';
 import type { Track } from '../lib/catalog';
 import type { ImportStatus } from './ImportBar';
 import { DOCK_PLATFORM_ORDER, platformMeta } from './platforms';
-import { GlassPill } from './dock/GlassPill';
+import { SideDock } from './dock/SideDock';
 
 interface PlaylistDockProps {
   visible: boolean;
@@ -21,6 +21,12 @@ interface PlaylistDockProps {
   onPlaySongFromList: (index: number) => void;
   onPlayPlaylist: () => void;
   onSongContextMenu: (e: React.MouseEvent, track: Track) => void;
+  /** 导入本地文件夹（与顶栏 ♪ 同一个入口）。 */
+  onOpenLocal: () => void;
+  /** 鼠标靠近左边缘（提示光痕变亮）。 */
+  near: boolean;
+  /** 面板开 / 关：通知边缘感应钉住或解除。 */
+  onPinChange: (open: boolean) => void;
 }
 
 /** 未登录平台窗口内文案（与原型逐字一致）。 */
@@ -89,59 +95,20 @@ export const PlaylistDock = memo(function PlaylistDock({
   onPlaySongFromList,
   onPlayPlaylist,
   onSongContextMenu,
+  onOpenLocal,
+  near,
+  onPinChange,
 }: PlaylistDockProps) {
-  const [openId, setOpenId] = useState<string | null>(null);
+  // 侧面板（样张 F）：歌单 / 导入
+  const [active, setActive] = useState<'playlists' | 'import' | null>(null);
   const [detailOpen, setDetailOpen] = useState(true);
-  const rowRefs = useRef(new Map<string, HTMLDivElement>());
-  const flipRef = useRef<{ id: string; from: number } | null>(null);
+  const lastRef = useRef<'playlists' | 'import'>('playlists');
+  if (active) lastRef.current = active;
+  const shown = active ?? lastRef.current;
   const listRef = useRef<HTMLDivElement>(null);
-
-  // 面板收回时复位
-  const visibleRef = useRef(visible);
-  visibleRef.current = visible;
-
-  // 原型 flipRow：开/关窗口时该行 FLIP 上移置顶，dock 整体上移
-  useLayoutEffect(() => {
-    const f = flipRef.current;
-    flipRef.current = null;
-    if (!f) return;
-    const row = rowRefs.current.get(f.id);
-    if (!row) return;
-    const to = row.getBoundingClientRect().top;
-    const dy = f.from - to;
-    if (Math.abs(dy) < 1) return;
-    row.style.transition = 'none';
-    row.style.transform = `translateY(${dy}px)`;
-    requestAnimationFrame(() => {
-      requestAnimationFrame(() => {
-        row.style.transition = 'transform 0.55s var(--jelly-win)';
-        row.style.transform = 'translateY(0)';
-      });
-    });
-  }, [openId]);
-
-  const handlePillClick = (id: string) => {
-    if (!visibleRef.current) return;
-    const row = rowRefs.current.get(id);
-    flipRef.current = { id, from: row ? row.getBoundingClientRect().top : 0 };
-    if (openId === id) {
-      setOpenId(null);
-      return;
-    }
-    setOpenId(id);
-    setDetailOpen(true);
-  };
 
   const isCurrent = (platform: string, id: string): boolean =>
     !!currentPlaylist && currentPlaylist.platform === platform && currentPlaylist.id === id;
-
-  // 窗口打开时：打开的行排到最前（原型 order:-1 的 React 等价）；手动行始终只有一份
-  const rows =
-    openId === 'manual'
-      ? ['manual', ...DOCK_PLATFORM_ORDER]
-      : openId
-        ? [openId, ...DOCK_PLATFORM_ORDER.filter((p) => p !== openId), 'manual']
-        : [...DOCK_PLATFORM_ORDER, 'manual'];
 
   const windowContent = (id: string) => {
     const meta = platformMeta(id);
@@ -245,61 +212,64 @@ export const PlaylistDock = memo(function PlaylistDock({
     );
   };
 
-  return (
-    <div
-      className={`dock dock-left${visible ? ' is-open' : ''}${openId ? ' has-open' : ''}`}
-      onPointerEnter={onEnter}
-      onPointerLeave={onLeave}
-    >
-      {rows.map((id) => {
-        const meta = platformMeta(id);
-        const account = accounts[id];
-        const isManual = id === 'manual';
-        const isOpen = openId === id;
-        return (
-          <div
-            key={id}
-            ref={(el) => {
-              if (el) rowRefs.current.set(id, el);
-              else rowRefs.current.delete(id);
-            }}
-            className={`row${isOpen ? ' open' : ''}`}
-            data-name={id}
-            style={{ '--brand': isManual ? '#9aa4c8' : meta.brand } as React.CSSProperties}
-          >
-            <GlassPill visible={visible} onClick={() => handlePillClick(id)}>
-              <span className="icon" style={isManual ? { fontSize: 14 } : undefined}>
-                {isManual ? (
-                  '＋'
-                ) : (
-                  <img className="dock-logo-img" src={meta.logo} alt="" draggable={false} />
-                )}
-              </span>
-              {isManual ? (
-                <span className="cap-text">手动导入 · 粘贴歌单链接（输入框示意）</span>
-              ) : account?.loggedIn ? (
-                <span className="cap-text">
-                  {meta.name} · 歌单 {account.playlists.length} 个
-                </span>
-              ) : (
-                <>
-                  <span className="cap-text">{meta.name}</span>
-                  <span className="cap-text" style={{ color: 'rgba(255,255,255,.5)' }}>
-                    未登录
-                  </span>
-                </>
-              )}
-              <span className="go">›</span>
-            </GlassPill>
-            <div className="win">
-              <div className="win-inner" ref={isOpen ? listRef : undefined}>
-                <div className="win-pad" />
-                {windowContent(id)}
-              </div>
-            </div>
-          </div>
-        );
-      })}
+  // 过渡版内容：已登录平台的歌单依次排列；下一步换成样张 F 的「歌单」（全部平台合并 + 平台筛选 + 详情）
+  const loggedIn = DOCK_PLATFORM_ORDER.filter((p) => accounts[p]?.loggedIn);
+  const playlistsView = (
+    <div ref={listRef}>
+      {loggedIn.length ? (
+        loggedIn.map((p) => <div key={p}>{windowContent(p)}</div>)
+      ) : (
+        <div className="login-detail">还没有登录任何平台 · 在右侧「账号」里登录后，歌单会出现在这里</div>
+      )}
     </div>
+  );
+  const importView = (
+    <>
+      <div className="win-title">
+        <span>导入</span>
+      </div>
+      <ManualImport status={importStatus} onImport={onImportUrl} />
+      <button type="button" className="glass-btn" style={{ marginTop: 12 }} onClick={onOpenLocal}>
+        本地文件夹…
+      </button>
+    </>
+  );
+
+  return (
+    <SideDock
+      side="left"
+      visible={visible}
+      near={near}
+      active={active}
+      onActiveChange={(id) => setActive(id === 'playlists' || id === 'import' ? id : null)}
+      onPinChange={onPinChange}
+      onEnter={onEnter}
+      onLeave={onLeave}
+      items={[
+        {
+          id: 'playlists',
+          label: '歌单',
+          icon: (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" aria-hidden="true">
+              <path d="M5.5 4.5v15M9.5 4.5v15" />
+              <path d="M14 5.2l4.2 14.3" />
+            </svg>
+          ),
+        },
+        {
+          id: 'import',
+          label: '导入',
+          icon: (
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M12 4v11" />
+              <path d="M7.5 10.5L12 15l4.5-4.5" />
+              <path d="M5 19.5h14" />
+            </svg>
+          ),
+        },
+      ]}
+    >
+      {shown === 'playlists' ? playlistsView : importView}
+    </SideDock>
   );
 });
