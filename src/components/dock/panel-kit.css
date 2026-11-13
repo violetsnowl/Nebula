@@ -150,14 +150,43 @@
   line-height: 1.5;
 }
 
-/* 分段控件（§9.5） */
+/* 分段控件（§9.5）：滑轨 + 一块会滑动的选中滑块（P4 动效回归）。
+   滑块位置 / 宽度由组件量出选中按钮后写入 --gx / --gw；过渡用果冻曲线，略带回弹但不晃。 */
 .sd-panel .seg {
+  position: relative;
   display: inline-flex;
   flex: none;
-  padding: 2px;
-  border-radius: 9px;
+  padding: 3px;
+  border-radius: 11px;
   background: rgba(0, 0, 0, 0.25);
   box-shadow: inset 0 0 0 1px var(--hair);
+  isolation: isolate;
+}
+
+.sd-panel .seg-glider {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  left: 0;
+  width: var(--gw, 0px);
+  border-radius: 8px;
+  z-index: -1;
+  /* 选中段（§6）：极淡底 + 1px 内描边 + 顶部一丝高光，不发光 */
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.07),
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 1px 3px rgba(0, 0, 0, 0.22);
+  transform: translateX(var(--gx, 0px));
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sd-panel .seg.is-placed .seg-glider {
+  opacity: 1;
+  transition:
+    transform 0.36s var(--ease-jelly),
+    width 0.36s var(--ease-jelly);
 }
 
 .sd-panel .seg button {
@@ -169,22 +198,24 @@
   font-size: 12px;
   font-weight: 500;
   line-height: 1;
-  padding: 6px 10px;
-  border-radius: 7px;
+  padding: 6px 11px;
+  border-radius: 8px;
   cursor: pointer;
   white-space: nowrap;
   transition:
-    color 0.12s ease,
-    background 0.12s ease;
+    color 0.16s ease,
+    transform 0.22s var(--ease-jelly);
 }
 
 .sd-panel .seg button:hover {
   color: var(--fg);
 }
 
+.sd-panel .seg button:active {
+  transform: scale(0.96);
+}
+
 .sd-panel .seg button[aria-pressed='true'] {
-  background: rgba(255, 255, 255, 0.1);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
   color: var(--fg);
 }
 
@@ -219,10 +250,9 @@
   top: 3px;
   width: 18px;
   height: 18px;
-  border-radius: 50%;
+  border-radius: 9px;
   background: #fff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
-  transition: transform 0.26s var(--ease-jelly);
 }
 
 .sd-panel .tg[aria-checked='true'] {
@@ -231,6 +261,21 @@
 
 .sd-panel .tg[aria-checked='true'] i {
   transform: translateX(16px);
+}
+
+/* 按下时圆钮横向拉长一点（和分段滑块同一种果冻手感），松开弹回 */
+.sd-panel .tg i {
+  transition:
+    transform 0.26s var(--ease-jelly),
+    width 0.2s var(--ease-jelly);
+}
+
+.sd-panel .tg:active i {
+  width: 22px;
+}
+
+.sd-panel .tg[aria-checked='true']:active i {
+  transform: translateX(12px);
 }
 
 /* 滑杆（§9.5）：--p 由组件按当前值写入 */
@@ -387,7 +432,9 @@
 @media (prefers-reduced-motion: reduce) {
   .sd-panel .view,
   .sd-panel .tg i,
-  .sd-panel .chev {
+  .sd-panel .chev,
+  .sd-panel .seg-glider,
+  .sd-panel .seg button {
     transition: none !important;
   }
 }

@@ -249,6 +249,147 @@
   margin: 0 4px 12px;
 }
 
+/* 歌单详情的紧凑栏：大页头（含「播放全部」）滚出顶部后，从面板顶边浮出
+   （iOS 大标题收成导航栏的做法）。栏在滚动区外面（SideDock overlay），直接落在面板玻璃上；
+   栏下面的列表用遮罩淡出——面板是 G3 玻璃，里面再套一层背景模糊不会生效，所以不用毛玻璃底条。 */
+@property --sd-fade {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+.sd-panel.fade-top .sd-scroll {
+  --sd-fade: 0px;
+  -webkit-mask-image: linear-gradient(to bottom, transparent var(--sd-fade), #000 calc(var(--sd-fade) * 1.55));
+  mask-image: linear-gradient(to bottom, transparent var(--sd-fade), #000 calc(var(--sd-fade) * 1.55));
+  transition: --sd-fade 0.26s var(--ease-std);
+}
+
+.sd-panel.fade-top.is-bar-on .sd-scroll {
+  --sd-fade: 40px;
+}
+
+.sd-panel .pl-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  height: 52px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 0 12px 0 6px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-8px);
+  pointer-events: none;
+  transition:
+    opacity 0.22s var(--ease-std),
+    transform 0.26s var(--ease-std),
+    visibility 0s linear 0.26s;
+}
+
+.sd-panel .pl-bar.is-on {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  pointer-events: auto;
+  transition-delay: 0s;
+}
+
+.sd-panel .pl-bar .cv {
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  flex: none;
+  background-size: cover;
+  background-position: center;
+}
+
+.sd-panel .pl-bar-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.sd-panel .pl-bar button {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  flex: none;
+  display: grid;
+  place-items: center;
+  cursor: pointer;
+  background: none;
+  color: var(--fg-2);
+  transition:
+    color 0.12s ease,
+    background 0.12s ease,
+    transform 0.22s var(--ease-jelly);
+}
+
+.sd-panel .pl-bar button svg {
+  width: 18px;
+  height: 18px;
+}
+
+.sd-panel .pl-bar-back,
+.sd-panel .pl-bar-top {
+  width: 30px;
+  height: 30px;
+}
+
+.sd-panel .pl-bar-back:hover,
+.sd-panel .pl-bar-top:hover {
+  color: var(--fg);
+}
+
+.sd-panel .pl-bar-back:hover {
+  transform: translateX(-1px);
+}
+
+.sd-panel .pl-bar-top:hover {
+  transform: translateY(-1px);
+}
+
+/* 播放：和「播放全部」同一种中性浅色实底，缩成小圆 */
+.sd-panel .pl-bar-play {
+  width: 30px;
+  height: 30px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.9) !important;
+  color: #0b0c10 !important;
+}
+
+.sd-panel .pl-bar-play svg {
+  width: 15px;
+  height: 15px;
+  margin-left: 1px;
+}
+
+.sd-panel .pl-bar-play:hover:not(:disabled) {
+  background: #fff !important;
+  transform: scale(1.06);
+}
+
+.sd-panel .pl-bar-play:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sd-panel .pl-bar,
+  .sd-panel.fade-top .sd-scroll {
+    transition: none;
+  }
+}
+
 /* 歌曲行：歌单可能上千首，离屏的行不参与布局和绘制 */
 .sd-panel .song {
   position: relative;

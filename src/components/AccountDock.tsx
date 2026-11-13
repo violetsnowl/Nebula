@@ -1,4 +1,4 @@
-﻿import { memo, useCallback, useEffect, useRef, useState } from 'react';
+﻿import { memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import type { KeyboardEvent, ReactNode } from 'react';
 import QRCode from 'qrcode';
 import type { DesktopLoginPlatform } from '../lib/playlist/ipcClient';
@@ -7,6 +7,8 @@ import type { BackgroundSetting } from '../lib/backgrounds';
 import type { CoverBgMode } from '../lib/backgrounds';
 import type { GlassTheme } from '../lib/glass';
 import type { ListenSettingsPatch, LyricVisualSettings } from '../lib/lyricSettings';
+import { audioPlayer } from '../lib/audio/AudioPlayer';
+import { currentLyricIndex, type LyricLineUI } from '../lib/lyrics';
 import { SideDock } from './dock/SideDock';
 import { DOCK_PLATFORM_ORDER, platformMeta } from './platforms';
 import './dock/right-panel.css';
@@ -58,13 +60,18 @@ interface AccountDockProps {
   near: boolean;
   /** 当前播放歌曲的封面（背景页「雾中封面」、外观页材质预览用；没有歌曲时为空）。 */
   coverUrl: string;
+  /** 当前歌曲的歌词（歌词设置页的实时预览用）。 */
+  lyricLines: LyricLineUI[];
   /** 面板开 / 关：通知边缘感应钉住或解除。 */
   onPinChange: (open: boolean) => void;
 }
 
 /* ---------- 面板内的小控件（样式在 dock/panel-kit.css） ---------- */
 
-/** 分段控件（§9.5）。 */
+/**
+ * 分段控件（§9.5）：选中段是一块滑块，换选项时带一点果冻弹性滑过去（P4 那版的动效，适配新面板）。
+ * 每段按文字自然宽度排开，滑块的位置和宽度量自选中按钮，所以长短不一的选项也能对齐。
+ */
 function Seg<T extends string>({
   value,
   options,
@@ -78,8 +85,36 @@ function Seg<T extends string>({
   label?: string;
   wide?: boolean;
 }) {
+  const ref = useRef<HTMLDivElement>(null);
+  // 第一次量到位置前不显示滑块，也不做过渡（避免从左边滑进来）
+  const [placed, setPlaced] = useState(false);
+  const idx = options.findIndex((o) => o.value === value);
+
+  useLayoutEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    const place = () => {
+      const btn = el.querySelectorAll<HTMLButtonElement>(':scope > button')[idx];
+      if (!btn || btn.offsetWidth === 0) return;
+      el.style.setProperty('--gx', `${btn.offsetLeft}px`);
+      el.style.setProperty('--gw', `${btn.offsetWidth}px`);
+      setPlaced(true);
+    };
+    place();
+    // 字体晚到、面板宽度变化时重新量
+    const ro = new ResizeObserver(place);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [idx, options.length]);
+
   return (
-    <div className={`seg${wide ? ' wide' : ''}${wide ? ' rp-tabs' : ''}`} role="group" aria-label={label}>
+    <div
+      ref={ref}
+      className={`seg${wide ? ' wide rp-tabs' : ''}${placed ? ' is-placed' : ''}`}
+      role="group"
+      aria-label={label}
+    >
+      <span className="seg-glider" aria-hidden="true" />
       {options.map((o) => (
         <button key={o.value} type="button" aria-pressed={value === o.value} onClick={() => onChange(o.value)}>
           {o.label}
@@ -557,39 +592,182 @@ function AccountDetail({
 
 const PREVIEW_LINE = '风经过的地方，都亮了';
 const PREVIEW_NEXT = '路灯一盏一盏替我数着心跳';
+
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 
-/**
- * 小窗里用当前封面的环境光和三段扫字唱一句，随歌词设置实时变化。
- * active=false（面板收起 / 不在歌词页）时停掉 rAF；减少动效时只画静止的半唱状态。
- */
-function LyricPreview({ settings, maxFont, active }: { settings: LyricVisualSettings; maxFont: number; active: boolean }) {
-  const curRef = useRef<HTMLDivElement>(null);
+/** 逐字切分用：CJK / 假名 / 谚文按单字，其余按空格分词（和空域歌词层一致）。 */
+const PV_CJK = /[⺀-鿿豈-﫿　-〿぀-ヿ가-힯]/;
 
-  useEffect(() => {
-    if (!active) return;
-    const chars = Array.from(curRef.current?.querySelectorAll<HTMLElement>('.rp-ch') ?? []);
-    const n = chars.length;
-    const setProgress = (t: number) => {
-      chars.forEach((c, j) => c.style.setProperty('--wp', clamp(t * n - j, 0, 1).toFixed(3)));
-    };
-    if (window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) {
-      setProgress(0.5);
-      return;
+interface PvToken {
+  text: string;
+  startMs: number;
+  duration: number;
+}
+
+const usableLine = (l?: LyricLineUI) => !!l && (!!l.text?.trim() || !!l.words?.length);
+
+/**
+ * 预览该唱哪一句：正在唱的那句（live）；前奏 / 还没开始时先拿第一句做示范（不跟时间）。
+ * 没有歌词（没在放歌 / 纯音乐 / 没拿到歌词）返回 -1，用示例句。
+ */
+function pickPreviewLine(lines: LyricLineUI[], tMs: number): { idx: number; live: boolean } {
+  const i = currentLyricIndex(lines, tMs);
+  for (let k = i; k >= 0; k--) if (usableLine(lines[k])) return { idx: k, live: true };
+  for (let k = 0; k < lines.length; k++) if (usableLine(lines[k])) return { idx: k, live: false };
+  return { idx: -1, live: false };
+}
+
+function nextUsable(lines: LyricLineUI[], from: number): LyricLineUI | undefined {
+  for (let k = from + 1; k < lines.length; k++) if (usableLine(lines[k])) return lines[k];
+  return undefined;
+}
+
+/** 一句歌词切成扫字单位：有逐字时间就用逐字时间，否则把整句时长平均分给每个字 / 词。 */
+function previewTokens(lines: LyricLineUI[], idx: number): PvToken[] {
+  const line = lines[idx];
+  if (!line) return [];
+  if (line.words?.length) {
+    // 逐字时间里的词不带空格：前后两个词都是字母 / 数字时补一个空格（和空域歌词层同一规则）
+    const ws = line.words;
+    return ws.map((w, i) => {
+      const prev = ws[i - 1];
+      const gap = !!prev && /[A-Za-z0-9]/.test(prev.text) && /[A-Za-z0-9]/.test(w.text) && !/\s$/.test(prev.text);
+      return { text: gap ? ` ${w.text}` : w.text, startMs: w.startMs, duration: Math.max(1, w.duration) };
+    });
+  }
+  const parts: string[] = [];
+  let buf = '';
+  for (const ch of line.text) {
+    if (PV_CJK.test(ch)) {
+      if (buf) parts.push(buf);
+      buf = '';
+      parts.push(ch);
+    } else if (ch === ' ') {
+      if (buf) parts.push(`${buf} `);
+      else if (parts.length) parts[parts.length - 1] += ' ';
+      buf = '';
+    } else {
+      buf += ch;
     }
-    const t0 = performance.now();
-    let raf = 0;
-    const tick = (now: number) => {
-      setProgress((((now - t0) % 4200) / 4200) / 0.82);
-      raf = requestAnimationFrame(tick);
-    };
-    raf = requestAnimationFrame(tick);
-    return () => cancelAnimationFrame(raf);
-  }, [active]);
+  }
+  if (buf) parts.push(buf);
+  const next = nextUsable(lines, idx);
+  const gap = next ? clamp(next.timeMs - line.timeMs, 1200, 12000) : 6000;
+  const per = (line.duration ?? gap) / Math.max(1, parts.length);
+  return parts.map((text, j) => ({ text, startMs: line.timeMs + j * per, duration: per }));
+}
+
+const SAMPLE_TOKENS: PvToken[] = [...PREVIEW_LINE].map((text) => ({ text, startMs: 0, duration: 1 }));
+
+/**
+ * 歌词实时预览：当前封面的环境光 + 当前歌曲正在唱的那一句，按歌词设置实时渲染。
+ *   - 播放中：跟着真实播放进度扫字（和画面里的空域歌词同步）；
+ *   - 暂停 / 前奏：在这一句上循环示范扫字，方便调高亮样式；
+ *   - 没有歌词：用一句示例歌词。
+ * 句子比预览窗宽时，跟着唱到的位置横向平移、两端淡出（保持真实字号，不缩小）。
+ * active=false（面板收起 / 不在歌词页）时停掉 rAF；减少动效时只画一帧静止的半唱状态。
+ */
+function LyricPreview({
+  settings,
+  maxFont,
+  active,
+  lines,
+}: {
+  settings: LyricVisualSettings;
+  maxFont: number;
+  active: boolean;
+  lines: LyricLineUI[];
+}) {
+  const curRef = useRef<HTMLDivElement>(null);
+  const lineRef = useRef<HTMLDivElement>(null);
+  const [pick, setPick] = useState(() => pickPreviewLine(lines, audioPlayer.getState().currentTime * 1000));
+  const pickRef = useRef(pick);
+  pickRef.current = pick;
+
+  const tokens = useMemo(() => (pick.idx >= 0 ? previewTokens(lines, pick.idx) : SAMPLE_TOKENS), [lines, pick.idx]);
+  const tokensRef = useRef(tokens);
+  tokensRef.current = tokens;
+  const nextText = pick.idx >= 0 ? (nextUsable(lines, pick.idx)?.text ?? '') : PREVIEW_NEXT;
 
   // 预览窗只有 104px 高：把软件里的字号（14…maxFont）按比例缩到 13–30px，再乘当前句放大
   const ratio = clamp((settings.fontSize - 14) / Math.max(1, maxFont - 14), 0, 1);
   const fs = 13 + ratio * 17;
+  const k = settings.currentScale / 1.22;
+  const kRef = useRef(k);
+  kRef.current = k;
+
+  // 换歌：立刻按当前进度重新挑一句
+  useEffect(() => {
+    setPick(pickPreviewLine(lines, audioPlayer.getState().currentTime * 1000));
+  }, [lines]);
+
+  useEffect(() => {
+    if (!active) return;
+    const reduce = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+    const t0 = performance.now();
+    let raf = 0;
+    let baseMs = -1;
+    let stamp = 0;
+    let sx = 0;
+    let lastLine: HTMLDivElement | null = null;
+
+    const tick = (now: number) => {
+      const st = audioPlayer.getState();
+      const propMs = st.currentTime * 1000;
+      if (propMs !== baseMs) {
+        baseMs = propMs;
+        stamp = now;
+      }
+      // 播放器的进度隔一段才更新一次，中间用帧时间补平
+      const t = st.playing ? baseMs + Math.min(now - stamp, 1500) : baseMs;
+
+      const want = lines.length ? pickPreviewLine(lines, t) : { idx: -1, live: false };
+      if (want.idx !== pickRef.current.idx || want.live !== pickRef.current.live) {
+        pickRef.current = want;
+        setPick(want);
+      }
+
+      const lineEl = lineRef.current;
+      const cur = curRef.current;
+      if (lineEl && cur) {
+        const toks = tokensRef.current;
+        const n = toks.length;
+        const live = st.playing && pickRef.current.live && pickRef.current.idx >= 0;
+        const demo = reduce ? 0.5 : ((now - t0) % 4200) / 4200 / 0.82;
+        const wp = toks.map((tk, j) =>
+          live ? clamp((t - tk.startMs) / tk.duration, 0, 1) : clamp(demo * n - j, 0, 1),
+        );
+        const chars = lineEl.children;
+
+        // 先读布局，再写样式
+        const W = cur.clientWidth;
+        const visW = lineEl.offsetWidth * kRef.current;
+        const over = visW > W - 24;
+        let target = 0;
+        if (over) {
+          let j = -1;
+          for (let q = 0; q < n; q++) if ((wp[q] ?? 0) > 0) j = q;
+          const el = j >= 0 ? (chars[j] as HTMLElement | undefined) : undefined;
+          const xs = el ? (el.offsetLeft + el.offsetWidth * (wp[j] ?? 0)) * kRef.current : 0;
+          const lim = visW / 2 - W / 2 + 14;
+          target = clamp(visW / 2 - xs, -lim, lim);
+        }
+        // 换句：直接到位；同一句里平滑跟随
+        sx = lineEl !== lastLine ? target : sx + (target - sx) * 0.2;
+        lastLine = lineEl;
+
+        for (let q = 0; q < chars.length; q++) {
+          (chars[q] as HTMLElement).style.setProperty('--wp', (wp[q] ?? 0).toFixed(3));
+        }
+        lineEl.style.setProperty('--sx', `${sx.toFixed(1)}px`);
+        cur.classList.toggle('is-over', over);
+      }
+      if (!reduce) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(raf);
+  }, [active, lines]);
+
   return (
     <div
       className={`rp-preview${settings.highlightStyle === 'float' ? ' float' : ''}`}
@@ -599,26 +777,30 @@ function LyricPreview({ settings, maxFont, active }: { settings: LyricVisualSett
     >
       <div className="rp-pb" />
       <div className="rp-pv" />
-      <div className="rp-next">{PREVIEW_NEXT}</div>
+      <div key={`n${pick.idx}`} className="rp-next">
+        {nextText}
+      </div>
       <div
         ref={curRef}
         className="rp-cur"
         style={
           {
             fontSize: `${fs.toFixed(1)}px`,
-            transform: `scale(${settings.currentScale / 1.22})`,
             fontWeight: settings.bold ? 700 : 600,
+            '--k': k.toFixed(3),
             '--rise': `${((settings.wordRise * fs) / 44).toFixed(2)}px`,
           } as React.CSSProperties
         }
       >
-        {[...PREVIEW_LINE].map((c, i) => (
-          <span key={i} className="rp-ch">
-            {c}
-          </span>
-        ))}
+        <div key={`c${pick.idx}`} ref={lineRef} className="rp-line">
+          {tokens.map((tk, i) => (
+            <span key={i} className="rp-ch">
+              {tk.text}
+            </span>
+          ))}
+        </div>
       </div>
-      <span className="rp-tag">实时预览</span>
+      <span className="rp-tag">{pick.idx >= 0 ? '实时预览 · 当前歌曲' : '实时预览'}</span>
     </div>
   );
 }
@@ -700,6 +882,7 @@ export const AccountDock = memo(function AccountDock({
   perfAutoLevel,
   near,
   coverUrl,
+  lyricLines,
   onPinChange,
 }: AccountDockProps) {
   const [openRow, setOpenRow] = useState<'login' | 'settings' | null>(null);
@@ -846,7 +1029,7 @@ export const AccountDock = memo(function AccountDock({
   const lyricsPage = (
     <>
       <div className="g-title">预览</div>
-      <LyricPreview settings={lyricSettings} maxFont={maxFont} active={openRow === 'settings'} />
+      <LyricPreview settings={lyricSettings} maxFont={maxFont} active={openRow === 'settings'} lines={lyricLines} />
       <div className="g-title">文字</div>
       <div className="group">
         <Slider

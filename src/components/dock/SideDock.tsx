@@ -32,6 +32,10 @@ interface SideDockProps {
   onPinChange: (open: boolean) => void;
   onEnter: () => void;
   onLeave: () => void;
+  /** 浮在滚动区上面、不随内容滚动的一层（如歌单详情的紧凑栏）。 */
+  overlay?: ReactNode;
+  /** 追加到面板上的类名（内容方控制滚动区顶部淡出等）。 */
+  panelClass?: string;
   children: ReactNode;
 }
 
@@ -81,6 +85,8 @@ export function SideDock({
   onPinChange,
   onEnter,
   onLeave,
+  overlay,
+  panelClass,
   children,
 }: SideDockProps) {
   const shown = visible || active !== null;
@@ -138,12 +144,13 @@ export function SideDock({
         ))}
       </nav>
       <section
-        className={`side-dock sd-panel ${cls} glass-g3${active ? ' is-open' : ''}`}
+        className={`side-dock sd-panel ${cls} glass-g3${active ? ' is-open' : ''}${panelClass ? ` ${panelClass}` : ''}`}
         aria-hidden={!active}
         onPointerEnter={onEnter}
         onPointerLeave={onLeave}
       >
         <div className="sd-scroll">{children}</div>
+        {overlay}
       </section>
     </>
   );

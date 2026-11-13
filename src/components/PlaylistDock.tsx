@@ -72,6 +72,9 @@ function activateOnKey(e: React.KeyboardEvent, fn: () => void) {
 }
 
 /** 封面方块：有图用背景图，没有就是中性占位。 */
+/** 歌单详情顶部紧凑栏的高度（和 left-panel.css 的 .pl-bar 一致）。 */
+const BAR_H = 52;
+
 function Cover({ src, className }: { src?: string; className: string }) {
   return (
     <span
@@ -189,6 +192,9 @@ export const PlaylistDock = memo(function PlaylistDock({
   const navRef = useRef<HTMLDivElement>(null);
   const timersRef = useRef<number[]>([]);
   const { song: playing } = usePlayback();
+  // 歌单详情：大页头（含「播放全部」）滚出顶部后，顶部浮出一条紧凑栏（返回 · 封面 · 歌单名 · 播放 · 回到顶部）
+  const actionsRef = useRef<HTMLDivElement>(null);
+  const [stuck, setStuck] = useState(false);
 
   useEffect(
     () => () => {
@@ -355,6 +361,79 @@ export const PlaylistDock = memo(function PlaylistDock({
   const selMeta = sel ? platformMeta(sel.platform) : null;
   const detailCover = (ready && currentPlaylist?.cover) || sel?.cover;
 
+  const inDetail = shown === 'playlists' && nav.view === 'detail' && !!sel;
+  useEffect(() => {
+    const target = actionsRef.current;
+    const root = scroller();
+    if (!inDetail || !target || !root) {
+      setStuck(false);
+      return;
+    }
+    // 「播放全部」那一行滑到紧凑栏（52px）后面时，紧凑栏出现
+    const io = new IntersectionObserver(
+      ([e]) => {
+        if (!e) return;
+        const top = e.rootBounds?.top ?? root.getBoundingClientRect().top + BAR_H;
+        setStuck(!e.isIntersecting && e.boundingClientRect.top < top);
+      },
+      { root, rootMargin: `-${BAR_H}px 0px 0px 0px`, threshold: 0 },
+    );
+    io.observe(target);
+    return () => {
+      io.disconnect();
+      setStuck(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inDetail, sel?.platform, sel?.id]);
+
+  const toTop = () => scroller()?.scrollTo({ top: 0, behavior: 'smooth' });
+
+  // 紧凑栏放在滚动区外面（SideDock 的 overlay 插槽）：栏下面的列表用遮罩淡出，栏直接落在面板玻璃上
+  const topBar =
+    inDetail && sel && selMeta ? (
+      <div className={`pl-bar${stuck ? ' is-on' : ''}`} aria-hidden={!stuck}>
+        <button
+          type="button"
+          className="pl-bar-back"
+          aria-label="返回歌单"
+          data-tip="返回歌单"
+          tabIndex={stuck ? 0 : -1}
+          onClick={() => go('list')}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M14.5 6 8.5 12l6 6" />
+          </svg>
+        </button>
+        <Cover src={detailCover} className="cv" />
+        <span className="pl-bar-name">{sel.name}</span>
+        <button
+          type="button"
+          className="pl-bar-play"
+          aria-label="播放全部"
+          data-tip="播放全部"
+          tabIndex={stuck ? 0 : -1}
+          disabled={!ready || songs.length === 0}
+          onClick={onPlayPlaylist}
+        >
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M8.5 6.2v11.6c0 .6.66.97 1.17.65l9.1-5.8a.77.77 0 0 0 0-1.3l-9.1-5.8a.77.77 0 0 0-1.17.65Z" fill="currentColor" />
+          </svg>
+        </button>
+        <button
+          type="button"
+          className="pl-bar-top"
+          aria-label="回到顶部"
+          data-tip="回到顶部"
+          tabIndex={stuck ? 0 : -1}
+          onClick={toTop}
+        >
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+            <path d="M12 18.5V6.5M6.5 12 12 6.5l5.5 5.5" />
+          </svg>
+        </button>
+      </div>
+    ) : null;
+
   const detailView = (
     <div key="detail" className={`view${viewClass('detail', nav)}`}>
       <button type="button" className="back" onClick={() => go('list')}>
@@ -372,7 +451,7 @@ export const PlaylistDock = memo(function PlaylistDock({
               </div>
             </div>
           </div>
-          <div className="pl-actions">
+          <div className="pl-actions" ref={actionsRef}>
             <button
               type="button"
               className="btn primary"
@@ -380,13 +459,6 @@ export const PlaylistDock = memo(function PlaylistDock({
               onClick={onPlayPlaylist}
             >
               播放全部
-            </button>
-            <button
-              type="button"
-              className="btn text"
-              onClick={() => scroller()?.scrollTo({ top: 0, behavior: 'smooth' })}
-            >
-              回到顶部
             </button>
           </div>
           {ready ? (
@@ -460,6 +532,8 @@ export const PlaylistDock = memo(function PlaylistDock({
   return (
     <SideDock
       side="left"
+      overlay={topBar}
+      panelClass={inDetail ? `fade-top${stuck ? ' is-bar-on' : ''}` : undefined}
       visible={visible}
       near={near}
       active={active}

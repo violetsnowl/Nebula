@@ -573,6 +573,7 @@ export default function App() {
         perfAutoLevel={perfAutoLevel}
         near={near.right}
         coverUrl={playerState.song?.cover ?? ''}
+        lyricLines={lyricLines}
         onPinChange={pinRight}
       />
 
