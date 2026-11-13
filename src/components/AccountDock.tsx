@@ -54,6 +54,8 @@ interface AccountDockProps {
   perfAutoLevel: number;
   /** 鼠标靠近右边缘（提示光痕变亮）。 */
   near: boolean;
+  /** 当前播放歌曲的封面（背景页「雾中封面」预览用；没有歌曲时为空）。 */
+  coverUrl: string;
   /** 面板开 / 关：通知边缘感应钉住或解除。 */
   onPinChange: (open: boolean) => void;
 }
@@ -519,8 +521,10 @@ export const AccountDock = memo(function AccountDock({
   onPerfPriority,
   perfAutoLevel,
   near,
+  coverUrl,
   onPinChange,
 }: AccountDockProps) {
+  void coverUrl; // 过渡：背景页「雾中封面」预览在面板内容重做时使用
   const [openRow, setOpenRow] = useState<'login' | 'settings' | null>(null);
   const [activePlatform, setActivePlatform] = useState(selectedPlatform);
   const [settingsPage, setSettingsPage] = useState<DockSettingsPage>('system');

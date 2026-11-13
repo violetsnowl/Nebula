@@ -1,0 +1,393 @@
+/* ============================================================
+   侧面板基础件（NEBULA_UI_SYSTEM §6 / §9.5，样张 E / F）
+   两侧面板共用：标题、分组列表、行、分段控件、开关、滑杆、按钮、返回、推入动画。
+   一律限定在 .sd-panel 内，避免和旧的全局类名（.row / .group …）互相影响。
+   左右各自的专用样式放在 left-panel.css / right-panel.css。
+   ============================================================ */
+
+:root {
+  --sep: rgba(255, 255, 255, 0.065);
+  --danger: #ff6b6b;
+  --success: #34d399;
+}
+
+.sd-panel {
+  color: var(--fg);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* 标题行：大标题 + 右侧弱文字 */
+.sd-panel .win-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 0 4px 12px;
+}
+
+.sd-panel .win-head h2 {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--fg);
+}
+
+.sd-panel .win-head .sub {
+  font-size: 12px;
+  color: var(--fg-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 分组：标题写在卡片外，卡片里的行之间用细线（iOS 式分组列表） */
+.sd-panel .g-title {
+  font-size: 12px;
+  color: var(--fg-3);
+  margin: 16px 6px 6px;
+}
+
+.sd-panel .g-title:first-child {
+  margin-top: 4px;
+}
+
+.sd-panel .group {
+  display: block;
+  background: rgba(255, 255, 255, 0.045);
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.sd-panel .row {
+  position: relative;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 8px 12px;
+}
+
+.sd-panel .row-col {
+  position: relative;
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px 12px;
+}
+
+.sd-panel .row-col .head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sd-panel .group > .row + .row::before,
+.sd-panel .group > .row + .row-col::before,
+.sd-panel .group > .row-col + .row::before,
+.sd-panel .group > .row-col + .row-col::before {
+  content: '';
+  position: absolute;
+  left: 12px;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: var(--sep);
+}
+
+.sd-panel .lbl {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--fg);
+  line-height: 1.35;
+}
+
+.sd-panel .lbl small {
+  display: block;
+  font-size: 11px;
+  color: var(--fg-3);
+  margin-top: 2px;
+  line-height: 1.4;
+}
+
+.sd-panel .val {
+  font-size: 12px;
+  color: var(--fg-3);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* 可点的行（§6 列表行：极淡底色 + 文字提亮，无描边无光晕） */
+.sd-panel .btn-row {
+  cursor: pointer;
+  transition: background 0.12s ease;
+}
+
+.sd-panel .btn-row:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.sd-panel .chev {
+  color: var(--fg-3);
+  font-size: 15px;
+  line-height: 1;
+  transition:
+    transform 0.22s var(--ease-jelly),
+    color 0.12s ease;
+}
+
+.sd-panel .btn-row:hover .chev {
+  transform: translateX(2px);
+  color: var(--fg-2);
+}
+
+.sd-panel .hint-line {
+  font-size: 12px;
+  color: var(--fg-3);
+  margin: 8px 4px 0;
+  line-height: 1.5;
+}
+
+/* 分段控件（§9.5） */
+.sd-panel .seg {
+  display: inline-flex;
+  flex: none;
+  padding: 2px;
+  border-radius: 9px;
+  background: rgba(0, 0, 0, 0.25);
+  box-shadow: inset 0 0 0 1px var(--hair);
+}
+
+.sd-panel .seg button {
+  appearance: none;
+  border: 0;
+  background: none;
+  color: var(--fg-2);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 6px 10px;
+  border-radius: 7px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition:
+    color 0.12s ease,
+    background 0.12s ease;
+}
+
+.sd-panel .seg button:hover {
+  color: var(--fg);
+}
+
+.sd-panel .seg button[aria-pressed='true'] {
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+  color: var(--fg);
+}
+
+.sd-panel .seg.wide {
+  display: flex;
+}
+
+.sd-panel .seg.wide button {
+  flex: 1;
+  padding: 8px 6px;
+  font-size: 13px;
+}
+
+/* 开关（§9.5：开启态 --acc） */
+.sd-panel .tg {
+  appearance: none;
+  position: relative;
+  flex: none;
+  width: 40px;
+  height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 12px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.16);
+  transition: background 0.2s ease;
+}
+
+.sd-panel .tg i {
+  position: absolute;
+  left: 3px;
+  top: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.35);
+  transition: transform 0.26s var(--ease-jelly);
+}
+
+.sd-panel .tg[aria-checked='true'] {
+  background: var(--acc);
+}
+
+.sd-panel .tg[aria-checked='true'] i {
+  transform: translateX(16px);
+}
+
+/* 滑杆（§9.5）：--p 由组件按当前值写入 */
+.sd-panel .rng {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 16px;
+  margin: 0;
+  cursor: pointer;
+  background: linear-gradient(90deg, var(--acc) 0 var(--p, 0%), rgba(255, 255, 255, 0.14) var(--p, 0%) 100%) center /
+    100% 2px no-repeat;
+}
+
+.sd-panel .rng::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
+  transition: transform 0.22s var(--ease-jelly);
+}
+
+.sd-panel .rng:hover::-webkit-slider-thumb {
+  transform: scale(1.07);
+}
+
+/* 按钮：主按钮中性浅色实底（颜色只来自音乐，不用品牌色）；次级；文字；危险 */
+.sd-panel .btn {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  height: 36px;
+  padding: 0 16px;
+  border-radius: 10px;
+  white-space: nowrap;
+  transition:
+    background 0.12s ease,
+    color 0.12s ease,
+    transform 0.12s ease;
+}
+
+.sd-panel .btn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.sd-panel .btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.sd-panel .btn.primary {
+  background: rgba(255, 255, 255, 0.9);
+  color: #0b0c10;
+}
+
+.sd-panel .btn.primary:hover:not(:disabled) {
+  background: #fff;
+}
+
+.sd-panel .btn.sec {
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+  color: var(--fg-2);
+}
+
+.sd-panel .btn.sec:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--fg);
+}
+
+.sd-panel .btn.text {
+  background: none;
+  color: var(--fg-2);
+  padding: 0 6px;
+}
+
+.sd-panel .btn.text:hover:not(:disabled) {
+  color: var(--fg);
+}
+
+.sd-panel .btn.danger {
+  background: none;
+  color: var(--danger);
+  padding: 0 6px;
+}
+
+.sd-panel .btn.full {
+  width: 100%;
+}
+
+/* 返回（面板内推入的详情页左上角） */
+.sd-panel .back {
+  appearance: none;
+  border: 0;
+  background: none;
+  color: var(--fg-2);
+  font: inherit;
+  font-size: 13px;
+  padding: 6px 4px;
+  margin: -2px 0 6px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: color 0.12s ease;
+}
+
+.sd-panel .back:hover {
+  color: var(--fg);
+}
+
+/* 推入动画：列表 ↔ 详情（280ms，左右 24px） */
+.sd-panel .nav {
+  position: relative;
+}
+
+.sd-panel .view {
+  transition:
+    transform 0.28s var(--ease-std),
+    opacity 0.28s var(--ease-std);
+}
+
+.sd-panel .view.hidden-left,
+.sd-panel .view.hidden-right {
+  position: absolute;
+  inset: 0 0 auto 0;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sd-panel .view.hidden-left {
+  transform: translateX(-24px);
+}
+
+.sd-panel .view.hidden-right {
+  transform: translateX(24px);
+}
+
+/* 键盘焦点（§6） */
+.sd-panel button:focus-visible,
+.sd-panel [role='button']:focus-visible,
+.sd-panel .rng:focus-visible,
+.sd-panel input:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.55);
+  outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sd-panel .view,
+  .sd-panel .tg i,
+  .sd-panel .chev {
+    transition: none !important;
+  }
+}

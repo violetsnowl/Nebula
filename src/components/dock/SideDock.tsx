@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ReactNode } from 'react';
 import { useGlass } from '../../lib/glass';
+import './panel-kit.css';
 
 /**
  * 两侧 Dock（NEBULA_UI_SYSTEM §9.2，样张 F，2026-11-12 定稿）：

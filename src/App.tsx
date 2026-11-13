@@ -572,6 +572,7 @@ export default function App() {
         onPerfPriority={setPerfPriority}
         perfAutoLevel={perfAutoLevel}
         near={near.right}
+        coverUrl={playerState.song?.cover ?? ''}
         onPinChange={pinRight}
       />
 
