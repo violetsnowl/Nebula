@@ -3,7 +3,7 @@ import { effectiveTierParams, glassThemeCssVars, tierBezel, type GlassTheme, typ
 
 /**
  * GlassManager（docs/design/NEBULA_UI_SYSTEM.md §3.6）：
- * 为每个注册的玻璃面创建一个 SVG 滤镜（位移贴图 + RGB 三通道色散）：G1、G2，以及 G3 的大面（两侧面板、弹窗）。
+ * 为每个注册的玻璃面创建一个 SVG 滤镜（位移贴图 + RGB 三通道色散）：G1、G2，以及 G3 的两侧面板。
  * 位移贴图是九宫格（4 角 + 4 边 + 中性底，P4 修正）：尺寸变化时每一帧只移动这些块，不重画贴图，
  * 所以宽度动画（Dock 小球展开成胶囊、搜索胶囊展开）全程折射都和真实形状对齐，不会出现"拉出一个球头、最后猛地一变"。
  * 通过元素上的 `--glass-filter: url(#id)` 交给 CSS 的 backdrop-filter 使用（材质画在 ::before 上）。
