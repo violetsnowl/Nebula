@@ -46,6 +46,37 @@ function ErrorLine({ text }: { text: string }) {
 
 /* ---------- 评论 ---------- */
 
+/** QQ 音乐评论里的表情是 `[em]e400835[/em]` 这样的代码，对应 QQ 自己图床上的 24px 表情图。 */
+const QQ_EMOJI = /\[em\](e\d{3,8})\[\/em\]/g;
+const qqEmojiUrl = (code: string) => `https://y.gtimg.cn/mediastyle/global/emoji/img/${code}.png`;
+
+/** 评论正文：表情代码换成行内小图；图取不到时整个隐藏，不露出代码或破图标。 */
+function CommentText({ text }: { text: string }) {
+  if (!text.includes('[em]')) return <>{text}</>;
+  const parts: React.ReactNode[] = [];
+  let last = 0;
+  for (const m of text.matchAll(QQ_EMOJI)) {
+    const i = m.index ?? 0;
+    if (i > last) parts.push(text.slice(last, i));
+    parts.push(
+      <img
+        key={i}
+        className="cmt-emoji"
+        src={qqEmojiUrl(m[1]!)}
+        alt=""
+        loading="lazy"
+        draggable={false}
+        onError={(e) => {
+          e.currentTarget.style.display = 'none';
+        }}
+      />,
+    );
+    last = i + m[0].length;
+  }
+  if (last < text.length) parts.push(text.slice(last));
+  return <>{parts}</>;
+}
+
 interface CommentItem {
   nickname: string;
   avatarUrl: string;
@@ -120,7 +151,9 @@ function CommentsPanel({ track, onClose }: { track: Track; onClose: () => void }
       {c.avatarUrl ? <img className="cmt-avatar" src={c.avatarUrl} alt="" loading="lazy" /> : <span className="cmt-avatar is-ph" />}
       <div className="cmt-body">
         <div className="cmt-nick">{c.nickname}</div>
-        <div className="cmt-content">{c.content}</div>
+        <div className="cmt-content">
+          <CommentText text={c.content} />
+        </div>
         <div className="cmt-like">♥ {c.likedCount}</div>
       </div>
     </div>

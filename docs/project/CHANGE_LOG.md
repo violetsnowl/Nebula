@@ -6,6 +6,20 @@
 
 ---
 
+## #104 — 2026-11-13 — 两处小修复：QQ 评论表情显示、播放模式循环顺序
+
+**改动**
+- QQ 音乐评论表情（`InfoModals.tsx` 新增 `CommentText`，`styles.css` 新增 `.cmt-emoji`）：
+  - 评论正文里的 `[em]e400835[/em]` 原来原样显示；现在换成 QQ 图床上的 24px 表情图，地址为 `https://y.gtimg.cn/mediastyle/global/emoji/img/<代码>.png`；
+  - 行内显示，1.35em，压在基线上；
+  - 图取不到时整个隐藏，不露代码也不露破图标。
+- 播放模式循环顺序按用户拍板改为 **顺序 → 随机 → 单曲**（`AudioPlayer.cycleMode`），与播放器母稿一致；`scripts/qa.cjs` 断言同步。
+- 文档：真源 §10、PLAYER_IMPL_PLAN、CONTEXT_SNAPSHOT、NOTES 中的挂起决策标为已定。
+
+**验证**
+- `tsc` ✔；`pnpm build` ✔；`pnpm qa` ✔（播放模式循环：random → repeat-one → sequential；控制台错误 0）。
+- 无头渲染带表情代码的评论：表情图正常加载；不存在的代码被隐藏。
+
 ## #103 — 2026-11-13 — 修复：打开评论弹窗整窗黑屏（撤掉弹窗的边缘折射）
 
 **背景**：用户验收 #101、#102 全部通过，唯一问题是在桌面版点「评论」后整个窗口变黑，重开软件依旧。

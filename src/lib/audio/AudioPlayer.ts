@@ -326,12 +326,12 @@ class AudioPlayer {
     this.emit();
   }
 
-  /** 顺序播放 → 单曲循环 → 全局随机 循环切换。 */
+  /** 顺序播放 → 全局随机 → 单曲循环 循环切换（2026-11-13 用户拍板，与播放器母稿一致）。 */
   cycleMode(): void {
     const next: Record<PlayMode, PlayMode> = {
-      sequential: 'repeat-one',
-      'repeat-one': 'random',
-      random: 'sequential',
+      sequential: 'random',
+      random: 'repeat-one',
+      'repeat-one': 'sequential',
     };
     this.setMode(next[this.mode]);
   }

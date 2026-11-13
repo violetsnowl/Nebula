@@ -385,7 +385,7 @@ async function main() {
     return { mode: p.getState().mode, unique: ids.size };
   });
   await page.evaluate(() => window.__nebula.player.setMode('sequential'));
-  const modeOk = JSON.stringify(modeCycle) === JSON.stringify(['repeat-one', 'random', 'sequential']);
+  const modeOk = JSON.stringify(modeCycle) === JSON.stringify(['random', 'repeat-one', 'sequential']);
   log('播放模式循环', modeCycle.join(' -> '));
   log('随机模式 12 次切歌不重复', `${shuffle.unique}/12`);
   const shuffleOk = modeOk && shuffle.mode === 'random' && shuffle.unique === 12;
