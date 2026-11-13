@@ -90,7 +90,7 @@ export const OverlayStack = memo(function OverlayStack({
       {contextMenu && (
         <>
           <div className="ctx-backdrop" onPointerDown={onCloseContextMenu} onContextMenu={(e) => e.preventDefault()} />
-          <div className="ctx-menu glass" style={{ left: contextMenu.x, top: contextMenu.y }}>
+          <div className="ctx-menu glass-g3" style={{ left: contextMenu.x, top: contextMenu.y }}>
             <button
               onClick={() => {
                 onInsertNext(contextMenu.track);

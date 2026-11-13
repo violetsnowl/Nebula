@@ -1,4 +1,5 @@
-import { memo, type ReactNode } from 'react';
+import { memo, useRef, type ReactNode } from 'react';
+import { useGlass } from '../lib/glass';
 
 interface TopBarProps {
   visible: boolean;
@@ -20,6 +21,9 @@ export const TopBar = memo(function TopBar({
   onLeave,
   onOpenLocal,
 }: TopBarProps) {
+  // 本地导入 = G2 透镜圆按钮（NEBULA_UI_SYSTEM §3.3）；顶栏收起时不注册折射
+  const localRef = useRef<HTMLButtonElement>(null);
+  useGlass(localRef, 'g2', visible);
   return (
     <header
       className={`edge-panel edge-top topbar${visible ? ' is-open' : ''}`}
@@ -29,12 +33,13 @@ export const TopBar = memo(function TopBar({
       <div className="top-bar">
         {searchSlot}
         <button
-          className="local-btn glass-btn"
+          ref={localRef}
+          className="local-btn glass-g2"
           title="导入本地音乐（选择文件夹，自动解析 ID3 标签）"
           disabled={localBusy}
           onClick={onOpenLocal}
         >
-          {localBusy ? '…' : '♪'}
+          <span>{localBusy ? '…' : '♪'}</span>
         </button>
         <span className="chip">{total.toLocaleString('en-US')} 首</span>
       </div>

@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { MouseEvent } from 'react';
 import { audioPlayer } from '../../lib/audio/AudioPlayer';
 import { libraryService } from '../../lib/library';
@@ -33,6 +33,12 @@ export function useOverlays() {
   const [infoModal, setInfoModal] = useState<InfoModalState | null>(null);
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
   const [modeToast, setModeToast] = useState('');
+  // Toast 停留 2.4s 后自动消失（NEBULA_UI_SYSTEM §9.6）；文字变了就重新计时。以前只有播放模式提示会消失，「未找到歌手」等提示会一直留着
+  useEffect(() => {
+    if (!modeToast) return;
+    const t = window.setTimeout(() => setModeToast(''), 2400);
+    return () => window.clearTimeout(t);
+  }, [modeToast]);
 
   const openContextMenu = useCallback((e: MouseEvent, track: Track) => {
     e.preventDefault();

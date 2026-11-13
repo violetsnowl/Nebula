@@ -11,9 +11,23 @@ import type {
 } from '../lib/playlist/ipcClient';
 
 function ModalShell({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+  // §9.4：Esc 关闭；关闭后焦点回到打开它的元素
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      if (opener && document.contains(opener)) opener.focus({ preventScroll: true });
+    };
+  }, [onClose]);
   return (
-    <div className="info-overlay" onPointerDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="info-modal glass" onPointerDown={(e) => e.stopPropagation()}>
+    <div className="info-overlay">
+      {/* 遮罩独立一层（NEBULA_UI_SYSTEM §9.4）：点它关闭；面板不以它为祖先，G3 玻璃才能采到背后画面 */}
+      <div className="info-veil" onPointerDown={onClose} />
+      <div className="info-modal glass-g3" onPointerDown={(e) => e.stopPropagation()}>
         {children}
       </div>
     </div>

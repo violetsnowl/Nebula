@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
+import { useGlass } from '../lib/glass';
 import { matchSongs, type SearchMatch } from '../lib/search';
 import type { Track } from '../lib/catalog';
 import { toFrontendTrack, type DesktopArtistHit } from '../lib/playlist/ipcClient';
@@ -100,6 +101,11 @@ export function SearchBar({
   const [netSearching, setNetSearching] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  // 搜索胶囊 = G1，展开后的放大镜小球 = G2（NEBULA_UI_SYSTEM §9.3 / §3.3）
+  const pillRef = useRef<HTMLButtonElement>(null);
+  const bubbleRef = useRef<HTMLDivElement>(null);
+  useGlass(pillRef, 'g1');
+  useGlass(bubbleRef, 'g2');
   const prevExpandedRef = useRef(false);
   const netSeqRef = useRef(0);
 
@@ -225,8 +231,9 @@ export function SearchBar({
           transition={GOOEY_TRANSITION}
         >
           <button
+            ref={pillRef}
             type="button"
-            className={`gooey-pill glass-btn${isExpanded ? '' : ' is-collapsed'}`}
+            className={`gooey-pill glass-g1${isExpanded ? '' : ' is-collapsed'}`}
             onClick={handleExpand}
             title={isExpanded ? undefined : '搜索歌曲 / 歌手'}
           >
@@ -271,7 +278,7 @@ export function SearchBar({
           animate={isExpanded ? 'expanded' : 'collapsed'}
           transition={GOOEY_TRANSITION}
         >
-          <div className="gooey-bubble-surface glass-btn">
+          <div ref={bubbleRef} className="gooey-bubble-surface glass-g2">
             <SearchIcon layoutId={iconLayoutId} />
           </div>
         </motion.div>

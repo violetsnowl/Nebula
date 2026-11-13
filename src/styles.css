@@ -843,21 +843,24 @@ body {
   color: rgba(255, 255, 255, 0.4);
 }
 
+/* 清空：图形按钮，hover 只提亮自身（§6） */
 .search-clear {
   width: 20px;
   height: 20px;
   border-radius: 50%;
   border: none;
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
-  font-size: 13px;
+  background: none;
+  color: var(--fg-3);
+  font-size: 15px;
   line-height: 1;
   cursor: pointer;
   flex: none;
+  transition: color 0.12s ease, transform 0.22s var(--ease-jelly);
 }
 
 .search-clear:hover {
-  background: rgba(255, 255, 255, 0.28);
+  color: var(--fg);
+  transform: scale(1.07);
 }
 
 .search-drop {
@@ -869,25 +872,29 @@ body {
   max-height: 380px;
   overflow: hidden auto;
   padding: 8px;
-  background: rgba(16, 18, 32, 0.9);
-  backdrop-filter: blur(24px) saturate(160%);
-  -webkit-backdrop-filter: blur(24px) saturate(160%);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  border-radius: 16px;
-  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  /* §9.3：结果下拉 = G3，圆角 r-lg */
+  background: rgba(0, 0, 0, calc(var(--g3-tint) + var(--tint-adapt) * 0.5));
+  -webkit-backdrop-filter: blur(var(--g3-blur)) saturate(var(--g3-sat)) brightness(1.05);
+  backdrop-filter: blur(var(--g3-blur)) saturate(var(--g3-sat)) brightness(1.05);
+  border: none;
+  border-radius: 20px;
+  box-shadow:
+    inset 0 0 1.5px 1px rgba(255, 255, 255, calc(var(--g3-rim) * 0.62)),
+    inset 0 0 14px 3px rgba(255, 255, 255, calc(var(--g3-rim) * 0.16)),
+    0 24px 60px rgba(0, 0, 0, 0.45);
 }
 
 .search-drop-count {
   padding: 4px 10px 8px;
   font-size: 11px;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--fg-3);
 }
 
 .search-empty {
   padding: 16px 10px;
   text-align: center;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.45);
+  color: var(--fg-3);
 }
 
 .search-results {
@@ -906,26 +913,28 @@ body {
   gap: 10px;
   padding: 7px 8px;
   border: none;
-  border-radius: 11px;
+  border-radius: 10px;
   background: transparent;
-  color: #fff;
+  color: var(--fg-row);
   cursor: pointer;
   text-align: left;
-  transition: background 0.18s ease;
+  transition: background 0.12s ease, color 0.12s ease;
 }
 
+/* §6 列表行：极淡底色 + 文字提亮；键盘选中项同样处理 */
 .search-item.is-active,
 .search-item:hover {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--fg);
 }
 
 .search-thumb {
   width: 34px;
   height: 34px;
   flex: none;
-  border-radius: 8px;
+  border-radius: 6px;
   overflow: hidden;
-  background: linear-gradient(135deg, rgba(120, 120, 255, 0.5), rgba(255, 120, 190, 0.35));
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .search-thumb img {
@@ -944,8 +953,8 @@ body {
 }
 
 .search-title {
-  font-size: 12.5px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -955,34 +964,27 @@ body {
   display: flex;
   align-items: center;
   gap: 6px;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.55);
+  font-size: 12px;
+  color: var(--fg-3);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
+/* 匹配类型小标签：中性（颜色只来自音乐，§2-1），r-xs */
 .search-kind {
   font-style: normal;
-  font-size: 10px;
+  font-size: 11px;
   padding: 1px 6px;
-  border-radius: 999px;
+  border-radius: 6px;
   flex: none;
-}
-
-.search-kind.is-title {
-  background: rgba(120, 160, 255, 0.22);
-  color: rgba(170, 200, 255, 0.9);
-}
-
-.search-kind.is-artist {
-  background: rgba(255, 160, 120, 0.2);
-  color: rgba(255, 200, 170, 0.9);
+  background: rgba(255, 255, 255, 0.07);
+  color: var(--fg-3);
 }
 
 .search-go {
   flex: none;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--fg-3);
   font-size: 13px;
 }
 
@@ -1026,42 +1028,54 @@ body {
   pointer-events: auto;
 }
 
+/* 顶栏歌曲计数：弱文字，不做胶囊（§5.1 --fg-3，数字等宽） */
 .chip {
-  padding: 8px 14px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.07);
-  backdrop-filter: blur(18px) saturate(160%);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  font-size: 11.5px;
-  letter-spacing: 0.3px;
-  color: rgba(255, 255, 255, 0.75);
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--fg-3);
+  font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
+/* 次级按钮（P4 合并原来三份定义，§6）：中性浅底 + 1px 内描边；hover 文字提亮、底色略亮；按下缩放；不发光。
+   顶栏 / 回到中心 / 搜索这些圆形或胶囊控件不用它，改用 .glass-g1 / .glass-g2 */
 .glass-btn {
-  padding: 8px 16px;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.09);
-  backdrop-filter: blur(18px) saturate(160%);
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  color: #fff;
+  position: relative;
+  padding: 8px 14px;
+  border-radius: 10px;
+  border: none;
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.07);
+  color: var(--fg-2);
   font-size: 12px;
+  font-weight: 500;
   cursor: pointer;
   white-space: nowrap;
   transition:
-    background 0.25s ease,
-    border-color 0.25s ease,
-    transform 0.25s ease;
+    color 0.12s ease,
+    background 0.12s ease,
+    transform 0.12s ease;
 }
 
-.glass-btn:hover,
+.glass-btn:hover:not(:disabled),
 .glass-btn.active {
-  background: rgba(255, 255, 255, 0.18);
-  border-color: rgba(255, 255, 255, 0.4);
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.12);
 }
 
-.glass-btn:active {
+.glass-btn:active:not(:disabled) {
   transform: scale(0.96);
+}
+
+.glass-btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* 次要动作（返回、改用另一种方式）：纯文字按钮 */
+.glass-btn.is-ghost {
+  background: none;
+  box-shadow: none;
 }
 
 /* ---------- 背景选择器 ---------- */
@@ -2167,22 +2181,25 @@ body {
   text-align: center;
 }
 
+/* Toast（§9.6）：G3 胶囊，位于播放条上方 24px（播放条距底 22px、高 80px），停留 2.4s（useOverlays 统一计时） */
 .mode-toast {
   position: fixed;
   left: 50%;
-  bottom: 112px;
+  bottom: calc(22px + 80px + 24px);
   transform: translateX(-50%);
   z-index: 400;
-  padding: 8px 18px;
+  padding: 8px 16px;
   border-radius: 999px;
-  background: rgba(18, 20, 34, 0.75);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  color: #fff;
-  font-size: 12px;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
-  animation: mode-toast-in 0.25s ease-out;
+  background: rgba(0, 0, 0, calc(var(--g3-tint) + var(--tint-adapt) * 0.5));
+  -webkit-backdrop-filter: blur(var(--g3-blur)) saturate(var(--g3-sat));
+  backdrop-filter: blur(var(--g3-blur)) saturate(var(--g3-sat));
+  border: none;
+  color: var(--fg);
+  font-size: 13px;
+  box-shadow:
+    inset 0 0 1.5px 1px rgba(255, 255, 255, calc(var(--g3-rim) * 0.62)),
+    0 12px 32px rgba(0, 0, 0, 0.4);
+  animation: mode-toast-in 0.16s var(--ease-std);
 }
 
 @keyframes mode-toast-in {
@@ -2196,6 +2213,7 @@ body {
   }
 }
 
+/* 弹窗（§9.4）：遮罩是独立的一层（不是面板的祖先），否则它会成为面板的背景采样边界，面板的 G3 玻璃采不到背后画面 */
 .info-overlay {
   position: fixed;
   inset: 0;
@@ -2203,27 +2221,49 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
-  background: rgba(4, 5, 10, 0.5);
-  backdrop-filter: blur(18px);
-  -webkit-backdrop-filter: blur(18px);
 }
 
+/* 遮罩（§3.3）：背后整体 brightness(.6) blur(6px)，进出 280ms */
+.info-veil {
+  position: absolute;
+  inset: 0;
+  -webkit-backdrop-filter: blur(6px) brightness(0.6);
+  backdrop-filter: blur(6px) brightness(0.6);
+  animation: info-veil-in 0.28s var(--ease-std) both;
+}
+
+@keyframes info-veil-in {
+  from {
+    opacity: 0;
+  }
+}
+
+/* 面板 = G3（.glass-g3 提供材质），圆角 r-lg；进出 = 透明度 + 8px 位移，不从中心放大 */
 .info-modal {
-  width: min(560px, 90vw);
+  position: relative;
+  width: min(560px, 92vw);
+  max-width: min(880px, 92vw);
   height: min(600px, 84vh);
   padding: 20px 22px;
   display: flex;
   flex-direction: column;
   gap: 12px;
   overflow: hidden;
-  border-radius: 18px;
+  border-radius: 20px;
+  animation: info-modal-in 0.28s var(--ease-std) both;
+}
+
+@keyframes info-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
 }
 
 .info-head {
-  font-size: 15px;
-  font-weight: 700;
-  color: #fff;
-  letter-spacing: 0.3px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
 }
 
 .info-scroll {
@@ -2314,10 +2354,13 @@ body {
   background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03));
 }
 
+/* 标题区（§9.4）：歌名 / 歌手名用 Display 字体 28px */
 .sd-title {
-  font-size: 17px;
-  font-weight: 700;
-  color: #fff;
+  font-family: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--fg);
 }
 
 .sd-artists {
@@ -2328,18 +2371,19 @@ body {
 }
 
 .sd-chip {
-  font-size: 11px;
+  font-size: 12px;
   padding: 4px 10px;
   border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.18);
+  border: none;
   background: rgba(255, 255, 255, 0.07);
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--fg-2);
   cursor: pointer;
+  transition: color 0.12s ease, background 0.12s ease;
 }
 
 .sd-chip:hover {
-  background: rgba(255, 255, 255, 0.14);
-  color: #fff;
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--fg);
 }
 
 .sd-album {
@@ -2355,12 +2399,12 @@ body {
     background: none;
     text-align: left;
     cursor: pointer;
-    transition: color 0.18s ease, text-shadow 0.18s ease;
+    transition: color 0.12s ease;
   }
 
+  /* hover 只提亮文字（§6），不发光 */
   .sd-album-link:hover {
-    color: rgba(255, 255, 255, 0.95);
-    text-shadow: 0 0 10px rgba(255, 255, 255, 0.35);
+    color: var(--fg);
   }
 
   .cmt-more {
@@ -2396,14 +2440,13 @@ body {
     background: none;
     padding: 0;
     font-size: 11px;
-    color: rgba(255, 255, 255, 0.55);
+    color: var(--fg-3);
     cursor: pointer;
-    transition: color 0.18s ease, text-shadow 0.18s ease;
+    transition: color 0.12s ease;
   }
 
   .ar-more:hover {
-    color: rgba(255, 255, 255, 0.95);
-    text-shadow: 0 0 10px rgba(255, 255, 255, 0.3);
+    color: var(--fg);
   }
 
   .info-head-row {
@@ -2412,20 +2455,19 @@ body {
     gap: 10px;
   }
 
+  /* 返回：文字按钮（§6） */
   .info-back {
     border: none;
-    background: rgba(255, 255, 255, 0.07);
-    border-radius: 999px;
-    padding: 4px 12px;
-    color: rgba(255, 255, 255, 0.85);
-    font-size: 12px;
+    background: none;
+    padding: 4px 2px;
+    color: var(--fg-2);
+    font-size: 13px;
     cursor: pointer;
-    transition: background 0.18s ease, color 0.18s ease;
+    transition: color 0.12s ease;
   }
 
   .info-back:hover {
-    background: rgba(255, 255, 255, 0.14);
-    color: #fff;
+    color: var(--fg);
   }
 
   .info-head-title {
@@ -2478,9 +2520,11 @@ body {
 }
 
 .ar-name {
-  font-size: 18px;
-  font-weight: 700;
-  color: #fff;
+  font-family: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--fg);
 }
 
 .ar-desc {
@@ -2507,7 +2551,7 @@ body {
 }
 
 .ar-song:hover {
-  background: rgba(255, 255, 255, 0.07);
+  background: rgba(255, 255, 255, 0.05);
 }
 
 .ar-song-idx {
@@ -2664,49 +2708,7 @@ body {
     inset 0 -12px 28px rgba(255, 255, 255, 0.035);
 }
 
-.glass-btn {
-  border: 1px solid transparent;
-  background:
-    linear-gradient(165deg, rgba(255, 255, 255, 0.13), rgba(255, 255, 255, 0.05)) padding-box,
-    linear-gradient(
-        160deg,
-        rgba(255, 255, 255, 0.52),
-        rgba(255, 255, 255, 0.1) 45%,
-        rgba(255, 255, 255, 0.3)
-      )
-      border-box;
-  box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.18),
-    0 6px 18px rgba(0, 0, 0, 0.35);
-}
-
-/* 顶层动态柔光遮罩：不挤压布局，颜色随背景 --glow-rgb 自适应 */
-.glass-btn::after,
-.search-box::after,
-.search-drop::after,
-.import-panel::after,
-.login-panel::after,
-.bg-picker::after,
-.now-playing::after,
-.quality-pop::after {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  pointer-events: none;
-  opacity: var(--glow-a, 0);
-  transition: opacity 0.35s ease-out;
-  background: radial-gradient(
-    300px circle at var(--gx, 50%) var(--gy, 50%),
-    rgba(var(--glow-rgb, 255, 255, 255), 0.14),
-    transparent 66%
-  );
-}
-
-/* 玻璃按钮需要相对定位承载遮罩 */
-.glass-btn {
-  position: relative;
-}
+/* （P4 删除：第二份 .glass-btn 渐变描边定义，以及跟随光标的柔光遮罩——属于 §6 禁止的通用发光） */
 
 /* 功能面板 / 弹窗的厚度感 */
 .import-panel::before,
@@ -2945,19 +2947,19 @@ body {
   width: 34px;
   height: 34px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.08);
-  color: #fff;
-  font-size: 17px;
+  border: none;
+  background: none;
+  color: var(--fg-2);
+  font-size: 20px;
   cursor: pointer;
   transition:
-    background 0.2s ease-out,
-    transform 0.2s ease-out;
+    color 0.12s ease,
+    transform 0.22s var(--ease-jelly);
 }
 
 .np-close:hover {
-  background: rgba(255, 255, 255, 0.2);
-  transform: scale(1.06);
+  color: var(--fg);
+  transform: scale(1.07);
 }
 
 .np-hero {
@@ -3198,27 +3200,32 @@ body {
   box-shadow: 0 18px 44px rgba(0, 0, 0, 0.45);
 }
 
+/* 本地导入：G2 透镜圆按钮（材质 .glass-g2），hover 只让图形自身提亮放大（§6） */
 .local-btn {
   flex: none;
   width: 40px;
   height: 40px;
   border-radius: 50%;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  background: rgba(255, 255, 255, 0.09);
-  color: #fff;
+  border: none;
+  color: rgba(236, 238, 241, 0.78);
   font-size: 16px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition:
-    background 0.2s ease,
-    transform 0.2s ease;
+}
+
+.local-btn > span {
+  display: inline-block;
+  transition: transform 0.22s var(--ease-jelly);
 }
 
 .local-btn:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.2);
-  transform: scale(1.05);
+  color: var(--fg);
+}
+
+.local-btn:hover:not(:disabled) > span {
+  transform: scale(1.07);
 }
 
 .local-btn:disabled {
@@ -3374,18 +3381,21 @@ body {
   resize: vertical;
   min-height: 64px;
   padding: 10px 12px;
-  border-radius: 12px;
-  border: 1px solid rgba(255, 255, 255, 0.16);
-  background: rgba(10, 12, 22, 0.55);
-  color: rgba(255, 255, 255, 0.86);
+  border-radius: 10px;
+  border: none;
+  background: rgba(0, 0, 0, 0.25);
+  box-shadow: inset 0 0 0 1px var(--hair);
+  color: var(--fg);
   font-size: 12px;
   font-family: inherit;
   line-height: 1.5;
   outline: none;
+  transition: box-shadow 0.12s ease;
 }
 
+/* 输入框（§9.5）：槽 + 内描边，焦点只加深描边，不发光 */
 .pf-cookie-input:focus {
-  border-color: rgba(255, 255, 255, 0.42);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
 }
 
 .acct-card {
@@ -3691,27 +3701,7 @@ body {
   background: rgba(255, 255, 255, 0.34);
 }
 
-/* ============================================================
-   全局按钮 hover 兜底（P0 清障，NEBULA_UI_SYSTEM §6）
-   原来的全局光晕（box-shadow 外发光 + 内描边）已删除：它会层叠到所有新组件上，
-   造成"乱发光"。这里只保留元素自身轻微提亮作为临时兜底；P4 各组件换上自己的状态后删除本段。
-   ============================================================ */
-button,
-.glass-btn,
-[role='button'] {
-  transition:
-    filter 0.18s ease,
-    box-shadow 0.18s ease,
-    background 0.18s ease,
-    border-color 0.18s ease,
-    transform 0.18s ease;
-}
-
-button:hover:not(:disabled),
-.glass-btn:hover:not(:disabled),
-[role='button']:hover {
-  filter: brightness(1.12);
-}
+/* （P4 删除：P0 留下的全局按钮提亮兜底。各组件已有自己的 hover 状态，见 NEBULA_UI_SYSTEM §6） */
 
 /* ============================================================
    歌单展开（已导入歌单 → 歌曲队列）
@@ -3862,28 +3852,38 @@ button:hover:not(:disabled),
 .ctx-menu {
   position: fixed;
   z-index: 301;
-  min-width: 132px;
+  min-width: 148px;
   padding: 6px;
-  border-radius: 12px;
+  border-radius: 14px;
   display: flex;
   flex-direction: column;
   gap: 2px;
+  animation: ctx-menu-in 0.16s var(--ease-std) both;
+}
+
+@keyframes ctx-menu-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
 }
 
 .ctx-menu button {
+  height: 34px;
   text-align: left;
-  font-size: 12px;
-  padding: 7px 10px;
+  font-size: 13px;
+  padding: 0 10px;
   border: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.9);
+  color: var(--fg-row);
   border-radius: 8px;
   cursor: pointer;
+  transition: background 0.12s ease, color 0.12s ease;
 }
 
 .ctx-menu button:hover {
-  background: rgba(255, 255, 255, 0.1);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+  color: var(--fg);
 }
 
 /* ============================================================
@@ -4141,11 +4141,40 @@ button:hover:not(:disabled),
 
 /* ---------- 常驻“回到中心” ---------- */
 
+/* 回到中心：G2 透镜圆按钮（§3.3，44px），图形 hover 提亮放大 */
 .center-btn {
   position: absolute;
   right: 24px;
   bottom: 110px;
   z-index: 50;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  color: rgba(236, 238, 241, 0.78);
+  font-size: 19px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.center-btn > span {
+  display: inline-block;
+  transition: transform 0.22s var(--ease-jelly);
+}
+
+.center-btn:hover {
+  color: var(--fg);
+}
+
+.center-btn:hover > span {
+  transform: scale(1.07);
+}
+
+.center-btn:active > span {
+  transform: scale(0.93);
 }
 
 /* 二级窗口歌词分区排版 */
@@ -4193,10 +4222,15 @@ button:hover:not(:disabled),
   height: 40px;
   padding: 0 14px;
   border-radius: 999px;
+  border: none;
+  background: none;
   cursor: pointer;
-  color: #fff;
-  font-size: 13px;
+  color: var(--fg);
+  font-size: 14px;
   text-align: left;
+  /* §9.3：搜索胶囊 = G1（.glass-g1 的材质在 ::before 上，这里建立层叠上下文） */
+  position: relative;
+  isolation: isolate;
 }
 
 .gooey-pill.is-collapsed {
@@ -4259,6 +4293,7 @@ button:hover:not(:disabled),
   display: flex;
   align-items: center;
   justify-content: center;
+  color: rgba(236, 238, 241, 0.78);
 }
 
 .gooey-clear {
@@ -4291,53 +4326,6 @@ button:hover:not(:disabled),
   --ui-hover-bright: 1.12;
   --ui-hover-saturate: 1.06;
   --ui-focus-ring: 0 0 0 2px rgba(var(--glow-rgb, 120, 140, 220), 0.45);
-}
-
-.fx-soft,
-.fx-medium,
-.fx-strong {
-  transition:
-    transform 0.18s var(--ui-spring),
-    filter 0.18s ease,
-    box-shadow 0.18s ease,
-    background 0.18s ease,
-    border-color 0.18s ease,
-    opacity 0.18s ease;
-}
-
-.fx-soft:hover:not(:disabled) {
-  transform: scale(var(--ui-hover-soft-scale));
-  filter: brightness(1.07) saturate(1.03);
-}
-
-.fx-medium:hover:not(:disabled) {
-  transform: scale(var(--ui-hover-med-scale));
-  filter: brightness(1.12) saturate(1.06);
-  box-shadow:
-    0 0 16px rgba(var(--glow-rgb, 120, 140, 220), 0.18),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.12);
-}
-
-.fx-strong:hover:not(:disabled) {
-  transform: scale(var(--ui-hover-strong-scale)) translateY(-1px);
-  filter: brightness(1.16) saturate(1.08);
-  box-shadow:
-    0 8px 22px rgba(0, 0, 0, 0.35),
-    0 0 20px rgba(var(--glow-rgb, 120, 140, 220), 0.28),
-    inset 0 0 0 1px rgba(255, 255, 255, 0.18);
-}
-
-.fx-soft:active:not(:disabled),
-.fx-medium:active:not(:disabled),
-.fx-strong:active:not(:disabled) {
-  transform: scale(0.97);
-}
-
-.fx-soft:focus-visible,
-.fx-medium:focus-visible,
-.fx-strong:focus-visible {
-  outline: none;
-  box-shadow: var(--ui-focus-ring);
 }
 
 /* 歌词加粗：由 LyricsLayer 写入 --lyric-weight */

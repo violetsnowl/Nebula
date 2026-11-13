@@ -36,6 +36,7 @@ import { useEdgePanels } from './hooks/edgePanels/useEdgePanels';
 import { useSearchCluster } from './hooks/searchCluster/useSearchCluster';
 import { useStage } from './hooks/stage/useStage';
 import { useListenMode } from './hooks/listen/useListenMode';
+import { useGlass } from './lib/glass';
 import { libraryService } from './lib/library';
 
 /** 初始曲库量：渲染成本与它无关，仅影响数据生成与空间索引（线性）。 */
@@ -216,6 +217,10 @@ export default function App() {
     resetImportState,
   } = stage;
 
+  // 回到中心 = G2 透镜圆按钮（NEBULA_UI_SYSTEM §3.3）
+  const centerRef = useRef<HTMLButtonElement>(null);
+  useGlass(centerRef, 'g2');
+
   // ---------- 漫游 / 聆听交接（useListenMode，NEBULA_UI_SYSTEM §7.1） ----------
   const appRef = useRef<HTMLElement>(null);
   const listenConfig = useMemo(
@@ -377,8 +382,7 @@ export default function App() {
     audioPlayer.cycleMode();
     const m = audioPlayer.getState().mode;
     const label = m === 'sequential' ? '顺序播放' : m === 'repeat-one' ? '单曲循环' : '随机播放';
-    setModeToast(label);
-    window.setTimeout(() => setModeToast(''), 1800);
+    setModeToast(label); // 停留时长由 useOverlays 统一计时（2.4s）
   }, []);
 
   /** 组合层接线：壁纸应用结果 → useBackground 设背景 + 关闭壁纸窗口。 */
@@ -572,8 +576,8 @@ export default function App() {
         onSongContextMenu={openContextMenu}
       />
 
-      <button className="glass-btn center-btn" onClick={handleReset} aria-label="回到中心">
-        ⌖ 回到中心
+      <button ref={centerRef} className="center-btn glass-g2" onClick={handleReset} aria-label="回到中心" title="回到中心">
+        <span>⌖</span>
       </button>
 
       {/* 开发者工具：歌词来源面板（默认隐藏，Ctrl+Shift+L 开关） */}
