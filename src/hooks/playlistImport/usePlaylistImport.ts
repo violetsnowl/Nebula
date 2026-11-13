@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Track } from '../../lib/catalog';
 import { hasDesktopAPI, toFrontendTrack } from '../../lib/playlist/ipcClient';
 import { resolvePlaylist } from '../../lib/playlist/adapters';
@@ -9,7 +9,7 @@ export interface ImportCommit {
   tracks: Track[];
   simulated: boolean;
   note?: string;
-  /** null 表示不更新当前歌单身份（如本地音乐，与既有行为一致）。 */
+  /** null 表示这批歌不属于任何平台歌单（本地音乐）：清掉当前歌单身份。 */
   meta: PlaylistMeta | null;
 }
 
@@ -20,6 +20,9 @@ interface UsePlaylistImportOptions {
   onImported: (commit: ImportCommit) => void;
 }
 
+/** 本地文件夹提示的停留时间。 */
+const WARN_MS = 5000;
+
 /**
  * 导入流程领域（docs/project/ARCHITECTURE.md §2）：
  * 手动链接 / 平台歌单 / 本地目录 三入口，只负责解析与状态，不拥有曲库。
@@ -29,8 +32,34 @@ export function usePlaylistImport({ onSessionStart, onImported }: UsePlaylistImp
   const [importMessage, setImportMessage] = useState('');
   const [localBusy, setLocalBusy] = useState(false);
 
+  // 本地文件夹的提示（取消 / 空文件夹）只是一句短提示：几秒后自动消失，下一次导入开始时也立刻清掉
+  const warnTimerRef = useRef(0);
+  const clearWarnTimer = useCallback(() => {
+    if (warnTimerRef.current) {
+      window.clearTimeout(warnTimerRef.current);
+      warnTimerRef.current = 0;
+    }
+  }, []);
+  useEffect(() => clearWarnTimer, [clearWarnTimer]);
+
+  const flashWarn = useCallback(
+    (message: string) => {
+      clearWarnTimer();
+      setImportStatus('warn');
+      setImportMessage(message);
+      warnTimerRef.current = window.setTimeout(() => {
+        warnTimerRef.current = 0;
+        // 只有状态还是这条提示时才复位，避免盖掉之后发生的导入状态
+        setImportStatus((s) => (s === 'warn' ? 'idle' : s));
+        setImportMessage((m) => (m === message ? '' : m));
+      }, WARN_MS);
+    },
+    [clearWarnTimer],
+  );
+
   const importUrl = useCallback(
     async (url: string) => {
+      clearWarnTimer();
       setImportStatus('parsing');
       setImportMessage('');
       onSessionStart();
@@ -48,12 +77,13 @@ export function usePlaylistImport({ onSessionStart, onImported }: UsePlaylistImp
         setImportMessage(`歌单解析失败：${err instanceof Error ? err.message : String(err)}`);
       }
     },
-    [onSessionStart, onImported],
+    [onSessionStart, onImported, clearWarnTimer],
   );
 
   const importPlaylistId = useCallback(
     async (platform: string, id: string) => {
       if (!hasDesktopAPI()) return;
+      clearWarnTimer();
       setImportStatus('parsing');
       setImportMessage('');
       onSessionStart();
@@ -71,11 +101,12 @@ export function usePlaylistImport({ onSessionStart, onImported }: UsePlaylistImp
         setImportMessage(`歌单导入失败：${err instanceof Error ? err.message : String(err)}`);
       }
     },
-    [onSessionStart, onImported],
+    [onSessionStart, onImported, clearWarnTimer],
   );
 
   const openLocal = useCallback(async () => {
     if (!hasDesktopAPI()) return;
+    clearWarnTimer();
     setLocalBusy(true);
     try {
       const res = await window.nebulaAPI!.openLocalDirectory();
@@ -90,16 +121,14 @@ export function usePlaylistImport({ onSessionStart, onImported }: UsePlaylistImp
           meta: null,
         });
       } else if (res.ok) {
-        setImportStatus('warn');
-        setImportMessage('所选文件夹未发现可导入的音频文件');
+        flashWarn('所选文件夹未发现可导入的音频文件');
       } else {
-        setImportStatus('warn');
-        setImportMessage(res.error ?? '未选择文件夹');
+        flashWarn(res.error ?? '未选择文件夹');
       }
     } finally {
       setLocalBusy(false);
     }
-  }, [onSessionStart, onImported]);
+  }, [onSessionStart, onImported, clearWarnTimer, flashWarn]);
 
   /** 渐进揭示完成后的收尾（由 App 的 beginImport onDone 调用）。 */
   const complete = useCallback((status: ImportStatus, message: string) => {

@@ -390,6 +390,55 @@ async function main() {
   log('随机模式 12 次切歌不重复', `${shuffle.unique}/12`);
   const shuffleOk = modeOk && shuffle.mode === 'random' && shuffle.unique === 12;
 
+  // 10a++++. 「下一首播放」插队位置（随机 / 顺序两种模式；被插歌曲在当前曲之前；对当前曲自己插队）
+  const insertNext = await page.evaluate(() => {
+    const p = window.__nebula.player;
+    const all = window.__nebula.songsData();
+    const up = () => p.getQueueSnapshot();
+    const out = {};
+    p.setMode('random');
+    p.playSong(all[0], all);
+    p.next(); p.next(); p.next();
+    // 挑两首不是当前曲的歌（随机模式下当前曲可能正好是任何一首；对当前曲插队按设计会被忽略）
+    const cur = p.getState().song?.id;
+    const [a, b] = all.filter((t) => t.id !== cur);
+    p.insertNext(a);
+    p.insertNext(b);
+    out.randomFifo = up().upcoming[0]?.id === a.id && up().upcoming[1]?.id === b.id;
+    p.setMode('sequential');
+    p.playSong(all[5], all);
+    p.insertNext(all[2]);
+    out.beforeCurrent = up().current?.id === all[5].id && up().upcoming[0]?.id === all[2].id;
+    p.insertNext(all[5]);
+    out.selfNoop = up().current?.id === all[5].id && up().upcoming[0]?.id === all[2].id;
+    p.next();
+    out.playsInserted = p.getState().song?.id === all[2].id;
+    return out;
+  });
+  const insertOk = Object.values(insertNext).every(Boolean);
+  log('下一首播放插队', JSON.stringify(insertNext));
+
+  // 10a+++++. 会话恢复后第一次点播放：要真的开始播放（以前卡在「播放中 + 加载中」）
+  await page.evaluate(() => {
+    const p = window.__nebula.player;
+    const all = window.__nebula.songsData();
+    p.stop();
+    p.restore(all[3], all);
+    p.toggle();
+  });
+  const restorePlay = await page
+    .waitForFunction(
+      () => {
+        const s = window.__nebula.player.getState();
+        return s.playing && !s.loading && s.currentTime > 0.05;
+      },
+      null,
+      { timeout: 12000 },
+    )
+    .then(() => true)
+    .catch(() => false);
+  log('恢复后首次播放', restorePlay);
+
   // 10a+++. 音量面板悬停向上展开
   await page.locator('.bp-tools .vol-ctl').hover();
   await page.waitForSelector('.vol-pop .vol-slider', { state: 'visible', timeout: 4000 });
@@ -476,16 +525,36 @@ async function main() {
   );
   log('上一首返回', 'ok');
 
-  // 10e. 进度条 seek
-  if (duration > 0) {
-    const beforeT = await page.evaluate(() => window.__nebula.player.getState().currentTime);
+  // 10e. 进度条 seek：断言「点进度条 60% 处 → 发出跳到 60% 的请求」。
+  // 不看 currentTime：QA 用的是网络 MP3，刚缓冲时浏览器不允许跳到很远的位置，会复位到 0，和界面接线无关。
+  // （以前 ProgressLine 没挂 ref，点了根本不会发请求，这里又只打印不断言，所以一直没发现。）
+  let seekOk = true;
+  const curDuration = await page
+    .waitForFunction(() => window.__nebula.player.getState().duration > 0, null, { timeout: 15000 })
+    .then(() => page.evaluate(() => window.__nebula.player.getState().duration))
+    .catch(() => 0);
+  if (curDuration > 0) {
+    await page.evaluate(() => {
+      const p = window.__nebula.player;
+      window.__seekCalls = [];
+      const orig = Object.getPrototypeOf(p).seek;
+      p.seek = function (t) {
+        window.__seekCalls.push(t);
+        return orig.call(this, t);
+      };
+    });
     const box = await page.locator('.player-surface .bp-progress-track').boundingBox();
     await page.mouse.click(box.x + box.width * 0.6, box.y + box.height / 2);
-    await page.waitForTimeout(500);
-    const afterT = await page.evaluate(() => window.__nebula.player.getState().currentTime);
-    log('seek 后 currentTime', `${beforeT.toFixed(1)} -> ${afterT.toFixed(1)}`);
+    await page.waitForTimeout(300);
+    const calls = await page.evaluate(() => {
+      delete window.__nebula.player.seek;
+      return window.__seekCalls;
+    });
+    const last = calls[calls.length - 1];
+    log('进度条点 60% 发出的跳转', calls.length ? `${last.toFixed(1)}s / ${curDuration.toFixed(1)}s` : '没有调用 seek');
+    seekOk = typeof last === 'number' && last >= curDuration * 0.55 && last <= curDuration * 0.65;
   } else {
-    log('seek 测试', '跳过（无时长）');
+    log('seek 测试', '跳过（当前歌曲没有时长）');
   }
 
   // 10f. 坏链接自动跳歌 + 卡片置灰
@@ -658,6 +727,9 @@ async function main() {
     !edgeHideOk ||
     !panelStays ||
     !shuffleOk ||
+    !insertOk ||
+    !restorePlay ||
+    !seekOk ||
     !volOk ||
     !localOk.title ||
     !localOk.source ||
@@ -684,6 +756,9 @@ async function main() {
     edgeHide: !edgeHideOk,
     panelStays: !panelStays,
     shuffle: !shuffleOk,
+    insertNext: !insertOk,
+    restorePlay: !restorePlay,
+    seek: !seekOk,
     volHover: !volOk,
     localImport: !localOk.title || !localOk.source || !localOk.audio,
     consoleErrors: errors.length > 0,

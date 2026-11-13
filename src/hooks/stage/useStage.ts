@@ -149,6 +149,29 @@ export function useStage({
     [contextMenuRef],
   );
 
+  // 右键菜单关闭后补一次 hover 清理：菜单开着时卡片的 pointerleave 被上面忽略了，
+  // 关闭后若指针已不在那张卡上，hoveredId / .is-hovered 会一直残留，并且 hoveredId !== null 会挡住让开模式。
+  // 这里用最近一次指针位置做 elementFromPoint 判断，不依赖浏览器何时刷新 :hover。
+  const lastPointerRef = useRef<{ x: number; y: number } | null>(null);
+  useEffect(() => {
+    const onMove = (e: PointerEvent) => {
+      lastPointerRef.current = { x: e.clientX, y: e.clientY };
+    };
+    window.addEventListener('pointermove', onMove, { passive: true });
+    return () => window.removeEventListener('pointermove', onMove);
+  }, []);
+  const menuWasOpenRef = useRef(false);
+  const menuOpen = !!contextMenuRef.current;
+  useEffect(() => {
+    const wasOpen = menuWasOpenRef.current;
+    menuWasOpenRef.current = menuOpen;
+    if (!wasOpen || menuOpen || hoveredId === null) return;
+    const p = lastPointerRef.current;
+    const hit = p ? document.elementFromPoint(p.x, p.y) : null;
+    const card = cardEls.current.get(hoveredId);
+    if (!card || !hit || !card.contains(hit)) setHoveredId(null);
+  });
+
   const handleFrame = useCallback((frame: PanFrame) => {
     panRef.current = { x: frame.x, y: frame.y };
     frameBusRef.current.x = frame.x;

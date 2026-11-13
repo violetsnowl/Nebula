@@ -444,7 +444,7 @@ export const PlaylistDock = memo(function PlaylistDock({
           <div className="pl-head">
             <Cover src={detailCover} className="cv" />
             <div className="pl-info">
-              <h3>{sel.name}</h3>
+              <h3 title={sel.name}>{sel.name}</h3>
               <div className="meta">
                 <img alt="" src={selMeta.logo} />
                 {selMeta.name} · {(ready ? songs.length : sel.trackCount).toLocaleString('en-US')} 首
@@ -461,7 +461,9 @@ export const PlaylistDock = memo(function PlaylistDock({
               播放全部
             </button>
           </div>
-          {ready ? (
+          {ready && songs.length === 0 ? (
+            <p className="hint-line">这个歌单是空的</p>
+          ) : ready ? (
             <div className="group">
               {songs.map((song, i) => (
                 <SongRow
@@ -526,6 +528,12 @@ export const PlaylistDock = memo(function PlaylistDock({
           <span className="chev">›</span>
         </div>
       </div>
+      {/* 取消选择 / 空文件夹的短提示（几秒后由 usePlaylistImport 清掉） */}
+      {importStatus === 'warn' && importMessage && (
+        <p className="hint-line" role="status">
+          {importMessage}
+        </p>
+      )}
     </>
   );
 

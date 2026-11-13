@@ -95,6 +95,8 @@ export function SearchBar({
   const [query, setQuery] = useState('');
   const [open, setOpen] = useState(false);
   const [activeIndex, setActiveIndex] = useState(0);
+  // 用户是否用方向键主动移动过高亮：只有移动过，回车才选高亮项；否则回车仍是「聚簇全览」
+  const [navigated, setNavigated] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
   const [netSongs, setNetSongs] = useState<Track[]>([]);
   const [netArtists, setNetArtists] = useState<DesktopArtistHit[]>([]);
@@ -175,13 +177,17 @@ export function SearchBar({
   const submit = useCallback(() => {
     if (!matches.length) return;
     setOpen(false);
-    if (matches.length === 1) onPick(matches[0]!);
+    // 方向键移动过高亮 -> 回车等同点击该项（下拉只展示前 10 条，高亮下标不会越界）
+    const picked = navigated ? matches[activeIndex] : undefined;
+    if (picked) onPick(picked);
+    else if (matches.length === 1) onPick(matches[0]!);
     else onSearchAll(matches);
-  }, [matches, onPick, onSearchAll]);
+  }, [matches, navigated, activeIndex, onPick, onSearchAll]);
 
   const handleChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
     setQuery(e.target.value);
     setActiveIndex(0);
+    setNavigated(false);
     setOpen(true);
   }, []);
 
@@ -194,13 +200,15 @@ export function SearchBar({
     (e: React.KeyboardEvent<HTMLInputElement>) => {
       if (e.key === 'Enter') {
         e.preventDefault();
-        // 回车语义：单条命中 -> 定位该卡片；多条命中 -> 聚簇全览（不自动选中第一项）
+        // 回车语义：方向键选过高亮项 -> 定位该项；否则单条命中 -> 定位该卡片；多条命中 -> 聚簇全览（不自动选中第一项）
         submit();
       } else if (e.key === 'ArrowDown') {
         e.preventDefault();
-        setActiveIndex((i) => Math.min(matches.length - 1, i + 1));
+        setNavigated(true);
+        setActiveIndex((i) => Math.min(Math.min(matches.length, 10) - 1, i + 1));
       } else if (e.key === 'ArrowUp') {
         e.preventDefault();
+        setNavigated(true);
         setActiveIndex((i) => Math.max(0, i - 1));
       } else if (e.key === 'Escape') {
         e.preventDefault();

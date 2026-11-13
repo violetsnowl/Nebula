@@ -67,8 +67,11 @@ export function hslToRgb(h: number, s: number, l: number): [number, number, numb
   ];
 }
 
+/** 通道钳到 0–255 并取整：自定义色（如 #ff3300）经饱和度抬升后 hslToRgb 会算出 >255 的分量，不合法的 CSS 颜色会整条失效。 */
+const ch255 = (v: number): number => Math.min(255, Math.max(0, Math.round(v)));
+
 function rgbCss(c: [number, number, number]): string {
-  return `rgb(${c[0]}, ${c[1]}, ${c[2]})`;
+  return `rgb(${ch255(c[0])}, ${ch255(c[1])}, ${ch255(c[2])})`;
 }
 
 /** 相对亮度（0~1）。 */

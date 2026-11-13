@@ -224,6 +224,8 @@ export function LyricsLayer({
 
   const playingRef = useRef(playing);
   playingRef.current = playing;
+  const relayoutKey = `${settings.currentScale}|${settings.lyricLayout}`;
+  const relayoutKeyRef = useRef(relayoutKey);
   const propMs = currentTime * 1000;
   if (propMs !== propMsRef.current) {
     propMsRef.current = propMs;
@@ -237,6 +239,21 @@ export function LyricsLayer({
     if (!container) return;
     let raf = 0;
     let last = performance.now();
+
+    // 「当前句放大 / 三句布局」变化时的重排：位置与缩放只在播放时的帧里推进，
+    // 暂停后改这两项会看不到效果，要恢复播放才生效。这里给一段「稳定期」，暂停时也推进到新目标
+    let settleMs = 0;
+    if (relayoutKeyRef.current !== relayoutKey) {
+      relayoutKeyRef.current = relayoutKey;
+      settleMs = 1500;
+      // 下下句的垂直偏移量按布局生成（堆叠更远），已有的句子也要按新布局重掷
+      for (const fl of flights.current.values()) {
+        fl.yMagNext =
+          settings.lyricLayout === 'stacked'
+            ? rand(NEXTNEXT_MAG[0], NEXTNEXT_MAG[1]) * frameBus.vh
+            : rand(NEXT_MAG[0], NEXT_MAG[1]) * frameBus.vh;
+      }
+    }
 
     /** 角色对应的目标带（不含呼吸）。 */
     const lineWidthPx = (lineIdx: number, line: LyricLineUI | undefined, scale: number): number => {
@@ -390,6 +407,9 @@ export function LyricsLayer({
       const cw = f.vw;
       const ch = f.vh;
       const playingNow = playingRef.current;
+      // 暂停时仅在设置变更后的稳定期内推进位置/缩放（歌词时间 t 与呼吸相位 simT 仍冻结）
+      const relayoutNow = !playingNow && settleMs > 0;
+      if (relayoutNow) settleMs -= dt * 1000;
       let t = smoothTRef.current;
       if (playingNow) {
         t += dt * 1000;
@@ -475,7 +495,7 @@ export function LyricsLayer({
             fl.sx += fl.exitVx * ease * dt;
             fl.sy += fl.exitVy * ease * dt;
           }
-        } else if (playingNow) {
+        } else if (playingNow || relayoutNow) {
           const target = roleTarget(fl, fl.role, cw, ch, lines[lineIdx]);
           let tx = target.x;
           const ty = target.y;

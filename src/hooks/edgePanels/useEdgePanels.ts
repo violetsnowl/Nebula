@@ -30,6 +30,23 @@ export function useEdgePanels({ contextMenuRef }: UseEdgePanelsOptions) {
   /** 鼠标是否靠近左右边缘（提示光痕变亮）。 */
   const [near, setNear] = useState<{ left: boolean; right: boolean }>({ left: false, right: false });
 
+  /**
+   * 指针最近一次的位置（视口坐标；指针离开窗口后为 null）。
+   * 小球滑入时会从静止的指针下面划过，触发一次多余的 pointerenter / pointerleave 并排上收起计时，
+   * 之后指针不动就没有 pointermove 来取消它；所以计时到点时要再核对指针是不是还停在热区 / 小球上。
+   */
+  const pointerRef = useRef<{ x: number; y: number } | null>(null);
+
+  const pointerStillIn = useCallback((k: EdgeKey): boolean => {
+    const p = pointerRef.current;
+    if (!p) return false;
+    if (k === 'top') return p.y <= EDGE_HOTSPOT;
+    if (k === 'right' ? p.x >= window.innerWidth - EDGE_HOTSPOT : p.x <= EDGE_HOTSPOT) return true;
+    // 热区外：指针若还压在这一侧的小球 / 面板上，也不收（未浮出的小球 pointer-events:none，不会命中）
+    const el = document.elementFromPoint(p.x, p.y);
+    return !!el?.closest(k === 'left' ? '.side-dock.sd-left' : '.side-dock.sd-right');
+  }, []);
+
   const showPanel = useCallback((k: EdgeKey) => {
     if (edgeTimerRef.current[k]) {
       window.clearTimeout(edgeTimerRef.current[k]);
@@ -50,10 +67,11 @@ export function useEdgePanels({ contextMenuRef }: UseEdgePanelsOptions) {
       edgeTimerRef.current[k] = window.setTimeout(() => {
         edgeTimerRef.current[k] = 0;
         if (pinnedRef.current[k]) return;
+        if (pointerStillIn(k)) return;
         setEdge((prev) => (prev[k] ? { ...prev, [k]: false } : prev));
       }, k === 'top' ? EDGE_HIDE_DELAY : SIDE_HIDE_DELAY);
     },
-    [contextMenuRef],
+    [contextMenuRef, pointerStillIn],
   );
 
   const enterPanel = useCallback(
@@ -75,6 +93,8 @@ export function useEdgePanels({ contextMenuRef }: UseEdgePanelsOptions) {
   // 热点触发 + 移出防抖（全局 pointermove）
   useEffect(() => {
     const onMove = (e: PointerEvent) => {
+      // 先记位置（在小球 / 面板上的移动也要记，收起计时到点时据此核对）
+      pointerRef.current = { x: e.clientX, y: e.clientY };
       if (contextMenuRef.current) return;
       const t = e.target as HTMLElement | null;
       if (t?.closest('.edge-panel') || t?.closest('.dock') || t?.closest('.side-dock')) return;
@@ -90,8 +110,17 @@ export function useEdgePanels({ contextMenuRef }: UseEdgePanelsOptions) {
       if (x <= EDGE_HOTSPOT) showPanel('left');
       else scheduleHidePanel('left');
     };
+    // 指针离开窗口：之后不会再有 pointermove，位置作废并按原规则收起（否则从 x=0 甩出窗口会一直停着）
+    const onLeaveWindow = () => {
+      pointerRef.current = null;
+      (['top', 'right', 'left'] as const).forEach((k) => scheduleHidePanel(k));
+    };
     document.addEventListener('pointermove', onMove);
-    return () => document.removeEventListener('pointermove', onMove);
+    document.documentElement.addEventListener('pointerleave', onLeaveWindow);
+    return () => {
+      document.removeEventListener('pointermove', onMove);
+      document.documentElement.removeEventListener('pointerleave', onLeaveWindow);
+    };
   }, [showPanel, scheduleHidePanel, contextMenuRef]);
 
   /** 侧面板开 / 关时调用：打开 = 钉住并保持显示；关闭 = 解除钉住，鼠标不在上面就按延迟收起。 */

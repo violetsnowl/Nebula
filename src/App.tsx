@@ -273,12 +273,14 @@ export default function App() {
         JSON.stringify({
           tracks: songs.map((s) => toBackendTrack(s)),
           currentId: playerState.song?.id,
+          // 歌单身份随会话保存：刷新后列表里才能标出「当前」，点它不会重新导入、打断恢复出来的当前歌
+          playlist: playlist.currentPlaylist,
         }),
       );
     } catch {
       /* ignore */
     }
-  }, [songs, playerState.song?.id]);
+  }, [songs, playerState.song?.id, playlist.currentPlaylist]);
 
   // 音质档位：随当前歌曲变化拉取可用列表（桌面版）
   useEffect(() => {
@@ -311,7 +313,7 @@ export default function App() {
   // 组合层接线：导入会话开始 → resetImportState；导入成功 → 曲库 + 歌单身份 + 渐进揭示
   sessionStartRef.current = resetImportState;
   commitRef.current = (c) => {
-    if (c.meta) playlist.setCurrent(c.meta);
+    playlist.setCurrent(c.meta);
     beginImport(c.adapterName, c.tracks, c.simulated, c.note);
   };
 

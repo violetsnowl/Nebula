@@ -194,10 +194,16 @@ class AudioPlayer {
       this.queue.push(track);
     }
     const existingAt = this.order.indexOf(idx);
-    if (existingAt >= 0) this.order.splice(existingAt, 1);
-    const curAt = this.order.indexOf(this.pos);
+    // 正在播放的就是它：不需要插队（以前会把当前项挪走，队列快照里的「当前」错位）
+    if (existingAt === this.pos) return;
+    if (existingAt >= 0) {
+      this.order.splice(existingAt, 1);
+      // 删掉的位置在当前曲之前：当前曲在 order 里的位置随之前移一位
+      if (existingAt < this.pos) this.pos--;
+    }
+    // this.pos 本身就是当前曲在 order 里的位置（以前误写成 order.indexOf(pos)，只有顺序模式且未插过队时才碰巧对）。
     // 跳过已插入的「下一首」段，插到段尾，保证多首按添加顺序播放
-    let insertAt = curAt + 1;
+    let insertAt = this.pos + 1;
     while (insertAt < this.order.length && this.viaNextIdx.has(this.order[insertAt]!)) insertAt++;
     this.order.splice(insertAt, 0, idx);
     this.viaNextIdx.add(idx);
@@ -247,6 +253,12 @@ class AudioPlayer {
 
   toggle(): void {
     if (!this.state.song) return;
+    // 会话恢复（restore）只设状态、不加载音源：第一次点播放时走完整的加载流程（解析音源、卡顿计时），
+    // 以前直接对空 src 调 play()，会卡在「播放中 + 加载中」且没有声音
+    if (!this.el.getAttribute('src')) {
+      this.loadAtOrder(this.pos);
+      return;
+    }
     if (this.el.paused) {
       this.el.play().catch(() => {
         /* error 事件会处理 */

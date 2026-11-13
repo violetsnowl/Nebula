@@ -44,6 +44,10 @@ const KEEP_OPEN =
   '.side-dock, .player-surface, .topbar, .info-overlay, .ctx-menu, .ctx-backdrop, .now-playing-overlay, ' +
   '.wallpaper-overlay, .queue-pop, .vol-pop, .quality-pop, .tooltip-bubble, .center-btn, .lyric-probe';
 
+/** 比侧面板更靠上的浮层：它们存在时 Esc 先归它们（评论 / 信息弹窗、右键菜单、二级播放页、队列 / 音质 / 音量弹层）。 */
+const ABOVE_PANEL = '.info-overlay, .ctx-menu, .now-playing-overlay, .queue-pop, .quality-pop, .vol-pop';
+const EDITABLE = 'input, textarea, select, [contenteditable=""], [contenteditable="true"]';
+
 function Orb({
   item,
   active,
@@ -126,8 +130,15 @@ export function SideDock({
       window.addEventListener('click', swallow, { capture: true, once: true });
       window.setTimeout(() => window.removeEventListener('click', swallow, { capture: true }), 500);
     };
+    // Esc 只关最上面一层：页面上还有更高的浮层，或焦点在侧面板外的输入框里（如顶部搜索框，
+    // 它自己用 Esc 收起）时，这一下不归侧面板。浮层的关闭和这里的监听都在 window 冒泡阶段、
+    // 先后顺序不可靠，所以不看 defaultPrevented，而是看 DOM 此刻的状态。
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onActiveChange(null);
+      if (e.key !== 'Escape') return;
+      if (document.querySelector(ABOVE_PANEL)) return;
+      const t = e.target as HTMLElement | null;
+      if (t?.closest?.(EDITABLE) && !t.closest('.sd-panel')) return;
+      onActiveChange(null);
     };
     window.addEventListener('pointerdown', onDown, true);
     window.addEventListener('keydown', onKey);
@@ -145,6 +156,15 @@ export function SideDock({
         aria-label={side === 'left' ? '左侧工具' : '右侧工具'}
         onPointerEnter={onEnter}
         onPointerLeave={onLeave}
+        // 键盘用户：Tab 聚焦到小球时让小球列浮出（否则焦点落在屏外不可见的小球上）；失焦后按原规则收回
+        onFocus={(e) => {
+          if ((e.target as HTMLElement).matches(':focus-visible')) onEnter();
+        }}
+        onBlur={(e) => {
+          // 焦点在小球之间移动、或鼠标仍悬在小球上时不算离开
+          if (e.currentTarget.contains(e.relatedTarget as Node | null) || e.currentTarget.matches(':hover')) return;
+          onLeave();
+        }}
       >
         {items.map((it) => (
           <Orb

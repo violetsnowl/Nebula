@@ -35,7 +35,7 @@ export const QueueControl = memo(function QueueControl() {
       <button
         className={`bp-ctrl${open ? ' is-active' : ''}`}
         aria-label="播放队列"
-        data-tip="播放队列"
+        data-tip={open ? undefined : '播放队列'}
         onClick={() => setOpen((o) => !o)}
       >
         <IconQueue />

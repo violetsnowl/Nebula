@@ -48,6 +48,16 @@ export function useOverlays() {
 
   const closeContextMenu = useCallback(() => setContextMenu(null), []);
 
+  // 右键菜单按 Esc 关闭（NEBULA_UI_SYSTEM §9.6）。以前只能点空白处关，而它的透明遮罩会挡住之后的悬停和点击
+  useEffect(() => {
+    if (!contextMenu) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setContextMenu(null);
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, [contextMenu]);
+
   const openCommentsModal = useCallback(() => {
     const song = audioPlayer.getState().song;
     if (!song) return;

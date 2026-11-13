@@ -94,8 +94,13 @@ function CommentsPanel({ track, onClose }: { track: Track; onClose: () => void }
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const [unavailable, setUnavailable] = useState(false);
+  // 纯网页模式没有桌面接口：不进入加载态，直接给说明，避免永远「加载中…」
+  const noDesktop = !hasDesktopAPI();
   useEffect(() => {
-    if (!hasDesktopAPI()) return;
+    if (!hasDesktopAPI()) {
+      setLoading(false);
+      return;
+    }
     let cancelled = false;
     setLoading(true);
     setError('');
@@ -163,9 +168,10 @@ function CommentsPanel({ track, onClose }: { track: Track; onClose: () => void }
     <ModalShell onClose={onClose}>
       <div className="info-head">评论</div>
       <div className="info-scroll">
+        {noDesktop && <ErrorLine text="评论需要在桌面版中查看" />}
         {error && <ErrorLine text={error} />}
         {unavailable && <ErrorLine text="该平台暂无评论" />}
-        {!error && !unavailable && loading && <Loading />}
+        {!noDesktop && !error && !unavailable && loading && <Loading />}
         {!!hot.length && <div className="cmt-section">热门评论</div>}
         {hot.map((c, i) => <Row key={`h${i}`} c={c} />)}
         {!!latest.length && <div className="cmt-section">最新评论{latestTotal ? `（共 ${latestTotal} 条）` : ''}</div>}
@@ -205,6 +211,7 @@ function SongDetailPanel({
   const [detail, setDetail] = useState<DesktopSongDetail | null>(null);
   const [missing, setMissing] = useState(false);
   const [error, setError] = useState('');
+  const noDesktop = !hasDesktopAPI();
   useEffect(() => {
     if (!hasDesktopAPI()) return;
     let cancelled = false;
@@ -240,8 +247,9 @@ function SongDetailPanel({
     <ModalShell onClose={onClose}>
       <div className="info-head">歌曲详情</div>
       <div className="info-scroll">
+        {noDesktop && <ErrorLine text="详情需要在桌面版中查看" />}
         {error && <ErrorLine text={error} />}
-        {!error && !detail && !missing && <Loading />}
+        {!noDesktop && !error && !detail && !missing && <Loading />}
         {(detail || missing) && (
           <div className="sd-wrap">
             <div className="sd-cover-row">
@@ -367,8 +375,10 @@ function ArtistPanel({
       <ModalShell onClose={onClose}>
       <div className="info-head">歌手主页</div>
       <div className="info-scroll">
+        {/* 网页模式没有桌面接口：直接说明，不要无限「加载中」（与评论、详情一致） */}
+        {!hasDesktopAPI() && <ErrorLine text="歌手页需要在桌面版中查看" />}
         {error && <ErrorLine text={error} />}
-        {!error && !info && <Loading />}
+        {hasDesktopAPI() && !error && !info && <Loading />}
         {info && (
           <div className="ar-head">
             {info.avatar ? <img className="ar-avatar" src={info.avatar} alt="" /> : <span className="ar-avatar is-ph" />}
@@ -448,34 +458,37 @@ function AlbumPanel({
 
   return (
     <ModalShell onClose={onClose}>
-      <div className="cmt-section">专辑</div>
-      <div className="ar-head">
-        {detail?.cover ? (
-          <img className="ar-avatar" src={detail.cover} alt="" />
-        ) : (
-          <span className="ar-avatar is-ph" />
-        )}
-        <div className="ar-meta">
-          <div className="ar-name">{detail?.name || albumName}</div>
-          {detail?.artist && <div className="ar-desc">歌手：{detail.artist}</div>}
-          {detail?.year != null && <div className="ar-desc">发行年份：{detail.year}</div>}
+      {/* .info-modal 是 overflow:hidden，列表必须包进 .info-scroll 才能滚动（80 首的专辑以前只看得到前 9 首） */}
+      <div className="info-scroll">
+        <div className="cmt-section">专辑</div>
+        <div className="ar-head">
+          {detail?.cover ? (
+            <img className="ar-avatar" src={detail.cover} alt="" />
+          ) : (
+            <span className="ar-avatar is-ph" />
+          )}
+          <div className="ar-meta">
+            <div className="ar-name">{detail?.name || albumName}</div>
+            {detail?.artist && <div className="ar-desc">歌手：{detail.artist}</div>}
+            {detail?.year != null && <div className="ar-desc">发行年份：{detail.year}</div>}
+          </div>
         </div>
-      </div>
-      <div className="cmt-section">歌曲（{detail?.tracks.length ?? 0}）</div>
+        <div className="cmt-section">歌曲（{detail?.tracks.length ?? 0}）</div>
         {failed && <div className="ar-desc">该平台专辑歌曲暂不可用</div>}
-      {detail?.tracks.map((t) => (
-        <button
-          key={`${t.platform}:${t.sourceId}`}
-          className="ar-song"
-          onClick={() => {
-            onPlayTrack(t);
-            onClose();
-          }}
-        >
-          <span className="ar-song-name">{t.title}</span>
-          <span className="ar-song-album">{t.artist}</span>
-        </button>
-      ))}
+        {detail?.tracks.map((t) => (
+          <button
+            key={`${t.platform}:${t.sourceId}`}
+            className="ar-song"
+            onClick={() => {
+              onPlayTrack(t);
+              onClose();
+            }}
+          >
+            <span className="ar-song-name">{t.title}</span>
+            <span className="ar-song-album">{t.artist}</span>
+          </button>
+        ))}
+      </div>
     </ModalShell>
   );
 }

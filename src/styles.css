@@ -1577,6 +1577,9 @@ body {
   align-items: center;
   gap: 12px;
   min-width: 0;
+  /* 不超出自己那一列：窄窗口（1024 宽，播放条按规范 635px）时左列只剩约 200px，
+     歌名靠下面的 min(…, 100%) 省略，而不是挤进中间的播放按钮（#105 回归测试发现） */
+  max-width: 100%;
   justify-self: start;
 }
 
@@ -1607,7 +1610,7 @@ body {
 
 .bp-title {
   display: block;
-  max-width: 230px;
+  max-width: min(230px, 100%);
   background: none;
   border: none;
   padding: 0;
@@ -1633,7 +1636,7 @@ body {
   display: flex;
   align-items: baseline;
   gap: 6px;
-  max-width: 230px;
+  max-width: min(230px, 100%);
   margin-top: 3px;
   background: none;
   border: none;
@@ -1894,6 +1897,9 @@ body {
   padding: 10px 14px;
   /* 材质：.glass-g3（浓玻璃，§3.3） */
   border-radius: 20px;
+  /* L5（§5.5）：.bp-progress（z-index:2）与本弹层同在 .player-surface 的层叠上下文里且几何重叠，
+     弹层必须压过进度条热区，否则滑杆中下部拿不到鼠标、点击还会变成进度跳转 */
+  z-index: 60;
   animation: popFade 0.16s var(--ease-std);
 }
 
@@ -1922,6 +1928,8 @@ body {
   /* 材质：.glass-g3 */
   border-radius: 20px;
   overflow-y: auto;
+  /* L5（§5.5）：同音量弹层，须压过 .bp-progress 热区 */
+  z-index: 60;
   animation: popFade 0.16s var(--ease-std);
 }
 
@@ -1944,6 +1952,8 @@ body {
   padding: 10px;
   /* 材质：.glass-g3 */
   border-radius: 20px;
+  /* L5（§5.5）：同音量弹层，须压过 .bp-progress 热区 */
+  z-index: 60;
   animation: popFade 0.16s var(--ease-std);
 }
 
@@ -2724,12 +2734,9 @@ body {
   .import-bar input {
     width: 200px;
   }
-  .player-surface.is-compact {
-    width: min(72vw, 760px);
-  }
   .bp-title,
   .bp-artist {
-    max-width: 170px;
+    max-width: min(170px, 100%);
   }
 }
 
@@ -2947,11 +2954,20 @@ body {
   pointer-events: none;
   transition: opacity 0.6s ease-out;
   opacity: 0.92;
-  white-space: nowrap;
+  /* 超长歌名（70 字时单行 nowrap 宽 4000+px，两边被裁）：宽度封顶并允许换行；
+     left:50% 的绝对定位默认只给一半视口宽的收缩空间，所以显式 max-content + max-width */
+  width: max-content;
+  max-width: min(80vw, 1100px);
 }
 
 /* 前奏 / 纯音乐时居中的歌名：同样用衬线 Display，不发光（§6 发光授权只给正在唱的字） */
 .lyrics-intro .li-title {
+  /* 最多 2 行，超出省略 */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+  overflow-wrap: anywhere;
   font-family: var(--lyric-font);
   font-size: calc(var(--lyric-size, 24px) * 1.2);
   font-weight: 600;
@@ -2961,6 +2977,10 @@ body {
 }
 
 .lyrics-intro .li-artist {
+  max-width: 100%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
   font-size: calc(var(--lyric-size, 24px) * 0.42);
   color: rgba(255, 255, 255, 0.64);
   letter-spacing: 0.1em;

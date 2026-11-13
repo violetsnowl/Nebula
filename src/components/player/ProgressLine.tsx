@@ -45,6 +45,7 @@ export const ProgressLine = memo(function ProgressLine({ current, duration, disa
 
   return (
     <div
+      ref={ref}
       className={`bp-progress${dragging ? ' is-dragging' : ''}${disabled ? ' is-disabled' : ''}`}
       onPointerDown={(e) => {
         if (disabled) return;

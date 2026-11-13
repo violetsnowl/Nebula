@@ -113,8 +113,11 @@ export function useLyrics() {
 
   // 随切歌拉取歌词：低频订阅（仅歌曲身份变化时触发）
   const songRef = useRef<Track | null>(null);
+  // 请求序号：快速切歌时，上一首慢返回的歌词不能覆盖当前歌，只接受最新一次请求的结果
+  const loadSeqRef = useRef(0);
   useEffect(() => {
     const load = async (song: Track | null) => {
+      const seq = ++loadSeqRef.current;
       if (!song) {
         setLyricLines([]);
         setLyricDebugInfo(null);
@@ -127,6 +130,7 @@ export function useLyrics() {
       }
       try {
         const res = await window.nebulaAPI!.fetchLyric(toBackendTrack(song));
+        if (seq !== loadSeqRef.current) return;
         const data = res.ok ? res.data : null;
         const lines = normalizeLyricLines(data, song.title, song.artist);
         setLyricLines(lines);
@@ -143,6 +147,7 @@ export function useLyrics() {
           setLyricDebugInfo(null);
         }
       } catch {
+        if (seq !== loadSeqRef.current) return;
         setLyricLines([]);
         setLyricDebugInfo(null);
       }

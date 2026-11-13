@@ -6,6 +6,13 @@ interface QualityControlProps {
   onSelectQuality: (level: string) => void;
 }
 
+const FALLBACK_QUALITY_LABEL: Record<string, string> = {
+  standard: '标准',
+  exhigh: '极高',
+  lossless: '无损',
+  hires: 'Hi-Res',
+};
+
 /**
  * 音质：低权重文字徽章按钮；点击开关，弹层水平居中于按钮，选择后关闭，
  * 点击外部 / Escape 关闭。取代旧的 hover 弹窗（悬停间隙导致抽搐、常显关不掉）。
@@ -17,7 +24,9 @@ export const QualityControl = memo(function QualityControl({
 }: QualityControlProps) {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
-  const qualityLabel = qualities.find((o) => o.level === quality)?.label ?? (quality ? quality : '音质');
+  // 没有歌曲时 qualities 为空：用通用等级的中文名兜底，绝不把 'standard' 等原始英文标识露给用户
+  const qualityLabel =
+    qualities.find((o) => o.level === quality)?.label ?? FALLBACK_QUALITY_LABEL[quality] ?? '音质';
 
   useEffect(() => {
     if (!open) return;
@@ -39,7 +48,7 @@ export const QualityControl = memo(function QualityControl({
     <div className="quality-ctl" ref={rootRef}>
       <button
         className={`bp-ctrl bp-quality${open ? ' is-active' : ''}`}
-        data-tip="音质"
+        data-tip={open ? undefined : '音质'}
         onClick={() => setOpen((o) => !o)}
       >
         {/* 完整显示中文标签，不截断（NEBULA_UI_SYSTEM §9.1） */}

@@ -887,9 +887,15 @@ export const AccountDock = memo(function AccountDock({
 }: AccountDockProps) {
   const [openRow, setOpenRow] = useState<'login' | 'settings' | null>(null);
   const [settingsPage, setSettingsPage] = useState<DockSettingsPage>('lyrics');
-  const [bgScheme, setBgScheme] = useState<'custom' | 'wallpaper' | 'cover'>(
-    bgSetting.type === 'cover' ? 'cover' : 'custom',
-  );
+  // 背景方案完全由实际生效的 bgSetting 推出（不再单独存状态）：
+  // 点「自定义」后取消选图、壁纸库里取消、刷新后恢复，高亮都不会和真实背景脱节。
+  // 壁纸库的媒体走 wallpaper:// 协议；自己选的图片 / 视频是 data: 或 blob: URL。
+  const bgScheme: 'custom' | 'wallpaper' | 'cover' =
+    bgSetting.type === 'cover'
+      ? 'cover'
+      : bgSetting.type !== 'preset' && bgSetting.url.startsWith('wallpaper:')
+        ? 'wallpaper'
+        : 'custom';
   const bgInputRef = useRef<HTMLInputElement>(null);
 
   // 账号面板的「列表 ↔ 详情」推入：detailPf = 详情里的平台（退出动画结束后才清掉），detailIn = 详情已滑入
@@ -1020,7 +1026,6 @@ export const AccountDock = memo(function AccountDock({
   const bgChoice: BgChoice =
     bgScheme === 'cover' ? (coverMode === 'blend' ? 'fog' : 'env') : bgScheme === 'custom' ? 'custom' : 'wallpaper';
   const selectCover = (mode: CoverBgMode) => {
-    setBgScheme('cover');
     onSelectBg({ type: 'cover' });
     onCoverMode(mode);
   };
@@ -1204,10 +1209,7 @@ export const AccountDock = memo(function AccountDock({
           name="自定义图片 / 视频"
           selected={bgChoice === 'custom'}
           data={{ 'data-bg': 'custom' }}
-          onClick={() => {
-            setBgScheme('custom');
-            bgInputRef.current?.click();
-          }}
+          onClick={() => bgInputRef.current?.click()}
         >
           {customPhoto ? (
             <>
@@ -1224,10 +1226,7 @@ export const AccountDock = memo(function AccountDock({
           name="Wallpaper"
           selected={bgChoice === 'wallpaper'}
           data={{ 'data-bg': 'wallpaper' }}
-          onClick={() => {
-            setBgScheme('wallpaper');
-            onOpenWallpapers();
-          }}
+          onClick={onOpenWallpapers}
         >
           <span className="rp-plain">Wallpaper Engine</span>
         </Tile>

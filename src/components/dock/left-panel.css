@@ -225,6 +225,12 @@
   line-height: 1.25;
   color: var(--fg);
   overflow-wrap: anywhere;
+  /* 超长歌单名最多 3 行，超出省略（完整名字在 title 里），避免页头被撑得很高 */
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+  line-clamp: 3;
+  overflow: hidden;
 }
 
 .sd-panel .pl-head .meta {
