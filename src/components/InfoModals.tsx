@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { Track } from '../lib/catalog';
+import { useOverlayScrollbar } from '../lib/overlayScrollbar';
 import { hasDesktopAPI, toBackendTrack } from '../lib/playlist/ipcClient';
 import type {
   DesktopAlbumDetail,
@@ -9,9 +10,36 @@ import type {
   DesktopSongDetail,
   DesktopTrack,
 } from '../lib/playlist/ipcClient';
-import { IconChevronLeft, IconHeart } from './icons';
+import { IconChevronLeft, IconChevronRight, IconClose, IconHeart } from './icons';
+import { platformMeta } from './platforms';
+import './modals.css';
 
-function ModalShell({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
+/** 把 background-image 的 url 安全地写进内联样式（地址里可能有引号 / 括号）。 */
+const bgUrl = (src: string): CSSProperties => ({ backgroundImage: `url(${JSON.stringify(src)})` });
+
+/** 秒 → m:ss；没有时长返回空串。 */
+function fmtDuration(sec?: number): string {
+  if (!sec || !Number.isFinite(sec) || sec <= 0) return '';
+  const s = Math.round(sec);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+}
+
+function ModalShell({
+  width,
+  head,
+  children,
+  onClose,
+  minHeight,
+}: {
+  /** 弹窗宽度（px），实际不超过 92vw。 */
+  width: number;
+  /** 页头：固定在滚动区上方，不随正文滚动。 */
+  head?: ReactNode;
+  children: ReactNode;
+  onClose: () => void;
+  /** 内容量差别大的弹窗（歌手页切页签）给个最小高度，避免居中的弹窗在页签间上下跳。 */
+  minHeight?: number;
+}) {
   // 弹窗 = G3，但不注册边缘折射（#103）：背后是压暗 + 模糊的遮罩，折射几乎看不见；
   // 而打开评论弹窗时桌面版出现过整窗黑屏（遮罩的背景滤镜叠在折射滤镜下面），去掉这条路径
   // §9.4：Esc 关闭；关闭后焦点回到打开它的元素
@@ -26,23 +54,110 @@ function ModalShell({ children, onClose }: { children: React.ReactNode; onClose:
       if (opener && document.contains(opener)) opener.focus({ preventScroll: true });
     };
   }, [onClose]);
+
+  // 正文区是唯一的滚动容器；悬浮滚动条挂在它的父元素（弹窗本身，已是 position: relative）上
+  const bodyRef = useRef<HTMLDivElement>(null);
+  useOverlayScrollbar(bodyRef);
+
+  const style = { '--mdl-w': `${width}px`, ...(minHeight ? { '--mdl-min-h': `${minHeight}px` } : null) } as CSSProperties;
   return (
     <div className="info-overlay">
       {/* 遮罩独立一层（NEBULA_UI_SYSTEM §9.4）：点它关闭；面板不以它为祖先，G3 玻璃才能采到背后画面 */}
       <div className="info-veil" onPointerDown={onClose} />
-      <div className="info-modal glass-g3" onPointerDown={(e) => e.stopPropagation()}>
-        {children}
+      <div className="info-modal glass-g3" style={style} onPointerDown={(e) => e.stopPropagation()}>
+        <button type="button" className="mdl-x" aria-label="关闭" onClick={onClose}>
+          <IconClose size={18} />
+        </button>
+        {head}
+        <div className="mdl-body" ref={bodyRef}>
+          {children}
+        </div>
       </div>
     </div>
   );
 }
 
 function Loading() {
-  return <div className="info-hint">加载中…</div>;
+  return <div className="mdl-hint">加载中…</div>;
 }
 
 function ErrorLine({ text }: { text: string }) {
-  return <div className="info-hint is-error">{text}</div>;
+  return <div className="mdl-hint is-error">{text}</div>;
+}
+
+/** 页头大标题区：封面原图大幅模糊铺底（向下渐隐进玻璃）+ 132px 封面 + 衬线标题。 */
+function HeroBand({
+  kicker,
+  title,
+  cover,
+  round,
+  by,
+  meta,
+  children,
+}: {
+  kicker: string;
+  title: string;
+  cover?: string;
+  /** 歌手头像是圆形，其余是圆角方形。 */
+  round?: boolean;
+  by?: ReactNode;
+  meta?: ReactNode;
+  children?: ReactNode;
+}) {
+  return (
+    <div className="mdl-band">
+      {cover && <div className="mdl-band-bg" style={bgUrl(cover)} aria-hidden="true" />}
+      {cover ? (
+        <img className={`mdl-cv${round ? ' is-round' : ''}`} src={cover} alt="" draggable={false} />
+      ) : (
+        <span className={`mdl-cv is-ph${round ? ' is-round' : ''}`} />
+      )}
+      <div className="mdl-band-text">
+        <div className="mdl-kicker">{kicker}</div>
+        <h3 className="mdl-title">{title}</h3>
+        {by}
+        {meta && <div className="mdl-meta">{meta}</div>}
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function SongRow({
+  index,
+  track,
+  showCover = true,
+  onClick,
+  onDoubleClick,
+}: {
+  index?: number;
+  track: DesktopTrack;
+  showCover?: boolean;
+  onClick?: () => void;
+  onDoubleClick?: () => void;
+}) {
+  const sub = showCover ? track.album : track.artist;
+  return (
+    <button
+      type="button"
+      className={`mdl-song${showCover ? '' : ' no-cover'}`}
+      onClick={onClick}
+      onDoubleClick={onDoubleClick}
+    >
+      <span className="mdl-song-n">{index ?? ''}</span>
+      {showCover &&
+        (track.cover ? (
+          <img className="mdl-song-c" src={track.cover} alt="" loading="lazy" draggable={false} />
+        ) : (
+          <span className="mdl-song-c is-ph" />
+        ))}
+      <span className="mdl-song-t">
+        {track.title}
+        {sub && <small>{sub}</small>}
+      </span>
+      <span className="mdl-song-d">{fmtDuration(track.duration)}</span>
+    </button>
+  );
 }
 
 /* ---------- 评论 ---------- */
@@ -83,6 +198,27 @@ interface CommentItem {
   avatarUrl: string;
   content: string;
   likedCount: number;
+}
+
+// 放在组件外：写在 CommentsPanel 里每次渲染都是新的组件类型，整列评论会被卸载重建
+function CommentRow({ c }: { c: CommentItem }) {
+  return (
+    <div className="mdl-cmt">
+      {c.avatarUrl ? (
+        <img className="mdl-cmt-av" src={c.avatarUrl} alt="" loading="lazy" />
+      ) : (
+        <span className="mdl-cmt-av is-ph" />
+      )}
+      <span className="mdl-cmt-nm">{c.nickname}</span>
+      <span className="mdl-cmt-like">
+        <IconHeart size={13} />
+        {c.likedCount}
+      </span>
+      <div className="mdl-cmt-tx">
+        <CommentText text={c.content} />
+      </div>
+    </div>
+  );
 }
 
 function CommentsPanel({ track, onClose }: { track: Track; onClose: () => void }) {
@@ -152,40 +288,60 @@ function CommentsPanel({ track, onClose }: { track: Track; onClose: () => void }
       .finally(() => setLoadingMore(false));
   }, [track, page, loadingMore]);
 
-  const Row = ({ c }: { c: CommentItem }) => (
-    <div className="cmt-row">
-      {c.avatarUrl ? <img className="cmt-avatar" src={c.avatarUrl} alt="" loading="lazy" /> : <span className="cmt-avatar is-ph" />}
-      <div className="cmt-body">
-        <div className="cmt-nick">{c.nickname}</div>
-        <div className="cmt-content">
-          <CommentText text={c.content} />
-        </div>
-        <div className="cmt-like">
-          <IconHeart size={12} />
-          {c.likedCount}
+  const head = (
+    <div className="mdl-chead">
+      <h3>
+        评论
+        {!!latestTotal && <small>共 {latestTotal.toLocaleString()} 条</small>}
+      </h3>
+      <div className="mdl-csong">
+        {track.cover ? <img src={track.cover} alt="" draggable={false} /> : <span className="is-ph" />}
+        <div>
+          <b>{track.title}</b>
+          {track.artist}
         </div>
       </div>
     </div>
   );
 
   return (
-    <ModalShell onClose={onClose}>
-      <div className="info-head">评论</div>
-      <div className="info-scroll">
-        {noDesktop && <ErrorLine text="评论需要在桌面版中查看" />}
-        {error && <ErrorLine text={error} />}
-        {unavailable && <ErrorLine text="该平台暂无评论" />}
-        {!noDesktop && !error && !unavailable && loading && <Loading />}
-        {!!hot.length && <div className="cmt-section">热门评论</div>}
-        {hot.map((c, i) => <Row key={`h${i}`} c={c} />)}
-        {!!latest.length && <div className="cmt-section">最新评论{latestTotal ? `（共 ${latestTotal} 条）` : ''}</div>}
-        {latest.map((c, i) => <Row key={`l${i}`} c={c} />)}
-        {hasMore && (
-          <button className="cmt-more" onClick={loadMore} disabled={loadingMore}>
+    <ModalShell width={580} head={head} onClose={onClose}>
+      {noDesktop && <ErrorLine text="评论需要在桌面版中查看" />}
+      {error && <ErrorLine text={error} />}
+      {unavailable && <ErrorLine text="该平台暂无评论" />}
+      {!noDesktop && !error && !unavailable && loading && <Loading />}
+      {!!hot.length && (
+        <>
+          <div className="mdl-gtitle">
+            <span>热门评论</span>
+          </div>
+          <div className="mdl-group" style={{ '--sep-l': '60px' } as CSSProperties}>
+            {hot.map((c, i) => (
+              <CommentRow key={`h${i}`} c={c} />
+            ))}
+          </div>
+        </>
+      )}
+      {!!latest.length && (
+        <>
+          <div className="mdl-gtitle">
+            <span>最新评论</span>
+            {!!latestTotal && <span>{latestTotal.toLocaleString()}</span>}
+          </div>
+          <div className="mdl-group" style={{ '--sep-l': '60px' } as CSSProperties}>
+            {latest.map((c, i) => (
+              <CommentRow key={`l${i}`} c={c} />
+            ))}
+          </div>
+        </>
+      )}
+      {hasMore && (
+        <div className="mdl-more">
+          <button type="button" className="mdl-btn-sec" onClick={loadMore} disabled={loadingMore}>
             {loadingMore ? '加载中…' : '加载更多评论'}
           </button>
-        )}
-      </div>
+        </div>
+      )}
     </ModalShell>
   );
 }
@@ -205,11 +361,13 @@ function SongDetailPanel({
   track,
   onOpenArtist,
   onOpenAlbum,
+  onOpenComments,
   onClose,
 }: {
   track: Track;
   onOpenArtist: (platform: string, artistId: string, name: string) => void;
   onOpenAlbum: (platform: string, albumId: string, albumName: string, artistName?: string) => void;
+  onOpenComments?: (track: Track) => void;
   onClose: () => void;
 }) {
   const [detail, setDetail] = useState<DesktopSongDetail | null>(null);
@@ -233,67 +391,97 @@ function SongDetailPanel({
     };
   }, [track]);
 
-  const artists = detail?.artists?.length
-    ? detail.artists
-    : missing
-      ? splitTrackArtists(track.artist)
-      : [];
+  const artists = detail?.artists?.length ? detail.artists : missing ? splitTrackArtists(track.artist) : [];
   const platform = detail?.platform ?? track.source;
   const albumId = detail?.album.id ?? '';
   const albumName = detail?.album.name || track.album || '';
   const albumCover = detail?.album.cover || track.cover || '';
+  const artistName = artists[0]?.name || track.artist;
   const openAlbumClick = () => {
     if (!albumName) return;
-    onOpenAlbum(platform, albumId, albumName, artists[0]?.name || track.artist);
+    onOpenAlbum(platform, albumId, albumName, artistName);
   };
+  const ready = !!detail || missing;
+
+  const by = (
+    <div className="mdl-by">
+      {ready ? (
+        artists.map((a) => (
+          <button key={a.id || a.name} type="button" className="mdl-link" onClick={() => onOpenArtist(platform, a.id, a.name)}>
+            {a.name}
+          </button>
+        ))
+      ) : (
+        <span>{track.artist}</span>
+      )}
+      {albumName && (
+        <button type="button" className="mdl-link" onClick={openAlbumClick} data-tip="查看专辑">
+          {albumName}
+        </button>
+      )}
+    </div>
+  );
+  const meta = [detail?.album.publishDate, fmtDuration(detail?.duration ?? track.duration), platformMeta(platform).name]
+    .filter(Boolean)
+    .join(' · ');
+
+  const head = <HeroBand kicker="歌曲" title={detail?.title || track.title} cover={albumCover} by={by} meta={meta} />;
 
   return (
-    <ModalShell onClose={onClose}>
-      <div className="info-head">歌曲详情</div>
-      <div className="info-scroll">
-        {noDesktop && <ErrorLine text="详情需要在桌面版中查看" />}
-        {error && <ErrorLine text={error} />}
-        {!noDesktop && !error && !detail && !missing && <Loading />}
-        {(detail || missing) && (
-          <div className="sd-wrap">
-            <div className="sd-cover-row">
-              {albumCover ? (
-                <img className="sd-cover" src={albumCover} alt="" />
-              ) : (
-                <span className="sd-cover is-ph" />
-              )}
-              <div className="sd-info">
-                <div className="sd-title">{detail?.title || track.title}</div>
-                <div className="sd-artists">
-                  {artists.map((a) => (
-                    <button key={a.id || a.name} className="sd-chip" onClick={() => onOpenArtist(platform, a.id, a.name)}>
-                      {a.name}
-                    </button>
-                  ))}
-                </div>
-                {albumName && (
-                  <button className="sd-album sd-album-link" onClick={openAlbumClick} data-tip="查看专辑">
-                    专辑：{albumName}
-                  </button>
-                )}
-                {detail?.album.publishDate && <div className="sd-album">发行：{detail.album.publishDate}</div>}
-                {detail?.duration != null && <div className="sd-album">时长：{Math.floor(detail.duration / 60)}:{String(detail.duration % 60).padStart(2, '0')}</div>}
+    <ModalShell width={600} head={head} onClose={onClose}>
+      {noDesktop && <ErrorLine text="详情需要在桌面版中查看" />}
+      {error && <ErrorLine text={error} />}
+      {!noDesktop && !error && !ready && <Loading />}
+      {!!detail?.credits?.length && (
+        <>
+          <div className="mdl-gtitle">制作团队</div>
+          <div className="mdl-group">
+            {detail.credits.map((c, i) => (
+              <div key={i} className="mdl-row">
+                <span className="mdl-k">{c.role}</span>
+                <span className="mdl-v">{c.name}</span>
               </div>
-            </div>
-            {!!detail?.credits?.length && (
-              <div className="sd-credits">
-                <div className="cmt-section">制作团队</div>
-                {detail.credits.map((c, i) => (
-                  <div key={i} className="sd-credit">
-                    <span className="sd-credit-role">{c.role}</span>
-                    <span className="sd-credit-name">{c.name}</span>
-                  </div>
-                ))}
-              </div>
+            ))}
+          </div>
+        </>
+      )}
+      {ready && (
+        <>
+          <div className="mdl-gtitle">更多</div>
+          <div className="mdl-group">
+            {/* 评论数没有现成数据（不为它额外发请求），行尾只放箭头 */}
+            {onOpenComments && (
+              <button type="button" className="mdl-row is-btn" onClick={() => onOpenComments(track)}>
+                <span className="mdl-v">评论</span>
+                <span className="mdl-end">
+                  <IconChevronRight size={14} />
+                </span>
+              </button>
+            )}
+            {artists.map((a) => (
+              <button
+                key={a.id || a.name}
+                type="button"
+                className="mdl-row is-btn"
+                onClick={() => onOpenArtist(platform, a.id, a.name)}
+              >
+                <span className="mdl-v">歌手 · {a.name}</span>
+                <span className="mdl-end">
+                  <IconChevronRight size={14} />
+                </span>
+              </button>
+            ))}
+            {albumName && (
+              <button type="button" className="mdl-row is-btn" onClick={openAlbumClick}>
+                <span className="mdl-v">专辑 · {albumName}</span>
+                <span className="mdl-end">
+                  <IconChevronRight size={14} />
+                </span>
+              </button>
             )}
           </div>
-        )}
-      </div>
+        </>
+      )}
     </ModalShell>
   );
 }
@@ -314,16 +502,19 @@ function ArtistPanel({
   onPlayTrack: (track: DesktopTrack) => void;
   onOpenAlbum: (platform: string, albumId: string, albumName: string) => void;
   onClose: () => void;
-  }) {
-    const [info, setInfo] = useState<DesktopArtistInfo | null>(null);
-    const [songs, setSongs] = useState<DesktopTrack[]>([]);
-    const [albums, setAlbums] = useState<DesktopAlbumSummary[]>([]);
-    const [view, setView] = useState<'overview' | 'all-songs'>('overview');
-    const [allSongs, setAllSongs] = useState<DesktopTrack[] | null>(null);
-    const [allLoading, setAllLoading] = useState(false);
-    const [error, setError] = useState('');
-    useEffect(() => {
-      if (!hasDesktopAPI()) return;
+}) {
+  const [info, setInfo] = useState<DesktopArtistInfo | null>(null);
+  const [songs, setSongs] = useState<DesktopTrack[]>([]);
+  const [albums, setAlbums] = useState<DesktopAlbumSummary[]>([]);
+  const [view, setView] = useState<'overview' | 'all-songs'>('overview');
+  const [tab, setTab] = useState<'songs' | 'albums'>('songs');
+  const [allSongs, setAllSongs] = useState<DesktopTrack[] | null>(null);
+  const [allLoading, setAllLoading] = useState(false);
+  const [error, setError] = useState('');
+  const noDesktop = !hasDesktopAPI();
+  useEffect(() => {
+    if (!hasDesktopAPI()) return;
+    let cancelled = false;
     const api = window.nebulaAPI!;
     Promise.all([
       api.artistInfo(platform, artistId),
@@ -331,99 +522,123 @@ function ArtistPanel({
       api.artistAlbums(platform, artistId),
     ])
       .then(([i, s, a]) => {
+        if (cancelled) return;
         if (i.ok) setInfo(i.data);
         if (s.ok) setSongs(s.data);
         if (a.ok) setAlbums(a.data);
       })
-        .catch(() => setError('歌手信息加载失败'));
-    }, [platform, artistId]);
+      .catch(() => !cancelled && setError('歌手信息加载失败'));
+    return () => {
+      cancelled = true;
+    };
+  }, [platform, artistId]);
 
-    const openAllSongs = useCallback(() => {
-      setView('all-songs');
-      if (allSongs !== null) return;
-      setAllLoading(true);
-      window.nebulaAPI!
-        .artistSongsAll(platform, artistId)
-        .then((res) => setAllSongs(res.ok ? res.data : []))
-        .catch(() => setAllSongs([]))
-        .finally(() => setAllLoading(false));
-    }, [platform, artistId, allSongs]);
+  const openAllSongs = useCallback(() => {
+    setView('all-songs');
+    if (allSongs !== null) return;
+    setAllLoading(true);
+    window.nebulaAPI!
+      .artistSongsAll(platform, artistId)
+      .then((res) => setAllSongs(res.ok ? res.data : []))
+      .catch(() => setAllSongs([]))
+      .finally(() => setAllLoading(false));
+  }, [platform, artistId, allSongs]);
 
-    if (view === 'all-songs') {
-      return (
-        <ModalShell onClose={onClose}>
-          <div className="info-head info-head-row">
-            <button className="info-back" onClick={() => setView('overview')}>
-              <IconChevronLeft size={16} />
-              返回
-            </button>
-            <span className="info-head-title">{artistName} · 全部歌曲</span>
-          </div>
-          <div className="info-scroll">
-            {allLoading && <Loading />}
-            {!allLoading && allSongs && (
-              <>
-                <div className="cmt-section">歌曲（{allSongs.length}）</div>
-                {allSongs.map((s, i) => (
-                  <button key={s.sourceId + i} className="ar-song" onDoubleClick={() => onPlayTrack(s)}>
-                    <span className="ar-song-idx">{i + 1}</span>
-                    <span className="ar-song-name">{s.title}</span>
-                    <span className="ar-song-album">{s.album}</span>
-                  </button>
-                ))}
-              </>
-            )}
-          </div>
-        </ModalShell>
-      );
-    }
-
+  if (view === 'all-songs') {
+    const nav = (
+      <div className="mdl-nav">
+        <button type="button" className="mdl-back" onClick={() => setView('overview')}>
+          <IconChevronLeft size={16} />
+          返回
+        </button>
+        <span className="mdl-nav-t">{info?.name || artistName} · 全部歌曲</span>
+      </div>
+    );
     return (
-      <ModalShell onClose={onClose}>
-      <div className="info-head">歌手主页</div>
-      <div className="info-scroll">
-        {/* 网页模式没有桌面接口：直接说明，不要无限「加载中」（与评论、详情一致） */}
-        {!hasDesktopAPI() && <ErrorLine text="歌手页需要在桌面版中查看" />}
-        {error && <ErrorLine text={error} />}
-        {hasDesktopAPI() && !error && !info && <Loading />}
-        {info && (
-          <div className="ar-head">
-            {info.avatar ? <img className="ar-avatar" src={info.avatar} alt="" /> : <span className="ar-avatar is-ph" />}
-            <div className="ar-meta">
-              <div className="ar-name">{info.name || artistName}</div>
-              {info.description && <div className="ar-desc">{info.description}</div>}
-              </div>
+      <ModalShell width={660} head={nav} onClose={onClose} minHeight={460}>
+        {allLoading && <Loading />}
+        {!allLoading && allSongs && (
+          <>
+            <div className="mdl-gtitle">
+              <span>歌曲（{allSongs.length}）</span>
             </div>
-          )}
-          <div className="cmt-section cmt-section-row">
-            <span>歌曲（{songs.length}）</span>
-            <button className="ar-more" onClick={openAllSongs}>查看全部</button>
-          </div>
-          {songs.map((s, i) => (
-          <button key={s.sourceId + i} className="ar-song" onDoubleClick={() => onPlayTrack(s)}>
-            <span className="ar-song-idx">{i + 1}</span>
-            <span className="ar-song-name">{s.title}</span>
-            <span className="ar-song-album">{s.album}</span>
+            <div className="mdl-group" style={{ '--sep-l': '86px' } as CSSProperties}>
+              {allSongs.map((s, i) => (
+                <SongRow key={s.sourceId + i} index={i + 1} track={s} onDoubleClick={() => onPlayTrack(s)} />
+              ))}
+            </div>
+          </>
+        )}
+      </ModalShell>
+    );
+  }
+
+  // 歌曲总数没有现成数据（热门列表只有前几首），拿到「全部歌曲」后才显示
+  const meta = [
+    platformMeta(platform).name,
+    allSongs ? `${allSongs.length} 首歌` : '',
+    albums.length ? `${albums.length} 张专辑` : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+  const head = (
+    <>
+      <HeroBand kicker="歌手" title={info?.name || artistName} cover={info?.avatar} round meta={meta}>
+        {info?.description && <p className="mdl-desc">{info.description}</p>}
+      </HeroBand>
+      {!noDesktop && (
+        <div className="mdl-tabs" role="tablist">
+          <button type="button" role="tab" aria-pressed={tab === 'songs'} onClick={() => setTab('songs')}>
+            热门歌曲
           </button>
-        ))}
-        <div className="cmt-section">专辑（{albums.length}）</div>
-        <div className="ar-albums">
+          <button type="button" role="tab" aria-pressed={tab === 'albums'} onClick={() => setTab('albums')}>
+            专辑
+          </button>
+        </div>
+      )}
+    </>
+  );
+
+  return (
+    <ModalShell width={660} head={head} onClose={onClose} minHeight={460}>
+      {/* 网页模式没有桌面接口：直接说明，不要无限「加载中」（与评论、详情一致） */}
+      {noDesktop && <ErrorLine text="歌手页需要在桌面版中查看" />}
+      {error && <ErrorLine text={error} />}
+      {!noDesktop && !error && !info && <Loading />}
+      {!noDesktop && tab === 'songs' && !!songs.length && (
+        <div className="mdl-group is-first" style={{ '--sep-l': '86px' } as CSSProperties}>
+          {songs.map((s, i) => (
+            <SongRow key={s.sourceId + i} index={i + 1} track={s} onDoubleClick={() => onPlayTrack(s)} />
+          ))}
+          <button type="button" className="mdl-row is-btn" onClick={openAllSongs}>
+            <span className="mdl-v">全部歌曲</span>
+            <span className="mdl-end">
+              <IconChevronRight size={14} />
+            </span>
+          </button>
+        </div>
+      )}
+      {!noDesktop && tab === 'albums' && (
+        <div className="mdl-albums">
           {albums.map((a) => (
             <button
+              type="button"
               key={a.id}
-              className="ar-album"
+              className="mdl-album"
               onClick={() => onOpenAlbum(platform, a.id, a.name)}
               data-tip={`查看专辑《${a.name}》`}
             >
-              {a.cover ? <img className="ar-album-cover" src={a.cover} alt="" loading="lazy" /> : <span className="ar-album-cover is-ph" />}
-              <div className="ar-album-meta">
-                <span className="ar-album-name">{a.name}</span>
-                <span className="ar-album-year">{a.year ?? ''}{a.songCount ? ` · ${a.songCount} 首` : ''}</span>
-              </div>
+              {a.cover ? (
+                <img className="mdl-album-c" src={a.cover} alt="" loading="lazy" draggable={false} />
+              ) : (
+                <span className="mdl-album-c is-ph" />
+              )}
+              <b>{a.name}</b>
+              {a.year ? <small>{a.year}</small> : null}
             </button>
           ))}
         </div>
-      </div>
+      )}
     </ModalShell>
   );
 }
@@ -463,39 +678,36 @@ function AlbumPanel({
     };
   }, [platform, albumId]);
 
+  const meta = [detail?.artist, detail?.year, detail ? `${detail.tracks.length} 首` : '']
+    .filter((x) => x !== undefined && x !== null && x !== '')
+    .join(' · ');
+  const head = <HeroBand kicker="专辑" title={detail?.name || albumName} cover={detail?.cover} meta={meta} />;
+
   return (
-    <ModalShell onClose={onClose}>
-      {/* .info-modal 是 overflow:hidden，列表必须包进 .info-scroll 才能滚动（80 首的专辑以前只看得到前 9 首） */}
-      <div className="info-scroll">
-        <div className="cmt-section">专辑</div>
-        <div className="ar-head">
-          {detail?.cover ? (
-            <img className="ar-avatar" src={detail.cover} alt="" />
-          ) : (
-            <span className="ar-avatar is-ph" />
-          )}
-          <div className="ar-meta">
-            <div className="ar-name">{detail?.name || albumName}</div>
-            {detail?.artist && <div className="ar-desc">歌手：{detail.artist}</div>}
-            {detail?.year != null && <div className="ar-desc">发行年份：{detail.year}</div>}
+    <ModalShell width={640} head={head} onClose={onClose}>
+      {failed && <ErrorLine text="该平台专辑歌曲暂不可用" />}
+      {!failed && !detail && <Loading />}
+      {!!detail?.tracks.length && (
+        <>
+          <div className="mdl-gtitle">
+            <span>曲目</span>
           </div>
-        </div>
-        <div className="cmt-section">歌曲（{detail?.tracks.length ?? 0}）</div>
-        {failed && <div className="ar-desc">该平台专辑歌曲暂不可用</div>}
-        {detail?.tracks.map((t) => (
-          <button
-            key={`${t.platform}:${t.sourceId}`}
-            className="ar-song"
-            onClick={() => {
-              onPlayTrack(t);
-              onClose();
-            }}
-          >
-            <span className="ar-song-name">{t.title}</span>
-            <span className="ar-song-album">{t.artist}</span>
-          </button>
-        ))}
-      </div>
+          <div className="mdl-group" style={{ '--sep-l': '48px' } as CSSProperties}>
+            {detail.tracks.map((t, i) => (
+              <SongRow
+                key={`${t.platform}:${t.sourceId}`}
+                index={i + 1}
+                track={t}
+                showCover={false}
+                onClick={() => {
+                  onPlayTrack(t);
+                  onClose();
+                }}
+              />
+            ))}
+          </div>
+        </>
+      )}
     </ModalShell>
   );
 }
@@ -505,6 +717,7 @@ export function InfoModals({
   onClose,
   onOpenArtist,
   onOpenAlbum,
+  onOpenComments,
   onPlayArtistTrack,
 }: {
   modal: {
@@ -519,6 +732,8 @@ export function InfoModals({
   onClose: () => void;
   onOpenArtist: (platform: string, artistId: string, name: string) => void;
   onOpenAlbum: (platform: string, albumId: string, albumName: string) => void;
+  /** 歌曲详情「更多」里的评论入口；不传则不显示这一行。 */
+  onOpenComments?: (track: Track) => void;
   onPlayArtistTrack: (track: DesktopTrack) => void;
 }) {
   if (!modal) return null;
@@ -531,6 +746,7 @@ export function InfoModals({
         track={modal.track}
         onOpenArtist={onOpenArtist}
         onOpenAlbum={onOpenAlbum}
+        onOpenComments={onOpenComments}
         onClose={onClose}
       />
     );

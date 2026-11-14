@@ -28,6 +28,8 @@ interface OverlayStackProps {
   onCloseWallpaper: () => void;
   onApplyWallpaper: (item: DesktopWallpaperItem, result: DesktopWallpaperSetResult) => void;
   onCloseInfo: () => void;
+  /** 歌曲详情「更多 › 评论」：切到这首歌的评论弹窗。 */
+  onOpenComments: (track: Track) => void;
   onOpenArtist: (platform: string, artistId: string, name: string) => void;
   onOpenAlbum: (platform: string, albumId: string, albumName: string) => void;
   onPlayArtistTrack: (t: DesktopTrack) => void;
@@ -137,6 +139,7 @@ export const OverlayStack = memo(function OverlayStack({
   onCloseWallpaper,
   onApplyWallpaper,
   onCloseInfo,
+  onOpenComments,
   onOpenArtist,
   onOpenAlbum,
   onPlayArtistTrack,
@@ -167,6 +170,7 @@ export const OverlayStack = memo(function OverlayStack({
       <InfoModals
         modal={infoModal}
         onClose={onCloseInfo}
+        onOpenComments={onOpenComments}
         onOpenArtist={onOpenArtist}
         onOpenAlbum={onOpenAlbum}
         onPlayArtistTrack={onPlayArtistTrack}

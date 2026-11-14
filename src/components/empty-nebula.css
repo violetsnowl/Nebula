@@ -1,0 +1,274 @@
+/* 首次启动空状态（样张 H 第一部分）。背景沿用 BackgroundLayer 的环境光，这里只把它的颜色换成样张的中性暗色；
+   其余负责空卡轮廓 + 标题区；以及「没有歌时播放条 / 回到中心先不出现」。 */
+
+/* 中性环境光（样张 .env.neutral）：只在 .app 上覆盖环境色变量，BackgroundLayer 的三团光和暗角原样复用；
+   自定义图片 / 视频 / 预设背景不用这些变量，不受影响。
+   淡出阶段（data-empty='leaving'）撤掉覆盖，并让颜色用 0.6s 过渡回根节点的值，和空状态淡出同步，不会突然变亮。
+   过渡只挂在 data-empty 存在期间，不拖慢换歌时根节点自己的 1.4s 换色。 */
+.app[data-empty] {
+  transition:
+    --e1 0.6s var(--ease-std),
+    --e2 0.6s var(--ease-std),
+    --e3 0.6s var(--ease-std),
+    --ebase 0.6s var(--ease-std);
+}
+
+.app[data-empty='on'] {
+  --e1: rgb(58 66 84);
+  --e2: rgb(46 52 66);
+  --e3: rgb(70 64 62);
+  --ebase: rgb(9 10 13);
+}
+
+.empty-nebula {
+  position: absolute;
+  inset: 0;
+  /* 在舞台（10）之上、顶栏 / Dock / 播放条（≥50）之下 */
+  z-index: 20;
+  /* 整层不吃指针：舞台拖拽照常；只有按钮自己接收点击 */
+  pointer-events: none;
+  opacity: 1;
+  /* 导入开始后淡出，不和卡片揭示打架 */
+  transition: opacity 0.6s var(--ease-std);
+}
+
+.empty-nebula.is-leaving {
+  opacity: 0;
+}
+
+/* 空卡轮廓：单色、低对比，排成星云的空间结构；中央留出标题区 */
+.en-ghosts {
+  position: absolute;
+  inset: 0;
+  -webkit-mask-image: radial-gradient(ellipse 34% 30% at 50% 47%, transparent 0, transparent 62%, #000 100%);
+  mask-image: radial-gradient(ellipse 34% 30% at 50% 47%, transparent 0, transparent 62%, #000 100%);
+}
+
+.en-ghosts span {
+  position: absolute;
+  aspect-ratio: 1;
+  border-radius: 13px;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, var(--a, 0.08));
+  background: rgba(255, 255, 255, calc(var(--a, 0.08) * 0.18));
+  animation:
+    en-float var(--d, 20s) ease-in-out infinite alternate,
+    en-ghost-in 1.6s var(--ease-std) both;
+  animation-delay: var(--dl, 0s), var(--di, 0s);
+}
+
+/* 漂移只用 transform；入场只用独立的 scale / opacity，两者互不覆盖 */
+@keyframes en-float {
+  from {
+    transform: translate3d(-42px, -10px, 0);
+  }
+  to {
+    transform: translate3d(42px, 14px, 0);
+  }
+}
+
+@keyframes en-ghost-in {
+  from {
+    opacity: 0;
+    scale: 0.94;
+  }
+  to {
+    opacity: 1;
+    scale: 1;
+  }
+}
+
+.en-hero {
+  position: absolute;
+  left: 50%;
+  top: 47%;
+  transform: translate(-50%, -50%);
+  width: min(760px, calc(100vw - 48px));
+  text-align: center;
+  display: grid;
+  justify-items: center;
+}
+
+/* 标题区上浮 10px 淡入，四行依次错开 80ms */
+.en-hero > * {
+  animation: en-rise 0.9s var(--ease-std) both;
+}
+
+.en-hero > :nth-child(2) {
+  animation-delay: 0.08s;
+}
+
+.en-hero > :nth-child(3) {
+  animation-delay: 0.16s;
+}
+
+.en-hero > :nth-child(4) {
+  animation-delay: 0.24s;
+}
+
+@keyframes en-rise {
+  from {
+    opacity: 0;
+    translate: 0 10px;
+  }
+  to {
+    opacity: 1;
+    translate: 0 0;
+  }
+}
+
+.en-hero h2 {
+  margin: 0;
+  font-family: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
+  font-weight: 600;
+  font-size: 48px;
+  letter-spacing: 0.06em;
+  line-height: 1.25;
+  color: rgba(255, 255, 255, 0.95);
+  text-shadow: 0 2px 18px rgba(0, 0, 0, 0.35);
+}
+
+.en-hero p {
+  margin: 18px 0 0;
+  max-width: 520px;
+  font-size: 15px;
+  line-height: 1.8;
+  color: var(--fg-2);
+}
+
+.en-acts {
+  display: flex;
+  gap: 12px;
+  margin-top: 34px;
+  /* 按钮可点，其余区域仍穿透到舞台 */
+  pointer-events: auto;
+}
+
+.en-supports {
+  margin-top: 26px;
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--fg-3s);
+}
+
+.en-btn {
+  appearance: none;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  height: 42px;
+  padding: 0 20px;
+  border-radius: 12px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  transition:
+    background 0.18s var(--ease-std),
+    color 0.18s var(--ease-std),
+    transform 0.18s var(--ease-std);
+}
+
+.en-btn:active {
+  transform: scale(0.97);
+}
+
+.en-btn:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.55);
+  outline-offset: 2px;
+}
+
+.en-btn--primary {
+  background: rgba(255, 255, 255, 0.92);
+  color: #0b0c10;
+}
+
+.en-btn--primary:hover {
+  background: #fff;
+}
+
+.en-btn--sec {
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  color: var(--fg);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+.en-btn--sec:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.en-btn--text {
+  background: none;
+  color: var(--fg-2);
+  padding: 0 10px;
+}
+
+.en-btn--text:hover {
+  color: var(--fg);
+}
+
+@media (max-width: 760px) {
+  .en-hero h2 {
+    font-size: 36px;
+  }
+  .en-acts {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+}
+
+/* ---------- 没有歌时播放条 / 回到中心先不出现；有歌后浮上来 ----------
+   App 在没有当前歌时给 .app 加 data-no-song。
+   不能给 .player-surface 本身设 opacity（会成为 ::before 的背景采样边界，玻璃采不到背后），
+   所以淡入落在材质（::before）和内容（> *）上，位移用独立的 translate 属性（不动它自带的 transform）。
+   出现用 animation 而不是 transition：只在「开始匹配」时播一次，不会拖慢聆听模式逐帧写的 opacity。 */
+.app[data-no-song] .player-surface,
+.app[data-no-song] .center-btn {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.app:not([data-no-song]) .player-surface {
+  animation: en-bar-rise 0.32s var(--ease-std);
+}
+
+.app:not([data-no-song]) .player-surface::before,
+.app:not([data-no-song]) .player-surface > * {
+  animation: en-bar-fade 0.32s var(--ease-std);
+}
+
+.app:not([data-no-song]) .center-btn {
+  animation:
+    en-bar-rise 0.32s var(--ease-std),
+    en-bar-fade 0.32s var(--ease-std);
+}
+
+@keyframes en-bar-rise {
+  from {
+    translate: 0 12px;
+  }
+}
+
+@keyframes en-bar-fade {
+  from {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .en-ghosts span,
+  .en-hero > *,
+  .app:not([data-no-song]) .player-surface,
+  .app:not([data-no-song]) .player-surface::before,
+  .app:not([data-no-song]) .player-surface > *,
+  .app:not([data-no-song]) .center-btn {
+    animation: none !important;
+  }
+  .empty-nebula {
+    transition: none;
+  }
+}

@@ -24,6 +24,8 @@ interface AccountDockProps {
   selectedPlatform: string;
   /** 外部「去登录」请求计数：变化时打开账号面板并推入对应平台的详情。 */
   loginNonce: number;
+  /** 外部「打开账号列表」请求计数（首次启动空状态的「登录音乐平台」）：只打开账号页、停在平台列表，不替用户选平台。 */
+  accountListNonce?: number;
   bgSetting: BackgroundSetting;
   coverMode: CoverBgMode;
   lyricSettings: LyricVisualSettings;
@@ -860,6 +862,7 @@ export const AccountDock = memo(function AccountDock({
   accounts,
   selectedPlatform,
   loginNonce,
+  accountListNonce = 0,
   bgSetting,
   coverMode,
   lyricSettings,
@@ -959,6 +962,15 @@ export const AccountDock = memo(function AccountDock({
     setOpenRow('login');
     openDetail(selectedPlatform);
   }, [loginNonce, selectedPlatform, openDetail]);
+
+  // 外部「打开账号列表」：打开账号面板，若停在某个平台详情里就退回列表
+  const handledListNonce = useRef(0);
+  useEffect(() => {
+    if (!accountListNonce || accountListNonce === handledListNonce.current) return;
+    handledListNonce.current = accountListNonce;
+    setOpenRow('login');
+    if (detailIn) closeDetail();
+  }, [accountListNonce, detailIn, closeDetail]);
 
   // 面板关闭动画期间保留上一次的内容，避免淡出时窗口先变空
   const lastRowRef = useRef<'login' | 'settings'>('settings');

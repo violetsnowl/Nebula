@@ -1,0 +1,638 @@
+/* 信息弹窗（歌曲详情 / 评论 / 歌手 / 专辑）。设计：样张 H「弹窗」，真源 NEBULA_UI_SYSTEM §9.4。
+   遮罩 .info-overlay / .info-veil 仍在 styles.css；这里是面板本体和里面的内容。
+   颜色只来自音乐：文字用 --fg 系列，页签下划线用 --acc。 */
+
+/* 面板 = 阅读型 G3（材质由 .glass-g3 提供），宽度由内联变量 --mdl-w 给出。
+   弹窗面积大，背后卡片的亮斑更容易透上来，所以在阅读型 G3（18px / .28）基础上再把散射加到 24px、底色加到 .3。
+   高度随内容，上限 84vh；页头 flex:none，正文区 flex:1 + min-height:0 才能在超高时滚动。
+   isolation 让页头的模糊铺底（z-index:-1）留在面板内部，不会掉到玻璃后面。 */
+.info-modal {
+  --g3-blur: 24px;
+  --g3-tint: 0.3;
+  --g3-sat: 1.4;
+  position: relative;
+  width: min(var(--mdl-w, 600px), 92vw);
+  min-height: min(var(--mdl-min-h, 0px), 84vh);
+  max-height: 84vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  isolation: isolate;
+  border-radius: 22px;
+  animation: info-modal-in 0.28s var(--ease-std) both;
+}
+
+/* 进出 = 透明度 + 8px 位移，不从中心放大 */
+@keyframes info-modal-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* 右上角关闭：只有图标自己变亮 + 轻微放大，没有底板 */
+.mdl-x {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  z-index: 4;
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--fg-2);
+  cursor: pointer;
+  transition:
+    color 0.18s var(--ease-std),
+    transform 0.18s var(--ease-std);
+}
+
+.mdl-x:hover {
+  color: var(--fg);
+  transform: scale(1.06);
+}
+
+.mdl-x:focus-visible,
+.mdl-link:focus-visible,
+.mdl-row.is-btn:focus-visible,
+.mdl-song:focus-visible,
+.mdl-album:focus-visible,
+.mdl-tabs button:focus-visible,
+.mdl-back:focus-visible,
+.mdl-btn-sec:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.55);
+  outline-offset: 2px;
+}
+
+/* ---------- 页头大标题区 ---------- */
+
+.mdl-band {
+  position: relative;
+  flex: none;
+  padding: 28px 56px 22px 30px;
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 22px;
+  align-items: end;
+}
+
+/* 封面原图大幅模糊铺底（取色来自封面本身），向下渐隐进玻璃；向外多铺 40px，免得模糊的边缘露出来 */
+.mdl-band-bg {
+  position: absolute;
+  inset: -40px -40px 0;
+  z-index: -1;
+  background-size: cover;
+  background-position: center;
+  filter: blur(42px) saturate(1.25) brightness(0.72);
+  opacity: 0.85;
+  pointer-events: none;
+  -webkit-mask-image: linear-gradient(#000 40%, transparent);
+  mask-image: linear-gradient(#000 40%, transparent);
+}
+
+.mdl-cv {
+  width: 132px;
+  height: 132px;
+  border-radius: 14px;
+  object-fit: cover;
+  box-shadow: 0 18px 40px rgba(0, 0, 0, 0.5);
+}
+
+.mdl-cv.is-round {
+  border-radius: 50%;
+}
+
+.mdl-cv.is-ph {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04));
+}
+
+.mdl-band-text {
+  min-width: 0;
+}
+
+.mdl-kicker {
+  margin-bottom: 8px;
+  font-size: 12px;
+  letter-spacing: 0.12em;
+  color: var(--fg-3s);
+}
+
+.mdl-title {
+  margin: 0;
+  font-family: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
+  font-size: 30px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: 0.02em;
+  color: #fff;
+  text-wrap: balance;
+  overflow-wrap: anywhere;
+}
+
+/* 歌手 / 专辑：文字链接，hover 只让文字自己变亮 */
+.mdl-by {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 14px;
+  align-items: baseline;
+  font-size: 14px;
+  color: var(--fg-2);
+}
+
+.mdl-link {
+  border: 0;
+  padding: 0;
+  background: none;
+  font: inherit;
+  color: var(--fg);
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.18s var(--ease-std);
+}
+
+.mdl-link:hover {
+  color: #fff;
+}
+
+.mdl-meta {
+  margin-top: 8px;
+  font-size: 12px;
+  letter-spacing: 0.02em;
+  color: var(--fg-3s);
+  font-variant-numeric: tabular-nums;
+}
+
+.mdl-desc {
+  margin: 10px 0 0;
+  max-width: 440px;
+  font-size: 13px;
+  line-height: 1.7;
+  color: var(--fg-2);
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+
+/* ---------- 正文区（唯一的滚动容器，挂悬浮滚动条） ---------- */
+
+.mdl-body {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 4px 22px 22px;
+}
+
+.mdl-hint {
+  padding: 14px 8px;
+  font-size: 12px;
+  color: var(--fg-3s);
+}
+
+.mdl-hint.is-error {
+  color: rgba(255, 120, 120, 0.9);
+}
+
+.mdl-gtitle {
+  margin: 18px 8px 8px;
+  display: flex;
+  justify-content: space-between;
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--fg-3s);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 分组卡；行间细线从 --sep-l 开始（各分组按自己的内容缩进） */
+.mdl-group {
+  --sep-l: 14px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.mdl-group.is-first {
+  margin-top: 14px;
+}
+
+.mdl-group > * {
+  position: relative;
+}
+
+.mdl-group > * + *::before {
+  content: '';
+  position: absolute;
+  left: var(--sep-l);
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: var(--sep, rgba(255, 255, 255, 0.065));
+}
+
+.mdl-row {
+  --sep-l: 14px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 46px;
+  padding: 9px 14px;
+  font-size: 14px;
+}
+
+.mdl-k {
+  flex: none;
+  width: 64px;
+  font-size: 13px;
+  color: var(--fg-3s);
+}
+
+.mdl-v {
+  flex: 1;
+  min-width: 0;
+  color: var(--fg);
+}
+
+.mdl-row.is-btn {
+  width: 100%;
+  border: 0;
+  font: inherit;
+  font-size: 14px;
+  text-align: left;
+  color: inherit;
+  background: none;
+  cursor: pointer;
+  transition: background 0.18s var(--ease-std);
+}
+
+.mdl-row.is-btn:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.mdl-end {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 13px;
+  color: var(--fg-3s);
+  font-variant-numeric: tabular-nums;
+}
+
+/* ---------- 评论 ---------- */
+
+.mdl-chead {
+  flex: none;
+  padding: 24px 56px 6px 26px;
+  display: grid;
+  gap: 14px;
+}
+
+.mdl-chead h3 {
+  margin: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  font-family: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.mdl-chead h3 small {
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--fg-3s);
+  font-variant-numeric: tabular-nums;
+}
+
+.mdl-csong {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  font-size: 13px;
+  color: var(--fg-2);
+}
+
+.mdl-csong img,
+.mdl-csong .is-ph {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.mdl-csong > div {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mdl-csong b {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--fg);
+}
+
+.mdl-cmt {
+  display: grid;
+  grid-template-columns: 34px minmax(0, 1fr) auto;
+  gap: 4px 12px;
+  padding: 14px;
+}
+
+.mdl-cmt-av {
+  grid-row: span 2;
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  object-fit: cover;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.mdl-cmt-nm {
+  align-self: end;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg-2);
+}
+
+.mdl-cmt-like {
+  grid-row: 1;
+  grid-column: 3;
+  align-self: end;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--fg-3s);
+  font-variant-numeric: tabular-nums;
+}
+
+.mdl-cmt-tx {
+  grid-column: 2 / span 2;
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--fg);
+  overflow-wrap: anywhere;
+}
+
+/* QQ 评论表情：行内小图，比字略大，压在基线上 */
+.cmt-emoji {
+  display: inline-block;
+  width: 1.35em;
+  height: 1.35em;
+  margin: 0 0.08em;
+  vertical-align: -0.3em;
+}
+
+.mdl-more {
+  display: flex;
+  justify-content: center;
+  margin-top: 14px;
+}
+
+/* 次级按钮：加载更多 */
+.mdl-btn-sec {
+  height: 36px;
+  padding: 0 20px;
+  border: 0;
+  border-radius: 12px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.08);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.08);
+  cursor: pointer;
+  transition:
+    background 0.18s var(--ease-std),
+    transform 0.18s var(--ease-std);
+}
+
+.mdl-btn-sec:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.mdl-btn-sec:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.mdl-btn-sec:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* ---------- 歌手：页签 + 歌曲行 + 专辑网格 ---------- */
+
+/* 文字页签：选中项变白 + 2px 下划线（--acc 取自封面），不用分段控件 */
+.mdl-tabs {
+  flex: none;
+  display: flex;
+  gap: 22px;
+  padding: 6px 30px 0;
+  border-bottom: 1px solid var(--sep, rgba(255, 255, 255, 0.065));
+}
+
+.mdl-tabs button {
+  position: relative;
+  border: 0;
+  padding: 10px 0 12px;
+  background: none;
+  font: inherit;
+  font-size: 14px;
+  color: var(--fg-2);
+  cursor: pointer;
+  transition: color 0.18s var(--ease-std);
+}
+
+.mdl-tabs button:hover {
+  color: var(--fg);
+}
+
+.mdl-tabs button[aria-pressed='true'] {
+  color: #fff;
+}
+
+.mdl-tabs button[aria-pressed='true']::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--acc);
+}
+
+.mdl-song {
+  display: grid;
+  grid-template-columns: 22px 38px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: center;
+  width: 100%;
+  min-height: 54px;
+  padding: 7px 14px;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: none;
+  cursor: pointer;
+  transition: background 0.18s var(--ease-std);
+}
+
+.mdl-song.no-cover {
+  grid-template-columns: 22px minmax(0, 1fr) auto;
+}
+
+.mdl-song:hover {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.mdl-song-n {
+  text-align: center;
+  font-size: 12px;
+  color: var(--fg-3s);
+  font-variant-numeric: tabular-nums;
+}
+
+.mdl-song-c {
+  width: 38px;
+  height: 38px;
+  border-radius: 7px;
+  object-fit: cover;
+}
+
+.mdl-song-c.is-ph {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.mdl-song-t {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  color: var(--fg);
+}
+
+.mdl-song-t small {
+  display: block;
+  margin-top: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  color: var(--fg-3s);
+}
+
+.mdl-song-d {
+  font-size: 12px;
+  color: var(--fg-3s);
+  font-variant-numeric: tabular-nums;
+}
+
+.mdl-albums {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  padding: 18px 8px 4px;
+}
+
+.mdl-album {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: none;
+  cursor: pointer;
+}
+
+.mdl-album-c {
+  width: 100%;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  object-fit: cover;
+  box-shadow: 0 10px 24px rgba(0, 0, 0, 0.35);
+  transition: transform 0.18s var(--ease-std);
+}
+
+.mdl-album-c.is-ph {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.mdl-album:hover .mdl-album-c {
+  transform: scale(1.03);
+}
+
+.mdl-album b {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--fg);
+}
+
+.mdl-album small {
+  margin-top: -4px;
+  font-size: 12px;
+  color: var(--fg-3s);
+}
+
+/* 「全部歌曲」子视图的返回条：给右上角的关闭按钮留位置 */
+.mdl-nav {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px 56px 6px 22px;
+}
+
+.mdl-back {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  border: 0;
+  padding: 4px 2px;
+  background: none;
+  font: inherit;
+  font-size: 13px;
+  color: var(--fg-2);
+  cursor: pointer;
+  transition: color 0.18s var(--ease-std);
+}
+
+.mdl-back:hover {
+  color: var(--fg);
+}
+
+.mdl-nav-t {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+}

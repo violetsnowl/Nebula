@@ -17,8 +17,9 @@ import { audioPlayer } from './lib/audio/AudioPlayer';
 import type { PanController } from './lib/panEngine';
 import { SEED, type CardSpec, type LayoutMetrics } from './lib/layout';
 import type { BackgroundSetting } from './lib/backgrounds';
-import { generateTracks } from './lib/catalog';
+import { generateTracks, isDemoNebulaEnabled } from './lib/catalog';
 import type { Track } from './lib/catalog';
+import { EmptyNebula, useEmptyPhase } from './components/EmptyNebula';
 import { mulberry32 } from './lib/rng';
 import { hasDesktopAPI, toBackendTrack, toFrontendTrack, type DesktopTrack } from './lib/playlist/ipcClient';
 import type { DesktopWallpaperItem, DesktopWallpaperSetResult } from './lib/playlist/ipcClient';
@@ -41,8 +42,21 @@ import { useListenMode } from './hooks/listen/useListenMode';
 import { useGlass } from './lib/glass';
 import { libraryService } from './lib/library';
 
-/** 初始曲库量：渲染成本与它无关，仅影响数据生成与空间索引（线性）。 */
+/** 演示曲库量（仅 `?demo=1` 开发 / QA 开关打开时生成）：渲染成本与它无关，仅影响数据生成与空间索引（线性）。 */
 const CARD_COUNT = 1000;
+
+/** localStorage 里是否有可恢复的会话歌单（同步嗅探，只用于决定首帧要不要闪一下空状态）。 */
+function hasSavedSession(): boolean {
+  try {
+    const raw = localStorage.getItem('music-nebula.session');
+    if (!raw) return false;
+    const s = JSON.parse(raw) as { tracks?: unknown[] };
+    return Array.isArray(s.tracks) && s.tracks.length > 0;
+  } catch {
+    return false;
+  }
+}
+
 declare global {
   interface Window {
     __nebula?: {
@@ -64,13 +78,18 @@ export default function App() {
   const isWallpaperView =
     typeof window !== 'undefined' &&
     new URLSearchParams(window.location.search).get('view') === 'wallpaper';
-  // 曲库初始化：首次挂载用演示数据填充 LibraryService（后续由导入/会话恢复接管）
+  // 曲库初始化：默认不预置任何歌曲（首次启动显示空状态，后续由导入 / 会话恢复接管）。
+  // 演示星云只在 `?demo=1` 开发 / QA 开关打开时生成（舞台测试依赖它）。
+  const [demoNebula] = useState(isDemoNebulaEnabled);
   useState(() => {
-    if (libraryService.getState().songs.length === 0) {
+    if (demoNebula && libraryService.getState().songs.length === 0) {
       libraryService.applyImported(generateTracks(mulberry32(SEED), CARD_COUNT));
     }
   });
   const { songs } = useLibrary();
+  // 会话恢复在 useStage 的挂载 effect 里做（首帧曲库仍是空的）：有会话时首帧不能闪空状态，
+  // 所以先同步嗅探 localStorage，等恢复 effect 跑完（下面那个 effect 在它之后）再放开
+  const [sessionPending, setSessionPending] = useState(hasSavedSession);
 
   // ---------- 多平台账号状态（领域 hook：useAccounts） ----------
   const {
@@ -107,6 +126,7 @@ export default function App() {
     closeContextMenu,
     copyTrackLink,
     openCommentsModal,
+    openCommentsFor,
     openSongDetailModal,
     openArtistByName,
     openArtistFromChip,
@@ -230,6 +250,13 @@ export default function App() {
     beginImport,
     resetImportState,
   } = stage;
+
+  // 必须声明在 useStage 之后：同一次提交里 effect 按声明顺序执行，会话恢复先写入曲库，这里再放开空状态，
+  // 两次 setState 合并成一次渲染（有会话时空状态一帧都不出现）
+  useEffect(() => setSessionPending(false), []);
+  /** 首次启动空状态：曲库里没有任何真实歌曲（演示开关打开时从不显示）。 */
+  const showEmpty = !demoNebula && songs.length === 0 && !sessionPending;
+  const emptyPhase = useEmptyPhase(showEmpty);
 
   // 回到中心 = G2 透镜圆按钮（NEBULA_UI_SYSTEM §3.3）
   const centerRef = useRef<HTMLButtonElement>(null);
@@ -444,6 +471,21 @@ export default function App() {
     [requestLogin, showPanel],
   );
 
+  /** 空状态「登录音乐平台」：打开右侧账号页、停在平台列表（第一次用，不替用户选平台）。 */
+  const [accountListNonce, setAccountListNonce] = useState(0);
+  const handleEmptyLogin = useCallback(() => {
+    setAccountListNonce((n) => n + 1);
+    showPanel('right');
+  }, [showPanel]);
+  /** 空状态「粘贴歌单链接」：左侧 Dock 的「导入」页 + 输入框聚焦。 */
+  const [playlistDockRequest, setPlaylistDockRequest] = useState<
+    { panel: 'import'; focusInput: boolean; nonce: number } | undefined
+  >(undefined);
+  const handleEmptyPasteLink = useCallback(() => {
+    setPlaylistDockRequest((r) => ({ panel: 'import', focusInput: true, nonce: (r?.nonce ?? 0) + 1 }));
+    showPanel('left');
+  }, [showPanel]);
+
   /** 全平台歌单一键刷新：只刷新已登录平台，账号信息与歌单一并重新拉取。 */
   const handleRefreshAll = useCallback(() => {
     const targets = Object.keys(accounts).filter((p) => accounts[p].loggedIn);
@@ -519,7 +561,13 @@ export default function App() {
   return (
     <InterfaceSettingsProvider value={interfaceSettingsValue}>
       <VisualAtmosphereProvider value={atmosphereValue}>
-        <main className="app" ref={appRef}>
+        {/* data-no-song：还没有当前歌时播放条和「回到中心」先不出现；data-empty：空状态期间的中性环境光（empty-nebula.css） */}
+        <main
+          className="app"
+          ref={appRef}
+          data-no-song={playerState.song ? undefined : ''}
+          data-empty={emptyPhase === 'off' ? undefined : emptyPhase}
+        >
       <BackgroundLayer setting={effectiveBgSetting} coverMode={bgSetting.type === 'cover' ? bgCoverMode : undefined} />
 
       {!uiHideLyrics && (
@@ -554,6 +602,13 @@ export default function App() {
         registerEl={registerEl}
       />
 
+      <EmptyNebula
+        phase={emptyPhase}
+        onLogin={handleEmptyLogin}
+        onPasteLink={handleEmptyPasteLink}
+        onLocal={importer.openLocal}
+      />
+
       <TopBar
         visible={edge.top}
         localBusy={importer.localBusy}
@@ -567,6 +622,7 @@ export default function App() {
         visible={edge.right}
         selectedPlatform={drawerPlatform}
         loginNonce={loginNonce}
+        accountListNonce={accountListNonce}
         platforms={platforms}
         accounts={accounts}
         bgSetting={bgSetting}
@@ -624,6 +680,7 @@ export default function App() {
         onOpenLocal={importer.openLocal}
         near={near.left}
         onPinChange={pinLeft}
+        openRequest={playlistDockRequest}
       />
 
       <button ref={centerRef} className="center-btn glass-g2" onClick={handleReset} aria-label="回到中心" data-tip="回到中心">
@@ -669,6 +726,7 @@ export default function App() {
         onCloseWallpaper={closeWallpaper}
         onApplyWallpaper={handleWallpaperApply}
         onCloseInfo={closeInfo}
+        onOpenComments={openCommentsFor}
         onOpenArtist={openArtistFromChip}
         onOpenAlbum={openAlbum}
         onPlayArtistTrack={handlePlayArtistTrack}

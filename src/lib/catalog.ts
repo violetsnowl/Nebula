@@ -53,6 +53,21 @@ export interface Track {
   quality?: string;
 }
 
+/**
+ * 演示星云开关（仅开发 / QA 用）：页面 URL 带 `?demo=1`，或 localStorage `music-nebula.dev.demo-nebula = '1'`。
+ * 首次启动默认不再生成演示曲库（随机色相的占位方块不来自音乐，见「首次启动」空状态），
+ * 但 QA 的舞台测试（总数 1000、挂载数、鱼眼、拖拽、滚轮）依赖这片星云，所以保留一个显式开关。
+ */
+export function isDemoNebulaEnabled(): boolean {
+  if (typeof window === 'undefined') return false;
+  try {
+    if (new URLSearchParams(window.location.search).get('demo') === '1') return true;
+    return window.localStorage.getItem('music-nebula.dev.demo-nebula') === '1';
+  } catch {
+    return false;
+  }
+}
+
 /** 伪随机生成整片“星云”的歌单（封面配色、标题、艺人全部确定性生成，零网络依赖）。 */
 export function generateTracks(
   rng: RNG,

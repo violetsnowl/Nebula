@@ -170,6 +170,71 @@ body {
   opacity: var(--g3-spec, 0);
 }
 
+/* 悬浮滚动条（lib/overlayScrollbar.ts，2026-11-14 用户反馈）：原生滚动条隐藏、不占宽度；
+   父元素里叠一根细圆条，只在滚动 / 鼠标在滚动区里时淡入，4px，移到圆条上变 6px，可拖动 */
+.ovs {
+  scrollbar-width: none;
+}
+
+.ovs::-webkit-scrollbar {
+  display: none;
+}
+
+.ovs-thumb {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 12px;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s var(--ease-std);
+}
+
+.ovs-thumb.is-on {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.ovs-thumb::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: 3px;
+  width: 4px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.24);
+  transition:
+    width 0.18s var(--ease-std),
+    background 0.18s var(--ease-std);
+}
+
+.ovs-thumb:hover::after,
+.ovs-thumb.is-drag::after {
+  width: 6px;
+  background: rgba(255, 255, 255, 0.4);
+}
+
+/* 没有挂悬浮滚动条的其他滚动区（兜底）：细、透明轨道、无箭头 */
+.app ::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.app ::-webkit-scrollbar-track,
+.app ::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.app ::-webkit-scrollbar-thumb {
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.app ::-webkit-scrollbar-button {
+  display: none;
+}
+
 /* 折射滤镜不继承（#106）：--glass-filter 是自定义属性，会从外层玻璃继承下来。播放条（G1）里的队列 / 音量 / 音质弹层
    以前继承了播放条按 992×80 圆角矩形生成的折射贴图，弹层顶部被套出一块「独立的胶囊」。
    这里先重置为不折射；真正注册了折射的面（两侧面板、小球）由 GlassManager 在元素上写内联样式，优先级更高。 */
@@ -178,13 +243,12 @@ body {
   --glass-filter: blur(0px);
 }
 
-/* 阅读型 G3（审查第 3 条，2026-11-14）：承载列表和长文字的表面——播放队列、音质、搜索结果、信息弹窗。
+/* 阅读型 G3（审查第 3 条，2026-11-14）：承载列表和长文字的表面——播放队列、音质、搜索结果（信息弹窗面积更大，参数在 components/modals.css 里单独给）。
    两种主题下都保持浓密度（散射 18px、底色 .28、透色 1.4），液态只保留受光边。
    液态参数下它们压在亮色封面上会整块透色，背后卡片的圆角轮廓还会正好框住某一行，像一块独立的胶囊。 */
 .queue-pop,
 .quality-pop,
-.search-drop,
-.info-modal {
+.search-drop {
   --g3-blur: 18px;
   --g3-tint: 0.28;
   --g3-sat: 1.4;
@@ -2368,417 +2432,6 @@ body {
   }
 }
 
-/* 面板 = G3（.glass-g3 提供材质），圆角 r-lg；进出 = 透明度 + 8px 位移，不从中心放大 */
-.info-modal {
-  position: relative;
-  width: min(560px, 92vw);
-  max-width: min(880px, 92vw);
-  height: min(600px, 84vh);
-  padding: 20px 22px;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  overflow: hidden;
-  border-radius: 20px;
-  animation: info-modal-in 0.28s var(--ease-std) both;
-}
-
-@keyframes info-modal-in {
-  from {
-    opacity: 0;
-    transform: translateY(8px);
-  }
-}
-
-.info-head {
-  font-size: 14px;
-  font-weight: 600;
-  color: var(--fg);
-}
-
-.info-scroll {
-  flex: 1;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.info-hint {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.6);
-}
-
-.info-hint.is-error {
-  color: rgba(255, 120, 120, 0.9);
-}
-
-.cmt-section {
-  font-size: 11px;
-  font-weight: 600;
-  color: var(--fg-3s);
-  margin: 6px 0 2px;
-}
-
-.cmt-row {
-  display: flex;
-  gap: 10px;
-  padding: 8px;
-  border-radius: 10px;
-}
-
-.cmt-row:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.cmt-avatar {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
-  flex: none;
-  object-fit: cover;
-}
-
-.cmt-avatar.is-ph {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04));
-}
-
-.cmt-body {
-  min-width: 0;
-}
-
-.cmt-nick {
-  font-size: 12px;
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.85);
-}
-
-.cmt-content {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.75);
-  line-height: 1.45;
-}
-
-/* QQ 评论表情：行内小图，比字略大，压在基线上 */
-.cmt-emoji {
-  display: inline-block;
-  width: 1.35em;
-  height: 1.35em;
-  margin: 0 0.08em;
-  vertical-align: -0.3em;
-}
-
-.cmt-like {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 11px;
-  color: var(--fg-3s);
-  font-variant-numeric: tabular-nums;
-  margin-top: 2px;
-}
-
-.sd-cover-row {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
-}
-
-.sd-cover {
-  width: 120px;
-  height: 120px;
-  border-radius: 14px;
-  object-fit: cover;
-  flex: none;
-  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
-}
-
-.sd-cover.is-ph {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03));
-}
-
-/* 标题区（§9.4）：歌名 / 歌手名用 Display 字体 28px */
-.sd-title {
-  font-family: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
-  font-size: 28px;
-  font-weight: 600;
-  line-height: 1.25;
-  color: var(--fg);
-}
-
-.sd-artists {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-top: 6px;
-}
-
-.sd-chip {
-  font-size: 12px;
-  padding: 4px 10px;
-  border-radius: 999px;
-  border: none;
-  background: rgba(255, 255, 255, 0.07);
-  color: var(--fg-2);
-  cursor: pointer;
-  transition: color 0.12s ease, background 0.12s ease;
-}
-
-.sd-chip:hover {
-  background: rgba(255, 255, 255, 0.12);
-  color: var(--fg);
-}
-
-.sd-album {
-    font-size: 11px;
-    color: rgba(255, 255, 255, 0.55);
-    margin-top: 4px;
-  }
-
-  .sd-album-link {
-    display: block;
-    padding: 0;
-    border: none;
-    background: none;
-    text-align: left;
-    cursor: pointer;
-    transition: color 0.12s ease;
-  }
-
-  /* hover 只提亮文字（§6），不发光 */
-  .sd-album-link:hover {
-    color: var(--fg);
-  }
-
-  .cmt-more {
-    margin: 10px auto 4px;
-    padding: 7px 18px;
-    border-radius: 999px;
-    border: 1px solid rgba(255, 255, 255, 0.16);
-    background: rgba(255, 255, 255, 0.06);
-    color: rgba(255, 255, 255, 0.8);
-    font-size: 11.5px;
-    cursor: pointer;
-    transition: background 0.18s ease, color 0.18s ease;
-  }
-
-  .cmt-more:hover:not(:disabled) {
-    background: rgba(255, 255, 255, 0.13);
-    color: #fff;
-  }
-
-  .cmt-more:disabled {
-    opacity: 0.6;
-    cursor: default;
-  }
-
-  .cmt-section-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .ar-more {
-    border: none;
-    background: none;
-    padding: 0;
-    font-size: 11px;
-    color: var(--fg-3);
-    cursor: pointer;
-    transition: color 0.12s ease;
-  }
-
-  .ar-more:hover {
-    color: var(--fg);
-  }
-
-  .info-head-row {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  /* 返回：文字按钮（§6） */
-  .info-back {
-    border: none;
-    background: none;
-    padding: 4px 2px;
-    color: var(--fg-2);
-    font-size: 13px;
-    cursor: pointer;
-    transition: color 0.12s ease;
-  }
-
-  .info-back:hover {
-    color: var(--fg);
-  }
-
-  .info-head-title {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-.sd-credits {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.sd-credit {
-  display: flex;
-  gap: 10px;
-  font-size: 12px;
-}
-
-.sd-credit-role {
-  color: rgba(255, 255, 255, 0.5);
-  flex: none;
-  width: 48px;
-}
-
-.sd-credit-name {
-  color: rgba(255, 255, 255, 0.85);
-}
-
-.ar-head {
-  display: flex;
-  gap: 16px;
-  align-items: flex-start;
-  padding-bottom: 10px;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.ar-avatar {
-  width: 84px;
-  height: 84px;
-  border-radius: 50%;
-  object-fit: cover;
-  flex: none;
-  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.4);
-}
-
-.ar-avatar.is-ph {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.12), rgba(255, 255, 255, 0.04));
-}
-
-.ar-name {
-  font-family: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
-  font-size: 28px;
-  font-weight: 600;
-  line-height: 1.25;
-  color: var(--fg);
-}
-
-.ar-desc {
-  margin-top: 6px;
-  font-size: 11.5px;
-  line-height: 1.55;
-  color: rgba(255, 255, 255, 0.6);
-  max-height: 90px;
-  overflow-y: auto;
-  white-space: pre-wrap;
-}
-
-.ar-song {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  width: 100%;
-  text-align: left;
-  padding: 8px 10px;
-  border: none;
-  background: transparent;
-  border-radius: 9px;
-  cursor: pointer;
-}
-
-.ar-song:hover {
-  background: rgba(255, 255, 255, 0.05);
-}
-
-.ar-song-idx {
-  flex: none;
-  width: 20px;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.4);
-}
-
-.ar-song-name {
-  font-size: 12px;
-  color: rgba(255, 255, 255, 0.9);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.ar-song-album {
-  margin-left: auto;
-  font-size: 10.5px;
-  color: rgba(255, 255, 255, 0.45);
-  max-width: 160px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.ar-albums {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 10px;
-}
-
-.ar-album {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-  min-width: 0;
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
-  text-align: left;
-  color: inherit;
-  font: inherit;
-  transition: transform 0.18s ease, opacity 0.18s ease;
-}
-
-.ar-album:hover {
-  transform: translateY(-2px);
-  opacity: 0.9;
-}
-
-.ar-album-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 0;
-}
-
-.ar-album-cover {
-  width: 100%;
-  aspect-ratio: 1;
-  border-radius: 10px;
-  object-fit: cover;
-}
-
-.ar-album-cover.is-ph {
-  background: linear-gradient(135deg, rgba(255, 255, 255, 0.1), rgba(255, 255, 255, 0.03));
-}
-
-.ar-album-name {
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.85);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.ar-album-year {
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.45);
-}
-
 
 @media (max-width: 1180px) {
   .import-bar input {
@@ -4783,7 +4436,9 @@ body {
 .sd-panel {
   position: fixed;
   top: 16px;
-  bottom: calc(22px + 80px + 14px);
+  /* 高度随内容（样张 H，2026-11-14 用户确认）：--sd-h 由 SideDock 量出这一页内容的自然高度；
+     上限仍是原来的「顶边 16px 到播放条上方 14px」。切页时高度 0.32s 过渡，短页面不再留下大半块空玻璃 */
+  height: min(var(--sd-h, 100vh), calc(100vh - 16px - 22px - 80px - 14px));
   z-index: 81;
   display: flex;
   flex-direction: column;
@@ -4792,6 +4447,7 @@ body {
   transition:
     transform 0.28s var(--ease-std),
     opacity 0.28s var(--ease-std),
+    height 0.32s var(--ease-std),
     visibility 0s linear 0.28s;
 }
 

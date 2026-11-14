@@ -75,8 +75,48 @@ async function main() {
   });
   page.on('pageerror', (err) => errors.push(`pageerror: ${String(err)}`));
 
-  await page.goto(`file:///${HTML_PATH.replace(/\\/g, '/')}`, { waitUntil: 'load' });
+  // 舞台测试依赖演示星云（1000 首）：首次启动默认是空状态，这里用 ?demo=1 显式打开演示曲库
+  const APP_URL = `file:///${HTML_PATH.replace(/\\/g, '/')}`;
+  await page.goto(`${APP_URL}?demo=1`, { waitUntil: 'load' });
   await page.waitForTimeout(1500);
+
+  // ---------- 0) 首次启动空状态（不带 demo 开关、全新存储）----------
+  let emptyOk = false;
+  // 新开一个独立上下文（localStorage 全空），断言：标题可见、没有卡片、没有显示播放条 / 回到中心
+  {
+    const ctx = await browser.newContext({ viewport: { width: 1600, height: 900 } });
+    const first = await ctx.newPage();
+    first.on('pageerror', (err) => errors.push(`pageerror(first-run): ${String(err)}`));
+    await first.goto(APP_URL, { waitUntil: 'load' });
+    await first.waitForTimeout(1500);
+    const emptyState = await first.evaluate(() => {
+      const vis = (el) => !!el && getComputedStyle(el).visibility !== 'hidden' && el.getBoundingClientRect().width > 0;
+      const h = document.querySelector('.empty-nebula .en-hero h2');
+      return {
+        title: h ? h.textContent : '',
+        titleVisible: vis(h),
+        cards: document.querySelectorAll('.music-card').length,
+        ghosts: document.querySelectorAll('.en-ghosts span').length,
+        buttons: Array.from(document.querySelectorAll('.en-acts .en-btn')).map((b) => b.textContent),
+        barVisible: vis(document.querySelector('.player-surface')),
+        centerVisible: vis(document.querySelector('.center-btn')),
+      };
+    });
+    log('首次启动：标题', emptyState.title);
+    log('首次启动：空卡轮廓数(35–45)', emptyState.ghosts);
+    log('首次启动：无 .music-card', emptyState.cards === 0);
+    log('首次启动：播放条 / 回到中心均不显示', !emptyState.barVisible && !emptyState.centerVisible);
+    emptyOk =
+      emptyState.title === '把你的歌，放进星云' &&
+      emptyState.titleVisible &&
+      emptyState.cards === 0 &&
+      emptyState.ghosts >= 35 &&
+      emptyState.ghosts <= 45 &&
+      emptyState.buttons.join('|') === '登录音乐平台|粘贴歌单链接|本地文件夹…' &&
+      !emptyState.barVisible &&
+      !emptyState.centerVisible;
+    await ctx.close();
+  }
 
   // ---------- 1) 密度与虚拟化 ----------
   const stats = await page.evaluate(() => {
@@ -293,7 +333,9 @@ async function main() {
   log('滚轮远移后挂载数(应>0)', afterWheel.mounted);
 
   // ---------- 8) 回到中心 ----------
-  await page.getByRole('button', { name: /回到中心/ }).click();
+  // 还没有当前歌时「回到中心」按设计隐藏（visibility:hidden），Playwright 的可见性检查点不了；
+  // 这里直接触发 DOM click，照样走 React 的 onClick，断言（重置后 pan）保持不变
+  await page.evaluate(() => document.querySelector('.center-btn').click());
   await page.waitForTimeout(500);
   const afterReset = await page.evaluate(() => window.__nebula?.pan());
   log('重置后 pan', JSON.stringify(afterReset));
@@ -741,6 +783,7 @@ async function main() {
     qualityItems < 3 ||
     !qualityState.quality ||
     !qualityState.switched ||
+    !emptyOk ||
     !edgeHideOk ||
     !panelStays ||
     !shuffleOk ||
@@ -771,6 +814,7 @@ async function main() {
     skip: skippedTo !== 1,
     failedCard: failedCount < 1,
     qualityMenu: qualityItems < 3 || !qualityState.quality || !qualityState.switched,
+    firstRunEmpty: !emptyOk,
     edgeHide: !edgeHideOk,
     panelStays: !panelStays,
     shuffle: !shuffleOk,

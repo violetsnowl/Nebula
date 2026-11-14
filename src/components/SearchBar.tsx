@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { motion } from 'motion/react';
 import { useGlass } from '../lib/glass';
+import { useOverlayScrollbar } from '../lib/overlayScrollbar';
 import { matchSongs, type SearchMatch } from '../lib/search';
 import type { Track } from '../lib/catalog';
 import { toFrontendTrack, type DesktopArtistHit } from '../lib/playlist/ipcClient';
@@ -109,6 +110,8 @@ export function SearchBar({
   const bubbleRef = useRef<HTMLDivElement>(null);
   useGlass(pillRef, 'g1');
   useGlass(bubbleRef, 'g2');
+  const dropRef = useRef<HTMLDivElement>(null);
+  useOverlayScrollbar(dropRef, open && query.trim().length > 0);
   const prevExpandedRef = useRef(false);
   const netSeqRef = useRef(0);
 
@@ -295,7 +298,7 @@ export function SearchBar({
       </motion.div>
 
       {open && query.trim() && (
-        <div className="search-drop">
+        <div className="search-drop" ref={dropRef}>
           {matches.length === 0 && !hasNet && !netSearching ? (
             <div className="search-empty">未找到匹配的歌曲或歌手</div>
           ) : (

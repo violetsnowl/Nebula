@@ -30,9 +30,11 @@ interface PlaylistDockProps {
   near: boolean;
   /** 面板开 / 关：通知边缘感应钉住或解除。 */
   onPinChange: (open: boolean) => void;
+  /** 外部打开某一页（首次启动空状态的「粘贴歌单链接」）：nonce 变化时打开 panel 页，focusInput 时聚焦链接输入框。 */
+  openRequest?: { panel: PanelId; focusInput?: boolean; nonce: number };
 }
 
-type PanelId = 'playlists' | 'import';
+export type PanelId = 'playlists' | 'import';
 type LibView = 'list' | 'detail';
 
 /** 面板内被选中的歌单（点进详情时记下，返回列表后仍保留，供离场动画使用）。 */
@@ -127,15 +129,18 @@ const SongRow = memo(function SongRow({
 function ManualImport({
   status,
   onImport,
+  inputRef,
 }: {
   status: ImportStatus;
   onImport: (url: string) => void;
+  inputRef?: React.Ref<HTMLInputElement>;
 }) {
   const [value, setValue] = useState('');
   return (
     <div className="manual-import">
       <div className="field">
         <input
+          ref={inputRef}
           className="input"
           type="text"
           placeholder="网易云 / QQ / 酷狗 / 汽水 / Spotify 的歌单链接"
@@ -182,11 +187,31 @@ export const PlaylistDock = memo(function PlaylistDock({
   onOpenLocal,
   near,
   onPinChange,
+  openRequest,
 }: PlaylistDockProps) {
   const [active, setActive] = useState<PanelId | null>(null);
   const lastRef = useRef<PanelId>('playlists');
   if (active) lastRef.current = active;
   const shown = active ?? lastRef.current;
+
+  // 外部打开某一页：和点小球同一条路径（setActive），要聚焦时等导入页渲染出来再聚焦输入框
+  const importInputRef = useRef<HTMLInputElement>(null);
+  const handledReq = useRef(0);
+  const [focusPending, setFocusPending] = useState(false);
+  useEffect(() => {
+    if (!openRequest || openRequest.nonce === handledReq.current) return;
+    handledReq.current = openRequest.nonce;
+    setActive(openRequest.panel);
+    if (openRequest.focusInput) setFocusPending(true);
+  }, [openRequest]);
+  useEffect(() => {
+    if (!focusPending || active !== 'import') return;
+    const raf = requestAnimationFrame(() => {
+      importInputRef.current?.focus({ preventScroll: true });
+      setFocusPending(false);
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [focusPending, active]);
 
   const [filter, setFilter] = useState<string>('all');
   const [sel, setSel] = useState<SelectedPlaylist | null>(null);
@@ -509,7 +534,7 @@ export const PlaylistDock = memo(function PlaylistDock({
       </div>
       <div className="g-title">粘贴歌单链接</div>
       <div className="group">
-        <ManualImport status={importStatus} onImport={onImportUrl} />
+        <ManualImport status={importStatus} onImport={onImportUrl} inputRef={importInputRef} />
       </div>
       <div className="g-title">其他方式</div>
       <div className="group">

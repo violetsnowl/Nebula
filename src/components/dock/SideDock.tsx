@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useOverlayScrollbar } from '../../lib/overlayScrollbar';
 import { useGlass } from '../../lib/glass';
 import './panel-kit.css';
 
@@ -42,7 +43,9 @@ interface SideDockProps {
 /** 点这些界面时侧面板保持打开（播放条、顶栏、另一侧 Dock、弹窗、弹层、提示）。 */
 const KEEP_OPEN =
   '.side-dock, .player-surface, .topbar, .info-overlay, .ctx-menu, .ctx-backdrop, .now-playing-overlay, ' +
-  '.wallpaper-overlay, .queue-pop, .vol-pop, .quality-pop, .tooltip-bubble, .center-btn, .lyric-probe';
+  '.wallpaper-overlay, .queue-pop, .vol-pop, .quality-pop, .tooltip-bubble, .center-btn, .lyric-probe, ' +
+  // 首次启动空状态的三个按钮：面板开着时点它们不能被「点外面关面板」吞掉（第一下只关面板、第二下才生效）
+  '.empty-nebula .en-acts';
 
 /** 比侧面板更靠上的浮层：它们存在时 Esc 先归它们（评论 / 信息弹窗、右键菜单、二级播放页、队列 / 音质 / 音量弹层）。 */
 const ABOVE_PANEL = '.info-overlay, .ctx-menu, .now-playing-overlay, .queue-pop, .quality-pop, .vol-pop';
@@ -113,6 +116,27 @@ export function SideDock({
     return () => window.clearTimeout(t);
   }, [active]);
   useGlass(panelRef, 'g3', lensOn);
+
+  // 面板高度随内容（样张 H）：量内容的自然高度 + 滚动区上下内边距，写成 --sd-h；CSS 里再封顶
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const panel = panelRef.current;
+    const scroll = scrollRef.current;
+    const content = contentRef.current;
+    if (!panel || !scroll || !content) return;
+    const apply = () => {
+      const cs = getComputedStyle(scroll);
+      const pad = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+      panel.style.setProperty('--sd-h', `${Math.ceil(content.offsetHeight + pad)}px`);
+    };
+    apply();
+    const ro = new ResizeObserver(apply);
+    ro.observe(content);
+    return () => ro.disconnect();
+  }, []);
+  // 悬浮滚动条：原生滚动条不占宽度，切页时内容不再左右跳（用户反馈）
+  useOverlayScrollbar(scrollRef);
 
   useEffect(() => {
     onPinChange(active !== null);
@@ -189,7 +213,11 @@ export function SideDock({
         onPointerEnter={onEnter}
         onPointerLeave={onLeave}
       >
-        <div className="sd-scroll">{children}</div>
+        <div className="sd-scroll" ref={scrollRef}>
+          <div className="sd-content" ref={contentRef}>
+            {children}
+          </div>
+        </div>
         {overlay}
       </section>
     </>

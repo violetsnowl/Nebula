@@ -3,6 +3,7 @@ import { audioPlayer } from '../../lib/audio/AudioPlayer';
 import { useAudioPlayer } from '../../lib/audio/useAudioPlayer';
 import { IconQueue } from './icons';
 import { IconClose, IconPlay } from '../icons';
+import { useOverlayScrollbar } from '../../lib/overlayScrollbar';
 
 /**
  * 播放队列：底部播放器常显入口；点击展开面板（当前项 + 即将播放）。
@@ -13,6 +14,8 @@ export const QueueControl = memo(function QueueControl() {
   useAudioPlayer();
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const popRef = useRef<HTMLDivElement>(null);
+  useOverlayScrollbar(popRef, open);
   const snap = audioPlayer.getQueueSnapshot();
 
   useEffect(() => {
@@ -42,7 +45,7 @@ export const QueueControl = memo(function QueueControl() {
         <IconQueue />
       </button>
       {open && (
-        <div className="queue-pop glass-g3" onMouseEnter={() => setOpen(true)}>
+        <div className="queue-pop glass-g3" ref={popRef} onMouseEnter={() => setOpen(true)}>
           <div className="queue-pop-title">播放队列</div>
           {snap.current && (
             <button

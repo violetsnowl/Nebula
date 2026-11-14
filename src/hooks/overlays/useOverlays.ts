@@ -80,6 +80,11 @@ export function useOverlays() {
     setInfoModal({ kind: 'comments', track: song });
   }, []);
 
+  /** 歌曲详情弹窗里的「评论」行：评论的是详情里那首歌，不一定是正在播放的。 */
+  const openCommentsFor = useCallback((track: Track) => {
+    setInfoModal({ kind: 'comments', track });
+  }, []);
+
   const openSongDetailModal = useCallback(() => {
     const song = audioPlayer.getState().song;
     if (!song) return;
@@ -203,6 +208,7 @@ export function useOverlays() {
     closeContextMenu,
     copyTrackLink,
     openCommentsModal,
+    openCommentsFor,
     openSongDetailModal,
     openArtistByName,
     openArtistFromChip,
