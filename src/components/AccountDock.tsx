@@ -12,7 +12,7 @@ import { currentLyricIndex, type LyricLineUI } from '../lib/lyrics';
 import { paletteFromBaseColor } from '../lib/coverColors';
 import { SideDock } from './dock/SideDock';
 import { DOCK_PLATFORM_ORDER, platformMeta } from './platforms';
-import { IconCheck, IconChevronLeft, IconChevronRight } from './icons';
+import { IconCheck, IconChevronLeft, IconChevronRight, IconExternal, IconImage, IconRefresh } from './icons';
 import './dock/right-panel.css';
 
 export type DockSettingsPage = 'lyrics' | 'bg' | 'look';
@@ -185,7 +185,17 @@ function Slider({
 }
 
 /** 可点的行（role=button，回车 / 空格也能触发）。 */
-function RowButton({ onClick, children }: { onClick: () => void; children: ReactNode }) {
+function RowButton({
+  onClick,
+  children,
+  className,
+  busy,
+}: {
+  onClick: () => void;
+  children: ReactNode;
+  className?: string;
+  busy?: boolean;
+}) {
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault();
@@ -193,9 +203,63 @@ function RowButton({ onClick, children }: { onClick: () => void; children: React
     }
   };
   return (
-    <div className="row btn-row" role="button" tabIndex={0} onClick={onClick} onKeyDown={onKeyDown}>
+    <div
+      className={`row btn-row${className ? ` ${className}` : ''}`}
+      role="button"
+      tabIndex={0}
+      aria-busy={busy || undefined}
+      onClick={onClick}
+      onKeyDown={onKeyDown}
+    >
       {children}
     </div>
+  );
+}
+
+/** 刷新中的图标至少转这么久，太快完成时不会一闪而过。 */
+const REFRESH_MIN_SPIN = 600;
+/** 「已更新」停留时长（与 Toast 一致）。 */
+const REFRESH_DONE_HOLD = 2400;
+
+/**
+ * 「刷新账号信息」（2026-11-14，用户反馈）：原地执行的动作，不是进入下一页，所以行尾不放箭头，
+ * 放刷新图标；点了图标旋转、说明换成「正在刷新…」，完成后换成勾和「已更新」，2.4 秒后复原。刷新中再点无效。
+ */
+function RefreshRow({ loading, onRefresh }: { loading: boolean; onRefresh: () => void }) {
+  const [phase, setPhase] = useState<'idle' | 'busy' | 'done'>('idle');
+  const askedAt = useRef(0);
+  useEffect(() => {
+    if (loading || !askedAt.current) return;
+    // 这次刷新是用户点的，并且已经结束：补足最短旋转时间后报告「已更新」
+    const wait = Math.max(0, REFRESH_MIN_SPIN - (performance.now() - askedAt.current));
+    askedAt.current = 0;
+    let hold = 0;
+    const t = window.setTimeout(() => {
+      setPhase('done');
+      hold = window.setTimeout(() => setPhase('idle'), REFRESH_DONE_HOLD);
+    }, wait);
+    return () => {
+      window.clearTimeout(t);
+      window.clearTimeout(hold);
+    };
+  }, [loading]);
+  const click = () => {
+    if (phase === 'busy' || loading) return;
+    askedAt.current = performance.now();
+    setPhase('busy');
+    onRefresh();
+  };
+  const busy = phase === 'busy';
+  return (
+    <RowButton onClick={click} className={busy ? 'is-busy' : undefined} busy={busy}>
+      <span className="lbl">
+        刷新账号信息
+        <small role="status">{busy ? '正在刷新…' : phase === 'done' ? '已更新' : '会员状态、歌单数量'}</small>
+      </span>
+      <span className={`act${busy ? ' is-spin' : ''}${phase === 'done' ? ' is-done' : ''}`}>
+        {phase === 'done' ? <IconCheck size={15} /> : <IconRefresh size={15} />}
+      </span>
+    </RowButton>
   );
 }
 
@@ -563,14 +627,7 @@ function AccountDetail({
           {meta.name} · {vipText(account)} · 歌单 {account.playlists.length} 个
         </div>
         <div className="group">
-          <RowButton onClick={() => onRefresh(platform)}>
-            <span className="lbl">
-              刷新账号信息<small>会员状态、歌单数量</small>
-            </span>
-            <span className="chev">
-              <IconChevronRight size={14} />
-            </span>
-          </RowButton>
+          <RefreshRow loading={account.loading} onRefresh={() => onRefresh(platform)} />
         </div>
         <button
           type="button"
@@ -1261,8 +1318,8 @@ export const AccountDock = memo(function AccountDock({
             <span className="lbl">
               选择图片或视频…<small>2.5MB 内的图片会被记住</small>
             </span>
-            <span className="chev">
-              <IconChevronRight size={14} />
+            <span className="act">
+              <IconImage size={15} />
             </span>
           </RowButton>
         </div>
@@ -1271,8 +1328,8 @@ export const AccountDock = memo(function AccountDock({
         <div className="group rp-group-gap">
           <RowButton onClick={onOpenWallpapers}>
             <span className="lbl">打开壁纸库…</span>
-            <span className="chev">
-              <IconChevronRight size={14} />
+            <span className="act">
+              <IconExternal size={15} />
             </span>
           </RowButton>
         </div>

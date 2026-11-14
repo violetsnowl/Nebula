@@ -105,3 +105,44 @@ export function IconMusic(p: IconProps) {
     </Svg>
   );
 }
+
+/** 刷新：一段开口圆弧 + 箭头（行尾动作图标，刷新中整体旋转）。 */
+export function IconRefresh(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M19.5 12a7.5 7.5 0 1 1-2.2-5.3" />
+      <path d="M19.5 4.5v4h-4" />
+    </Svg>
+  );
+}
+
+/** 文件夹（打开系统的文件夹选择窗口）。 */
+export function IconFolder(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M3.5 7.5a2 2 0 0 1 2-2h3.6l2 2.2h7.4a2 2 0 0 1 2 2v7.8a2 2 0 0 1-2 2h-13a2 2 0 0 1-2-2z" />
+    </Svg>
+  );
+}
+
+/** 图片（打开系统的文件选择窗口，选图片或视频）。 */
+export function IconImage(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <rect x="3.5" y="5" width="17" height="14" rx="2" />
+      <circle cx="9" cy="10" r="1.6" />
+      <path d="M20.5 15.5l-4.8-4.6-6.7 8.1" />
+    </Svg>
+  );
+}
+
+/** 新窗口（打开一个独立窗口，例如壁纸库）。 */
+export function IconExternal(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M13.5 4.5h6v6" />
+      <path d="M19.5 4.5l-8 8" />
+      <path d="M17.5 14v4a1.5 1.5 0 0 1-1.5 1.5H6A1.5 1.5 0 0 1 4.5 18V8A1.5 1.5 0 0 1 6 6.5h4" />
+    </Svg>
+  );
+}

@@ -38,7 +38,7 @@
 
 ### 远端与分支
 
-- 远端：`github.com/violetsnowl/nebula`（由 `a161858970-ux/nebula` 迁移，旧地址自动重定向；本地 `origin` 已更新）。
+- 远端：`github.com/violetsnowl/Nebula`（2026-11-14 仓库改名为大写 N，推送时 GitHub 提示已搬家；两个工作树共用的 `origin` 已改为 `https://github.com/violetsnowl/Nebula.git` 并用 `git ls-remote` 确认）。更早由 `a161858970-ux/nebula` 迁移而来，旧地址都会自动重定向。
 - 三条远端分支：`main`（生产线）、`ui/nebula-design-deepseek-codex`（活跃 UI 线）、`ui/nebula-design`（原型归档，仅留档、不再迭代）。
 
 ### 基线状态（2026-10-14 预合并）

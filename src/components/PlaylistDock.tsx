@@ -5,7 +5,7 @@ import { usePlayback } from '../hooks/playback/PlaybackContext';
 import type { ImportStatus } from './ImportBar';
 import { DOCK_PLATFORM_ORDER, platformMeta } from './platforms';
 import { SideDock } from './dock/SideDock';
-import { IconChevronLeft, IconChevronRight } from './icons';
+import { IconChevronLeft, IconChevronRight, IconFolder } from './icons';
 import './dock/left-panel.css';
 
 interface PlaylistDockProps {
@@ -548,8 +548,8 @@ export const PlaylistDock = memo(function PlaylistDock({
           <span className="lbl">
             本地文件夹…<small>选择文件夹，自动读取歌名、歌手和封面</small>
           </span>
-          <span className="chev">
-            <IconChevronRight size={14} />
+          <span className="act">
+            <IconFolder size={15} />
           </span>
         </div>
         <div

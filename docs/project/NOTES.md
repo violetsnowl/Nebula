@@ -20,7 +20,7 @@
 - 后端统一入口是 `dist-main/index.cjs`（由 `src/main/index.ts` 经 esbuild 打包）；改 `src/main` 后必须 `pnpm build:main` 才能让 Electron 和冒烟测试生效。
 - `pnpm build` 会清空并重建 `../nebula-outputs/`（README 等内容需在构建后重写，见构建脚本说明）。
 - **构建产物在仓库外**：`pnpm build` 输出到同级目录 `../nebula-outputs/index.html`（本机 `E:\CUFE\vibecoding\nebula-outputs`）；而 `pnpm qa` 正是读取这个文件，所以**必须先 build 再 qa**。两个工作区（main / UI）共用这一个路径、会互相覆盖——一个工作区刚 build 完，另一个若只跑 qa，测的是别人的产物。
-- 项目已接入 git；远程已迁移到 `github.com/violetsnowl/nebula`（旧地址 `a161858970-ux/nebula` 自动重定向，本地 origin 已更新）；文档随提交维护（docs/）。
+- 项目已接入 git；远程为 `github.com/violetsnowl/Nebula`（2026-11-14 改名；旧地址 `violetsnowl/nebula`、`a161858970-ux/nebula` 自动重定向，本地 origin 已更新）；文档随提交维护（docs/）。
 
 ### 前端样式与舞台渲染（2026-11 沉淀）
 
