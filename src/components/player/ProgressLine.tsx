@@ -21,8 +21,11 @@ export const ProgressLine = memo(function ProgressLine({ current, duration, disa
   const seekFrom = (clientX: number) => {
     const el = ref.current;
     if (!el || duration <= 0) return;
-    const rect = el.getBoundingClientRect();
-    audioPlayer.seek(((clientX - rect.left) / rect.width) * duration);
+    // 按轨道本身换算（轨道右边留给了时间文字，比整个热区短）
+    const track = el.querySelector<HTMLElement>('.bp-progress-track') ?? el;
+    const rect = track.getBoundingClientRect();
+    const ratio = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    audioPlayer.seek(ratio * duration);
   };
   const endDrag = () => {
     if (dragging) flush();

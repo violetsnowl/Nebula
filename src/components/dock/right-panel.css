@@ -317,7 +317,7 @@
   display: inline-block;
   white-space: pre;
   --now-k: calc(var(--wp, 0) * (1 - var(--wp, 0)) * 4);
-  --sung-col: color-mix(in srgb, var(--ly-now) calc(var(--now-k) * 100%), rgba(255, 255, 255, 0.96));
+  --sung-col: color-mix(in srgb, var(--ly-now) calc(var(--now-k) * 100%), var(--ly-sung, rgba(255, 255, 255, 0.96)));
   background: linear-gradient(
     90deg,
     var(--sung-col) calc((var(--wp, 0) - 0.045) * 100%),

@@ -18,6 +18,19 @@ import { LyricCache } from './lyricCache';
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /** 歌词/评论统一入口：平台失败返回 null，不向上抛错。 */
+/** 去掉搜索接口返回的高亮标签（<em>…</em> 等），并还原常见 HTML 实体。 */
+function stripMarkup<T extends string | undefined>(v: T): T {
+  if (typeof v !== 'string') return v;
+  return v
+    .replace(/<[^>]*>/g, '')
+    .replace(/&nbsp;/g, ' ')
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;|&apos;/g, "'")
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&amp;/g, '&') as T;
+}
+
 export class LyricService {
   constructor(
     private adapters: AdapterMap,
@@ -252,7 +265,8 @@ export class LyricService {
       const key = `${t.platform}:${t.sourceId}`;
       if (seen.has(key)) return;
       seen.add(key);
-      out.push(t);
+      // 平台搜索接口会把命中词包成 <em>…</em>（QQ 尤其），界面上原样露出来；统一在这里清洗
+      out.push({ ...t, title: stripMarkup(t.title), artist: stripMarkup(t.artist), album: stripMarkup(t.album) });
     };
     const sources = [this.adapters.netease, this.adapters.qq, this.adapters.kugou];
     await Promise.all(
@@ -284,7 +298,7 @@ export class LyricService {
             const key = `${hit.platform}:${hit.id}`;
             if (seen.has(key)) continue;
             seen.add(key);
-            out.push(hit);
+            out.push({ ...hit, name: stripMarkup(hit.name) });
           }
         } catch (err) {
           console.warn('[LyricService] searchArtists', adapter.platform, errMsg(err));

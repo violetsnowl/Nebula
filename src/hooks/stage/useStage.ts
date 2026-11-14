@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MutableRefObject, RefObject } from 'react';
-import { audioPlayer } from '../../lib/audio/AudioPlayer';
+import { audioPlayer, FOREIGN_SONG_ID } from '../../lib/audio/AudioPlayer';
 import {
   CARD_HEIGHT,
   CARD_WIDTH,
@@ -345,7 +345,12 @@ export function useStage({
     try {
       const raw = localStorage.getItem('music-nebula.session');
       if (!raw) return;
-      const s = JSON.parse(raw) as { tracks?: DesktopTrack[]; currentId?: number };
+      const s = JSON.parse(raw) as {
+        tracks?: DesktopTrack[];
+        currentId?: number;
+        currentTrack?: DesktopTrack;
+        resumeAfter?: number;
+      };
       if (!s.tracks?.length) return;
       const restored = s.tracks.map((t, i) => toFrontendTrack(t, i));
       libraryService.restoreSongs(restored);
@@ -353,8 +358,17 @@ export function useStage({
       revealedRef.current = restored.length;
       visibleRef.current = new Set();
       setVisibleIds([]);
-      const cur = restored.find((t) => t.id === s.currentId) ?? restored[0]!;
-      audioPlayer.restore(cur, restored);
+      if (s.currentTrack) {
+        // 上次正在播的是「插播歌」（不在歌单里）：按插播还原，播完接回歌单原来的位置
+        audioPlayer.restoreTransient(
+          toFrontendTrack(s.currentTrack, FOREIGN_SONG_ID),
+          restored,
+          typeof s.resumeAfter === 'number' ? s.resumeAfter : -1,
+        );
+      } else {
+        const cur = restored.find((t) => t.id === s.currentId) ?? restored[0]!;
+        audioPlayer.restore(cur, restored);
+      }
     } catch {
       /* ignore */
     }
@@ -386,6 +400,8 @@ export function useStage({
       visibleRef.current = new Set();
       setVisibleIds([]);
       libraryService.applyImported(tracks);
+      // 新歌单接管播放队列，但不打断正在播的歌：它播完后从新歌单第一首接上（AudioPlayer.adoptQueue）
+      audioPlayer.adoptQueue(tracks);
       setImporting(true);
       spawnFromCenterRef.current = new Set(tracks.map((_, i) => i));
       startProgressiveReveal(tracks.length, () => {
@@ -402,7 +418,7 @@ export function useStage({
 
   const resetImportState = useCallback(() => {
     setHoveredId(null);
-    audioPlayer.stop();
+    // 不再 audioPlayer.stop()：载入新歌单不打断正在播放的歌（2026-11-14 用户确认）
     setFailedIds(new Set());
     lastFailedSongRef.current = null;
     setLikedIds(new Set());

@@ -9,6 +9,7 @@ import type { GlassTheme } from '../lib/glass';
 import type { ListenSettingsPatch, LyricVisualSettings } from '../lib/lyricSettings';
 import { audioPlayer } from '../lib/audio/AudioPlayer';
 import { currentLyricIndex, type LyricLineUI } from '../lib/lyrics';
+import { paletteFromBaseColor } from '../lib/coverColors';
 import { SideDock } from './dock/SideDock';
 import { DOCK_PLATFORM_ORDER, platformMeta } from './platforms';
 import './dock/right-panel.css';
@@ -685,6 +686,7 @@ function LyricPreview({
   pickRef.current = pick;
 
   const tokens = useMemo(() => (pick.idx >= 0 ? previewTokens(lines, pick.idx) : SAMPLE_TOKENS), [lines, pick.idx]);
+  const customPal = useMemo(() => paletteFromBaseColor(settings.customColor), [settings.customColor]);
   const tokensRef = useRef(tokens);
   tokensRef.current = tokens;
   const nextText = pick.idx >= 0 ? (nextUsable(lines, pick.idx)?.text ?? '') : PREVIEW_NEXT;
@@ -772,7 +774,10 @@ function LyricPreview({
     <div
       className={`rp-preview${settings.highlightStyle === 'float' ? ' float' : ''}`}
       style={
-        { '--ly-now': settings.lyricColorSource === 'custom' ? settings.customColor : 'var(--acc)' } as React.CSSProperties
+        // 与画面里的歌词层同一套颜色：自定义时「正在唱」= 所选颜色，「已唱」= 它和白的混合（coverColors.paletteFromBaseColor）
+        (settings.lyricColorSource === 'custom'
+          ? { '--ly-now': customPal.highlight, '--ly-sung': customPal.primary }
+          : { '--ly-now': 'var(--acc)' }) as unknown as React.CSSProperties
       }
     >
       <div className="rp-pb" />

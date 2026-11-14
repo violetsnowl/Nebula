@@ -247,8 +247,9 @@ export default function App() {
     [lyricSettings, uiHideCards, uiHideLyrics],
   );
   // 正在操作时不进入聆听：悬停卡片、右键菜单、弹窗、二级播放页、壁纸、Dock / 顶部面板、导入中
+  // 指针静止在卡片上也能进入聆听（2026-11-14 用户确认，NEBULA_UI_SYSTEM §7.1）：悬停不再阻断；
+  // 聆听中悬停态由 CSS 压回普通态（.app[data-lk] .music-card.is-hovered），一动鼠标自然恢复
   const listenBlocked =
-    hoveredId !== null ||
     !!contextMenu ||
     !!infoModal ||
     nowPlayingOpen ||
@@ -268,11 +269,21 @@ export default function App() {
   useEffect(() => {
     try {
       if (!songs.length || songs[0]?.source === 'demo') return;
+      const song = playerState.song;
+      // 当前歌是否就是歌单里的那一首（曲目 id = 曲库下标；插播歌 / 换歌单后留下的那首不在歌单里）
+      const listed =
+        !!song &&
+        song.id >= 0 &&
+        songs[song.id]?.source === song.source &&
+        songs[song.id]?.sourceId === song.sourceId;
       localStorage.setItem(
         'music-nebula.session',
         JSON.stringify({
           tracks: songs.map((s) => toBackendTrack(s)),
-          currentId: playerState.song?.id,
+          currentId: listed ? song!.id : undefined,
+          // 不在歌单里的当前歌：存下这首歌本身，以及播完后歌单从哪首接着放（重开后按插播还原）
+          currentTrack: song && !listed ? toBackendTrack(song) : undefined,
+          resumeAfter: song && !listed ? (audioPlayer.getResumeIndex() ?? -1) : undefined,
           // 歌单身份随会话保存：刷新后列表里才能标出「当前」，点它不会重新导入、打断恢复出来的当前歌
           playlist: playlist.currentPlaylist,
         }),
@@ -280,7 +291,7 @@ export default function App() {
     } catch {
       /* ignore */
     }
-  }, [songs, playerState.song?.id, playlist.currentPlaylist]);
+  }, [songs, playerState.song?.id, playerState.song?.sourceId, playlist.currentPlaylist]);
 
   // 音质档位：随当前歌曲变化拉取可用列表（桌面版）
   useEffect(() => {

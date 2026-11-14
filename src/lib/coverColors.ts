@@ -128,16 +128,27 @@ export function paletteFromSample(sample: CoverSample): LyricPalette {
   return paletteFromHsl(h, s, l, sample.avgL);
 }
 
-/** 自定义基色：输入 hex，走同一套三色生成逻辑。 */
+/**
+ * 自定义歌词色（2026-11-14 用户确认）：所选颜色就是「正在唱的字」的颜色，所见即所得。
+ * 以前走封面那套「高冲击」推导，选 #ff3300 画面里却是偏粉的亮色，和设置里的预览对不上。
+ *   - highlight / glow：所选颜色本身；只有暗到在深色背景上看不见时才把亮度托到可读线；
+ *   - primary（已唱的字）：所选颜色和白色 38 : 62 混合，同色系、在深色背景上保持可读；
+ *   - secondary：所选颜色本身（光晕等次要用途）。
+ */
 export function paletteFromBaseColor(hex: string): LyricPalette {
   const m = /^#?([0-9a-f]{6})$/i.exec(hex.trim());
   if (!m) return SILVER_BLUE;
   const n = parseInt(m[1]!, 16);
-  const r = (n >> 16) & 255;
-  const g = (n >> 8) & 255;
-  const b = n & 255;
-  const [h, s, l] = rgbToHsl(r, g, b);
-  return paletteFromHsl(h, Math.max(s, 0.35), l, l);
+  const pick: [number, number, number] = [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+  const now = liftToMin(pick, 0.22);
+  const sung = now.map((c) => c + (255 - c) * 0.62) as [number, number, number];
+  return {
+    primary: rgbCss(sung),
+    secondary: rgbCss(now),
+    highlight: rgbCss(now),
+    glow: rgbCss(now),
+    shadow: 'rgba(0,6,10,0.48)',
+  };
 }
 
 function hexToRgb(hex: string): [number, number, number] {

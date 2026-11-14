@@ -167,6 +167,26 @@ body {
   opacity: var(--g3-spec, 0);
 }
 
+/* 折射滤镜不继承（#106）：--glass-filter 是自定义属性，会从外层玻璃继承下来。播放条（G1）里的队列 / 音量 / 音质弹层
+   以前继承了播放条按 992×80 圆角矩形生成的折射贴图，弹层顶部被套出一块「独立的胶囊」。
+   这里先重置为不折射；真正注册了折射的面（两侧面板、小球）由 GlassManager 在元素上写内联样式，优先级更高。 */
+.glass-g2,
+.glass-g3 {
+  --glass-filter: blur(0px);
+}
+
+/* 阅读型 G3（审查第 3 条，2026-11-14）：承载列表和长文字的表面——播放队列、音质、搜索结果、信息弹窗。
+   两种主题下都保持浓密度（散射 18px、底色 .28、透色 1.4），液态只保留受光边。
+   液态参数下它们压在亮色封面上会整块透色，背后卡片的圆角轮廓还会正好框住某一行，像一块独立的胶囊。 */
+.queue-pop,
+.quality-pop,
+.search-drop,
+.info-modal {
+  --g3-blur: 18px;
+  --g3-tint: 0.28;
+  --g3-sat: 1.4;
+}
+
 /* 播放队列弹层自己会滚动：伪元素描边会跟着内容滚走，不画 */
 .queue-pop.glass-g3::after {
   content: none;
@@ -1555,14 +1575,6 @@ body {
   padding: 22px 22px 12px;
 }
 
-.bp-error {
-  font-size: 10.5px;
-  color: #ff8fa3;
-  margin: 0 2px 8px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
 
 .bp-row {
   display: grid;
@@ -1656,6 +1668,23 @@ body {
 
 .bp-title:hover:not(:disabled) {
   filter: none;
+}
+
+/* 播放状态提示（正在获取音源、正在兜底等）：临时占用歌手这一行，度量与歌手行一致，不改变播放条高度 */
+.bp-status {
+  display: block;
+  max-width: min(230px, 100%);
+  margin-top: 3px;
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--fg-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bp-status.is-danger {
+  color: var(--danger);
 }
 
 .bp-artist:disabled {
@@ -1830,7 +1859,9 @@ body {
 
 .bp-progress-track {
   position: relative;
-  width: 100%;
+  /* 轨道在时间文字前结束：以前时间绝对定位在右下角，压在轨道尾端上（#106） */
+  flex: 1;
+  min-width: 0;
   height: 2px;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.14);
@@ -1871,9 +1902,8 @@ body {
 }
 
 .bp-progress-time {
-  position: absolute;
-  right: 0;
-  bottom: 2px;
+  flex: none;
+  margin-left: 10px;
   font-size: 9.5px;
   font-variant-numeric: tabular-nums;
   color: rgba(255, 255, 255, 0.5);
@@ -2735,7 +2765,8 @@ body {
     width: 200px;
   }
   .bp-title,
-  .bp-artist {
+  .bp-artist,
+  .bp-status {
     max-width: min(170px, 100%);
   }
 }
@@ -4496,6 +4527,28 @@ body {
 
 .app[data-listen] .music-card {
   pointer-events: none;
+}
+
+/* 指针静止在卡片上也能进入聆听（2026-11-14，§7.1）：交接和聆听中把悬停态压回普通态（不放大、不出播放球、
+   标题回到景深透明度），唤醒后 .is-hovered 还在、指针还在卡上时悬停效果自然回来 */
+.app[data-lk] .music-card.is-hovered {
+  transform: translate3d(var(--x, 0px), var(--y, 0px), var(--near-z, 0px))
+    rotateZ(var(--rz, 0deg))
+    scale(calc(var(--scale, 1) * var(--near-s, 1)));
+  filter: var(--card-filter, none);
+}
+
+.app[data-lk] .music-card.is-hovered:not(.is-current) .cover {
+  box-shadow: 0 16px 38px rgba(0, 0, 0, 0.5);
+}
+
+.app[data-lk] .music-card.is-hovered .play-chip {
+  opacity: 0;
+  transform: translateY(6px) scale(0.7);
+}
+
+.app[data-lk] .music-card.is-hovered .meta {
+  opacity: var(--meta-a, 1);
 }
 
 /* 沉浸模式：隐藏 Z2 卡片云（保持舞台挂载，避免破坏 pan 控制器） */

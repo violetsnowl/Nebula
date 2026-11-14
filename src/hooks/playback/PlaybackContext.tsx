@@ -48,13 +48,17 @@ export function usePlayback(): PlaybackState {
 
 export function PlaybackProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<PlaybackState>(() => snapshot(audioPlayer.getState()));
-  useEffect(
-    () =>
-      audioPlayer.subscribe(() => {
-        const s = snapshot(audioPlayer.getState());
-        setState((prev) => (same(prev, s) ? prev : s));
-      }),
-    [],
-  );
+  useEffect(() => {
+    const sync = () => {
+      const s = snapshot(audioPlayer.getState());
+      setState((prev) => (same(prev, s) ? prev : s));
+    };
+    const off = audioPlayer.subscribe(sync);
+    // 订阅之后立刻同步一次：子组件的副作用先于这里运行（例如会话恢复里的 audioPlayer.restore），
+    // 它们发出的通知在订阅之前就丢了。以前 App 因此一直以为没有当前歌，启动时把会话里的当前歌抹掉，
+    // 下次启动只能从第一首开始（#106）
+    sync();
+    return off;
+  }, []);
   return <PlaybackCtx.Provider value={state}>{children}</PlaybackCtx.Provider>;
 }

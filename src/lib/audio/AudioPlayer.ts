@@ -37,6 +37,9 @@ export function formatTime(sec: number): string {
  * - 自动队列：playSong(track, queue) 后 next/prev 在队列内循环；
  * - 容错：音频加载失败自动跳过下一首（连续失败达到队列长度则停止）。
  */
+/** 换歌单后仍在播放的旧歌单曲目使用的 id：不与任何曲库下标冲突（见 adoptQueue）。 */
+export const FOREIGN_SONG_ID = -1;
+
 class AudioPlayer {
   readonly el: HTMLAudioElement;
   private listeners = new Set<Listener>();
@@ -157,6 +160,70 @@ class AudioPlayer {
     this.loadAtOrder(0);
   }
 
+  /**
+   * 换歌单但不打断当前播放（2026-11-14 用户确认）：新歌单成为播放队列，位置停在第一首之前（pos = -1）。
+   * 当前这首继续播（暂停着就继续暂停）；它播完、出错跳过，或用户点「下一首」时，从新歌单第一首接上，
+   * 语义等同「播放全部」（随机模式下按随机顺序）。用户直接点新歌单里的歌则照常播放。
+   * 当前曲换成不会冲突的 id：曲目 id 是曲库下标，新曲库里同一下标是另一首歌，不能让星云把它标成「正在播放」。
+   */
+  adoptQueue(tracks: Track[]): void {
+    this.transientBackup = null;
+    this.viaNextIdx.clear();
+    this.queue = tracks;
+    this.order = this.mode === 'random' ? this.buildRandomOrder(false) : this.buildIdentityOrder();
+    this.pos = -1;
+    const cur = this.state.song;
+    if (cur) {
+      // 正在播的这首也在新歌单里（例如重新载入同一个歌单）：对上它在新队列里的位置，播完接它的下一首
+      const idx = cur.sourceId
+        ? tracks.findIndex((t) => t.source === cur.source && t.sourceId === cur.sourceId)
+        : -1;
+      if (idx >= 0) {
+        if (this.mode === 'random') {
+          this.order.splice(this.order.indexOf(idx), 1);
+          this.order.unshift(idx);
+        }
+        this.pos = this.order.indexOf(idx);
+        this.state.song = { ...cur, id: tracks[idx]!.id };
+      } else {
+        this.state.song = { ...cur, id: FOREIGN_SONG_ID };
+      }
+    }
+    this.emit();
+  }
+
+  /**
+   * 会话恢复「插播歌」：上次退出时正在播的歌不在歌单里（搜索 / 专辑 / 歌手页点播，或换歌单后留下的那首）。
+   * 按插播的方式还原：屏幕上是那首歌，播完后接回歌单，从 resumeAfter 的下一首继续（-1 = 从第一首开始）。
+   */
+  restoreTransient(track: Track, queue: Track[], resumeAfter: number): void {
+    this.viaNextIdx.clear();
+    const order = this.buildIdentityOrderFor(queue.length);
+    this.transientBackup = { queue, order, pos: resumeAfter >= 0 && resumeAfter < queue.length ? resumeAfter : -1 };
+    this.queue = [track];
+    this.order = [0];
+    this.pos = 0;
+    this.state.song = track;
+    this.state.currentTime = 0;
+    this.state.duration = track.duration ?? 0;
+    this.state.playing = false;
+    this.state.loading = false;
+    this.state.failed = false;
+    this.state.error = null;
+    this.emit();
+  }
+
+  /**
+   * 会话记忆用：当前歌不在歌单里时，播完它之后歌单从哪首接着放。
+   * 返回「已经播到的那首」的队列下标（-1 = 从第一首开始）；当前歌就在歌单里时返回 null。
+   */
+  getResumeIndex(): number | null {
+    const b = this.transientBackup;
+    if (b) return b.pos >= 0 && b.pos < b.order.length ? b.order[b.pos]! : -1;
+    if (this.pos < 0) return -1;
+    return null;
+  }
+
   /** 恢复上次会话：设置当前歌曲与队列，但不自动播放、不加载音源。 */
   restore(track: Track, queue?: Track[]): void {
     this.viaNextIdx.clear();
@@ -212,6 +279,13 @@ class AudioPlayer {
 
   /** 队列快照（按实际播放顺序）：当前曲 + 即将播放。 */
   getQueueSnapshot(): { current: Track | null; upcoming: Track[] } {
+    if (this.pos < 0 && this.queue.length) {
+      // 刚换了歌单：当前曲是旧歌单留下的那首，即将播放 = 整份新队列
+      return {
+        current: this.state.song,
+        upcoming: this.order.map((i) => this.queue[i]).filter((t): t is Track => !!t),
+      };
+    }
     if (this.pos < 0 || !this.queue.length || this.pos >= this.order.length) {
       return { current: null, upcoming: [] };
     }
@@ -256,7 +330,9 @@ class AudioPlayer {
     // 会话恢复（restore）只设状态、不加载音源：第一次点播放时走完整的加载流程（解析音源、卡顿计时），
     // 以前直接对空 src 调 play()，会卡在「播放中 + 加载中」且没有声音
     if (!this.el.getAttribute('src')) {
-      this.loadAtOrder(this.pos);
+      // 换歌单后留下的那首（pos < 0）不在队列里：直接加载屏幕上显示的这首
+      if (this.pos < 0) this.loadTrack(this.state.song);
+      else this.loadAtOrder(this.pos);
       return;
     }
     if (this.el.paused) {
@@ -297,6 +373,11 @@ class AudioPlayer {
 
   prev(): void {
     if (!this.queue.length) return;
+    // 当前曲是换歌单前留下的那首：没有「上一首」，回到它的开头
+    if (this.pos < 0) {
+      this.el.currentTime = 0;
+      return;
+    }
     if (this.queue.length === 1) {
       this.el.currentTime = 0;
       this.el.play().catch(() => {});
@@ -323,7 +404,10 @@ class AudioPlayer {
   setMode(mode: PlayMode): void {
     if (this.mode === mode) return;
     this.mode = mode;
-    if (this.queue.length && this.state.song) {
+    if (this.queue.length && this.state.song && this.pos < 0) {
+      // 当前曲不属于这份队列（刚换了歌单）：只重排队列，位置仍停在第一首之前
+      this.order = mode === 'random' ? this.buildRandomOrder(false) : this.buildIdentityOrder();
+    } else if (this.queue.length && this.state.song) {
       const cur = this.pos >= 0 && this.pos < this.order.length ? this.order[this.pos] : 0;
       if (mode === 'random') {
         this.order = this.buildRandomOrder(true);
@@ -350,6 +434,10 @@ class AudioPlayer {
 
   private buildIdentityOrder(): number[] {
     return this.queue.map((_, i) => i);
+  }
+
+  private buildIdentityOrderFor(n: number): number[] {
+    return Array.from({ length: n }, (_, i) => i);
   }
 
   /** Fisher-Yates 洗牌；keepCurrent 时把当前曲目固定到队首。 */
@@ -441,7 +529,11 @@ class AudioPlayer {
 
   private loadAt(i: number): void {
     if (i < 0 || i >= this.queue.length) return;
-    const track = this.queue[i]!;
+    this.loadTrack(this.queue[i]!);
+  }
+
+  /** 加载并播放一首歌（不改动队列位置）。loadAt 和「换歌单后留下的那首」都走这里。 */
+  private loadTrack(track: Track): void {
     this.state.song = track;
     this.state.currentTime = 0;
     this.state.duration = 0;
@@ -451,7 +543,8 @@ class AudioPlayer {
     if (!track.audio) {
       // 无直链：先走一次兜底解析
       this.state.failed = false;
-      this.state.error = `正在解析《${track.title}》音源…`;
+      // 歌名就在上一行，这里不再重复（审查第 15 条）
+      this.state.error = '正在获取音源…';
       this.emit();
       this.tryResolveEmpty(track);
       return;
@@ -531,7 +624,8 @@ class AudioPlayer {
   private onEnded = (): void => {
     this.state.playing = false;
     this.emit();
-    if (this.mode === 'repeat-one' && !this.transientBackup) {
+    // 单曲循环只循环队列里的歌；换歌单后留下的那首（pos < 0）播完就接新歌单
+    if (this.mode === 'repeat-one' && !this.transientBackup && this.pos >= 0) {
       this.el.currentTime = 0;
       const p = this.el.play();
       p?.catch(() => {

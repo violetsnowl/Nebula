@@ -446,6 +446,23 @@ async function main() {
   log('音量面板展开', `0 -> ${volAfter}`);
   const volOk = volAfter > 0;
 
+  // 10a++++++. 状态提示不改变播放条高度（以前「正在解析音源」插成一行，把整条播放条顶高）；
+  // 嵌在播放条里的弹层不能继承播放条的折射贴图（以前队列顶部被套出一块「独立的胶囊」）
+  const barLayout = await page.evaluate(async () => {
+    const bar = document.querySelector('.player-surface');
+    const h0 = bar.getBoundingClientRect().height;
+    window.__nebula.player.setError('正在获取音源…');
+    await new Promise((r) => setTimeout(r, 120));
+    const h1 = bar.getBoundingClientRect().height;
+    const inMeta = !!document.querySelector('.bp-meta .bp-status');
+    window.__nebula.player.setError(null);
+    const pop = document.querySelector('.vol-pop');
+    const popFilter = pop ? getComputedStyle(pop).backdropFilter : '';
+    return { h0: Math.round(h0), h1: Math.round(h1), inMeta, popFilter };
+  });
+  const barLayoutOk = barLayout.h0 === barLayout.h1 && barLayout.inMeta && !/url\(/.test(barLayout.popFilter);
+  log('状态提示与弹层材质', JSON.stringify(barLayout));
+
   // 10b. 点击卡片播放
   const cardCenter = await page.evaluate(() => {
     const vw = innerWidth;
@@ -731,6 +748,7 @@ async function main() {
     !restorePlay ||
     !seekOk ||
     !volOk ||
+    !barLayoutOk ||
     !localOk.title ||
     !localOk.source ||
     !localOk.audio ||
@@ -760,6 +778,7 @@ async function main() {
     restorePlay: !restorePlay,
     seek: !seekOk,
     volHover: !volOk,
+    barLayout: !barLayoutOk,
     localImport: !localOk.title || !localOk.source || !localOk.audio,
     consoleErrors: errors.length > 0,
   };

@@ -68,7 +68,6 @@ export const BottomPlayer = memo(function BottomPlayer({
   return (
     <div className={`bp-shell${state.loading ? ' is-loading' : ''}`}>
       <ProgressLine current={state.currentTime} duration={state.duration} disabled={!hasSong} />
-      {state.error && <div className="bp-error">⚠ {state.error}</div>}
       <div className="bp-row">
         {/* 左：Now Playing Object */}
         <div className="bp-now">
@@ -84,6 +83,16 @@ export const BottomPlayer = memo(function BottomPlayer({
             <button className="bp-title" disabled={!hasSong} onClick={onOpenSongDetail} data-tip="查看歌曲详情">
               {state.song?.title ?? '未在播放'}
             </button>
+            {state.error ? (
+              // 状态提示临时占用歌手这一行，不新增一行、不把播放条顶高（#106）；
+              // 进行中的提示用中性灰，只有真的失败才用警示色（审查第 15 条）
+              <span
+                className={`bp-status${/失败|不可用/.test(state.error) && !/正在/.test(state.error) ? ' is-danger' : ''}`}
+                role="status"
+              >
+                {state.error}
+              </span>
+            ) : (
             <button
               className="bp-artist"
               disabled={!hasSong || !state.song?.artist}
@@ -99,6 +108,7 @@ export const BottomPlayer = memo(function BottomPlayer({
                 '点击星云卡片开始播放'
               )}
             </button>
+            )}
           </div>
         </div>
 
