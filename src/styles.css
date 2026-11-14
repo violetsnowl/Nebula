@@ -59,6 +59,9 @@ body {
   --fg: #eceef1;
   --fg-2: rgba(236, 238, 241, 0.64);
   --fg-3: rgba(236, 238, 241, 0.4);
+  /* 13px 以下的次要文字用这一档（审查第 8 条）：--fg-3 在深色玻璃上只有约 2.5:1，小字读不清；
+     这一档约 4.5:1。--fg-3 本身不动（大字号弱文字、占位符仍用它）。 */
+  --fg-3s: rgba(236, 238, 241, 0.58);
   --fg-disabled: rgba(236, 238, 241, 0.28);
   --hair: rgba(255, 255, 255, 0.08);
   /* 列表行常态文字（§6：hover 时提亮到 --fg） */
@@ -913,7 +916,7 @@ body {
   color: rgba(255, 255, 255, 0.4);
 }
 
-/* 清空：图形按钮，hover 只提亮自身（§6） */
+/* 清空：图形按钮，hover 只提亮自身（§6）；× 是 IconClose（审查第 1 条），悬停位移走 ease-std（审查第 23 条） */
 .search-clear {
   width: 20px;
   height: 20px;
@@ -921,11 +924,13 @@ body {
   border: none;
   background: none;
   color: var(--fg-3);
-  font-size: 15px;
   line-height: 1;
   cursor: pointer;
   flex: none;
-  transition: color 0.12s ease, transform 0.22s var(--ease-jelly);
+  display: inline-grid;
+  place-items: center;
+  padding: 0;
+  transition: color 0.18s var(--ease-std), transform 0.18s var(--ease-std);
 }
 
 .search-clear:hover {
@@ -956,15 +961,15 @@ body {
 
 .search-drop-count {
   padding: 4px 10px 8px;
-  font-size: 11px;
-  color: var(--fg-3);
+  font-size: 12px;
+  color: var(--fg-3s);
 }
 
 .search-empty {
   padding: 16px 10px;
   text-align: center;
   font-size: 12px;
-  color: var(--fg-3);
+  color: var(--fg-3s);
 }
 
 .search-results {
@@ -988,7 +993,7 @@ body {
   color: var(--fg-row);
   cursor: pointer;
   text-align: left;
-  transition: background 0.12s ease, color 0.12s ease;
+  transition: background 0.18s var(--ease-std), color 0.18s var(--ease-std);
 }
 
 /* §6 列表行：极淡底色 + 文字提亮；键盘选中项同样处理 */
@@ -1035,13 +1040,13 @@ body {
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: var(--fg-3);
+  color: var(--fg-3s);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
-/* 匹配类型小标签：中性（颜色只来自音乐，§2-1），r-xs */
+/* 类型小标签：中性（颜色只来自音乐，§2-1），r-xs。审查第 20 条：只有「歌手」行留标签，歌曲行不再标「歌曲 / 点播」 */
 .search-kind {
   font-style: normal;
   font-size: 11px;
@@ -1049,13 +1054,21 @@ body {
   border-radius: 6px;
   flex: none;
   background: rgba(255, 255, 255, 0.07);
-  color: var(--fg-3);
+  color: var(--fg-3s);
 }
 
+/* 行尾：歌曲 = 实心播放三角，歌手 = 右箭头（都是 icons.tsx 的 SVG）；悬停 / 键盘选中行时随行提亮 */
 .search-go {
   flex: none;
-  color: var(--fg-3);
-  font-size: 13px;
+  display: grid;
+  place-items: center;
+  color: var(--fg-3s);
+  transition: color 0.18s var(--ease-std);
+}
+
+.search-item.is-active .search-go,
+.search-item:hover .search-go {
+  color: var(--fg);
 }
 
 /* 全网搜索：分隔线 / 网络结果计数（P4 清理时从旧 Dock 原型块里搬出） */
@@ -1065,7 +1078,7 @@ body {
   gap: 8px;
   padding: 8px 10px 4px;
   font-size: 11px;
-  color: var(--fg-3);
+  color: var(--fg-3s);
 }
 
 .search-divider::before,
@@ -1079,7 +1092,7 @@ body {
 .search-net-searching,
 .search-net-count {
   font-style: normal;
-  color: var(--fg-3);
+  color: var(--fg-3s);
 }
 
 .brand {
@@ -1120,15 +1133,6 @@ body {
   align-items: center;
   gap: 10px;
   pointer-events: auto;
-}
-
-/* 顶栏歌曲计数：弱文字，不做胶囊（§5.1 --fg-3，数字等宽） */
-.chip {
-  padding: 0 4px;
-  font-size: 12px;
-  color: var(--fg-3);
-  font-variant-numeric: tabular-nums;
-  white-space: nowrap;
 }
 
 /* 次级按钮（P4 合并原来三份定义，§6）：中性浅底 + 1px 内描边；hover 文字提亮、底色略亮；按下缩放；不发光。
@@ -1604,7 +1608,8 @@ body {
   padding: 0;
   cursor: pointer;
   box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
-  transition: transform 0.22s var(--ease-jelly);
+  /* 悬停缩放用标准曲线，回弹只留给状态切换（审查第 23 条） */
+  transition: transform 0.18s var(--ease-std);
 }
 
 .bp-cover:hover:not(:disabled) {
@@ -1732,7 +1737,8 @@ body {
 
 .bp-ctrl svg,
 .bp-play svg {
-  transition: transform 0.22s var(--ease-jelly);
+  /* 悬停缩放用标准曲线，回弹只留给状态切换（审查第 23 条） */
+  transition: transform 0.18s var(--ease-std);
 }
 
 .bp-core .bp-ctrl svg {
@@ -2029,19 +2035,19 @@ body {
   font-size: 11px;
   font-weight: 500;
   letter-spacing: 0.1em;
-  color: var(--fg-3);
+  color: var(--fg-3s);
   padding: 4px 12px 6px;
 }
 
 .queue-pop-sub {
-  font-size: 11px;
-  color: var(--fg-3);
+  font-size: 12px;
+  color: var(--fg-3s);
   padding: 8px 12px 4px;
 }
 
 .queue-empty {
   font-size: 12px;
-  color: var(--fg-3);
+  color: var(--fg-3s);
   padding: 8px 12px;
 }
 
@@ -2059,7 +2065,7 @@ body {
   cursor: pointer;
   color: var(--fg-2);
   min-width: 0;
-  transition: color 0.12s ease, background 0.12s ease;
+  transition: color 0.18s var(--ease-std), background 0.18s var(--ease-std);
 }
 
 .queue-row:hover {
@@ -2095,9 +2101,17 @@ body {
 .queue-row-idx {
   flex: none;
   width: 18px;
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.4);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  color: var(--fg-3s);
   text-align: center;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 当前行的序号位是实心播放三角（IconPlay 10px），颜色跟行走 --acc */
+.queue-row.is-current .queue-row-idx {
+  color: var(--acc);
 }
 
 .queue-row-name {
@@ -2113,8 +2127,8 @@ body {
   flex: none;
   margin-left: auto;
   max-width: 110px;
-  font-size: 10.5px;
-  color: rgba(255, 255, 255, 0.42);
+  font-size: 11px;
+  color: var(--fg-3s);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2126,17 +2140,19 @@ body {
   height: 24px;
   border: none;
   background: transparent;
-  color: rgba(255, 255, 255, 0.35);
+  color: var(--fg-3s);
   border-radius: 50%;
   cursor: pointer;
-  font-size: 14px;
+  display: grid;
+  place-items: center;
+  padding: 0;
   line-height: 1;
-  transition: color 0.15s ease, background 0.15s ease;
+  transition: color 0.18s var(--ease-std), transform 0.18s var(--ease-std);
 }
 
 .queue-remove:hover {
   color: #fff;
-  transform: translateY(-1px);
+  transform: scale(1.07);
 }
 
 .progress-track {
@@ -2400,7 +2416,7 @@ body {
 .cmt-section {
   font-size: 11px;
   font-weight: 600;
-  color: rgba(255, 255, 255, 0.6);
+  color: var(--fg-3s);
   margin: 6px 0 2px;
 }
 
@@ -2453,8 +2469,12 @@ body {
 }
 
 .cmt-like {
-  font-size: 10px;
-  color: rgba(255, 255, 255, 0.45);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 11px;
+  color: var(--fg-3s);
+  font-variant-numeric: tabular-nums;
   margin-top: 2px;
 }
 
@@ -3088,7 +3108,7 @@ body {
   cursor: pointer;
   transition:
     color 0.12s ease,
-    transform 0.22s var(--ease-jelly);
+    transform 0.18s var(--ease-std);
 }
 
 .np-close:hover {
@@ -3351,7 +3371,8 @@ body {
 
 .local-btn > span {
   display: inline-block;
-  transition: transform 0.22s var(--ease-jelly);
+  /* 悬停缩放用标准曲线，回弹只留给状态切换（审查第 23 条） */
+  transition: transform 0.18s var(--ease-std);
 }
 
 .local-btn:hover:not(:disabled) {
@@ -4015,9 +4036,23 @@ body {
   transition: background 0.12s ease, color 0.12s ease;
 }
 
-.ctx-menu button:hover {
+.ctx-menu button:hover:not(:disabled) {
   background: rgba(255, 255, 255, 0.05);
   color: var(--fg);
+}
+
+/* 禁用项（没有链接的平台 / 没有专辑名 / 非桌面端）：变淡且不响应悬停（审查第 17 条） */
+.ctx-menu button:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+
+/* 分组分隔线：1px，左右内缩 8px（上下各留 2px，加上 gap 共 4px 的呼吸） */
+.ctx-sep {
+  flex: none;
+  height: 1px;
+  margin: 2px 8px;
+  background: var(--sep, rgba(255, 255, 255, 0.08));
 }
 
 /* ============================================================
@@ -4277,9 +4312,12 @@ body {
 
 /* 回到中心：G2 透镜圆按钮（§3.3，44px），图形 hover 提亮放大 */
 .center-btn {
-  position: absolute;
-  right: 24px;
-  bottom: 110px;
+  /* 位置（审查第 18 条）：贴在底部播放条右端外侧 14px，垂直中心与播放条对齐。
+     播放条宽 clamp(540px, 62vw, 1000px)、水平居中、距底 22px、高 80px；(80 − 44) / 2 + 22 = 40。
+     宽度 > 900px 时右侧一定放得下（最窄 901px：播放条右缘 730px，按钮到 788px）。 */
+  position: fixed;
+  left: calc(50% + clamp(540px, 62vw, 1000px) / 2 + 14px);
+  bottom: 40px;
   z-index: 50;
   width: 44px;
   height: 44px;
@@ -4289,14 +4327,29 @@ body {
   display: grid;
   place-items: center;
   color: rgba(236, 238, 241, 0.78);
-  font-size: 19px;
   line-height: 1;
   cursor: pointer;
 }
 
 .center-btn > span {
-  display: inline-block;
-  transition: transform 0.22s var(--ease-jelly);
+  display: inline-grid;
+  /* 悬停缩放用标准曲线，回弹只留给状态切换（审查第 23 条） */
+  transition: transform 0.18s var(--ease-std);
+}
+
+.center-btn svg {
+  width: 20px;
+  height: 20px;
+}
+
+/* 窄窗口（≤ 900px）：播放条撑满 calc(100vw - 28px)，右侧放不下，改放播放条上方右侧
+   （播放条顶边上方 12px，右缘与播放条右缘对齐 = 14px）。≤900px 时封面放大到 48px，播放条高 82px 而不是 80px：22 + 82 + 12 = 116 */
+@media (max-width: 900px) {
+  .center-btn {
+    left: auto;
+    right: 14px;
+    bottom: 116px;
+  }
 }
 
 .center-btn:hover {
@@ -4573,7 +4626,12 @@ body {
   transition: opacity 0.12s ease, transform 0.12s ease;
 }
 .tooltip-bubble.is-visible { opacity: 1; transform: none; }
-@media (prefers-reduced-motion: reduce) { .tooltip-bubble { transition: opacity 0.12s ease; transform: none; } }
+/* 横向出提示（审查第 18 条，data-tip-side=right / left）：侧边小球贴着屏幕边，提示往画面内侧出，
+   入场也从小球那边往里滑 4px，而不是上下浮 */
+.tooltip-bubble[data-side='right'] { transform: translateX(-4px); }
+.tooltip-bubble[data-side='left'] { transform: translateX(4px); }
+.tooltip-bubble[data-side].is-visible { transform: none; }
+@media (prefers-reduced-motion: reduce) { .tooltip-bubble, .tooltip-bubble[data-side] { transition: opacity 0.12s ease; transform: none; } }
 
 /* 性能降级第 4 级（NEBULA_UI_SYSTEM §3.7）：停掉环境光漂移和雾中封面的呼吸（lib/perf 写根节点 data-perf） */
 [data-perf='4'] .bg-env .env-blob,
@@ -4668,7 +4726,7 @@ body {
   color: rgba(236, 238, 241, 0.78);
   cursor: pointer;
   transition:
-    color 0.12s ease,
+    color 0.18s var(--ease-std),
     background 0.2s ease,
     box-shadow 0.2s ease;
 }
@@ -4676,7 +4734,8 @@ body {
 .sd-orb-icon {
   display: grid;
   place-items: center;
-  transition: transform 0.22s var(--ease-jelly);
+  /* 悬停 / 按下的缩放走标准曲线（审查第 23 条）：回弹只留给分段滑块和开关这类「状态切换」 */
+  transition: transform 0.18s var(--ease-std);
 }
 
 .sd-orb svg {

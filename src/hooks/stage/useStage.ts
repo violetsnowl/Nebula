@@ -12,6 +12,7 @@ import {
   type LayoutMetrics,
 } from '../../lib/layout';
 import { fisheyeFilter, fisheyeMetaAlpha, fisheyeScale, fisheyeZIndex } from '../../lib/fisheye';
+import { makeMetaBox, resolveMetaVisibility, type MetaBox } from '../../lib/metaOverlap';
 import { buildSpatialIndex, queryVisibleIds } from '../../lib/spatial';
 import { CULL_BUFFER, type FrameBus } from '../../lib/stage';
 import { initGlassGlow, registerProximity, unregisterProximity } from '../../lib/glassGlow';
@@ -130,6 +131,14 @@ export function useStage({
   /** 「散开」是否正在推卡片（交接结束时还要再刷新一次，把卡片放回原位）。 */
   const partActiveRef = useRef(false);
 
+  // 标题防压盖（审查第 2 条）：每帧把参与计算的卡片收进复用池，循环结束后统一判断再写 --meta-a
+  const metaPoolRef = useRef<MetaBox[]>([]);
+  /** 卡片 DOM 盒高度（封面 + 标题区）：缩放以盒中心为原点，推封面位置要用它。只在第一次读一次 offsetHeight。 */
+  const cardBoxHRef = useRef(0);
+  /** 正在播放的卡片的标题不参与防压盖（handleFrame 是稳定回调，用 ref 读最新值）。 */
+  const currentSongIdRef = useRef(currentSongId);
+  currentSongIdRef.current = currentSongId;
+
   const registerEl = useCallback((id: number, el: HTMLElement | null) => {
     if (el) {
       cardEls.current.set(id, el);
@@ -190,6 +199,9 @@ export function useStage({
     // 漫游 / 聆听交接「散开」（NEBULA_UI_SYSTEM §7.1）：卡片中心按离歌词区的远近向外推，景深按推开后的位置算
     const partK = listenBus.style === 'part' ? listenBus.k : 0;
     partActiveRef.current = partK > 0;
+
+    const metaPool = metaPoolRef.current;
+    let metaN = 0;
 
     const cur = visibleRef.current;
     let changed = ids.length !== cur.size;
@@ -259,10 +271,41 @@ export function useStage({
           ? `${depthFilter === 'none' ? '' : `${depthFilter} `}brightness(${(1 - 0.42 * pushDim).toFixed(3)})`
           : depthFilter,
       );
-      el.style.setProperty('--meta-a', String(fisheyeMetaAlpha(dist, maxDist)));
-      el.style.zIndex = String(fisheyeZIndex(dist, maxDist));
+      const scale = Math.min(3.4, fisheyeScale(dist, maxDist) * frame.zoom);
+      const z = fisheyeZIndex(dist, maxDist);
+      el.style.zIndex = String(z);
+      // --meta-a 先按景深（焦点圈内为 1）写一个初值，循环后再由防压盖判断改写
+      const base = fisheyeMetaAlpha(dist, maxDist);
+      el.style.setProperty('--meta-a', String(base));
+      if (cardBoxHRef.current === 0) cardBoxHRef.current = el.offsetHeight;
+      const box = (metaPool[metaN] ??= makeMetaBox());
+      box.id = id;
+      box.el = el;
+      box.x = x;
+      box.y = y;
+      box.s = scale;
+      box.rot = card.rotateZ;
+      box.z = z;
+      box.base = base;
+      box.exempt = card.track.id === currentSongIdRef.current;
+      metaN++;
     }
+
+    // 标题防压盖：只有结果变成 0 的才需要再写一次（0.3s 透明度过渡沿用 CSS）
+    if (metaN > 1 && cardBoxHRef.current > 0) {
+      resolveMetaVisibility(metaPool, metaN, cardBoxHRef.current);
+      for (let i = 0; i < metaN; i++) {
+        const b = metaPool[i]!;
+        if (b.alpha !== b.base) b.el!.style.setProperty('--meta-a', String(b.alpha));
+      }
+    }
+    for (let i = 0; i < metaN; i++) metaPool[i]!.el = null; // 不让池持有已卸载卡片的元素
   }, []);
+
+  // 新挂载的卡片 / 换了正在播放的歌：补一帧，让防压盖按最新的屏幕坐标重新判断（空闲时没有别的帧会来做）
+  useEffect(() => {
+    controllerRef.current?.refresh();
+  }, [visibleIds, currentSongId, controllerRef]);
 
   // PanController 生命周期 + __nebula 调试口
   useEffect(() => {

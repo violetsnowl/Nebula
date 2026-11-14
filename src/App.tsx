@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { IconLocate } from './components/icons';
 import { BackgroundLayer } from './components/BackgroundLayer';
   import { PlayerSurface } from './components/player/PlayerSurface';
   import { BottomPlayer } from './components/player/BottomPlayer';
@@ -104,6 +105,7 @@ export default function App() {
     modeToast,
     openContextMenu,
     closeContextMenu,
+    copyTrackLink,
     openCommentsModal,
     openSongDetailModal,
     openArtistByName,
@@ -394,6 +396,20 @@ export default function App() {
 
   const insertNextSong = useCallback((track: Track) => playlist.insertNext(track), [playlist]);
 
+  // 右键菜单（审查第 17 条）：立即播放走和点击卡片相同的路径（handleCardPlay）；
+  // 歌手 / 专辑复用二级页的打开逻辑（多歌手只取第一位，其余歌手可在歌手页 / 详情里进入）
+  const playTrackNow = useCallback((track: Track) => void handleCardPlay(track.id), [handleCardPlay]);
+  const viewTrackArtist = useCallback(
+    (track: Track) => openArtistByName(track.artist.split(/[\/、&,，]/)[0]!.trim(), track),
+    [openArtistByName],
+  );
+  const viewTrackAlbum = useCallback(
+    (track: Track) => {
+      if (track.album) openAlbum(track.source, '', track.album, track.artist.split(/[\/、&,，]/)[0]!.trim());
+    },
+    [openAlbum],
+  );
+
   /** 歌手页点播：overlays.playArtistTrack + 回到中心（组合层接线）。 */
   const handlePlayArtistTrack = useCallback(
     (t: DesktopTrack) => {
@@ -540,7 +556,6 @@ export default function App() {
 
       <TopBar
         visible={edge.top}
-        total={songs.length}
         localBusy={importer.localBusy}
         searchSlot={searchSlot}
         onEnter={enterTop}
@@ -612,7 +627,10 @@ export default function App() {
       />
 
       <button ref={centerRef} className="center-btn glass-g2" onClick={handleReset} aria-label="回到中心" data-tip="回到中心">
-        <span>⌖</span>
+        {/* 准星（审查第 18 条），统一图标集 */}
+        <span>
+          <IconLocate size={18} />
+        </span>
       </button>
 
       {/* 开发者工具：歌词来源面板（默认隐藏，Ctrl+Shift+L 开关） */}
@@ -656,6 +674,10 @@ export default function App() {
         onPlayArtistTrack={handlePlayArtistTrack}
         onCloseContextMenu={closeContextMenu}
         onInsertNext={insertNextSong}
+        onPlayNow={playTrackNow}
+        onViewArtist={viewTrackArtist}
+        onViewAlbum={viewTrackAlbum}
+        onCopyLink={copyTrackLink}
       />
       <TooltipLayer />
         </main>

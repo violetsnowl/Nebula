@@ -2,6 +2,7 @@ import { memo, useEffect, useRef, useState } from 'react';
 import { audioPlayer } from '../../lib/audio/AudioPlayer';
 import { useAudioPlayer } from '../../lib/audio/useAudioPlayer';
 import { IconQueue } from './icons';
+import { IconClose, IconPlay } from '../icons';
 
 /**
  * 播放队列：底部播放器常显入口；点击展开面板（当前项 + 即将播放）。
@@ -48,7 +49,9 @@ export const QueueControl = memo(function QueueControl() {
               className="queue-row is-current"
               onClick={() => audioPlayer.playQueueItem(snap.current!.id)}
             >
-              <span className="queue-row-idx">▶</span>
+              <span className="queue-row-idx">
+                <IconPlay size={10} />
+              </span>
               <span className="queue-row-name">{snap.current.title}</span>
               <span className="queue-row-artist">{snap.current.artist}</span>
             </button>
@@ -68,7 +71,7 @@ export const QueueControl = memo(function QueueControl() {
                 data-tip="从队列移除"
                 onClick={() => audioPlayer.removeUpcoming(t.id)}
               >
-                ×
+                <IconClose size={14} />
               </button>
             </div>
           ))}

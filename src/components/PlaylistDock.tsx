@@ -5,6 +5,7 @@ import { usePlayback } from '../hooks/playback/PlaybackContext';
 import type { ImportStatus } from './ImportBar';
 import { DOCK_PLATFORM_ORDER, platformMeta } from './platforms';
 import { SideDock } from './dock/SideDock';
+import { IconChevronLeft, IconChevronRight } from './icons';
 import './dock/left-panel.css';
 
 interface PlaylistDockProps {
@@ -173,6 +174,7 @@ export const PlaylistDock = memo(function PlaylistDock({
   onLeave,
   onImportPlaylist,
   onImportUrl,
+  onGoLogin,
   onRefreshAll,
   onPlaySongFromList,
   onPlayPlaylist,
@@ -322,7 +324,7 @@ export const PlaylistDock = memo(function PlaylistDock({
                         {pl.trackCount.toLocaleString('en-US')} 首
                       </small>
                     </span>
-                    {cur ? <span className="now">当前</span> : <span className="chev">›</span>}
+                    {cur ? <span className="now">当前</span> : <span className="chev"><IconChevronRight size={14} /></span>}
                   </div>
                 );
               });
@@ -338,19 +340,28 @@ export const PlaylistDock = memo(function PlaylistDock({
 
       {loggedIn.length === 0 && loadingPfs.length === 0 && (
         <>
-          <p className="hint-line">还没有歌单。在右侧「账号」登录音乐平台，或者在「导入」里粘贴歌单链接。</p>
-          <div className="empty-act">
-            <button type="button" className="btn sec" onClick={() => setActive('import')}>
-              去导入
-            </button>
+          <div className="hint-inline">
+            <span>还没有歌单</span>
+            <span>
+              <button type="button" className="btn text" onClick={() => onGoLogin(DOCK_PLATFORM_ORDER[0]!)}>
+                去登录
+              </button>
+              <button type="button" className="btn text" onClick={() => setActive('import')}>
+                去导入
+              </button>
+            </span>
           </div>
         </>
       )}
 
       {loggedIn.length > 0 && notLoggedIn.length > 0 && (
-        <p className="hint-line">
-          还有 {notLoggedIn.length} 个平台没登录 · 在右侧「账号」里登录后，歌单会出现在这里
-        </p>
+        // 一行：短句 + 文字按钮（审查第 22 条），不再写满两行
+        <div className="hint-inline">
+          <span>还有 {notLoggedIn.length} 个平台未登录</span>
+          <button type="button" className="btn text" onClick={() => onGoLogin(notLoggedIn[0]!)}>
+            去登录
+          </button>
+        </div>
       )}
     </div>
   );
@@ -400,9 +411,7 @@ export const PlaylistDock = memo(function PlaylistDock({
           tabIndex={stuck ? 0 : -1}
           onClick={() => go('list')}
         >
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-            <path d="M14.5 6 8.5 12l6 6" />
-          </svg>
+          <IconChevronLeft size={18} />
         </button>
         <Cover src={detailCover} className="cv" />
         <span className="pl-bar-name">{sel.name}</span>
@@ -437,7 +446,8 @@ export const PlaylistDock = memo(function PlaylistDock({
   const detailView = (
     <div key="detail" className={`view${viewClass('detail', nav)}`}>
       <button type="button" className="back" onClick={() => go('list')}>
-        ‹ 歌单
+        <IconChevronLeft size={16} />
+        歌单
       </button>
       {sel && selMeta && (
         <>
@@ -513,7 +523,9 @@ export const PlaylistDock = memo(function PlaylistDock({
           <span className="lbl">
             本地文件夹…<small>选择文件夹，自动读取歌名、歌手和封面</small>
           </span>
-          <span className="chev">›</span>
+          <span className="chev">
+            <IconChevronRight size={14} />
+          </span>
         </div>
         <div
           className="row btn-row"
@@ -525,7 +537,9 @@ export const PlaylistDock = memo(function PlaylistDock({
           <span className="lbl">
             已登录平台的歌单<small>登录后自动出现在「歌单」里，不用手动导入</small>
           </span>
-          <span className="chev">›</span>
+          <span className="chev">
+            <IconChevronRight size={14} />
+          </span>
         </div>
       </div>
       {/* 取消选择 / 空文件夹的短提示（几秒后由 usePlaylistImport 清掉） */}
@@ -554,9 +568,12 @@ export const PlaylistDock = memo(function PlaylistDock({
           id: 'playlists',
           label: '歌单',
           icon: (
-            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" aria-hidden="true">
-              <path d="M5.5 4.5v15M9.5 4.5v15" />
-              <path d="M14 5.2l4.2 14.3" />
+            // 三条横线（上两条长、第三条短）+ 右下角一个小八分音符：歌单 = 一列歌（审查第 18 条）
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M4 6.5h16M4 11.5h16M4 16.5h6.5" />
+              <path d="M18.6 21V15.8" />
+              <path d="M18.6 15.8c.2 1.1 1.4 1.6 2.4 1.9" />
+              <circle cx="16.9" cy="20.9" r="1.7" fill="currentColor" stroke="none" />
             </svg>
           ),
         },
@@ -564,10 +581,11 @@ export const PlaylistDock = memo(function PlaylistDock({
           id: 'import',
           label: '导入',
           icon: (
+            // 箭头落进托盘：向下箭头 + 开口向上的托盘（审查第 18 条）
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M12 4v11" />
-              <path d="M7.5 10.5L12 15l4.5-4.5" />
-              <path d="M5 19.5h14" />
+              <path d="M12 4v10" />
+              <path d="M7.8 10.2L12 14.4l4.2-4.2" />
+              <path d="M5 15.5v2.2a1.8 1.8 0 0 0 1.8 1.8h10.4a1.8 1.8 0 0 0 1.8-1.8v-2.2" />
             </svg>
           ),
         },

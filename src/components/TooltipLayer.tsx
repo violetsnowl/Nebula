@@ -8,9 +8,18 @@ import { useEffect, useRef, useState } from 'react';
 
 const SHOW_DELAY = 400;
 const GAP = 8;
+/** 横向出提示时与目标的距离（审查第 18 条）。 */
+const SIDE_GAP = 10;
 const EDGE = 8;
 
+type Side = 'top' | 'right' | 'left';
 type Pos = { left: number; top: number };
+
+/** `data-tip-side`：top（默认，上方居中）/ right / left（垂直居中于目标，往侧面出）。 */
+function tipSide(el: HTMLElement): Side {
+  const v = el.getAttribute('data-tip-side');
+  return v === 'right' || v === 'left' ? v : 'top';
+}
 
 function findTipTarget(node: EventTarget | null): HTMLElement | null {
   if (!(node instanceof Element)) return null;
@@ -24,6 +33,7 @@ export function TooltipLayer() {
   const [text, setText] = useState('');
   const [pos, setPos] = useState<Pos>({ left: 0, top: 0 });
   const [visible, setVisible] = useState(false);
+  const [side, setSide] = useState<Side>('top');
 
   useEffect(() => {
     let target: HTMLElement | null = null;
@@ -54,6 +64,7 @@ export function TooltipLayer() {
         return;
       }
       setText(tip);
+      setSide(tipSide(el));
       shown = true;
       setVisible(true);
       // 文字更新后在下一帧量尺寸再定位，避免首帧位置闪动
@@ -63,6 +74,17 @@ export function TooltipLayer() {
         const rect = target.getBoundingClientRect();
         const bw = bubble.offsetWidth;
         const bh = bubble.offsetHeight;
+        const s = tipSide(target);
+        if (s !== 'top') {
+          // 侧边小球：提示往画面内侧出，垂直居中于目标，相距 10px；上下夹在窗口内
+          const left = s === 'right' ? rect.right + SIDE_GAP : rect.left - SIDE_GAP - bw;
+          const top = rect.top + rect.height / 2 - bh / 2;
+          setPos({
+            left: Math.round(Math.max(EDGE, Math.min(left, window.innerWidth - bw - EDGE))),
+            top: Math.round(Math.max(EDGE, Math.min(top, window.innerHeight - bh - EDGE))),
+          });
+          return;
+        }
         let left = rect.left + rect.width / 2 - bw / 2;
         left = Math.max(EDGE, Math.min(left, window.innerWidth - bw - EDGE));
         const top = rect.top < bh + 16 ? rect.bottom + GAP : rect.top - bh - GAP;
@@ -122,6 +144,7 @@ export function TooltipLayer() {
     <div
       ref={bubbleRef}
       className={`tooltip-bubble${visible ? ' is-visible' : ''}`}
+      data-side={side === 'top' ? undefined : side}
       role="tooltip"
       aria-hidden="true"
       style={{ left: pos.left, top: pos.top }}

@@ -4,6 +4,7 @@ import { useGlass } from '../lib/glass';
 import { matchSongs, type SearchMatch } from '../lib/search';
 import type { Track } from '../lib/catalog';
 import { toFrontendTrack, type DesktopArtistHit } from '../lib/playlist/ipcClient';
+import { IconChevronRight, IconClose, IconPlay } from './icons';
 
 interface SearchBarProps {
   songs: Track[];
@@ -274,7 +275,7 @@ export function SearchBar({
                   inputRef.current?.focus();
                 }}
               >
-                ×
+                <IconClose size={14} />
               </button>
             )}
           </button>
@@ -325,11 +326,11 @@ export function SearchBar({
                         <span className="search-title">{m.title}</span>
                         <span className="search-artist">
                           {m.artist}
-                          <em className={`search-kind is-${m.kind}`}>{m.kind === 'title' ? '歌曲' : '歌手'}</em>
+                          {m.kind === 'artist' && <em className="search-kind is-artist">歌手</em>}
                         </span>
                       </span>
                       <span className="search-go" aria-hidden="true">
-                        →
+                        {m.kind === 'artist' ? <IconChevronRight size={14} /> : <IconPlay size={12} />}
                       </span>
                     </button>
                   </li>
@@ -357,7 +358,7 @@ export function SearchBar({
                         </span>
                       </span>
                       <span className="search-go" aria-hidden="true">
-                        →
+                        <IconChevronRight size={14} />
                       </span>
                     </button>
                   </li>
@@ -384,11 +385,10 @@ export function SearchBar({
                         <span className="search-title">{t.title}</span>
                         <span className="search-artist">
                           {t.artist}
-                          <em className="search-kind is-song">点播</em>
                         </span>
                       </span>
                       <span className="search-go" aria-hidden="true">
-                        ▶
+                        <IconPlay size={12} />
                       </span>
                     </button>
                   </li>

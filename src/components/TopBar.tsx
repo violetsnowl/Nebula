@@ -1,9 +1,9 @@
 import { memo, useRef, type ReactNode } from 'react';
+import { IconMusic } from './icons';
 import { useGlass } from '../lib/glass';
 
 interface TopBarProps {
   visible: boolean;
-  total: number;
   localBusy: boolean;
   searchSlot: ReactNode;
   onEnter: () => void;
@@ -11,10 +11,9 @@ interface TopBarProps {
   onOpenLocal: () => void;
 }
 
-/** 顶部边缘感应搜索栏：默认隐藏在视口上方，鼠标触顶滑入。 */
+/** 顶部边缘感应搜索栏：默认隐藏在视口上方，鼠标触顶滑入。只保留搜索和本地导入两颗玻璃球（歌曲数量在左侧面板里已有，审查第 19 条）。 */
 export const TopBar = memo(function TopBar({
   visible,
-  total,
   localBusy,
   searchSlot,
   onEnter,
@@ -40,9 +39,8 @@ export const TopBar = memo(function TopBar({
           disabled={localBusy}
           onClick={onOpenLocal}
         >
-          <span>{localBusy ? '…' : '♪'}</span>
+          <span>{localBusy ? '…' : <IconMusic size={18} />}</span>
         </button>
-        <span className="chip">{total.toLocaleString('en-US')} 首</span>
       </div>
     </header>
   );

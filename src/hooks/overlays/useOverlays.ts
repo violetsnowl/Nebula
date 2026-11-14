@@ -4,6 +4,7 @@ import { audioPlayer } from '../../lib/audio/AudioPlayer';
 import { libraryService } from '../../lib/library';
 import { hasDesktopAPI, toBackendTrack, toFrontendTrack, type DesktopTrack } from '../../lib/playlist/ipcClient';
 import type { Track } from '../../lib/catalog';
+import { trackShareLink } from '../../lib/shareLink';
 
 export interface InfoModalState {
   kind: 'comments' | 'song' | 'artist' | 'album';
@@ -48,6 +49,21 @@ export function useOverlays() {
 
   const closeContextMenu = useCallback(() => setContextMenu(null), []);
 
+  /** 右键菜单「复制链接」：写入歌曲页面地址，用 toast 反馈结果；没有链接的平台菜单项已禁用。 */
+  const copyTrackLink = useCallback((track: Track) => {
+    const url = trackShareLink(track);
+    if (!url) return;
+    const clip = typeof navigator !== 'undefined' ? navigator.clipboard : undefined;
+    if (!clip) {
+      setModeToast('复制失败');
+      return;
+    }
+    clip.writeText(url).then(
+      () => setModeToast('已复制链接'),
+      () => setModeToast('复制失败'),
+    );
+  }, []);
+
   // 右键菜单按 Esc 关闭（NEBULA_UI_SYSTEM §9.6）。以前只能点空白处关，而它的透明遮罩会挡住之后的悬停和点击
   useEffect(() => {
     if (!contextMenu) return;
@@ -70,9 +86,10 @@ export function useOverlays() {
     setInfoModal({ kind: 'song', track: song });
   }, []);
 
-  /** 底部条点击歌手名：先取详情拿歌手 id；详情缺失/匹配不到时按名字转译路由到网易云/QQ 歌手。 */
-  const openArtistByName = useCallback((name: string) => {
-    const song = audioPlayer.getState().song;
+  /** 底部条点击歌手名：先取详情拿歌手 id；详情缺失/匹配不到时按名字转译路由到网易云/QQ 歌手。
+   *  右键菜单「查看歌手」传入被点的那首歌（track）；底部条不传，沿用正在播放的歌。 */
+  const openArtistByName = useCallback((name: string, track?: Track) => {
+    const song = track ?? audioPlayer.getState().song;
     if (!song || !hasDesktopAPI()) return;
     const fallbackToNameRoute = () => {
       window.nebulaAPI!
@@ -184,6 +201,7 @@ export function useOverlays() {
     modeToast,
     openContextMenu,
     closeContextMenu,
+    copyTrackLink,
     openCommentsModal,
     openSongDetailModal,
     openArtistByName,

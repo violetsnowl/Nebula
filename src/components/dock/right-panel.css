@@ -22,6 +22,10 @@
   height: 100%;
   object-fit: cover;
   display: block;
+  /* 账号列表的平台图标改单色（审查第 14 条）：品牌色只留给详情页的大图标；
+     「已连接」由名字下面那颗 6px 状态点（--success）表示 */
+  filter: grayscale(1) brightness(1.2);
+  opacity: 0.85;
 }
 
 .sd-panel .lbl small.rp-status {
@@ -88,6 +92,7 @@
   overflow: hidden;
   background: #fff;
 }
+/* 详情页的大图标保留品牌原色（上面列表里的小图标是单色） */
 
 .sd-panel .rp-big-logo img {
   width: 100%;
@@ -108,7 +113,7 @@
 .sd-panel .rp-how {
   margin: -4px 0 0;
   font-size: 12px;
-  color: var(--fg-3);
+  color: var(--fg-3s);
   max-width: 26ch;
 }
 
@@ -119,10 +124,13 @@
   display: grid;
   place-items: center;
   overflow: hidden;
-  font-size: 26px;
+  font-family: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
+  font-size: 28px;
   font-weight: 600;
-  color: #0b0c10;
-  background: var(--acc);
+  line-height: 1;
+  /* 没有平台头像时的占位（审查第 21 条）：封面环境色渐变 + 白色衬线首字；有头像时 img 盖在上面 */
+  color: #fff;
+  background: linear-gradient(135deg, var(--e1), var(--e2));
   box-shadow: 0 10px 26px rgba(0, 0, 0, 0.4);
 }
 
@@ -135,7 +143,7 @@
 
 .sd-panel .rp-acct-meta {
   font-size: 12px;
-  color: var(--fg-3);
+  color: var(--fg-3s);
   margin-top: -6px;
 }
 
@@ -353,7 +361,7 @@
   background: none;
   cursor: pointer;
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.22);
-  transition: transform 0.22s var(--ease-jelly);
+  transition: transform 0.18s var(--ease-std);
 }
 
 .sd-panel .rp-swatch:hover {
@@ -430,14 +438,17 @@
   border-radius: 50%;
   background: rgba(255, 255, 255, 0.92);
   color: #0b0c10;
-  font-size: 11px;
-  font-weight: 700;
   display: none;
   place-items: center;
 }
 
 .sd-panel .rp-tile[aria-pressed='true'] .rp-check {
   display: grid;
+}
+
+/* 12px 的勾按 24 网格缩放后线只有 0.85px，在白底上太虚：这一处单独加粗 */
+.sd-panel .rp-tile .rp-check svg {
+  stroke-width: 3;
 }
 
 .sd-panel .rp-envbg {
@@ -487,7 +498,7 @@
   justify-items: center;
   gap: 4px;
   background: rgba(255, 255, 255, 0.05);
-  color: var(--fg-3);
+  color: var(--fg-3s);
   font-size: 11px;
   text-align: center;
   transition: color 0.12s ease;
@@ -559,8 +570,8 @@
 }
 
 .sd-panel .rp-foot {
-  font-size: 11px;
-  color: var(--fg-3);
+  font-size: 12px;
+  color: var(--fg-3s);
   text-align: center;
   margin: 14px 0 0;
   line-height: 1.6;

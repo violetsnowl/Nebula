@@ -53,12 +53,15 @@ function Orb({
   active,
   glass,
   tip,
+  tipSide,
   onClick,
 }: {
   item: SideDockItem;
   active: boolean;
   glass: boolean;
   tip: boolean;
+  /** 名称提示往哪边出：往画面内侧（左侧小球 → right，右侧小球 → left）。 */
+  tipSide: 'right' | 'left';
   onClick: () => void;
 }) {
   const ref = useRef<HTMLButtonElement>(null);
@@ -72,6 +75,7 @@ function Orb({
       aria-label={item.label}
       aria-pressed={active}
       data-tip={tip ? item.label : undefined}
+      data-tip-side={tipSide}
       onClick={onClick}
     >
       <span className="sd-orb-icon">{item.icon}</span>
@@ -173,6 +177,7 @@ export function SideDock({
             active={active === it.id}
             glass={shown}
             tip={active === null}
+            tipSide={side === 'left' ? 'right' : 'left'}
             onClick={() => onActiveChange(active === it.id ? null : it.id)}
           />
         ))}

@@ -9,6 +9,7 @@ import type {
   DesktopSongDetail,
   DesktopTrack,
 } from '../lib/playlist/ipcClient';
+import { IconChevronLeft, IconHeart } from './icons';
 
 function ModalShell({ children, onClose }: { children: React.ReactNode; onClose: () => void }) {
   // 弹窗 = G3，但不注册边缘折射（#103）：背后是压暗 + 模糊的遮罩，折射几乎看不见；
@@ -159,7 +160,10 @@ function CommentsPanel({ track, onClose }: { track: Track; onClose: () => void }
         <div className="cmt-content">
           <CommentText text={c.content} />
         </div>
-        <div className="cmt-like">♥ {c.likedCount}</div>
+        <div className="cmt-like">
+          <IconHeart size={12} />
+          {c.likedCount}
+        </div>
       </div>
     </div>
   );
@@ -349,7 +353,10 @@ function ArtistPanel({
       return (
         <ModalShell onClose={onClose}>
           <div className="info-head info-head-row">
-            <button className="info-back" onClick={() => setView('overview')}>← 返回</button>
+            <button className="info-back" onClick={() => setView('overview')}>
+              <IconChevronLeft size={16} />
+              返回
+            </button>
             <span className="info-head-title">{artistName} · 全部歌曲</span>
           </div>
           <div className="info-scroll">

@@ -17,7 +17,7 @@
   padding: 0 6px;
   font-size: 12px;
   font-weight: 400;
-  color: var(--fg-3);
+  color: var(--fg-3s);
 }
 
 .sd-panel .win-head .btn.text:hover:not(:disabled) {
@@ -65,12 +65,21 @@
   box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.1);
 }
 
+/* 平台图标改单色（审查第 14 条）：品牌原色只留在右侧平台详情页的大图标上；选中 opacity 1、未选 .6 */
 .sd-panel .chip-f img {
   width: 16px;
   height: 16px;
   border-radius: 50%;
   background: #fff;
   object-fit: cover;
+  filter: grayscale(1) brightness(1.2);
+  opacity: 0.6;
+  transition: opacity 0.18s var(--ease-std);
+}
+
+.sd-panel .chip-f:hover img,
+.sd-panel .chip-f[aria-pressed='true'] img {
+  opacity: 1;
 }
 
 /* ---------- 歌单列表 ---------- */
@@ -183,7 +192,7 @@
 
 .sd-panel .pl-loading .lbl {
   font-size: 12px;
-  color: var(--fg-3);
+  color: var(--fg-3s);
 }
 
 .sd-panel .empty-act {
@@ -238,7 +247,7 @@
   align-items: center;
   gap: 6px;
   font-size: 12px;
-  color: var(--fg-3);
+  color: var(--fg-3s);
 }
 
 .sd-panel .pl-head .meta img {
@@ -337,7 +346,7 @@
   transition:
     color 0.12s ease,
     background 0.12s ease,
-    transform 0.22s var(--ease-jelly);
+    transform 0.18s var(--ease-std);
 }
 
 .sd-panel .pl-bar button svg {
@@ -427,7 +436,7 @@
 
 .sd-panel .song .idx {
   font-size: 11px;
-  color: var(--fg-3);
+  color: var(--fg-3s);
   text-align: right;
   font-variant-numeric: tabular-nums;
 }
@@ -455,8 +464,8 @@
 
 .sd-panel .song .t small {
   display: block;
-  font-size: 11px;
-  color: var(--fg-3);
+  font-size: 12px;
+  color: var(--fg-3s);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

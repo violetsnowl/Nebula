@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { IconClose } from './icons';
 import type { DesktopWallpaperItem, DesktopWallpaperSetResult } from '../lib/playlist/ipcClient';
 import { hasDesktopAPI } from '../lib/playlist/ipcClient';
 
@@ -114,7 +115,7 @@ export function WallpaperPicker({ onClose, onApply, standalone }: WallpaperPicke
     >
       <div className="wallpaper-panel glass" onPointerDown={(e) => e.stopPropagation()}>
         <button className="np-close" aria-label="关闭" onClick={onClose}>
-          ×
+          <IconClose size={18} />
         </button>
         <div className="wallpaper-head">Wallpaper Engine 壁纸库</div>
         {hint && <div className="wallpaper-hint is-hint">{hint}</div>}

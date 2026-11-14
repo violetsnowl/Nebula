@@ -12,6 +12,7 @@ import { currentLyricIndex, type LyricLineUI } from '../lib/lyrics';
 import { paletteFromBaseColor } from '../lib/coverColors';
 import { SideDock } from './dock/SideDock';
 import { DOCK_PLATFORM_ORDER, platformMeta } from './platforms';
+import { IconCheck, IconChevronLeft, IconChevronRight } from './icons';
 import './dock/right-panel.css';
 
 export type DockSettingsPage = 'lyrics' | 'bg' | 'look';
@@ -564,7 +565,9 @@ function AccountDetail({
             <span className="lbl">
               刷新账号信息<small>会员状态、歌单数量</small>
             </span>
-            <span className="chev">›</span>
+            <span className="chev">
+              <IconChevronRight size={14} />
+            </span>
           </RowButton>
         </div>
         <button
@@ -815,10 +818,10 @@ function LyricPreview({
 type BgChoice = 'env' | 'fog' | 'custom' | 'wallpaper';
 
 const BG_DESC: Record<BgChoice, string> = {
-  env: '颜色取自正在播放的封面：深色底上三团缓慢漂移的光，换歌时整个空间一起换色。',
-  fog: '环境光里隐约浮着一层雾化的封面原图，缓慢地若隐若现；浅色封面会自动更淡。',
-  custom: '用你自己的图片或视频铺满背景，强调色从画面里取。',
-  wallpaper: '从本机 Wallpaper Engine 的壁纸库里选一张（支持动态壁纸）。',
+  env: '颜色取自封面，换歌时整个空间一起换色',
+  fog: '环境光里隐约浮着一层雾化的封面',
+  custom: '用自己的图片或视频铺满背景',
+  wallpaper: '从 Wallpaper Engine 壁纸库里选一张',
 };
 
 function Tile({
@@ -838,7 +841,9 @@ function Tile({
     <button type="button" className="rp-tile" aria-pressed={selected} onClick={onClick} {...data}>
       <span className="rp-art">
         {children}
-        <span className="rp-check">✓</span>
+        <span className="rp-check">
+          <IconCheck size={12} />
+        </span>
       </span>
       <span className="rp-name">{name}</span>
     </button>
@@ -1002,19 +1007,20 @@ export const AccountDock = memo(function AccountDock({
                     {acc?.avatarUrl ? <img src={acc.avatarUrl} alt="" draggable={false} /> : nick.slice(0, 1)}
                   </span>
                 )}
-                <span className="chev">›</span>
+                <span className="chev">
+              <IconChevronRight size={14} />
+            </span>
               </RowButton>
             );
           })}
         </div>
-        <p className="hint-line">
-          登录后，这个平台的歌单会出现在左侧「歌单」里；取歌链接时会按会员情况自动挑选平台。
-        </p>
+        <p className="hint-line">登录后，歌单会出现在左侧「歌单」里</p>
       </div>
       {detailPf !== null && (
         <div className={`view${detailIn ? '' : ' hidden-right'}`} aria-hidden={!detailIn}>
           <button type="button" className="back" onClick={closeDetail}>
-            ‹ 账号
+            <IconChevronLeft size={16} />
+            账号
           </button>
           <AccountDetail
             platform={detailPf}
@@ -1146,7 +1152,7 @@ export const AccountDock = memo(function AccountDock({
       <div className="group">
         <div className="row">
           <span className="lbl">
-            让歌词成为主角<small>音乐在播放、鼠标静止一会儿，星云让开</small>
+            让歌词成为主角<small>播放中静止一会儿，星云让开</small>
           </span>
           <Tg
             checked={lyricSettings.listenHandoff}
@@ -1241,9 +1247,11 @@ export const AccountDock = memo(function AccountDock({
         <div className="group rp-group-gap">
           <RowButton onClick={() => bgInputRef.current?.click()}>
             <span className="lbl">
-              选择图片或视频…<small>2.5MB 以内的图片会被记住，大文件只在本次使用</small>
+              选择图片或视频…<small>2.5MB 内的图片会被记住</small>
             </span>
-            <span className="chev">›</span>
+            <span className="chev">
+              <IconChevronRight size={14} />
+            </span>
           </RowButton>
         </div>
       )}
@@ -1251,7 +1259,9 @@ export const AccountDock = memo(function AccountDock({
         <div className="group rp-group-gap">
           <RowButton onClick={onOpenWallpapers}>
             <span className="lbl">打开壁纸库…</span>
-            <span className="chev">›</span>
+            <span className="chev">
+              <IconChevronRight size={14} />
+            </span>
           </RowButton>
         </div>
       )}
@@ -1299,7 +1309,7 @@ export const AccountDock = memo(function AccountDock({
                 ? '已关闭折射、色散和背景漂移'
                 : perfAutoLevel > 0
                   ? `检测到卡顿，已自动降低 ${perfAutoLevel} 级效果`
-                  : '关闭折射、色散和背景漂移；卡顿时也会自动逐级降低'}
+                  : '关闭折射、色散和背景漂移'}
             </small>
           </span>
           <Tg checked={perfPriority} onChange={onPerfPriority} label="性能优先" />

@@ -36,15 +36,16 @@
 
 .sd-panel .win-head .sub {
   font-size: 12px;
-  color: var(--fg-3);
+  color: var(--fg-3s);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
 
-/* 分组：标题写在卡片外，卡片里的行之间用细线（iOS 式分组列表） */
+/* 分组：标题写在卡片外，卡片里的行之间用细线（iOS 式分组列表）。
+   小号次要文字统一用 --fg-3s（审查第 8 条，约 4.5:1）；11px 只留给标签类，说明文字统一 12px */
 .sd-panel .g-title {
   font-size: 12px;
-  color: var(--fg-3);
+  color: var(--fg-3s);
   margin: 16px 6px 6px;
 }
 
@@ -106,15 +107,15 @@
 
 .sd-panel .lbl small {
   display: block;
-  font-size: 11px;
-  color: var(--fg-3);
+  font-size: 12px;
+  color: var(--fg-3s);
   margin-top: 2px;
   line-height: 1.4;
 }
 
 .sd-panel .val {
   font-size: 12px;
-  color: var(--fg-3);
+  color: var(--fg-3s);
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
@@ -129,13 +130,17 @@
   background: rgba(255, 255, 255, 0.05);
 }
 
+/* 行尾箭头：内容是 icons.tsx 的 IconChevronRight（审查第 1 条）。
+   悬停位移走标准曲线、0.18s（审查第 23 条）：回弹曲线只留给分段滑块和开关的状态切换 */
 .sd-panel .chev {
-  color: var(--fg-3);
-  font-size: 15px;
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  color: var(--fg-3s);
   line-height: 1;
   transition:
-    transform 0.22s var(--ease-jelly),
-    color 0.12s ease;
+    transform 0.18s var(--ease-std),
+    color 0.18s var(--ease-std);
 }
 
 .sd-panel .btn-row:hover .chev {
@@ -145,9 +150,33 @@
 
 .sd-panel .hint-line {
   font-size: 12px;
-  color: var(--fg-3);
+  color: var(--fg-3s);
   margin: 8px 4px 0;
   line-height: 1.5;
+}
+
+/* 单行提示（审查第 22 条）：一句短话 + 行尾一个文字按钮，不再写满两行 */
+.sd-panel .hint-inline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin: 8px 4px 0;
+  font-size: 12px;
+  line-height: 22px;
+  color: var(--fg-3s);
+}
+
+.sd-panel .hint-inline .btn.text {
+  height: 22px;
+  padding: 0 6px;
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--fg-2);
+}
+
+.sd-panel .hint-inline .btn.text:hover:not(:disabled) {
+  color: var(--fg);
 }
 
 /* 分段控件（§9.5）：滑轨 + 一块会滑动的选中滑块（P4 动效回归）。
@@ -203,8 +232,8 @@
   cursor: pointer;
   white-space: nowrap;
   transition:
-    color 0.16s ease,
-    transform 0.22s var(--ease-jelly);
+    color 0.18s var(--ease-std),
+    transform 0.18s var(--ease-std);
 }
 
 .sd-panel .seg button:hover {
@@ -297,7 +326,7 @@
   border-radius: 50%;
   background: #fff;
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.4);
-  transition: transform 0.22s var(--ease-jelly);
+  transition: transform 0.18s var(--ease-std);
 }
 
 .sd-panel .rng:hover::-webkit-slider-thumb {
@@ -320,7 +349,7 @@
   transition:
     background 0.12s ease,
     color 0.12s ease,
-    transform 0.12s ease;
+    transform 0.18s var(--ease-std);
 }
 
 .sd-panel .btn:active:not(:disabled) {
@@ -385,8 +414,14 @@
   cursor: pointer;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
+  line-height: 1;
   transition: color 0.12s ease;
+}
+
+/* 返回箭头是 IconChevronLeft 16px：和文字同一条基线（flex 居中，文字行高 16px） */
+.sd-panel .back svg {
+  flex: none;
 }
 
 .sd-panel .back:hover {
