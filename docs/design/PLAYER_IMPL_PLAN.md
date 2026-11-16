@@ -3,6 +3,8 @@
 > 状态：设计已冻结，进入实现。单一事实来源 = `NEBULA_PLAYER_DESIGN_SPEC.md` + `PLAYER_AGENT_BRIEF.md`。
 > 本文档记录 grill 对齐结论（R1/R2）、架构决策与阶段跟踪；与 CHANGE_LOG 同步维护。
 
+> **状态更新（2026-11-16）：已按样张 I / J 重新设计并落地 P2（#118），各阶段处置见 §3 表格；下面 10-14 的暂停说明为历史。**
+>
 > **⏸ 状态更新（2026-10-14）：本任务暂停中。**
 > P1（Bottom Player）已实现并两轮打磨，**等待用户桌面端复验**；用户已决定**先执行全局 UI 底层重构**（母稿设计中），该重构验收合格后再回到本计划。
 >
@@ -64,13 +66,13 @@
 | 阶段 | 内容 | 状态 |
 |---|---|---|
 | P1 | Bottom Player 结构（几何/三区/进度/工具簇/队列+FIFO insertNext） | 完成，待用户桌面端验收 |
-| P2 | Listening Space shell / Bottom→Listening morph / 主舞台退场 | 待做 |
-| P3 | Music Orb（锚点稳定/进度轨道/暂停静默/恢复唤醒/切歌过渡） | 待做 |
-| P4 | Spatial Lyrics（外置、上下同当前行、稳定轴、深度） | 待做 |
-| P5 | Inner Lyrics（左对齐、5–7 行、滚动/点击 seek/回到当前、逐字高亮/长音擦除） | 待做 |
-| P6 | 状态与 morph 编排（Spatial↔Inner、Bottom↔Listening、播放/暂停/切歌状态机） | 待做 |
-| P7 | Atmosphere / energy / airflow（三场域、独立气流、能量映射、低频谱事件） | 待做 |
-| P8 | Frosted 打磨 + 性能 + 设置/DIY + Restore Default + 自动隐藏 | 待做 |
+| P2 | Listening Space shell / Bottom→Listening morph / 主舞台退场 | **已完成**（#118，按样张 I / J 重新设计：整屏听音空间、封面一镜到底、星云后退） |
+| P3 | Music Orb（锚点稳定/进度轨道/暂停静默/恢复唤醒/切歌过渡） | **取消**（样张 I 推翻圆形旋转唱片 + 圆形进度，改方形大封面） |
+| P4 | Spatial Lyrics（外置、上下同当前行、稳定轴、深度） | **改道**：并入星云漫游歌词重设计（审查第 10、11、12、24 条），待出样张 |
+| P5 | Inner Lyrics（左对齐、5–7 行、滚动/点击 seek/回到当前、逐字高亮/长音擦除） | **已完成**（#118 歌词阅读栏，`lib/listen/`） |
+| P6 | 状态与 morph 编排（Spatial↔Inner、Bottom↔Listening、播放/暂停/切歌状态机） | **大部分完成**（进出听音空间、暂停变暗）；切歌时封面交叉淡化未做 |
+| P7 | Atmosphere / energy / airflow（三场域、独立气流、能量映射、低频谱事件） | **暂缓**（节奏光列为加分项，表现需重做） |
+| P8 | Frosted 打磨 + 性能 + 设置/DIY + Restore Default + 自动隐藏 | **基本完成**（磨砂主题、性能降级、听音空间设置；自动隐藏并入「播放条变淡」） |
 
 ---
 
