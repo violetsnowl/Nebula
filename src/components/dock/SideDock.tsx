@@ -42,13 +42,13 @@ interface SideDockProps {
 
 /** 点这些界面时侧面板保持打开（播放条、顶栏、另一侧 Dock、弹窗、弹层、提示）。 */
 const KEEP_OPEN =
-  '.side-dock, .player-surface, .topbar, .info-overlay, .ctx-menu, .ctx-backdrop, .now-playing-overlay, ' +
+  '.side-dock, .player-surface, .topbar, .info-overlay, .ctx-menu, .ctx-backdrop, ' +
   '.wallpaper-overlay, .queue-pop, .vol-pop, .quality-pop, .tooltip-bubble, .center-btn, .lyric-probe, ' +
   // 首次启动空状态的三个按钮：面板开着时点它们不能被「点外面关面板」吞掉（第一下只关面板、第二下才生效）
   '.empty-nebula .en-acts';
 
 /** 比侧面板更靠上的浮层：它们存在时 Esc 先归它们（评论 / 信息弹窗、右键菜单、二级播放页、队列 / 音质 / 音量弹层）。 */
-const ABOVE_PANEL = '.info-overlay, .ctx-menu, .now-playing-overlay, .queue-pop, .quality-pop, .vol-pop';
+const ABOVE_PANEL = '.info-overlay, .ctx-menu, .queue-pop, .quality-pop, .vol-pop';
 const EDITABLE = 'input, textarea, select, [contenteditable=""], [contenteditable="true"]';
 
 function Orb({

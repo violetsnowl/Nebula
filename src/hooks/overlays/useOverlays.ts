@@ -33,6 +33,18 @@ export function useOverlays() {
   contextMenuRef.current = contextMenu;
   const [infoModal, setInfoModal] = useState<InfoModalState | null>(null);
   const [nowPlayingOpen, setNowPlayingOpen] = useState(false);
+  // 听音空间（NEBULA_UI_SYSTEM §9.9）打开时，歌曲详情 / 歌手 / 专辑 / 评论不再弹窗，而是在右栏原地显示
+  const [listenPane, setListenPane] = useState<InfoModalState | null>(null);
+  const listenOpenRef = useRef(false);
+  listenOpenRef.current = nowPlayingOpen;
+  const showInfo = useCallback((s: InfoModalState) => {
+    if (listenOpenRef.current) setListenPane(s);
+    else setInfoModal(s);
+  }, []);
+  // 收起听音空间时右栏回到歌词
+  useEffect(() => {
+    if (!nowPlayingOpen) setListenPane(null);
+  }, [nowPlayingOpen]);
   const [modeToast, setModeToast] = useState('');
   // Toast 停留 2.4s 后自动消失（NEBULA_UI_SYSTEM §9.6）；文字变了就重新计时。以前只有播放模式提示会消失，「未找到歌手」等提示会一直留着
   useEffect(() => {
@@ -77,19 +89,19 @@ export function useOverlays() {
   const openCommentsModal = useCallback(() => {
     const song = audioPlayer.getState().song;
     if (!song) return;
-    setInfoModal({ kind: 'comments', track: song });
-  }, []);
+    showInfo({ kind: 'comments', track: song });
+  }, [showInfo]);
 
   /** 歌曲详情弹窗里的「评论」行：评论的是详情里那首歌，不一定是正在播放的。 */
   const openCommentsFor = useCallback((track: Track) => {
-    setInfoModal({ kind: 'comments', track });
-  }, []);
+    showInfo({ kind: 'comments', track });
+  }, [showInfo]);
 
   const openSongDetailModal = useCallback(() => {
     const song = audioPlayer.getState().song;
     if (!song) return;
-    setInfoModal({ kind: 'song', track: song });
-  }, []);
+    showInfo({ kind: 'song', track: song });
+  }, [showInfo]);
 
   /** 底部条点击歌手名：先取详情拿歌手 id；详情缺失/匹配不到时按名字转译路由到网易云/QQ 歌手。
    *  右键菜单「查看歌手」传入被点的那首歌（track）；底部条不传，沿用正在播放的歌。 */
@@ -101,12 +113,12 @@ export function useOverlays() {
         .resolveArtistByName(name)
         .then((r) => {
           if (r.ok && r.data) {
-            setInfoModal({ kind: 'artist', platform: r.data.platform, artistId: r.data.id, artistName: r.data.name });
+            showInfo({ kind: 'artist', platform: r.data.platform, artistId: r.data.id, artistName: r.data.name });
           } else {
-            setInfoModal({ kind: 'song', track: song });
+            showInfo({ kind: 'song', track: song });
           }
         })
-        .catch(() => setInfoModal({ kind: 'song', track: song }));
+        .catch(() => showInfo({ kind: 'song', track: song }));
     };
     window.nebulaAPI!
       .songDetail(toBackendTrack(song))
@@ -123,7 +135,7 @@ export function useOverlays() {
           parts.some((p) => p === a.name || p.includes(a.name) || a.name.includes(p)),
         );
         if (match.length === 1) {
-          setInfoModal({
+          showInfo({
             kind: 'artist',
             platform: res.data.platform,
             artistId: match[0]!.id,
@@ -134,7 +146,7 @@ export function useOverlays() {
         }
       })
       .catch(fallbackToNameRoute);
-  }, []);
+  }, [showInfo]);
 
   /**
    * 专辑点击 → 专辑详情弹层。netease/qq 带 id 直接打开；
@@ -142,7 +154,7 @@ export function useOverlays() {
    */
   const openAlbum = useCallback((platform: string, albumId: string, albumName: string, artistName?: string) => {
     if (albumId && (platform === 'netease' || platform === 'qq')) {
-      setInfoModal({ kind: 'album', platform, albumId, albumName });
+      showInfo({ kind: 'album', platform, albumId, albumName });
       return;
     }
     if (!hasDesktopAPI()) return;
@@ -150,7 +162,7 @@ export function useOverlays() {
       .resolveAlbumByTitle(albumName, artistName)
       .then((res) => {
         if (res.ok && res.data) {
-          setInfoModal({
+          showInfo({
             kind: 'album',
             platform: res.data.platform,
             albumId: res.data.id,
@@ -161,7 +173,7 @@ export function useOverlays() {
         }
       })
       .catch(() => setModeToast(`未找到专辑《${albumName}》`));
-  }, []);
+  }, [showInfo]);
 
   /**
    * 歌手 chip 点击：netease/qq 带 id 直接打开；其他平台（酷狗/汽水/Spotify）
@@ -169,7 +181,7 @@ export function useOverlays() {
    */
   const openArtistFromChip = useCallback((platform: string, artistId: string, name: string) => {
     if (artistId && (platform === 'netease' || platform === 'qq')) {
-      setInfoModal({ kind: 'artist', platform, artistId, artistName: name });
+      showInfo({ kind: 'artist', platform, artistId, artistName: name });
       return;
     }
     if (!hasDesktopAPI()) return;
@@ -177,7 +189,7 @@ export function useOverlays() {
       .resolveArtistByName(name)
       .then((res) => {
         if (res.ok && res.data) {
-          setInfoModal({
+          showInfo({
             kind: 'artist',
             platform: res.data.platform,
             artistId: res.data.id,
@@ -188,20 +200,21 @@ export function useOverlays() {
         }
       })
       .catch(() => setModeToast(`未找到歌手「${name}」`));
-  }, []);
+  }, [showInfo]);
 
-  /** 歌手页点播：追加到当前曲库队列播放（不打断歌单本身）。 */
+  /** 歌手页点播：追加到当前曲库队列播放（不打断歌单本身）。听音空间里点播时听音空间保持打开，只换歌。 */
   const playArtistTrack = useCallback((t: DesktopTrack) => {
     const songs = libraryService.getState().songs;
     const front = toFrontendTrack(t, songs.length);
     audioPlayer.playSong(front, [...songs, front]);
-    setNowPlayingOpen(false);
   }, []);
 
   return {
     contextMenu,
     contextMenuRef,
     infoModal,
+    listenPane,
+    setListenPane,
     nowPlayingOpen,
     modeToast,
     openContextMenu,

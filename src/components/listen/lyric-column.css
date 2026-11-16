@@ -1,0 +1,225 @@
+/* 听音空间的歌词阅读栏（NEBULA_UI_SYSTEM §7.2，样张 J 第 6 版）。引擎在 lib/listen/engine.ts，这里只有样式。
+   所有数值是 760px 高的栏下的值，引擎把宿主高度换算成 --lc-k（预览固定 .56），长度都乘它。
+
+   ！环境透色：不在唱的句子用 mix-blend-mode: plus-lighter 与背后的封面环境混合。
+   所以 .lc-root 及其所有祖先都不能建立层叠上下文 / 隔离组：不设 z-index、mask、filter、
+   opacity<1、contain: paint、will-change: transform / opacity。上下边缘淡出由引擎逐句算透明度，不用遮罩。 */
+
+.lc-root {
+  position: relative;
+  overflow: hidden;
+  /* 引擎按脚本（中 / 英 / 日 / 韩）与字体设置写入这些变量 */
+  font-family: var(--lc-font, serif);
+  font-weight: var(--lc-w, 600);
+  font-size: var(--lc-size, 36px);
+  line-height: var(--lc-lh, 1.32);
+  letter-spacing: var(--lc-ls, 0);
+  font-optical-sizing: auto;
+  color: #fff;
+  /* 歌词主色由 lib/environment.ts 写到根元素（--ly-a / --ly-b）；没有时退成近白 */
+  --lc-a: var(--ly-a, rgb(238 240 244));
+  --lc-ease: var(--ease-std, cubic-bezier(0.2, 0, 0, 1));
+  --lc-ui: 'SF Pro Display', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+/* 预览：不接收指针 */
+.lc-root[data-compact] {
+  pointer-events: none;
+}
+
+.lc-root .lc-lines {
+  position: absolute;
+  inset: 0;
+}
+
+.lc-root .ly-line {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: min(calc(100% - 40px * var(--lc-k, 1)), calc(760px * var(--lc-k, 1)));
+  transform-origin: 0 50%;
+  cursor: pointer;
+  transition: filter 0.5s var(--lc-ease);
+}
+.lc-root .ly-line.is-gapline {
+  cursor: default;
+}
+/* 环境透色（学 Apple Music）：不在唱的句子用「叠加变亮」和背后的画面混合，白字会透出封面环境的颜色，不再是灰白 */
+.lc-root .ly-line:not(.is-cur) {
+  mix-blend-mode: plus-lighter;
+}
+.lc-root .ly-line:hover {
+  opacity: 0.86 !important;
+  filter: none !important;
+}
+.lc-root .ly-line.is-cur:hover {
+  opacity: 1 !important;
+}
+.lc-root .ly-main {
+  display: block;
+}
+
+/* 每个字：inline-block 才能单独位移 / 放大；浮起量按字号（em）算 */
+.lc-root .u {
+  display: inline-block;
+  white-space: pre;
+  color: var(--lc-rest, #fff);
+  transform: translate3d(0, calc(var(--lift, 0) * -1em), 0) scale(var(--sc, 1));
+  transform-origin: 50% 85%;
+}
+.lc-root .u .ch {
+  display: inline-block;
+  white-space: pre;
+  transform: translate3d(0, calc(var(--lift, 0) * -1em), 0) scale(var(--sc, 1));
+  transform-origin: 50% 85%;
+}
+/* 当前句的字各自上合成层：位移按亚像素走，慢速起伏不会一格一格地跳（文字位移被对齐到整像素才会） */
+.lc-root .ly-line.is-cur .u,
+.lc-root .ly-line.is-cur .u .ch,
+.lc-root .ly-line.is-cur .ly-whole {
+  will-change: transform;
+}
+/* 扫光：已唱 → 波前 → 未唱，三段渐变随 --p 移动；--f 是羽化宽度（中日韩 42% 字宽，拉丁 26% 词宽） */
+.lc-root .is-grad .u:not(.has-ch),
+.lc-root .is-grad .u .ch {
+  color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+  --P: calc(var(--p, 0) * (100% + 2 * var(--f, 34%)) - var(--f, 34%));
+  background-image: linear-gradient(90deg, var(--sung, #fff) 0, var(--sung, #fff) calc(var(--P) - var(--f, 34%)), var(--edge) var(--P), var(--un) calc(var(--P) + var(--f, 34%)));
+}
+/* 长音的白光 */
+.lc-root .u.glow,
+.lc-root .u .ch.glow {
+  filter: drop-shadow(0 0 var(--gr, 8px) var(--gc, transparent));
+}
+/* 退场：字依次落回（每字晚 14ms） */
+.lc-root .is-settle .u,
+.lc-root .is-settle .u .ch {
+  transition: transform 0.55s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition-delay: calc(var(--k, 0) * 14ms);
+}
+
+/* 没有逐字时间的句子：整句 0.38s 内亮起，整句轻浮 */
+.lc-root .ly-whole {
+  color: var(--lc-rest, #fff);
+  transform: translate3d(0, calc(var(--lift, 0) * -1em), 0);
+  transition: color 0.38s ease;
+}
+.lc-root .is-settle .ly-whole {
+  transition:
+    color 0.38s ease,
+    transform 0.55s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* 翻译：每句下面一行小号无衬线，跟着整句亮暗，不扫色 */
+.lc-root .ly-tr {
+  display: block;
+  margin-top: 0.34em;
+  font-family: 'Noto Sans SC', var(--lc-ui);
+  font-weight: 500;
+  font-size: calc(18px * var(--lc-k, 1));
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  color: var(--lc-tr, rgba(255, 255, 255, 0.62));
+}
+.lc-root[data-tr='off'] .ly-tr {
+  display: none;
+}
+
+/* 视觉模式 · 封面色：唱过的（含已退到上面的句子）带封面色，没唱的是白 */
+.lc-root[data-scheme='accent'] .ly-line.is-past:not(.is-grad) .u,
+.lc-root[data-scheme='accent'] .ly-line.is-past .ly-whole {
+  color: var(--lc-a);
+}
+.lc-root[data-scheme='accent'] .ly-line.is-cur .ly-whole {
+  color: color-mix(in srgb, var(--lc-a) 30%, #fff);
+}
+/* 视觉模式 · 同色系：没唱的整列带封面色，唱过的变白；与封面色模式互为反色 */
+.lc-root[data-scheme='mono'] {
+  --lc-rest: color-mix(in srgb, var(--lc-a) 58%, #fff);
+  --lc-tr: color-mix(in srgb, var(--lc-a) 50%, rgba(255, 255, 255, 0.62));
+}
+.lc-root[data-scheme='mono'] .ly-line.is-past:not(.is-grad) .u,
+.lc-root[data-scheme='mono'] .ly-line.is-past .ly-whole {
+  color: #fff;
+}
+.lc-root[data-scheme='mono'] .ly-line.is-cur .ly-whole {
+  color: color-mix(in srgb, var(--lc-a) 35%, #fff);
+}
+.lc-root[data-scheme='mono'] .ly-line.is-past .ly-tr {
+  color: rgba(255, 255, 255, 0.62);
+}
+
+/* 间奏 / 前奏的三个点 */
+.lc-root .ly-gap {
+  height: calc(var(--lc-size, 36px) * var(--lc-lh, 1.32));
+  display: flex;
+  align-items: center;
+  gap: 0.32em;
+  transform-origin: 0 50%;
+}
+.lc-root .ly-gap i {
+  width: 0.2em;
+  height: 0.2em;
+  border-radius: 50%;
+  background: #fff;
+  opacity: var(--o, 0.3);
+  transform: scale(var(--ds, 0.8));
+}
+
+/* 手动浏览时右侧出现的「回到当前」：在当前句锚点下方一点 */
+.lc-root .ly-back {
+  position: absolute;
+  right: 0;
+  top: calc(var(--lc-anchor, 212px) + 9px * var(--lc-k, 1));
+  height: 30px;
+  padding: 0 12px 0 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  appearance: none;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-family: var(--lc-ui);
+  font-size: 12.5px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1;
+  color: var(--fg-2, rgba(236, 238, 241, 0.64));
+  opacity: 0;
+  pointer-events: none;
+  transition:
+    opacity 0.2s var(--lc-ease),
+    color 0.18s var(--lc-ease);
+}
+.lc-root .ly-back svg {
+  transition: transform 0.18s var(--lc-ease);
+}
+.lc-root .ly-back:hover {
+  color: #fff;
+}
+.lc-root .ly-back:hover svg {
+  transform: scale(1.07);
+}
+.lc-root .ly-back:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.55);
+  outline-offset: 2px;
+  border-radius: 8px;
+}
+.lc-root[data-browsing] .ly-back {
+  opacity: 1;
+  pointer-events: auto;
+}
+.lc-root[data-compact] .ly-back {
+  display: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lc-root .ly-line {
+    transition-duration: 0.01s !important;
+  }
+}

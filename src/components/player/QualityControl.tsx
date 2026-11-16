@@ -14,6 +14,17 @@ const FALLBACK_QUALITY_LABEL: Record<string, string> = {
 };
 
 /**
+ * 播放条上的音质代号（§9.1）：无损 = SQ、极高 = HQ；Hi-Res / 臻品等保留原名，标准、较高保留中文。
+ * 各平台标签带格式后缀（「无损 FLAC」「极高 320k」），只取第一段判断；弹层里仍显示全称。
+ */
+function qualityCode(label: string): string {
+  const head = label.trim().split(/\s+/)[0] ?? label;
+  if (head === '无损') return 'SQ';
+  if (head === '极高') return 'HQ';
+  return head;
+}
+
+/**
  * 音质：低权重文字徽章按钮；点击开关，弹层水平居中于按钮，选择后关闭，
  * 点击外部 / Escape 关闭。取代旧的 hover 弹窗（悬停间隙导致抽搐、常显关不掉）。
  */
@@ -48,11 +59,12 @@ export const QualityControl = memo(function QualityControl({
     <div className="quality-ctl" ref={rootRef}>
       <button
         className={`bp-ctrl bp-quality${open ? ' is-active' : ''}`}
-        data-tip={open ? undefined : '音质'}
+        aria-label={`音质：${qualityLabel}`}
+        data-tip={open ? undefined : `音质：${qualityLabel}`}
         onClick={() => setOpen((o) => !o)}
       >
-        {/* 完整显示中文标签，不截断（NEBULA_UI_SYSTEM §9.1） */}
-        <span className="quality-badge">{qualityLabel}</span>
+        {/* 按钮上写代号，悬停提示与弹层给全称（NEBULA_UI_SYSTEM §9.1） */}
+        <span className="quality-badge">{qualityCode(qualityLabel)}</span>
       </button>
       {open && (
         <div className="quality-pop glass-g3">

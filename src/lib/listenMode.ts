@@ -58,7 +58,7 @@ const MOVE_PX = 6;
 const MOVE_WINDOW_MS = 400;
 const CHECK_MS = 250;
 /** 这些弹层存在时不进入聆听（正在操作）。 */
-const BUSY_SELECTOR = '.queue-pop, .quality-pop, .vol-pop, .ctx-menu, .info-modal, .now-playing-overlay';
+const BUSY_SELECTOR = '.queue-pop, .quality-pop, .vol-pop, .ctx-menu, .info-modal, .ls-root.is-shown';
 
 /**
  * 「散开」：把屏幕坐标 (x, y) 处的卡片中心向外推。返回推开后的位置和推开量（0~1，用于压暗）。

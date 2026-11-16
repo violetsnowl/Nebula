@@ -383,6 +383,18 @@
   font-variant-numeric: tabular-nums;
 }
 
+.mdl-cmt.no-av {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.mdl-cmt.no-av .mdl-cmt-like {
+  grid-column: 2;
+}
+
+.mdl-cmt.no-av .mdl-cmt-tx {
+  grid-column: 1 / -1;
+}
+
 .mdl-cmt-tx {
   grid-column: 2 / span 2;
   font-size: 14px;

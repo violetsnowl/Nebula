@@ -597,3 +597,32 @@
     animation: none;
   }
 }
+
+/* 设置 › 歌词 › 听音空间的实时预览（§9.9）：当前封面模糊作底，引擎紧凑模式唱三句。
+   预览块不设 z-index / filter / opacity，歌词的环境透色要和底图混合 */
+.sd-panel .lsp-prev {
+  position: relative;
+  height: 150px;
+  border-radius: 12px;
+  overflow: hidden;
+  background: var(--ebase);
+}
+.sd-panel .lsp-prev-bg {
+  position: absolute;
+  inset: -30px;
+  background-size: cover;
+  background-position: center;
+  filter: blur(20px) brightness(0.42) saturate(1.2);
+}
+.sd-panel .lsp-prev-ly {
+  position: absolute;
+  inset: 0;
+}
+.sd-panel .lsp-prev-tag {
+  position: absolute;
+  right: 10px;
+  bottom: 8px;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  pointer-events: none;
+}

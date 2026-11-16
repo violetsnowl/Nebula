@@ -107,6 +107,12 @@ class AudioPlayer {
     return { ...this.state };
   }
 
+  /** 当前播放位置（秒）：直接读音频元素，比 state.currentTime（timeupdate 约 4Hz）更实时；没有音源时退回 state。 */
+  position(): number {
+    if (!this.el.getAttribute('src')) return this.state.currentTime;
+    return this.el.currentTime || 0;
+  }
+
   /** 播放指定歌曲；可选传入整个队列用于上一首/下一首。 */
   playSong(track: Track, queue?: Track[]): void {
     this.transientBackup = null;

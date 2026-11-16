@@ -13,6 +13,8 @@ import { paletteFromBaseColor } from '../lib/coverColors';
 import { SideDock } from './dock/SideDock';
 import { DOCK_PLATFORM_ORDER, platformMeta } from './platforms';
 import { IconCheck, IconChevronLeft, IconChevronRight, IconExternal, IconImage, IconRefresh } from './icons';
+import { setListenSettings as setListenSpaceSettings, useListenSettings as useListenSpaceSettings } from '../lib/listen/settings';
+import { ListenPreview } from './listen/ListenPreview';
 import './dock/right-panel.css';
 
 export type DockSettingsPage = 'lyrics' | 'bg' | 'look';
@@ -1007,6 +1009,8 @@ export const AccountDock = memo(function AccountDock({
 
   useEffect(() => clearNavTimers, [clearNavTimers]);
 
+  // 听音空间的歌词设置（§9.9）：与星云歌词的设置分开存
+  const lsSettings = useListenSpaceSettings();
   const loggedCount = DOCK_PLATFORM_ORDER.filter((p) => accounts[p]?.loggedIn).length;
   const avatarUrl =
     DOCK_PLATFORM_ORDER.map((p) => accounts[p]).find((a) => a?.loggedIn && a.avatarUrl)?.avatarUrl ?? null;
@@ -1113,7 +1117,7 @@ export const AccountDock = memo(function AccountDock({
 
   const lyricsPage = (
     <>
-      <div className="g-title">预览</div>
+      <div className="g-title">星云上的歌词</div>
       <LyricPreview settings={lyricSettings} maxFont={maxFont} active={openRow === 'settings'} lines={lyricLines} />
       <div className="g-title">文字</div>
       <div className="group">
@@ -1268,6 +1272,42 @@ export const AccountDock = memo(function AccountDock({
           </>
         )}
       </div>
+      {/* 听音空间（NEBULA_UI_SYSTEM §9.9）：两种视觉模式互为反色、字体、翻译默认值；预览用同一个引擎实时唱 */}
+      <div className="g-title">听音空间</div>
+      <ListenPreview lines={lyricLines} settings={lsSettings} />
+      <div className="group rp-group-gap">
+        <div className="row">
+          <span className="lbl">歌词着色</span>
+          <Seg
+            label="听音空间歌词着色"
+            value={lsSettings.scheme}
+            options={[
+              { value: 'accent', label: '封面色' },
+              { value: 'mono', label: '同色系' },
+            ]}
+            onChange={(v) => setListenSpaceSettings({ scheme: v })}
+          />
+        </div>
+        <div className="row">
+          <span className="lbl">字体</span>
+          <Seg
+            label="听音空间歌词字体"
+            value={lsSettings.font}
+            options={[
+              { value: 'serif', label: '衬线' },
+              { value: 'sans', label: '无衬线' },
+            ]}
+            onChange={(v) => setListenSpaceSettings({ font: v })}
+          />
+        </div>
+        <div className="row">
+          <span className="lbl">
+            翻译<small>外文歌词下面显示中文；听音空间里也能随时开关</small>
+          </span>
+          <Tg checked={lsSettings.translation} onChange={(b) => setListenSpaceSettings({ translation: b })} label="听音空间显示翻译" />
+        </div>
+      </div>
+      <p className="hint-line">封面色：唱过的字染上封面色。同色系：没唱的字带封面色，唱过的变白。</p>
     </>
   );
 

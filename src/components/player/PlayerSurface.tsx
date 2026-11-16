@@ -6,7 +6,7 @@ export type PlayerVariant = 'compact' | 'expanded';
 /**
  * PlayerSurface：Bottom Player 与 Listening Space 的**单一身份**根元素。
  * compact / expanded 只切换 class 与内部组合，DOM 根不卸载重挂（Phase 2 提供 expanded 内容）。
- * 材质：G1 主玻璃（NEBULA_UI_SYSTEM §3.3），折射滤镜由 GlassManager 按元素尺寸生成。
+ * 材质：G1 主玻璃（NEBULA_UI_SYSTEM §3.3），折射滤镜由 GlassManager 按元素尺寸生成；外观见 §9.1。
  */
 export const PlayerSurface = memo(function PlayerSurface({
   variant,
@@ -19,6 +19,8 @@ export const PlayerSurface = memo(function PlayerSurface({
   useGlass(ref, 'g1');
   return (
     <section ref={ref} className={`player-surface glass-g1 is-${variant}`}>
+      {/* 中间雾层（§9.1）：与 G1 材质（::before）是兄弟层，在内容之下，挡住背后卡片上的字 */}
+      <i className="bp-haze" aria-hidden="true" />
       {children}
     </section>
   );

@@ -320,7 +320,7 @@ export class NeteaseAdapter implements PlatformAdapter {
         (list ?? []).map((c) => ({
           id: String(c.commentId ?? c.user?.userId ?? ''),
           nickname: c.user?.nickname ?? '匿名用户',
-          avatarUrl: c.user?.avatarUrl ?? '',
+          avatarUrl: String(c.user?.avatarUrl ?? '').replace(/^http:\/\//, 'https://'),
           content: c.content ?? '',
           likedCount: c.likedCount ?? 0,
         }));

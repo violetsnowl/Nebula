@@ -1,4 +1,5 @@
 import { hslToRgb as hslToRgbUnit, rgbToHsl as rgbToHslUnit } from './coverColors';
+import { lyricPaletteFrom } from './listen/palette';
 
 /** coverColors 的色相单位是 0–1；本模块统一用角度（0–360）。 */
 const hslToRgb = (hDeg: number, s: number, l: number) => hslToRgbUnit(hDeg / 360, s, l) as [number, number, number];
@@ -9,7 +10,7 @@ const rgbToHsl = (r: number, g: number, b: number): [number, number, number] => 
 
 /**
  * 环境光（docs/design/NEBULA_UI_SYSTEM.md §4）：从当前背景媒体取色，生成三团环境光 + 底色 + 强调色。
- * 写入根节点 CSS 变量（--e1 / --e2 / --e3 / --ebase / --acc / --env-lum / --tint-adapt），
+ * 写入根节点 CSS 变量（--e1 / --e2 / --e3 / --ebase / --acc / --ly-a / --ly-b / --env-lum / --tint-adapt），
  * 由背景层、玻璃材质、进度条等消费端读取；本模块不触碰歌词或任何组件状态。
  */
 
@@ -206,6 +207,10 @@ export function applyEnvironment(env: EnvPalette, envMode: boolean): void {
   const lum = backgroundLuminance(env, envMode);
   root.setProperty('--e1', css(env.e1));
   root.setProperty('--e2', css(env.e2));
+  // 听音空间歌词阅读栏的主色 / 第二色（§7.2）：与环境光同时写，中性兜底（灰色封面）自然退成近白
+  const ly = lyricPaletteFrom(css(env.e1), css(env.e2));
+  root.setProperty('--ly-a', ly.a);
+  root.setProperty('--ly-b', ly.b);
   root.setProperty('--e3', css(env.e3));
   root.setProperty('--ebase', css(env.base));
   root.setProperty('--acc', css(env.acc));

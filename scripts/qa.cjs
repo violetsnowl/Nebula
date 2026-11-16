@@ -502,8 +502,99 @@ async function main() {
     const popFilter = pop ? getComputedStyle(pop).backdropFilter : '';
     return { h0: Math.round(h0), h1: Math.round(h1), inMeta, popFilter };
   });
-  const barLayoutOk = barLayout.h0 === barLayout.h1 && barLayout.inMeta && !/url\(/.test(barLayout.popFilter);
+  const barLayoutOk =
+    barLayout.h0 === 72 && barLayout.h0 === barLayout.h1 && barLayout.inMeta && !/url\(/.test(barLayout.popFilter);
   log('状态提示与弹层材质', JSON.stringify(barLayout));
+
+  // 10a+++++++. 播放条新规格（NEBULA_UI_SYSTEM §9.1）：几何、回到中心的位置、平时不显示时间、
+  // 悬停播放条出时间、悬停细线出时间点气泡、封面带 data-np-cover、播放条上不再有来源平台文字
+  await page.mouse.move(700, 250);
+  await page.waitForTimeout(500);
+  const barGeo = await page.evaluate(() => {
+    const bar = document.querySelector('.player-surface');
+    const btn = document.querySelector('.center-btn');
+    const b = bar.getBoundingClientRect();
+    const c = btn.getBoundingClientRect();
+    const cover = document.querySelector('.bp-cover[data-np-cover]');
+    const cr = cover ? cover.getBoundingClientRect() : null;
+    return {
+      w: Math.round(b.width),
+      expectW: Math.round(Math.min(920, Math.max(560, innerWidth * 0.56))),
+      bottom: Math.round(innerHeight - b.bottom),
+      gap: Math.round(c.left - b.right),
+      dy: Math.round(c.top + c.height / 2 - (b.top + b.height / 2)),
+      cover: cr ? Math.round(cr.width) : 0,
+      noSrc: !document.querySelector('.bp-artist-src'),
+      timeIdle: Number(getComputedStyle(document.querySelector('.bp-time')).opacity),
+      trackH: document.querySelector('.bp-progress-track').getBoundingClientRect().height,
+      leftTimeIdle: Number(getComputedStyle(document.querySelector('.bp-left-time')).opacity),
+    };
+  });
+  const barBox = await page.locator('.player-surface').boundingBox();
+  await page.mouse.move(barBox.x + barBox.width * 0.45, barBox.y + barBox.height * 0.55);
+  await page.waitForTimeout(500);
+  const barHover = await page.evaluate(() => ({
+    time: Number(getComputedStyle(document.querySelector('.bp-time')).opacity),
+    trackH: document.querySelector('.bp-progress-track').getBoundingClientRect().height,
+    text: document.querySelector('.bp-time').textContent,
+  }));
+  const hasDur = await page.evaluate(() => window.__nebula.player.getState().duration > 0);
+  const trackBox = await page.locator('.player-surface .bp-progress-track').boundingBox();
+  await page.mouse.move(trackBox.x + trackBox.width * 0.3, trackBox.y + trackBox.height / 2);
+  await page.waitForTimeout(250);
+  const bubbleText = await page.evaluate(() => document.querySelector('.bp-seek-bubble')?.textContent ?? null);
+  await page.mouse.move(700, 250);
+  await page.waitForTimeout(300);
+  const bubbleGone = await page.evaluate(() => !document.querySelector('.bp-seek-bubble'));
+  const barNewOk =
+    Math.abs(barGeo.w - barGeo.expectW) <= 1 &&
+    barGeo.bottom === 20 &&
+    barGeo.gap === 14 &&
+    Math.abs(barGeo.dy) <= 1 &&
+    barGeo.cover === 48 &&
+    barGeo.noSrc &&
+    barGeo.timeIdle === 0 &&
+    barGeo.leftTimeIdle === 0 &&
+    barGeo.trackH === 2 &&
+    barHover.time > 0.95 &&
+    barHover.trackH === 3 &&
+    /^\d+:\d\d \/ \d+:\d\d$/.test(barHover.text) &&
+    (!hasDur || /^\d+:\d\d$/.test(bubbleText ?? '')) &&
+    bubbleGone;
+  log('播放条新规格', JSON.stringify({ barGeo, barHover, bubbleText, bubbleGone }));
+
+  // 10a++++++++. 听音空间（NEBULA_UI_SYSTEM §9.9）：点播放条封面进入（.app[data-ls]、听音空间显示、播放条缩成胶囊、
+  // 播放条封面让位）；大封面落在位置槽上；Esc 收起后大封面卸下、播放条封面复原（同帧交接，不能留在隐藏状态）
+  const lsOpen = await page.evaluate(async () => {
+    const cover = document.querySelector('.bp-cover[data-np-cover]');
+    if (!cover) return { ok: false };
+    cover.click();
+    await new Promise((r) => setTimeout(r, 1000));
+    const hero = document.querySelector('.ls-hero');
+    const slot = document.querySelector('.ls-slot');
+    const hr = hero ? hero.getBoundingClientRect() : null;
+    const sr = slot ? slot.getBoundingClientRect() : null;
+    return {
+      ok: true,
+      dataLs: document.querySelector('.app').hasAttribute('data-ls'),
+      shown: !!document.querySelector('.ls-root.is-shown'),
+      heroOnSlot: !!hr && !!sr && Math.abs(hr.left - sr.left) < 1.5 && Math.abs(hr.top - sr.top) < 1.5 && Math.abs(hr.width - sr.width) < 1.5,
+      barW: Math.round(document.querySelector('.player-surface').getBoundingClientRect().width),
+      coverHidden: getComputedStyle(cover).visibility === 'hidden',
+    };
+  });
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(1000);
+  const lsClosed = await page.evaluate(() => ({
+    dataLs: document.querySelector('.app').hasAttribute('data-ls'),
+    root: !!document.querySelector('.ls-root'),
+    hero: !!document.querySelector('.ls-hero'),
+    coverVisible: getComputedStyle(document.querySelector('.bp-cover[data-np-cover]')).visibility !== 'hidden',
+  }));
+  const listenOk =
+    lsOpen.ok && lsOpen.dataLs && lsOpen.shown && lsOpen.heroOnSlot && lsOpen.barW <= 641 && lsOpen.coverHidden &&
+    !lsClosed.dataLs && !lsClosed.root && !lsClosed.hero && lsClosed.coverVisible;
+  log('听音空间进出', JSON.stringify({ lsOpen, lsClosed }));
 
   // 10b. 点击卡片播放
   const cardCenter = await page.evaluate(() => {
@@ -753,6 +844,7 @@ async function main() {
   await browser.close();
 
   const failed =
+    !listenOk ||
     stats.total !== 1000 ||
     stats.mounted > 60 ||
     stats.onScreen < 8 ||
@@ -792,12 +884,14 @@ async function main() {
     !seekOk ||
     !volOk ||
     !barLayoutOk ||
+    !barNewOk ||
     !localOk.title ||
     !localOk.source ||
     !localOk.audio ||
     errors.length > 0;
 
   const diagnostics = {
+    listenSpace: !listenOk,
     total: stats.total !== 1000,
     mounted: stats.mounted > 60,
     onScreen: stats.onScreen < 8 || stats.onScreen > 30,
@@ -823,6 +917,7 @@ async function main() {
     seek: !seekOk,
     volHover: !volOk,
     barLayout: !barLayoutOk,
+    barSpec: !barNewOk,
     localImport: !localOk.title || !localOk.source || !localOk.audio,
     consoleErrors: errors.length > 0,
   };

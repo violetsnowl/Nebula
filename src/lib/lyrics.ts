@@ -5,6 +5,11 @@ export interface LyricWordUI {
   startMs: number;
   /** Word duration ms. */
   duration: number;
+  /**
+   * 原文里这个词后面是否带空格（解析时 text 会 trim 掉空格，英文就靠它还原词间空格）。
+   * undefined = 来源没有这个信息（老数据 / 合成数据）。
+   */
+  space?: boolean;
 }
 
 export interface LyricLineUI {
@@ -64,10 +69,11 @@ export function parseYrcText(raw: string): Array<{ timeMs: number; duration: num
         const words: LyricWordUI[] = [];
         let offset = 0;
         for (const c of chunks) {
-          const text = (c.tx ?? '').replace(/[♪♫♬♩𝄞𝄢♭♮]/g, '').trim();
+          const raw = (c.tx ?? '').replace(/[♪♫♬♩𝄞𝄢♭♮]/g, '');
+          const text = raw.trim();
           if (!text) continue;
           if (typeof c.t === 'number') offset = c.t;
-          words.push({ text, startMs: obj.t + offset, duration: c.d ?? 0 });
+          words.push({ text, startMs: obj.t + offset, duration: c.d ?? 0, space: /\s$/.test(raw) });
           if (typeof c.d === 'number') offset += c.d;
         }
         if (words.length) out.push({ timeMs: obj.t, duration: 0, words });
@@ -91,13 +97,14 @@ export function parseYrcText(raw: string): Array<{ timeMs: number; duration: num
     const words: LyricWordUI[] = [];
     let m: RegExpExecArray | null;
     while ((m = WORD_GROUP.exec(t)) !== null) {
-      const text = (m[4] ?? '').replace(/[♪♫♬♩𝄞𝄢♭♮]/g, '').trim();
+      const raw = (m[4] ?? '').replace(/[♪♫♬♩𝄞𝄢♭♮]/g, '');
+      const text = raw.trim();
       if (!text) continue;
       const ws = Number(m[1]);
       const wd = Number(m[2]);
       // YRC 字时间戳是绝对毫秒；QRC 是相对行首偏移 → 启发式归一
       const start = lineStart != null && ws < lineStart ? lineStart + ws : ws;
-      words.push({ text, startMs: start, duration: wd });
+      words.push({ text, startMs: start, duration: wd, space: /\s$/.test(raw) });
     }
     if (!words.length) {
       if (lineStart == null) continue;
@@ -137,6 +144,8 @@ export function mergeWordLyrics(lines: LyricLineUI[], rawYrc: string): LyricLine
       .toLowerCase()
       .replace(/[\s，。！？、,.!?'"·\-—–()（）]/g, '');
   const joinWords = (words: LyricWordUI[]): string => {
+    // 有原文空格信息时按它拼（「stronger.」这类带标点的英文词以前会被当成非拉丁、空格全丢）
+    if (words.some((w) => w.space !== undefined)) return words.map((w) => w.text + (w.space ? ' ' : '')).join('').trim();
     const latin = words.every((w) => /^[A-Za-z0-9'’\- ]+$/.test(w.text));
     return latin ? words.map((w) => w.text).join(' ') : words.map((w) => w.text).join('');
   };
@@ -199,14 +208,14 @@ export function alignWordsToText(lines: LyricLineUI[]): LyricLineUI[] {
     const newWords: LyricWordUI[] = [];
     let charOffset = 0;
 
-    for (const lrcWord of lrcWords) {
-      if (!lrcWord) continue;
+    const kept = lrcWords.filter(Boolean);
+    kept.forEach((lrcWord, i) => {
       const wordLen = lrcWord.length;
       const startMs = line.timeMs + dur * (charOffset / wordsConcat.length);
       const duration = dur * (wordLen / wordsConcat.length);
-      newWords.push({ text: lrcWord, startMs, duration });
+      newWords.push({ text: lrcWord, startMs, duration, space: i < kept.length - 1 });
       charOffset += wordLen;
-    }
+    });
 
     return { ...line, words: newWords };
   });

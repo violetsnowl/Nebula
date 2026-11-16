@@ -322,7 +322,7 @@ export class QqAdapter implements PlatformAdapter {
         (list ?? []).map((c) => ({
           id: String(c.commentid ?? ''),
           nickname: c.rootcommentnick || c.nick || '匿名用户',
-          avatarUrl: c.avatarurl ?? '',
+          avatarUrl: String(c.avatarurl ?? '').replace(/^http:\/\//, 'https://'),
           content: c.rootcommentcontent || c.middlecommentcontent || '',
           likedCount: c.praisenum ?? c.rootcommentlikenum ?? 0,
         }));

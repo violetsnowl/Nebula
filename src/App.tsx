@@ -120,6 +120,8 @@ export default function App() {
     contextMenu,
     contextMenuRef,
     infoModal,
+    listenPane,
+    setListenPane,
     nowPlayingOpen,
     modeToast,
     openContextMenu,
@@ -139,10 +141,7 @@ export default function App() {
   // 浮层稳定回调（供 memo 区块与后续领域 hook 使用）
   const openNowPlaying = useCallback(() => setNowPlayingOpen(true), [setNowPlayingOpen]);
   const closeNowPlaying = useCallback(() => setNowPlayingOpen(false), [setNowPlayingOpen]);
-  const togglePlay = useCallback(() => audioPlayer.toggle(), []);
-  const playPrev = useCallback(() => audioPlayer.prev(), []);
-  const playNext = useCallback(() => audioPlayer.next(), []);
-  const seekTo = useCallback((t: number) => audioPlayer.seek(t), []);
+  const closeListenPane = useCallback(() => setListenPane(null), [setListenPane]);
   const openWallpapers = useCallback(() => {
     if (hasDesktopAPI()) void window.nebulaAPI!.wallpaperOpen();
     else setWallpaperOpen(true);
@@ -239,14 +238,12 @@ export default function App() {
     hoveredId,
     visibleIds,
     failedIds,
-    liked,
     metrics,
     effectiveCards,
     registerEl,
     handleHoverChange,
     handleCardPlay,
     handleReset,
-    handleToggleLike,
     beginImport,
     resetImportState,
   } = stage;
@@ -409,7 +406,6 @@ export default function App() {
   const playSongFromList = useCallback(
     (index: number) => {
       playlist.playFromList(index);
-      setNowPlayingOpen(false);
       handleReset();
     },
     [playlist, handleReset],
@@ -417,7 +413,6 @@ export default function App() {
 
   const playPlaylistFromStart = useCallback(() => {
     playlist.playFromStart();
-    setNowPlayingOpen(false);
     handleReset();
   }, [playlist, handleReset]);
 
@@ -567,6 +562,7 @@ export default function App() {
           ref={appRef}
           data-no-song={playerState.song ? undefined : ''}
           data-empty={emptyPhase === 'off' ? undefined : emptyPhase}
+          data-ls={nowPlayingOpen ? '' : undefined}
         >
       <BackgroundLayer setting={effectiveBgSetting} coverMode={bgSetting.type === 'cover' ? bgCoverMode : undefined} />
 
@@ -709,20 +705,16 @@ export default function App() {
 
       <OverlayStack
         nowPlayingOpen={nowPlayingOpen}
-        liked={liked}
         lines={lyricLines}
-        translateOn={lyricTranslationEnabled}
+        listenPane={listenPane}
+        onListenPaneBack={closeListenPane}
+        onOpenSongDetail={openSongDetailModal}
+        onOpenArtistByName={openArtistByName}
         wallpaperOpen={wallpaperOpen}
         infoModal={infoModal}
         modeToast={modeToast}
         contextMenu={contextMenu}
         onCloseNowPlaying={closeNowPlaying}
-        onTogglePlay={togglePlay}
-        onPrev={playPrev}
-        onNext={playNext}
-        onToggleLike={handleToggleLike}
-        onToggleTranslate={toggleTranslation}
-        onSeek={seekTo}
         onCloseWallpaper={closeWallpaper}
         onApplyWallpaper={handleWallpaperApply}
         onCloseInfo={closeInfo}

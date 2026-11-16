@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import type { Track } from '../lib/catalog';
 import { useOverlayScrollbar } from '../lib/overlayScrollbar';
 import { hasDesktopAPI, toBackendTrack } from '../lib/playlist/ipcClient';
@@ -24,6 +24,12 @@ function fmtDuration(sec?: number): string {
   return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
 }
 
+/**
+ * 呈现方式（2026-11-16，NEBULA_UI_SYSTEM §9.9）：同一套面板既做信息弹窗（modal），
+ * 也在听音空间的右栏原地显示（pane）——右栏没有遮罩、玻璃外壳、关闭叉，左上角是「‹ 歌词」返回，Esc 由听音空间处理。
+ */
+const PresentCtx = createContext<'modal' | 'pane'>('modal');
+
 function ModalShell({
   width,
   head,
@@ -40,10 +46,12 @@ function ModalShell({
   /** 内容量差别大的弹窗（歌手页切页签）给个最小高度，避免居中的弹窗在页签间上下跳。 */
   minHeight?: number;
 }) {
+  const mode = useContext(PresentCtx);
   // 弹窗 = G3，但不注册边缘折射（#103）：背后是压暗 + 模糊的遮罩，折射几乎看不见；
   // 而打开评论弹窗时桌面版出现过整窗黑屏（遮罩的背景滤镜叠在折射滤镜下面），去掉这条路径
-  // §9.4：Esc 关闭；关闭后焦点回到打开它的元素
+  // §9.4：Esc 关闭；关闭后焦点回到打开它的元素（右栏模式下 Esc 归听音空间）
   useEffect(() => {
+    if (mode === 'pane') return;
     const opener = document.activeElement as HTMLElement | null;
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
@@ -53,12 +61,26 @@ function ModalShell({
       window.removeEventListener('keydown', onKey);
       if (opener && document.contains(opener)) opener.focus({ preventScroll: true });
     };
-  }, [onClose]);
+  }, [onClose, mode]);
 
   // 正文区是唯一的滚动容器；悬浮滚动条挂在它的父元素（弹窗本身，已是 position: relative）上
   const bodyRef = useRef<HTMLDivElement>(null);
   useOverlayScrollbar(bodyRef);
 
+  if (mode === 'pane') {
+    return (
+      <div className="lp-pane">
+        <button type="button" className="lp-back" onClick={onClose}>
+          <IconChevronLeft size={16} />
+          歌词
+        </button>
+        {head}
+        <div className="lp-pane-body" ref={bodyRef}>
+          {children}
+        </div>
+      </div>
+    );
+  }
   const style = { '--mdl-w': `${width}px`, ...(minHeight ? { '--mdl-min-h': `${minHeight}px` } : null) } as CSSProperties;
   return (
     <div className="info-overlay">
@@ -94,6 +116,7 @@ function HeroBand({
   by,
   meta,
   children,
+  self,
 }: {
   kicker: string;
   title: string;
@@ -103,7 +126,25 @@ function HeroBand({
   by?: ReactNode;
   meta?: ReactNode;
   children?: ReactNode;
+  /** 正在播放的这首歌本身（歌曲详情）：右栏里不重复显示封面，左侧已经有大封面。 */
+  self?: boolean;
 }) {
+  const mode = useContext(PresentCtx);
+  if (mode === 'pane') {
+    // 右栏：没有模糊铺底的大标题区，只留小封面（歌手 / 专辑）+ 小标题 + 标题 + 元信息
+    return (
+      <div className="lp-head">
+        {!self && cover && <img className={`lp-head-cv${round ? ' is-round' : ''}`} src={cover} alt="" draggable={false} />}
+        <div className="lp-head-text">
+          <div className="lp-kicker">{self ? '关于这首歌' : kicker}</div>
+          <h3 className="lp-title">{title}</h3>
+          {by}
+          {meta && <div className="mdl-meta">{meta}</div>}
+          {children}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="mdl-band">
       {cover && <div className="mdl-band-bg" style={bgUrl(cover)} aria-hidden="true" />}
@@ -201,14 +242,12 @@ interface CommentItem {
 }
 
 // 放在组件外：写在 CommentsPanel 里每次渲染都是新的组件类型，整列评论会被卸载重建
+// 头像（2026-11-16，用户反馈）：拿到就显示；拿不到或加载失败就不显示，不放占位圆（满屏同一个占位很诡异）
 function CommentRow({ c }: { c: CommentItem }) {
+  const [hasAv, setHasAv] = useState(!!c.avatarUrl);
   return (
-    <div className="mdl-cmt">
-      {c.avatarUrl ? (
-        <img className="mdl-cmt-av" src={c.avatarUrl} alt="" loading="lazy" />
-      ) : (
-        <span className="mdl-cmt-av is-ph" />
-      )}
+    <div className={`mdl-cmt${hasAv ? '' : ' no-av'}`}>
+      {hasAv && <img className="mdl-cmt-av" src={c.avatarUrl} alt="" loading="lazy" onError={() => setHasAv(false)} />}
       <span className="mdl-cmt-nm">{c.nickname}</span>
       <span className="mdl-cmt-like">
         <IconHeart size={13} />
@@ -425,7 +464,7 @@ function SongDetailPanel({
     .filter(Boolean)
     .join(' · ');
 
-  const head = <HeroBand kicker="歌曲" title={detail?.title || track.title} cover={albumCover} by={by} meta={meta} />;
+  const head = <HeroBand kicker="歌曲" title={detail?.title || track.title} cover={albumCover} by={by} meta={meta} self />;
 
   return (
     <ModalShell width={600} head={head} onClose={onClose}>
@@ -710,6 +749,46 @@ function AlbumPanel({
       )}
     </ModalShell>
   );
+}
+
+export interface InfoPaneState {
+  kind: 'comments' | 'song' | 'artist' | 'album';
+  track?: Track;
+  platform?: string;
+  artistId?: string;
+  artistName?: string;
+  albumId?: string;
+  albumName?: string;
+}
+
+/**
+ * 听音空间右栏（NEBULA_UI_SYSTEM §9.9）：和信息弹窗同一套面板，以右栏方式原地显示。
+ * 打开歌手 / 专辑 / 评论的回调由外部路由（听音空间打开时，useOverlays 会把它们送到右栏而不是弹窗）。
+ */
+export function InfoPane({
+  pane,
+  onBack,
+  onOpenArtist,
+  onOpenAlbum,
+  onOpenComments,
+  onPlayArtistTrack,
+}: {
+  pane: InfoPaneState;
+  onBack: () => void;
+  onOpenArtist: (platform: string, artistId: string, name: string) => void;
+  onOpenAlbum: (platform: string, albumId: string, albumName: string, artistName?: string) => void;
+  onOpenComments: (track: Track) => void;
+  onPlayArtistTrack: (track: DesktopTrack) => void;
+}) {
+  let body: ReactNode = null;
+  if (pane.kind === 'comments' && pane.track) body = <CommentsPanel track={pane.track} onClose={onBack} />;
+  else if (pane.kind === 'song' && pane.track)
+    body = <SongDetailPanel track={pane.track} onOpenArtist={onOpenArtist} onOpenAlbum={onOpenAlbum} onOpenComments={onOpenComments} onClose={onBack} />;
+  else if (pane.kind === 'artist' && pane.platform && pane.artistId)
+    body = <ArtistPanel platform={pane.platform} artistId={pane.artistId} artistName={pane.artistName ?? ''} onOpenAlbum={onOpenAlbum} onPlayTrack={onPlayArtistTrack} onClose={onBack} />;
+  else if (pane.kind === 'album' && pane.platform && pane.albumId)
+    body = <AlbumPanel platform={pane.platform} albumId={pane.albumId} albumName={pane.albumName ?? ''} onPlayTrack={onPlayArtistTrack} onClose={onBack} />;
+  return <PresentCtx.Provider value="pane">{body}</PresentCtx.Provider>;
 }
 
 export function InfoModals({

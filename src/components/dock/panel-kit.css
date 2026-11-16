@@ -218,9 +218,12 @@
 
 /* 分段控件（§9.5）：滑轨 + 一块会滑动的选中滑块（P4 动效回归）。
    滑块位置 / 宽度由组件量出选中按钮后写入 --gx / --gw；过渡用果冻曲线，略带回弹但不晃。 */
+/* 各段等宽（2026-11-16，用户反馈：「衬线 / 无衬线」一宽一窄不对称）：按最宽的一段撑开，滑块随之等宽 */
 .sd-panel .seg {
   position: relative;
-  display: inline-flex;
+  display: inline-grid;
+  grid-auto-flow: column;
+  grid-auto-columns: 1fr;
   flex: none;
   padding: 3px;
   border-radius: 11px;
@@ -286,7 +289,7 @@
 }
 
 .sd-panel .seg.wide {
-  display: flex;
+  display: grid;
 }
 
 .sd-panel .seg.wide button {

@@ -9,7 +9,7 @@
 const NEAR_RADIUS = 150;
 
 /** 只有指针落在这些元素上时才更新邻近状态（沿用 P2 验收时的行为：在星云空白处移动不会让卡片上浮）。 */
-const PROXIMITY_GATE = '.glass, .glass-btn, .music-card, .search-drop, .now-playing';
+const PROXIMITY_GATE = '.glass, .glass-btn, .music-card, .search-drop';
 
 let initialized = false;
 const proximityTargets = new Set<HTMLElement>();

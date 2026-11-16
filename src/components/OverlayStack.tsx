@@ -5,33 +5,30 @@ import type { DesktopTrack, DesktopWallpaperItem, DesktopWallpaperSetResult } fr
 import type { ContextMenuState, InfoModalState } from '../hooks/overlays/useOverlays';
 import { hasDesktopAPI } from '../lib/playlist/ipcClient';
 import { trackShareLink } from '../lib/shareLink';
-import { NowPlayingPanel } from './NowPlayingPanel';
+import { ListenSpace } from './listen/ListenSpace';
 import { WallpaperPicker } from './WallpaperPicker';
-import { InfoModals } from './InfoModals';
+import { InfoModals, type InfoPaneState } from './InfoModals';
 
 interface OverlayStackProps {
   nowPlayingOpen: boolean;
-  liked: boolean;
   lines: LyricLineUI[];
-  translateOn: boolean;
+  /** 听音空间右栏正在显示的详情（null = 歌词）。 */
+  listenPane: InfoPaneState | null;
+  onListenPaneBack: () => void;
+  onOpenSongDetail: () => void;
+  onOpenArtistByName: (name: string, track?: Track) => void;
   wallpaperOpen: boolean;
   infoModal: InfoModalState | null;
   modeToast: string;
   contextMenu: ContextMenuState | null;
   onCloseNowPlaying: () => void;
-  onTogglePlay: () => void;
-  onPrev: () => void;
-  onNext: () => void;
-  onToggleLike: () => void;
-  onToggleTranslate: () => void;
-  onSeek: (t: number) => void;
   onCloseWallpaper: () => void;
   onApplyWallpaper: (item: DesktopWallpaperItem, result: DesktopWallpaperSetResult) => void;
   onCloseInfo: () => void;
   /** 歌曲详情「更多 › 评论」：切到这首歌的评论弹窗。 */
   onOpenComments: (track: Track) => void;
   onOpenArtist: (platform: string, artistId: string, name: string) => void;
-  onOpenAlbum: (platform: string, albumId: string, albumName: string) => void;
+  onOpenAlbum: (platform: string, albumId: string, albumName: string, artistName?: string) => void;
   onPlayArtistTrack: (t: DesktopTrack) => void;
   onCloseContextMenu: () => void;
   onInsertNext: (track: Track) => void;
@@ -122,20 +119,16 @@ function ContextMenu({
  */
 export const OverlayStack = memo(function OverlayStack({
   nowPlayingOpen,
-  liked,
   lines,
-  translateOn,
+  listenPane,
   wallpaperOpen,
   infoModal,
   modeToast,
   contextMenu,
   onCloseNowPlaying,
-  onTogglePlay,
-  onPrev,
-  onNext,
-  onToggleLike,
-  onToggleTranslate,
-  onSeek,
+  onListenPaneBack,
+  onOpenSongDetail,
+  onOpenArtistByName,
   onCloseWallpaper,
   onApplyWallpaper,
   onCloseInfo,
@@ -152,20 +145,20 @@ export const OverlayStack = memo(function OverlayStack({
 }: OverlayStackProps) {
   return (
     <>
-      {nowPlayingOpen && (
-        <NowPlayingPanel
-          liked={liked}
-          lines={lines}
-          translateOn={translateOn}
-          onClose={onCloseNowPlaying}
-          onTogglePlay={onTogglePlay}
-          onPrev={onPrev}
-          onNext={onNext}
-          onToggleLike={onToggleLike}
-          onToggleTranslate={onToggleTranslate}
-          onSeek={onSeek}
-        />
-      )}
+      {/* 听音空间（§9.9）：常驻挂载，自己管理进入 / 收起的封面飞行，收起落地后才卸下内容 */}
+      <ListenSpace
+        open={nowPlayingOpen}
+        onClose={onCloseNowPlaying}
+        lines={lines}
+        pane={listenPane}
+        onPaneBack={onListenPaneBack}
+        onOpenSongDetail={onOpenSongDetail}
+        onOpenArtistByName={onOpenArtistByName}
+        onOpenArtist={onOpenArtist}
+        onOpenAlbum={onOpenAlbum}
+        onOpenComments={onOpenComments}
+        onPlayArtistTrack={onPlayArtistTrack}
+      />
       {wallpaperOpen && <WallpaperPicker onClose={onCloseWallpaper} onApply={onApplyWallpaper} />}
       <InfoModals
         modal={infoModal}
