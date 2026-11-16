@@ -65,6 +65,47 @@ function rectOf(el: Element | null): Rect | null {
   return { x: r.left, y: r.top, w: r.width };
 }
 
+/** 大封面的画面：有图用图，没图用占位渐变。key 用来判断是不是换了一张。 */
+interface Art {
+  key: string;
+  url: string;
+  style: CSSProperties;
+}
+const ART_FADE_MS = 700;
+
+/**
+ * 切歌时大封面交叉淡化（#131）：新封面先在后台解码好，再一次性换上；旧封面盖在上面 0.7 秒淡出。
+ * 解码完成前一直显示旧封面，不会闪空白；连续切歌时只认最后一次。
+ */
+function useArtCrossfade(art: Art): { cur: Art; prev: Art | null } {
+  const [cur, setCur] = useState(art);
+  const [prev, setPrev] = useState<Art | null>(null);
+  const curRef = useRef(cur);
+  curRef.current = cur;
+  useEffect(() => {
+    if (art.key === curRef.current.key) return;
+    let cancelled = false;
+    let timer = 0;
+    const swap = () => {
+      if (cancelled) return;
+      setPrev(curRef.current);
+      setCur(art);
+      timer = window.setTimeout(() => setPrev(null), ART_FADE_MS + 100);
+    };
+    if (art.url) {
+      const img = new Image();
+      img.src = art.url;
+      img.decode().then(swap, swap);
+    } else swap();
+    return () => {
+      cancelled = true;
+      window.clearTimeout(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [art.key]);
+  return { cur, prev };
+}
+
 interface ListenSpaceProps {
   open: boolean;
   onClose: () => void;
@@ -103,6 +144,12 @@ export const ListenSpace = memo(function ListenSpace({
   const curRef = useRef<Rect | null>(null);
 
   const cover = song?.cover ? hiResCover(song.cover) : '';
+  // 没有封面图的歌（本地 / 演示 / 后端没拿到）：和播放条封面同一个低饱和占位
+  const art = useArtCrossfade(
+    cover
+      ? { key: cover, url: cover, style: { backgroundImage: `url(${JSON.stringify(cover)})` } }
+      : { key: `ph-${song?.hue1 ?? ''}-${song?.hue2 ?? ''}`, url: '', style: { background: placeholderBg(song?.hue1, song?.hue2) } },
+  );
   const hasTranslation = lines.some((l) => !!l.translation);
 
   // 大封面逐帧插值：只改 transform / 圆角 / 阴影（都按真实尺寸换算），封面本身不做任何模糊或变暗
@@ -208,10 +255,8 @@ export const ListenSpace = memo(function ListenSpace({
 
   if (phase === 'closed') return null;
   const shown = phase === 'in' || phase === 'open';
-  // 没有封面图的歌（本地 / 演示 / 后端没拿到）：和播放条封面同一个低饱和占位
-  const heroStyle: CSSProperties = cover
-    ? { backgroundImage: `url(${JSON.stringify(cover)})` }
-    : { background: placeholderBg(song?.hue1, song?.hue2) };
+  const heroStyle = art.cur.style;
+  const prevArt = art.prev && <i key={art.prev.key} className="ls-art-prev" style={art.prev.style} aria-hidden="true" />;
   const artistName = song?.artist ?? '';
   const albumLine = [song?.album, qualityName(song?.quality)].filter(Boolean).join(' · ');
 
@@ -227,7 +272,9 @@ export const ListenSpace = memo(function ListenSpace({
         </button>
         {/* 大封面的位置槽：飞行的起点 / 终点按它量；它身后是封面自己的发光副本 */}
         <div className="ls-slot" ref={slotRef}>
-          <div className="ls-glow" style={heroStyle} aria-hidden="true" />
+          <div className="ls-glow" style={heroStyle} aria-hidden="true">
+            {prevArt}
+          </div>
         </div>
         <div className="ls-meta">
           <button type="button" className="ls-link ls-title" onClick={onOpenSongDetail} disabled={!song}>
@@ -288,7 +335,9 @@ export const ListenSpace = memo(function ListenSpace({
           className={`ls-hero${phase === 'open' ? ' is-rest' : ''}`}
           style={heroStyle}
           aria-hidden="true"
-        />
+        >
+          {prevArt}
+        </div>
       )}
     </>
   );

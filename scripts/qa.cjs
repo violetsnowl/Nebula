@@ -621,20 +621,29 @@ async function main() {
       const col = document.querySelector('.ls-col')?.getBoundingClientRect();
       if (!sr || !col) return null;
       // 歌词栏宽 = 一行最宽 + 40k（QA 的歌可能没有歌词，按栏右边量，右边留白会比按最长一行量少约 45px）
-      return { W: innerWidth, left: Math.round(sr.left), right: Math.round(innerWidth - col.right), colW: Math.round(col.width) };
+      return { W: innerWidth, left: Math.round(sr.left), top: Math.round(sr.top), cv: Math.round(sr.width), gap: Math.round(col.left - sr.right), right: Math.round(innerWidth - col.right), colW: Math.round(col.width) };
     });
   const lsMid = await lsGeo();
   await page.setViewportSize({ width: 2544, height: 1375 });
   await page.waitForTimeout(500);
   const lsWide = await lsGeo();
+  // 窄窗口（#131）：封面和歌词之间至少 0.24 × 封面；竖长窗口里封面中心落在 37.7% 高处
+  await page.setViewportSize({ width: 1024, height: 700 });
+  await page.waitForTimeout(500);
+  const lsNarrow = await lsGeo();
+  await page.setViewportSize({ width: 1280, height: 1380 });
+  await page.waitForTimeout(500);
+  const lsTall = await lsGeo();
   await page.setViewportSize({ width: 1600, height: 900 });
   await page.waitForTimeout(500);
   const lsLayoutOk =
     !!lsMid && !!lsWide &&
     Math.abs(lsMid.left - 1600 * 0.106) <= 4 &&
     lsWide.right / lsWide.left > 0.65 && lsWide.right / lsWide.left < 1 &&
-    lsWide.colW < 2544 * 0.4;
-  log('听音空间整组居中', JSON.stringify({ lsMid, lsWide }));
+    lsWide.colW < 2544 * 0.4 &&
+    !!lsNarrow && lsNarrow.gap >= lsNarrow.cv * 0.24 - 2 &&
+    !!lsTall && lsTall.gap >= lsTall.cv * 0.24 - 2 && Math.abs(lsTall.top + lsTall.cv / 2 - 1380 * 0.377) <= 3;
+  log('听音空间整组居中', JSON.stringify({ lsMid, lsWide, lsNarrow, lsTall }));
   await page.keyboard.press('Escape');
   await page.waitForTimeout(1000);
   const lsClosed = await page.evaluate(() => ({

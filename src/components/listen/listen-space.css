@@ -130,6 +130,22 @@
 .ls-root[data-playing='0'] ~ .ls-hero.is-rest {
   filter: brightness(0.86) saturate(0.9);
 }
+/* 切歌：旧封面盖在新封面上淡出（#131）；发光副本里同样一层，跟着一起换 */
+.ls-art-prev {
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background-size: cover;
+  background-position: center;
+  pointer-events: none;
+  animation: ls-art-out 0.7s var(--ease-std) forwards;
+}
+@keyframes ls-art-out {
+  to {
+    opacity: 0;
+  }
+}
+
 /* 封面自己的发光副本（全局发光授权第 2 类）：播放时极慢呼吸，暂停后 1.2s 暗下去；收起头 0.18s 先退掉 */
 .ls-glow {
   position: absolute;
@@ -449,6 +465,9 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .ls-art-prev {
+    display: none;
+  }
   .stage-3d,
   .ls-veil,
   .ls-light,
