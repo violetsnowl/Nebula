@@ -1,17 +1,23 @@
 /* 听音空间（NEBULA_UI_SYSTEM §9.9）。布局按 1600×900 的样张换算成视口比例：
    大封面 = min(42vh, 30vw)，左边距 10.6vw、顶边 16.7vh；歌词栏左 43.75vw、顶 4.4vh、宽 50vw、高 84.4vh。
+   水平位置（#129）：ListenSpace 按窗口尺寸算「封面 + 间距 + 歌词块」整组的位置，写到 :root 的
+   --ls-cv / --ls-x / --ls-colx / --ls-colw（见 lib/listen/layout.ts）；下面 :root 里的是没算之前的兜底。
 
    层叠（重要）：根层用 absolute、不设 z-index——它不能自成层叠上下文。歌词的环境透色（plus-lighter）
    和遮罩的 backdrop-filter 都要和背后的星云处在同一个合成组（.app）里：根层一旦自成一层，
    遮罩就只能模糊这一层里的东西（等于没模糊），透色也只和透明底混合。
    为了叠在星云之上，听音空间存在期间把舞台的 z-index 从 10 降到 0，按 DOM 顺序它在下面（见下方 :has 规则）。 */
+:root {
+  --ls-cv: min(42vh, 30vw);
+  --ls-x: 10.6vw;
+  --ls-y: 16.7vh;
+  --ls-colx: 43.75vw;
+  --ls-colw: 50vw;
+}
 .ls-root {
   position: absolute;
   inset: 0;
   pointer-events: none;
-  --ls-cv: min(42vh, 30vw);
-  --ls-x: 10.6vw;
-  --ls-y: 16.7vh;
   /* 拉丁字体排在中日韩字体前面：没装 Newsreader / Inter 时，英文和弯引号由 Georgia / Segoe UI 渲染，
      否则会落到思源宋体上，弯引号变成全角宽度（I’ m 中间一大段空） */
   --ls-serif: 'Newsreader', Georgia, 'Noto Serif SC', 'Noto Serif JP', 'Noto Serif KR', 'Songti SC', serif;
@@ -112,9 +118,6 @@
 }
 .ls-hero {
   position: fixed;
-  --ls-cv: min(42vh, 30vw);
-  --ls-x: 10.6vw;
-  --ls-y: 16.7vh;
   z-index: 55;
   border-radius: 18px;
   background-size: cover;
@@ -272,9 +275,9 @@
    打开详情时整栏向左淡出 28px；opacity 过渡期间会暂时隔离，结束后恢复 */
 .ls-col {
   position: absolute;
-  left: 43.75vw;
+  left: var(--ls-colx);
   top: 4.4vh;
-  width: 50vw;
+  width: var(--ls-colw);
   height: 84.4vh;
   transition:
     opacity 0.3s var(--ease-std),
@@ -345,7 +348,7 @@
 /* 右栏详情（InfoPane，pane 呈现方式）：在歌词的位置原地换内容，不叠弹窗 */
 .ls-pane-host {
   position: absolute;
-  left: 43.75vw;
+  left: var(--ls-colx);
   top: 11vh;
   width: min(44vw, 720px);
   height: 74vh;

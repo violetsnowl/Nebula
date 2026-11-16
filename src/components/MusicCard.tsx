@@ -4,6 +4,7 @@ import { cardScreenPos } from '../lib/layout';
 import type { CardSpec, LayoutMetrics } from '../lib/layout';
 import { fisheyeFilter, fisheyeMetaAlpha, fisheyeScale, fisheyeZIndex } from '../lib/fisheye';
 import { registerGlass } from '../lib/glass';
+import { placeholderBg } from '../lib/coverPlaceholder';
 
 interface MusicCardProps {
   card: CardSpec;
@@ -81,7 +82,7 @@ function MusicCardImpl({
           style={
             track.cover && !coverError
               ? { backgroundImage: `url("${track.cover}")` }
-              : { background: `linear-gradient(135deg, hsl(${track.hue1} 70% 58%), hsl(${track.hue2} 72% 34%))` }
+              : { background: placeholderBg(track.hue1, track.hue2) }
           }
         />
       )}
@@ -90,7 +91,7 @@ function MusicCardImpl({
         style={
           track.cover && !coverError
             ? undefined
-            : { background: `linear-gradient(135deg, hsl(${track.hue1} 70% 58%), hsl(${track.hue2} 72% 34%))` }
+            : { background: placeholderBg(track.hue1, track.hue2) }
         }
       >
         {track.cover && !coverError && (

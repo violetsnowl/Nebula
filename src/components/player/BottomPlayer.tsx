@@ -6,6 +6,7 @@ import { VolumeControl } from './VolumeControl';
 import { QueueControl } from './QueueControl';
 import { QualityControl } from './QualityControl';
 import { platformName } from '../../lib/quality';
+import { placeholderBg } from '../../lib/coverPlaceholder';
 import {
   IconPrev,
   IconNext,
@@ -55,9 +56,7 @@ export const BottomPlayer = memo(function BottomPlayer({
   const hasSong = !!state.song;
   const coverStyle = state.song?.cover
     ? { backgroundImage: `url(${state.song.cover})`, backgroundSize: 'cover' as const, backgroundPosition: 'center' as const }
-    : {
-        background: `linear-gradient(135deg, hsl(${state.song?.hue1 ?? 220} 70% 58%), hsl(${state.song?.hue2 ?? 280} 72% 34%))`,
-      };
+    : { background: placeholderBg(state.song?.hue1, state.song?.hue2) };
   const timeText = `${formatTime(state.currentTime)} / ${formatTime(state.duration)}`;
   return (
     <div className={`bp-shell${state.loading ? ' is-loading' : ''}`}>

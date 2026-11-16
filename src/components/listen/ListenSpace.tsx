@@ -5,6 +5,8 @@ import type { LyricLineUI } from '../../lib/lyrics';
 import type { DesktopTrack } from '../../lib/playlist/ipcClient';
 import { setListenSettings, useListenSettings } from '../../lib/listen/settings';
 import { hiResCover } from '../../lib/listen/coverUrl';
+import { applyListenLayout } from '../../lib/listen/layout';
+import { placeholderBg } from '../../lib/coverPlaceholder';
 import { qualityName } from '../../lib/quality';
 import { InfoPane, type InfoPaneState } from '../InfoModals';
 import { IconChevronRight } from '../icons';
@@ -166,6 +168,13 @@ export const ListenSpace = memo(function ListenSpace({
     [paint, clearPaint],
   );
 
+  // 水平布局按窗口尺寸算（#129）：起飞前就要写好，位置槽要按它量
+  useLayoutEffect(() => {
+    applyListenLayout();
+    window.addEventListener('resize', applyListenLayout);
+    return () => window.removeEventListener('resize', applyListenLayout);
+  }, []);
+
   // open 变化 → 起飞。phase 先切到 in/out 让 DOM 就位，下一帧再量位置
   useEffect(() => {
     if (open && (phase === 'closed' || phase === 'out')) setPhase('in');
@@ -199,10 +208,10 @@ export const ListenSpace = memo(function ListenSpace({
 
   if (phase === 'closed') return null;
   const shown = phase === 'in' || phase === 'open';
-  // 没有封面图的歌（本地 / 演示）：和播放条封面一样用色相渐变
+  // 没有封面图的歌（本地 / 演示 / 后端没拿到）：和播放条封面同一个低饱和占位
   const heroStyle: CSSProperties = cover
     ? { backgroundImage: `url(${JSON.stringify(cover)})` }
-    : { background: `linear-gradient(135deg, hsl(${song?.hue1 ?? 220} 70% 58%), hsl(${song?.hue2 ?? 280} 72% 34%))` };
+    : { background: placeholderBg(song?.hue1, song?.hue2) };
   const artistName = song?.artist ?? '';
   const albumLine = [song?.album, qualityName(song?.quality)].filter(Boolean).join(' · ');
 

@@ -3,6 +3,7 @@ import { motion } from 'motion/react';
 import { useGlass } from '../lib/glass';
 import { useOverlayScrollbar } from '../lib/overlayScrollbar';
 import { matchSongs, type SearchMatch } from '../lib/search';
+import { placeholderFill } from '../lib/coverPlaceholder';
 import type { Track } from '../lib/catalog';
 import { toFrontendTrack, type DesktopArtistHit } from '../lib/playlist/ipcClient';
 import { IconChevronRight, IconClose, IconPlay } from './icons';
@@ -322,7 +323,7 @@ export function SearchBar({
                       onMouseEnter={() => setActiveIndex(i)}
                       onClick={() => commit(m)}
                     >
-                      <span className="search-thumb" style={{ background: m.hue1 != null ? `hsl(${m.hue1} 70% 46%)` : undefined }}>
+                      <span className="search-thumb" style={{ background: m.hue1 != null ? placeholderFill(m.hue1) : undefined }}>
                         {m.cover ? <img src={m.cover} alt="" loading="lazy" /> : null}
                       </span>
                       <span className="search-info">
@@ -380,7 +381,7 @@ export function SearchBar({
                     >
                       <span
                         className="search-thumb"
-                        style={{ background: `hsl(${t.hue1} 70% 46%)` }}
+                        style={{ background: placeholderFill(t.hue1) }}
                       >
                         {t.cover ? <img src={t.cover} alt="" loading="lazy" /> : null}
                       </span>
