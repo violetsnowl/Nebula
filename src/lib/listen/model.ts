@@ -135,49 +135,35 @@ function buildUnits(line: LyricLineUI): EngineUnit[] {
   return units;
 }
 
+/**
+ * 一句歌词 → 引擎句子（逐字 / 整句）。nextStart = 下一句开始（秒），整句没有时长时用它当结束。
+ * 听音空间（buildEntries）和星云上的空域歌词（LyricsLayer）共用。
+ */
+export function toEngineLine(l: LyricLineUI, nextStart?: number): EngineLine {
+  const tr = l.translation?.trim() || undefined;
+  // parseYrcText 对没有逐字数据的行会把整行塞成「一个词」：这不是真的逐字，按整句处理
+  const ws = l.words ?? [];
+  const fake = ws.length === 0 || (ws.length === 1 && [...ws[0]!.text.trim()].length > 1);
+  const units = fake ? [] : buildUnits(l);
+  if (units.length) {
+    const s = units[0]!.s;
+    const e = units.reduce((m, u) => Math.max(m, u.e), s);
+    return { kind: 'line', s, e, text: units.map((u) => u.t).join(''), units, tr, dens: clamp((3.6 - (e - s)) / 1.8, 0, 1) };
+  }
+  // 没有逐字时间：整句条目，不伪造逐字
+  const s = l.timeMs / 1000;
+  const rawDur = l.duration && l.duration > 0 ? l.duration : ws[0]?.duration;
+  const dur = rawDur && rawDur > 0 ? rawDur / 1000 : undefined;
+  const e = dur != null ? s + dur : nextStart != null && nextStart > s ? nextStart : s + 4;
+  return { kind: 'line', s, e, text: (l.text ?? '').trim(), units: null, tr, dens: clamp((3.6 - (e - s)) / 1.8, 0, 1) };
+}
+
 /** 把歌词转成引擎条目；中间加入间奏 / 前奏（空档 > 4s）。 */
 export function buildEntries(lines: LyricLineUI[]): EngineEntry[] {
   const out: EngineEntry[] = [];
   // 先转成句子，再统一插间奏
-  const body: EngineLine[] = [];
   const src = lines.filter((l) => (l.text ?? '').trim() !== '' || (l.words?.length ?? 0) > 0);
-  for (let i = 0; i < src.length; i++) {
-    const l = src[i]!;
-    const nextStart = src[i + 1] ? src[i + 1]!.timeMs / 1000 : undefined;
-    const tr = l.translation?.trim() || undefined;
-    // parseYrcText 对没有逐字数据的行会把整行塞成「一个词」：这不是真的逐字，按整句处理
-    const ws = l.words ?? [];
-    const fake = ws.length === 0 || (ws.length === 1 && [...ws[0]!.text.trim()].length > 1);
-    const units = fake ? [] : buildUnits(l);
-    if (units.length) {
-      const s = units[0]!.s;
-      const e = units.reduce((m, u) => Math.max(m, u.e), s);
-      body.push({
-        kind: 'line',
-        s,
-        e,
-        text: units.map((u) => u.t).join(''),
-        units,
-        tr,
-        dens: clamp((3.6 - (e - s)) / 1.8, 0, 1),
-      });
-    } else {
-      // 没有逐字时间：整句条目，不伪造逐字
-      const s = l.timeMs / 1000;
-      const rawDur = l.duration && l.duration > 0 ? l.duration : ws[0]?.duration;
-      const dur = rawDur && rawDur > 0 ? rawDur / 1000 : undefined;
-      const e = dur != null ? s + dur : nextStart != null && nextStart > s ? nextStart : s + 4;
-      body.push({
-        kind: 'line',
-        s,
-        e,
-        text: (l.text ?? '').trim(),
-        units: null,
-        tr,
-        dens: clamp((3.6 - (e - s)) / 1.8, 0, 1),
-      });
-    }
-  }
+  const body: EngineLine[] = src.map((l, i) => toEngineLine(l, src[i + 1] ? src[i + 1]!.timeMs / 1000 : undefined));
   body.sort((a, b) => a.s - b.s);
   if (body.length && body[0]!.s > GAP_MIN) out.push({ kind: 'gap', s: 0, e: body[0]!.s });
   for (let i = 0; i < body.length; i++) {

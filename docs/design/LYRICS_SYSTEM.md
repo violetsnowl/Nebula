@@ -51,6 +51,8 @@
 
 ## 5. 逐字高亮
 
+> **2026-11-16 更新（#124）：本节被取代。** 星云上的歌词改用听音空间的逐字层（`lib/listen/words.ts`：扫光、波浪、长音、尾韵、快歌自适应），规格见 `NEBULA_UI_SYSTEM.md` §7、§7.2；「扫光 / 上浮」两种模式与 `wordRise` 已删除。下面是历史记录。
+
 - 有 YRC / QRC 字级时间轴：按字映射到整句水平区间 `[p0, p1]`，区间内按时间插值得到连续 `progress`；`--wp` 按需写入——**过去句只写一次 1**，当前句 / 切换帧才更新（性能优化，修复过逐字重影）。
 - 软羽化扫字：`smoothstep` 柔边过渡，`--feather` 逐字 0.03 / 整句 0.055（无字级时间轴时用更大值）；进度线附近叠加柔光，禁止硬切 if。
 - 上浮模式：`--lyric-rise`（`wordRise` 设置项）逐字轻微上浮微弹（translateY / scale），增强"吐字"感；已唱字额外轻 `translateY(-2px)` 微弹。
@@ -66,8 +68,9 @@
 
 - 三色系统 `primary / secondary / highlight`（`lib/coverColors.ts`）：从**当前背景媒体**（封面 / 自定义上传 / Wallpaper）实时采样，非固定按歌曲封面；近单色银蓝兜底（`SILVER_BLUE`）；最低亮度保护（普通句 ≥0.34–0.38、高亮句 ≥0.48）；逐字高亮带轻微发光。
 - 自定义颜色也走同一套 primary/secondary/highlight 生成逻辑，保持同色系双层效果（`lyricColorSource` 设置）。
-- 视觉层级（必须拉开，否则三句糊成一团）：current 最大最亮最实、角度 ±8°–14°；next 中等（opacity 0.62）；nextNext 更小更透（0.42）、角度可稍大；leaving 0.95。
-- 当前句放大系数（`currentScale`）与逐字上浮幅度（`wordRise`）暴露在歌词设置页可调。
+- 视觉层级（必须拉开，否则三句糊成一团）：current 最大最亮最实；next 中等（opacity 0.62）；nextNext 更小更透（0.42）；leaving 0.95。
+- **角度（2026-11-16 #124 修订，审查第 24 条，用户确认）**：current 0–3°（原 ±8°–14°，三句三个角度没有稳定的阅读基线）；next 5–9°，nextNext 再 +3°；进场从 16–24° 收到等候角；离场转出 10–16°。另加长句自动收窄（current ≤ 屏宽 66%，候句 ≤ 58%）。
+- 当前句放大系数（`currentScale`）暴露在歌词设置页可调（`wordRise` 已于 #124 删除）。
 - **翻译只作用于二级播放页**（NowPlayingPanel）；Z1 穿梭仅显示原文，不显示翻译。
 
 ---

@@ -255,7 +255,7 @@
   right: 0;
   top: 18px;
   text-align: center;
-  font-family: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
+  font-family: var(--lc-font, 'Noto Serif SC', serif);
   font-weight: 600;
   font-size: 12px;
   letter-spacing: 0.05em;
@@ -272,14 +272,19 @@
 
 /* 当前句：外框是一条横向视口（覆盖整个可能的字高，免得被淡出遮罩切到），句子在里面居中；
    句子比窗口宽时（.is-over）两端淡出，句子跟着唱到的位置平移（--sx，由组件逐帧写入）。 */
+.sd-panel .rp-preview[data-scheme='mono'] .rp-cur {
+  --lc-rest: color-mix(in srgb, var(--lc-a) 58%, #fff);
+}
+
 .sd-panel .rp-preview .rp-cur {
   position: absolute;
   left: 0;
   right: 0;
   top: 26px;
   height: 74px;
-  font-family: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
-  letter-spacing: 0.05em;
+  font-family: var(--lc-font, 'Noto Serif SC', serif);
+  letter-spacing: 0.04em;
+  --lc-rest: #fff;
   filter: drop-shadow(0 1px 2px rgba(4, 6, 12, 0.55));
 }
 
@@ -320,33 +325,7 @@
   letter-spacing: 0.08em;
 }
 
-/* 三段扫字：和真实歌词层同一套算法（--wp = 这个字唱到的比例） */
-.sd-panel .rp-ch {
-  display: inline-block;
-  white-space: pre;
-  --now-k: calc(var(--wp, 0) * (1 - var(--wp, 0)) * 4);
-  --sung-col: color-mix(in srgb, var(--ly-now) calc(var(--now-k) * 100%), var(--ly-sung, rgba(255, 255, 255, 0.96)));
-  background: linear-gradient(
-    90deg,
-    var(--sung-col) calc((var(--wp, 0) - 0.045) * 100%),
-    var(--sung-col) calc((var(--wp, 0) - 0.018) * 100%),
-    color-mix(in srgb, var(--sung-col) 60%, rgba(255, 255, 255, 0.34)) calc(var(--wp, 0) * 100%),
-    rgba(255, 255, 255, 0.34) calc((var(--wp, 0) + 0.05) * 100%)
-  );
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  text-shadow: 0 0 14px color-mix(in srgb, var(--ly-now) calc(var(--now-k) * 55%), transparent);
-  transform: translateY(calc(-1 * var(--wp, 0) * var(--rise, 2px)));
-}
-
-.sd-panel .rp-preview.float .rp-ch {
-  background: none;
-  -webkit-background-clip: initial;
-  background-clip: initial;
-  color: var(--sung-col);
-  opacity: calc(0.3 + 0.7 * var(--wp, 0));
-}
+/* 当前句的字：与画面里的歌词同一套逐字效果（listen/lyric-words.css + lib/listen/words.ts，#124） */
 
 /* 自定义歌词颜色：原生取色器画成 24px 圆形色块 */
 .sd-panel .rp-swatch {

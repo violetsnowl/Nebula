@@ -682,6 +682,7 @@ async function main() {
   await page.waitForFunction(() => window.__nebula.player.getState().playing);
   log('恢复播放 playing=true', 'ok');
 
+
   // 10c+. 进度填充逐帧亚像素推进（2026-11-16）：连续 40 帧采样填充右缘，应基本每帧都在动、出现小数像素、整体单调
   await page.waitForTimeout(600);
   const progSmooth = await page.evaluate(
@@ -826,7 +827,18 @@ async function main() {
         ],
       }),
       fallbackSong: async () => ({ ok: false, error: 'no' }),
-      fetchLyric: async () => ({ ok: false, error: 'no' }),
+      // 逐字歌词（YRC 格式）：每 3.5 秒一句、每字 300ms，用来验证空域歌词的逐字层（#124）
+      fetchLyric: async () => {
+        const text = '星光落在远方的海面';
+        const lines = [];
+        let yrc = '';
+        for (let i = 0; i < 120; i++) {
+          const t = 500 + i * 3500;
+          lines.push({ timeMs: t, text });
+          yrc += `[${t},${text.length * 300}]` + [...text].map((c, j) => `(${t + j * 300},300,0)${c}`).join('') + '\n';
+        }
+        return { ok: true, data: { source: 'netease', lines, yrc } };
+      },
       fetchComments: async () => ({ ok: false, error: 'no' }),
       loginAccount: async () => ({ ok: true, data: { loggedIn: false } }),
       loginPlaylists: async () => ({ ok: true, data: [] }),
@@ -897,6 +909,45 @@ async function main() {
   });
   log('本地音乐导入', JSON.stringify(localOk));
 
+  // 10c-. 空域歌词换用听音空间的逐字层（#124）：当前句是 .u 逐字、带扫光进度；倾斜不超过 3°；
+  // 漫游（没进入聆听）时退成氛围：当前句半透明；旧的扫光 / 上浮节点不再出现
+  await page.evaluate(() => {
+    const n = window.__nebula;
+    const s0 = { ...n.songsData()[1], source: 'netease', sourceId: 'qa-lyric' };
+    n.player.playSong(s0, [s0]);
+  });
+  await page.mouse.move(700, 250);
+  await page.waitForSelector('.lyrics-layer .flow-lyric.is-current .u', { timeout: 10000 }).catch(() => {});
+  await page.waitForTimeout(400);
+  const z1 = await page.evaluate(() => {
+    const cur = document.querySelector('.lyrics-layer .flow-lyric.is-current');
+    if (!cur)
+      return {
+        missing: true,
+        layer: !!document.querySelector('.lyrics-layer'),
+        flights: document.querySelectorAll('.flow-lyric').length,
+        t: window.__nebula.player.getState().currentTime,
+        song: window.__nebula.player.getState().song?.sourceId ?? null,
+      };
+    const us = [...cur.querySelectorAll('.u')];
+    const ps = us.map((u) => Number(u.style.getPropertyValue('--p') || 0));
+    const m = (cur.style.transform.match(/rotate\((-?[\d.]+)deg\)/) || [])[1];
+    return {
+      units: us.length,
+      grad: cur.classList.contains('is-grad'),
+      pMax: Math.max(...ps),
+      rot: m ? Math.abs(Number(m)) : null,
+      op: Number(cur.style.opacity),
+      listening: !!document.querySelector('.app[data-listen]'),
+      old: document.querySelectorAll('.fl-word').length,
+      caption: !!document.querySelector('.lyric-caption'),
+    };
+  });
+  const z1Ok =
+    !!z1 && z1.units === 9 && z1.grad && z1.pMax > 0 && z1.rot !== null && z1.rot <= 3.2 && z1.old === 0 && z1.caption &&
+    (z1.listening || z1.op <= 0.66);
+  log('空域歌词逐字层', JSON.stringify(z1));
+
   log('控制台错误数', errors.length);
   if (errors.length) console.log(errors.join('\n'));
 
@@ -943,6 +994,7 @@ async function main() {
     !seekOk ||
     !volOk ||
     !volUiOk ||
+    !z1Ok ||
     !progSmoothOk ||
     !barLayoutOk ||
     !barNewOk ||
@@ -978,6 +1030,7 @@ async function main() {
     seek: !seekOk,
     volHover: !volOk,
     volSlider: !volUiOk,
+    z1Words: !z1Ok,
     progressSmooth: !progSmoothOk,
     barLayout: !barLayoutOk,
     barSpec: !barNewOk,

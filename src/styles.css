@@ -2673,18 +2673,15 @@ body {
   pointer-events: none;
   perspective: 1400px;
   --lyric-size: 15px;
-  /* 歌词赋色系统：primary=普通句 / highlight=当前句与逐字 / glow=光晕 */
-  --fl-hi: rgb(var(--lyric-highlight-rgb, 238, 247, 255));
-  --fl-dim: rgb(var(--lyric-primary-rgb, 216, 241, 255));
-  --fl-glow: rgb(var(--lyric-glow-rgb, 157, 184, 207));
-  /* 字的设计（NEBULA_UI_SYSTEM §7）：衬线 Display；已唱白 / 正在唱用强调色 / 未唱淡白。
-     --ly-sung / --ly-now 在「自定义颜色」时由 LyricsLayer 覆盖（主色 → 已唱，高亮色 → 正在唱）。 */
-  --lyric-font: 'Noto Serif SC', 'Songti SC', 'STSong', 'SimSun', serif;
-  --ly-sung: rgba(255, 255, 255, 0.96);
-  --ly-now: var(--acc);
-  --ly-unsung: rgba(255, 255, 255, 0.34);
-  /* 中性外羽化：浅色背景下也清楚，不给字形内部染灰 */
-  --ly-feather-shadow: 0 1px 2.4px rgba(4, 6, 12, 0.58), 0 0 4.8px rgba(4, 6, 12, 0.3);
+  /* 逐字层（lib/listen/words.ts + listen/lyric-words.css，#124）：与听音空间同一套字。
+     --lc-a 歌词主色（跟随封面 = 环境写入的 --ly-a；自定义 = 所选颜色），由 LyricsLayer 写入；
+     --lc-rest 没在扫的字：封面色模式为白，同色系模式整列带主色 */
+  --lc-rest: #fff;
+}
+
+.lyrics-layer[data-scheme='mono'],
+.lyric-caption[data-scheme='mono'] {
+  --lc-rest: color-mix(in srgb, var(--lc-a) 58%, #fff);
 }
 
 .flow-lyric {
@@ -2694,86 +2691,69 @@ body {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 3px;
-  font-family: var(--lyric-font);
+  font-family: var(--lc-font, 'Noto Serif SC', serif);
   font-size: var(--lyric-size);
-  letter-spacing: 0.05em;
+  font-weight: var(--lyric-weight, 600);
+  letter-spacing: calc(var(--lc-ls, 0.02em) + 0.02em);
   white-space: nowrap;
   will-change: transform, opacity;
 }
 
 .flow-lyric .fl-text {
-  display: flex;
-  flex-wrap: nowrap;
-  align-items: baseline;
-  font-weight: var(--lyric-weight, 600);
-  line-height: 1.25;
-}
-
-/* 候句（下一句 / 下下句）与离场句：未唱部分用亮白，层级由飞行系统的透明度（.62 / .42）表达 */
-.flow-lyric:not(.is-current) {
-  --ly-unsung: rgba(255, 255, 255, 0.92);
-}
-
-/* ????????????? + ????????????? */
-.fl-word {
   position: relative;
-  display: inline-block;
-  white-space: pre;
-  /* 三段扫字（§7）：已唱白 → 波前强调色 → 未唱淡白。
-     --wp 是这个字（词）自己的演唱进度 0~1；--now-k = 4·wp·(1−wp) 在唱到一半时为 1、开始和唱完时为 0，
-     所以"正在唱的那个字"带强调色和柔光，唱完后回到白色。整句（无逐字时间轴）的行用 --acc-k:0 关掉强调。 */
-  --now-k: calc(var(--wp, 0) * (1 - var(--wp, 0)) * 4 * var(--acc-k, 1));
-  --sung-col: color-mix(in srgb, var(--ly-now) calc(var(--now-k) * 100%), var(--ly-sung));
-  /* --wp 是无单位数字，必须经 calc 转成百分比，否则渐变失效导致文字隐形 */
-  background: linear-gradient(
-    90deg,
-    var(--sung-col) calc((var(--wp, 0) - var(--feather, 0.045)) * 100%),
-    var(--sung-col) calc((var(--wp, 0) - var(--feather, 0.045) * 0.4) * 100%),
-    color-mix(in srgb, var(--sung-col) 60%, var(--ly-unsung)) calc(var(--wp, 0) * 100%),
-    var(--ly-unsung) calc((var(--wp, 0) + var(--feather, 0.045) * 1.1) * 100%)
-  );
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  /* 只有正在唱的字带强调色柔光（发光授权：§6）。
-     注意：渐变填字（background-clip: text）时 text-shadow 会画在字形"上面"，
-     所以中性外羽化不能放这里（会给字蒙一层灰），改在 .fl-text 上用 drop-shadow。 */
-  text-shadow: 0 0 22px color-mix(in srgb, var(--ly-now) calc(var(--now-k) * 55%), transparent);
-  transform: translateZ(0);
-  will-change: background;
-}
-
-/* 中性外羽化（§7）：drop-shadow 画在字形之后，浅色背景下也清楚，且不给字形内部染灰 */
-.flow-lyric .fl-text {
+  display: block;
+  line-height: 1.25;
+  /* 中性外羽化：drop-shadow 画在字形之后，浅色背景下也清楚，且不给字形内部染灰 */
   filter: drop-shadow(0 1px 2.4px rgba(4, 6, 12, 0.58)) drop-shadow(0 0 4.8px rgba(4, 6, 12, 0.3));
 }
 
-.fl-text.is-whole .fl-word {
-  --acc-k: 0;
+.flow-lyric .fl-words {
+  position: relative;
+  display: inline-block;
 }
 
-.flow-lyric .fl-tr {
-  font-size: calc(var(--lyric-size) * 0.66);
-  font-weight: 400;
-  color: var(--fl-dim);
-  white-space: nowrap;
+.flow-lyric.is-current .u,
+.flow-lyric.is-current .u .ch,
+.flow-lyric.is-current .fl-whole {
+  will-change: transform;
 }
 
-/* ?????????????? --wp ??? */
-.hl-float .fl-word {
-  background: none;
-  -webkit-background-clip: initial;
-  background-clip: initial;
-  color: var(--sung-col);
-  opacity: calc(0.3 + 0.7 * var(--wp, 0));
-  transform: translateZ(0) translateY(calc((1 - var(--wp, 0)) * var(--lyric-rise, 4px)));
-  text-shadow: 0 0 22px color-mix(in srgb, var(--ly-now) calc(var(--now-k) * 55%), transparent);
+/* 审查第 11 条：当前句身后一层很淡的局部压暗。深色背景上看不出，压在白封面上时把字托出来 */
+.flow-lyric .fl-halo {
+  position: absolute;
+  left: -0.7em;
+  right: -0.7em;
+  top: -0.55em;
+  bottom: -0.55em;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(4, 6, 12, 0.52), rgba(4, 6, 12, 0.3) 55%, rgba(4, 6, 12, 0));
+  filter: blur(14px);
+  opacity: var(--halo, 0);
+  transition: opacity 0.5s var(--ease-std);
+  pointer-events: none;
 }
 
-
-.lyric-dark .flow-lyric .fl-tr {
-  color: var(--fl-dim);
+/* 没有逐字时间的句子：整句亮起（0.38s）、整句轻浮，不伪造逐字 */
+.fl-whole {
+  display: inline-block;
+  color: var(--lc-rest);
+  transform: translate3d(0, calc(var(--lift, 0) * -1em), 0);
+  transition: color 0.38s ease;
+}
+.fl-whole.is-on {
+  color: color-mix(in srgb, var(--lc-a) 30%, #fff);
+}
+[data-scheme='mono'] .fl-whole.is-on {
+  color: color-mix(in srgb, var(--lc-a) 35%, #fff);
+}
+.is-settle .fl-whole.is-on {
+  color: var(--lc-a);
+  transition:
+    color 0.38s ease,
+    transform 0.55s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+[data-scheme='mono'] .is-settle .fl-whole.is-on {
+  color: #fff;
 }
 
 /* 覆盖在卡片云之上（Z2 之上、UI 之下） */
@@ -2781,9 +2761,44 @@ body {
   z-index: 11;
 }
 
-/* 已唱字轻微上浮 2px，增加“吐字”感（扫光风格） */
-.hl-sweep .fl-word {
-  transform: translateY(calc(-1 * var(--wp, 0) * var(--lyric-rise, 4px)));
+/* 漫游时的字幕（§7.1，#124）：播放条上方一行小字，压在卡片之上；身后一块柔和的局部压暗 + 外羽化 */
+.lyric-caption {
+  position: absolute;
+  left: 50%;
+  bottom: calc(20px + 72px + 26px);
+  z-index: 12;
+  transform: translateX(-50%);
+  padding: 4px 20px;
+  /* 不能 overflow: hidden：会把身后的暗晕（::before）裁成方块 */
+  white-space: nowrap;
+  pointer-events: none;
+  font-family: var(--lc-font, 'Noto Serif SC', serif);
+  font-weight: var(--lyric-weight, 600);
+  font-size: 22px;
+  letter-spacing: calc(var(--lc-ls, 0.02em) + 0.03em);
+  line-height: 1.35;
+  opacity: 0;
+  filter: drop-shadow(0 1px 2.4px rgba(4, 6, 12, 0.62)) drop-shadow(0 0 5px rgba(4, 6, 12, 0.34));
+  --lc-rest: #fff;
+}
+.lyric-caption::before {
+  content: '';
+  position: absolute;
+  inset: -10px -40px;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgba(4, 6, 12, 0.66), rgba(4, 6, 12, 0.36) 60%, rgba(4, 6, 12, 0));
+  filter: blur(12px);
+}
+/* 听音空间打开时不出字幕（那里有自己的歌词栏） */
+.app[data-ls] .lyric-caption {
+  display: none;
+}
+@media (max-width: 900px) {
+  .lyric-caption {
+    font-size: 18px;
+    bottom: calc(20px + 72px + 70px);
+  }
 }
 
 /* 前奏/纯音乐：歌曲信息居中展示 */
@@ -4117,10 +4132,6 @@ body {
   --ui-focus-ring: 0 0 0 2px rgba(var(--glow-rgb, 120, 140, 220), 0.45);
 }
 
-/* 歌词加粗：由 LyricsLayer 写入 --lyric-weight */
-.flow-lyric .fl-text {
-  font-weight: var(--lyric-weight, 600);
-}
 
 /* ============================================================
    漫游 / 聆听交接（NEBULA_UI_SYSTEM §7.1）
@@ -4128,26 +4139,28 @@ body {
    data-listen-style（交接启用时）、data-lk（交接进行中或聆听中）、data-listen（聆听中）、data-lyr-top、data-listen-bar
    ============================================================ */
 
-/* 歌词层：漫游 .82 → 聆听 1，略微放大。交接停用时没有 data-listen-style，歌词层保持原样 */
+/* 歌词层：聆听时略微放大；--lo 只在换层时先淡一下（漫游时的「氛围 / 字幕」由 LyricsLayer 自己按 --lk 处理，#124）。
+   交接停用时没有 data-listen-style，歌词层保持原样 */
 .app[data-listen-style] .lyrics-layer {
   opacity: var(--lo, 1);
   transform: scale(var(--ls, 1));
   transform-origin: 50% 45%;
 }
 
-/* 沉降：歌词换到卡片之上（与「卡片之上」图层同级） */
+/* 沉降、退潮：歌词换到卡片之上（与「卡片之上」图层同级） */
 .app[data-lyr-top] .lyrics-layer {
   z-index: 11;
 }
 
-/* 聆听时环境光略微提亮 */
-.app[data-lk] .bg-layer {
+/* 聆听时环境光略微提亮（退潮不提亮：卡片化成薄雾时再提亮背景，整屏会发灰，审查第 12 条） */
+.app[data-lk]:not([data-listen-style='ebb']) .bg-layer {
   filter: brightness(calc(1 + 0.12 * var(--lk))) saturate(calc(1 + 0.08 * var(--lk)));
 }
 
-/* 沉降：整片星云后退、压暗 */
+/* 三种让开各有情绪（#124）：沉降是暗，散开是让，退潮是淡。
+   沉降：整片星云往下沉、后退、压暗 */
 .app[data-listen-style='sink'][data-lk] .stage-3d {
-  transform: scale(calc(1 - 0.14 * var(--lk)));
+  transform: translateY(calc(4vh * var(--lk))) scale(calc(1 - 0.14 * var(--lk)));
   transform-origin: 50% 45%;
   filter: brightness(calc(1 - 0.62 * var(--lk))) saturate(calc(1 - 0.45 * var(--lk)));
 }
@@ -4161,16 +4174,17 @@ body {
   transition: filter 0.45s ease;
 }
 
-/* 退潮：整片星云变淡 */
+/* 退潮：卡片向外、略向下漂散（位移在舞台帧循环里），化成一层薄雾——变淡、轻微虚化，不压暗，背景不提亮 */
 .app[data-listen-style='ebb'][data-lk] .stage-3d {
-  opacity: calc(1 - 0.86 * var(--lk));
+  opacity: calc(1 - 0.68 * var(--lk));
+  filter: brightness(calc(1 - 0.08 * var(--lk))) blur(calc(2.2px * var(--lk)));
 }
 
-/* 播放条变淡：只降材质（::before）和内容。不能给 .player-surface 本身设 opacity，
-   否则它会成为 ::before 的背景采样边界，玻璃采不到背后的画面 */
+/* 播放条变淡：最多淡到 70%（审查第 12 条：淡到一半读起来像「不可用」）。只降材质（::before）和内容。
+   不能给 .player-surface 本身设 opacity，否则它会成为 ::before 的背景采样边界，玻璃采不到背后的画面 */
 .app[data-listen-bar='dim'][data-lk] .player-surface::before,
 .app[data-listen-bar='dim'][data-lk] .player-surface > * {
-  opacity: calc(1 - 0.5 * var(--lk));
+  opacity: calc(1 - 0.3 * var(--lk));
 }
 
 /* 「回到中心」在聆听时整个退场（2026-11-16）：星云已经让开，回到中心没有可做的；跟着交接曲线淡出，一动就回来 */

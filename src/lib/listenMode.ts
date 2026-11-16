@@ -32,9 +32,11 @@ export interface ListenBus {
   k: number;
   style: ListenStyle;
   layout: 'stacked' | 'offset';
+  /** 交接是否启用。没启用时没有「聆听」，空域歌词按聆听时的样子常显（不退成氛围）。 */
+  enabled: boolean;
 }
 
-export const listenBus: ListenBus = { k: 0, style: 'sink', layout: 'stacked' };
+export const listenBus: ListenBus = { k: 0, style: 'sink', layout: 'stacked', enabled: false };
 
 const frameSubs = new Set<() => void>();
 
@@ -50,7 +52,8 @@ export function onListenFrame(fn: () => void): () => void {
 const ENTER_MS = 1600;
 const EXIT_MS = 380;
 /** 漫游时歌词层亮度。 */
-const LYR_ROAM = 0.82;
+/** 漫游时歌词层的整体亮度。#124 起漫游的「氛围 / 字幕」由歌词层自己按 --lk 处理，这里不再压暗。 */
+const LYR_ROAM = 1;
 /** 「沉降」换层时歌词先淡到的亮度。 */
 const LYR_DIP = 0.22;
 /** 鼠标在 400ms 内累计移动超过这个距离才算"动了"（过滤手抖和触控板噪声）。 */
@@ -173,6 +176,7 @@ export class ListenDirector {
     this.cfg = cfg;
     listenBus.style = cfg.style;
     listenBus.layout = cfg.layout;
+    listenBus.enabled = cfg.enabled;
     if (!cfg.enabled) {
       this.mode = 'roam';
       this.k = 0;
@@ -201,8 +205,9 @@ export class ListenDirector {
     this.emit();
   }
 
+  /** 沉降、退潮都把歌词换到卡片之上（退潮时卡片化成薄雾，留在下面会被挡住，#124）。 */
   private needsTop(): boolean {
-    return this.cfg.style === 'sink' && this.cfg.lyricsUnder;
+    return (this.cfg.style === 'sink' || this.cfg.style === 'ebb') && this.cfg.lyricsUnder;
   }
 
   private clearRoot(): void {

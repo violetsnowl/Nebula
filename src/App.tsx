@@ -156,10 +156,8 @@ export default function App() {
     lyricSettings,
     lyricTranslationEnabled,
     handleLyricFontSize,
-    handleHighlightStyle,
     handleLayerMode,
     handleCurrentScale,
-    handleWordRise,
     handleLyricLayout,
     handleLyricColorSource,
     handleCustomColor,
@@ -650,10 +648,8 @@ export default function App() {
         onFile={handleBgFile}
         onCoverMode={handleCoverMode}
         onFontSize={handleLyricFontSize}
-        onHighlightStyle={handleHighlightStyle}
         onLayerMode={handleLayerMode}
         onCurrentScale={handleCurrentScale}
-        onWordRise={handleWordRise}
         onLyricLayout={handleLyricLayout}
         onLyricColorSource={handleLyricColorSource}
         onCustomColor={handleCustomColor}

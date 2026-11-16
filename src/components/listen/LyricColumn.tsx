@@ -4,6 +4,7 @@ import { LyricEngine } from '../../lib/listen/engine';
 import { buildEntries, detectScript, type EngineEntry } from '../../lib/listen/model';
 import type { ListenSettings } from '../../lib/listen/settings';
 import type { LyricLineUI } from '../../lib/lyrics';
+import './lyric-words.css';
 import './lyric-column.css';
 
 /**

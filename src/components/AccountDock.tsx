@@ -9,12 +9,14 @@ import type { GlassTheme } from '../lib/glass';
 import type { ListenSettingsPatch, LyricVisualSettings } from '../lib/lyricSettings';
 import { audioPlayer } from '../lib/audio/AudioPlayer';
 import { currentLyricIndex, type LyricLineUI } from '../lib/lyrics';
-import { paletteFromBaseColor } from '../lib/coverColors';
 import { SideDock } from './dock/SideDock';
 import { DOCK_PLATFORM_ORDER, platformMeta } from './platforms';
 import { IconCheck, IconChevronLeft, IconChevronRight, IconExternal, IconImage, IconRefresh } from './icons';
 import { setListenSettings as setListenSpaceSettings, useListenSettings as useListenSpaceSettings } from '../lib/listen/settings';
 import { ListenPreview } from './listen/ListenPreview';
+import { detectScript, toEngineLine, type EngineLine } from '../lib/listen/model';
+import { TYPO, measureUnits, renderUnits, unitFrame, waveOf, wholeLift, type UnitRt } from '../lib/listen/words';
+import './listen/lyric-words.css';
 import './dock/right-panel.css';
 
 export type DockSettingsPage = 'lyrics' | 'bg' | 'look';
@@ -42,10 +44,8 @@ interface AccountDockProps {
   onCoverMode: (m: CoverBgMode) => void;
   onOpenWallpapers: () => void;
   onFontSize: (n: number) => void;
-  onHighlightStyle: (s: LyricVisualSettings['highlightStyle']) => void;
   onLayerMode: (m: LyricVisualSettings['layerMode']) => void;
   onCurrentScale: (n: number) => void;
-  onWordRise: (n: number) => void;
   onLyricLayout: (m: LyricVisualSettings['lyricLayout']) => void;
   onLyricColorSource: (s: LyricVisualSettings['lyricColorSource']) => void;
   onCustomColor: (c: string) => void;
@@ -660,15 +660,6 @@ const PREVIEW_NEXT = '路灯一盏一盏替我数着心跳';
 
 const clamp = (v: number, a: number, b: number) => Math.min(b, Math.max(a, v));
 
-/** 逐字切分用：CJK / 假名 / 谚文按单字，其余按空格分词（和空域歌词层一致）。 */
-const PV_CJK = /[⺀-鿿豈-﫿　-〿぀-ヿ가-힯]/;
-
-interface PvToken {
-  text: string;
-  startMs: number;
-  duration: number;
-}
-
 const usableLine = (l?: LyricLineUI) => !!l && (!!l.text?.trim() || !!l.words?.length);
 
 /**
@@ -687,48 +678,28 @@ function nextUsable(lines: LyricLineUI[], from: number): LyricLineUI | undefined
   return undefined;
 }
 
-/** 一句歌词切成扫字单位：有逐字时间就用逐字时间，否则把整句时长平均分给每个字 / 词。 */
-function previewTokens(lines: LyricLineUI[], idx: number): PvToken[] {
-  const line = lines[idx];
-  if (!line) return [];
-  if (line.words?.length) {
-    // 逐字时间里的词不带空格：前后两个词都是字母 / 数字时补一个空格（和空域歌词层同一规则）
-    const ws = line.words;
-    return ws.map((w, i) => {
-      const prev = ws[i - 1];
-      const gap = !!prev && /[A-Za-z0-9]/.test(prev.text) && /[A-Za-z0-9]/.test(w.text) && !/\s$/.test(prev.text);
-      return { text: gap ? ` ${w.text}` : w.text, startMs: w.startMs, duration: Math.max(1, w.duration) };
-    });
-  }
-  const parts: string[] = [];
-  let buf = '';
-  for (const ch of line.text) {
-    if (PV_CJK.test(ch)) {
-      if (buf) parts.push(buf);
-      buf = '';
-      parts.push(ch);
-    } else if (ch === ' ') {
-      if (buf) parts.push(`${buf} `);
-      else if (parts.length) parts[parts.length - 1] += ' ';
-      buf = '';
-    } else {
-      buf += ch;
+/** 示例句（原创）：逐字时间按慢歌合成，「亮」是 1.4 秒的长音，演示放大和白光。 */
+const SAMPLE_LINE: EngineLine = (() => {
+  const chars = [...PREVIEW_LINE];
+  let t = 0;
+  const units: EngineLine['units'] = [];
+  chars.forEach((ch, i) => {
+    if (/[，。]/.test(ch) && units.length) {
+      units[units.length - 1]!.t += ch;
+      return;
     }
-  }
-  if (buf) parts.push(buf);
-  const next = nextUsable(lines, idx);
-  const gap = next ? clamp(next.timeMs - line.timeMs, 1200, 12000) : 6000;
-  const per = (line.duration ?? gap) / Math.max(1, parts.length);
-  return parts.map((text, j) => ({ text, startMs: line.timeMs + j * per, duration: per }));
-}
-
-const SAMPLE_TOKENS: PvToken[] = [...PREVIEW_LINE].map((text) => ({ text, startMs: 0, duration: 1 }));
+    const d = ch === '亮' ? 1.4 : 0.3 + ((i * 37) % 90) / 1000;
+    units.push({ t: ch, s: t, e: t + d, cjk: true, sp: false, emph: d >= 1 });
+    t += d;
+  });
+  return { kind: 'line', s: 0, e: t, text: PREVIEW_LINE, units, dens: 0 };
+})();
 
 /**
- * 歌词实时预览：当前封面的环境光 + 当前歌曲正在唱的那一句，按歌词设置实时渲染。
- *   - 播放中：跟着真实播放进度扫字（和画面里的空域歌词同步）；
- *   - 暂停 / 前奏：在这一句上循环示范扫字，方便调高亮样式；
- *   - 没有歌词：用一句示例歌词。
+ * 星云上的歌词的实时预览（#124）：当前封面的环境光 + 正在唱的那一句，用和画面里同一套逐字效果
+ * （lib/listen/words.ts：扫光、波浪、长音放大与白光、尾韵），着色与字体跟随「听音空间」的设置，
+ * 字号 / 加粗 / 当前句放大 / 自定义颜色跟随这里的设置。
+ *   - 播放中：跟着真实播放进度；暂停 / 前奏：在这一句上循环示范；没有歌词：用一句示例歌词。
  * 句子比预览窗宽时，跟着唱到的位置横向平移、两端淡出（保持真实字号，不缩小）。
  * active=false（面板收起 / 不在歌词页）时停掉 rAF；减少动效时只画一帧静止的半唱状态。
  */
@@ -743,17 +714,26 @@ function LyricPreview({
   active: boolean;
   lines: LyricLineUI[];
 }) {
+  const listen = useListenSpaceSettings();
   const curRef = useRef<HTMLDivElement>(null);
   const lineRef = useRef<HTMLDivElement>(null);
+  const hostRef = useRef<HTMLSpanElement>(null);
   const [pick, setPick] = useState(() => pickPreviewLine(lines, audioPlayer.getState().currentTime * 1000));
   const pickRef = useRef(pick);
   pickRef.current = pick;
 
-  const tokens = useMemo(() => (pick.idx >= 0 ? previewTokens(lines, pick.idx) : SAMPLE_TOKENS), [lines, pick.idx]);
-  const customPal = useMemo(() => paletteFromBaseColor(settings.customColor), [settings.customColor]);
-  const tokensRef = useRef(tokens);
-  tokensRef.current = tokens;
+  const line: EngineLine = useMemo(() => {
+    if (pick.idx < 0) return SAMPLE_LINE;
+    const nx = nextUsable(lines, pick.idx);
+    return toEngineLine(lines[pick.idx]!, nx ? nx.timeMs / 1000 : undefined);
+  }, [lines, pick.idx]);
+  const lineDataRef = useRef(line);
+  lineDataRef.current = line;
   const nextText = pick.idx >= 0 ? (nextUsable(lines, pick.idx)?.text ?? '') : PREVIEW_NEXT;
+  const script = useMemo(() => (lines.length ? detectScript(lines) : 'zh'), [lines]);
+  const typo = TYPO[listen.font][script];
+  const schemeRef = useRef(listen.scheme);
+  schemeRef.current = listen.scheme;
 
   // 预览窗只有 104px 高：把软件里的字号（14…maxFont）按比例缩到 13–30px，再乘当前句放大
   const ratio = clamp((settings.fontSize - 14) / Math.max(1, maxFont - 14), 0, 1);
@@ -761,6 +741,27 @@ function LyricPreview({
   const k = settings.currentScale / 1.22;
   const kRef = useRef(k);
   kRef.current = k;
+
+  // 这一句的字（逐字 `.u` 或整句）；换句 / 换字体时重建
+  const domRef = useRef<{ rts: UnitRt[] | null; whole: HTMLElement | null; measured: boolean }>({
+    rts: null,
+    whole: null,
+    measured: false,
+  });
+  useLayoutEffect(() => {
+    const host = hostRef.current;
+    if (!host) return;
+    host.textContent = '';
+    if (line.units) {
+      domRef.current = { rts: renderUnits(host, line.units), whole: null, measured: false };
+    } else {
+      const w = document.createElement('span');
+      w.className = 'fl-whole';
+      w.textContent = line.text;
+      host.appendChild(w);
+      domRef.current = { rts: null, whole: w, measured: true };
+    }
+  }, [line, listen.font, fs, settings.bold]);
 
   // 换歌：立刻按当前进度重新挑一句
   useEffect(() => {
@@ -772,22 +773,13 @@ function LyricPreview({
     const reduce = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
     const t0 = performance.now();
     let raf = 0;
-    let baseMs = -1;
-    let stamp = 0;
     let sx = 0;
     let lastLine: HTMLDivElement | null = null;
 
     const tick = (now: number) => {
       const st = audioPlayer.getState();
-      const propMs = st.currentTime * 1000;
-      if (propMs !== baseMs) {
-        baseMs = propMs;
-        stamp = now;
-      }
-      // 播放器的进度隔一段才更新一次，中间用帧时间补平
-      const t = st.playing ? baseMs + Math.min(now - stamp, 1500) : baseMs;
-
-      const want = lines.length ? pickPreviewLine(lines, t) : { idx: -1, live: false };
+      const posMs = audioPlayer.position() * 1000;
+      const want = lines.length ? pickPreviewLine(lines, posMs) : { idx: -1, live: false };
       if (want.idx !== pickRef.current.idx || want.live !== pickRef.current.live) {
         pickRef.current = want;
         setPick(want);
@@ -795,35 +787,37 @@ function LyricPreview({
 
       const lineEl = lineRef.current;
       const cur = curRef.current;
+      const d = domRef.current;
+      const e = lineDataRef.current;
       if (lineEl && cur) {
-        const toks = tokensRef.current;
-        const n = toks.length;
         const live = st.playing && pickRef.current.live && pickRef.current.idx >= 0;
-        const demo = reduce ? 0.5 : ((now - t0) % 4200) / 4200 / 0.82;
-        const wp = toks.map((tk, j) =>
-          live ? clamp((t - tk.startMs) / tk.duration, 0, 1) : clamp(demo * n - j, 0, 1),
-        );
-        const chars = lineEl.children;
-
+        // 示范：在这一句上循环（唱完停 1.2 秒再来）
+        const span = Math.max(0.5, e.e - e.s);
+        const t = live ? posMs / 1000 : reduce ? e.s + span * 0.5 : e.s + (((now - t0) / 1000) % (span + 1.2));
+        if (d.rts && !d.measured) {
+          measureUnits(d.rts);
+          d.measured = !!d.rts[0] && d.rts[0].w > 0;
+        }
         // 先读布局，再写样式
         const W = cur.clientWidth;
         const visW = lineEl.offsetWidth * kRef.current;
         const over = visW > W - 24;
         let target = 0;
-        if (over) {
-          let j = -1;
-          for (let q = 0; q < n; q++) if ((wp[q] ?? 0) > 0) j = q;
-          const el = j >= 0 ? (chars[j] as HTMLElement | undefined) : undefined;
-          const xs = el ? (el.offsetLeft + el.offsetWidth * (wp[j] ?? 0)) * kRef.current : 0;
+        if (over && d.rts && d.rts.length) {
+          let x = 0;
+          for (const rt of d.rts) if (t >= rt.u.s) x = rt.left + rt.w * clamp((t - rt.u.s) / Math.max(0.001, rt.u.e - rt.u.s), 0, 1);
           const lim = visW / 2 - W / 2 + 14;
-          target = clamp(visW / 2 - xs, -lim, lim);
+          target = clamp(visW / 2 - x * kRef.current, -lim, lim);
         }
-        // 换句：直接到位；同一句里平滑跟随
         sx = lineEl !== lastLine ? target : sx + (target - sx) * 0.2;
         lastLine = lineEl;
 
-        for (let q = 0; q < chars.length; q++) {
-          (chars[q] as HTMLElement).style.setProperty('--wp', (wp[q] ?? 0).toFixed(3));
+        if (d.rts && d.rts.length) {
+          const wave = waveOf(d.rts, e.dens, t);
+          for (const rt of d.rts) unitFrame(rt, t, schemeRef.current, true, wave, e.dens);
+        } else if (d.whole) {
+          d.whole.classList.toggle('is-on', t >= e.s);
+          d.whole.style.setProperty('--lift', wholeLift(e.s, e.e, e.dens, t).toFixed(4));
         }
         lineEl.style.setProperty('--sx', `${sx.toFixed(1)}px`);
         cur.classList.toggle('is-over', over);
@@ -836,12 +830,14 @@ function LyricPreview({
 
   return (
     <div
-      className={`rp-preview${settings.highlightStyle === 'float' ? ' float' : ''}`}
+      className="rp-preview lw"
+      data-scheme={listen.scheme}
       style={
-        // 与画面里的歌词层同一套颜色：自定义时「正在唱」= 所选颜色，「已唱」= 它和白的混合（coverColors.paletteFromBaseColor）
-        (settings.lyricColorSource === 'custom'
-          ? { '--ly-now': customPal.highlight, '--ly-sung': customPal.primary }
-          : { '--ly-now': 'var(--acc)' }) as unknown as React.CSSProperties
+        {
+          // 与画面里的歌词层同一个主色：自定义时用所选颜色，跟随封面时用环境写入的 --ly-a
+          '--lc-a': settings.lyricColorSource === 'custom' ? settings.customColor : 'var(--ly-a, rgb(238 240 244))',
+          '--lc-font': typo.f,
+        } as unknown as React.CSSProperties
       }
     >
       <div className="rp-pb" />
@@ -855,18 +851,13 @@ function LyricPreview({
         style={
           {
             fontSize: `${fs.toFixed(1)}px`,
-            fontWeight: settings.bold ? 700 : 600,
+            fontWeight: settings.bold ? 700 : typo.w,
             '--k': k.toFixed(3),
-            '--rise': `${((settings.wordRise * fs) / 44).toFixed(2)}px`,
           } as React.CSSProperties
         }
       >
         <div key={`c${pick.idx}`} ref={lineRef} className="rp-line">
-          {tokens.map((tk, i) => (
-            <span key={i} className="rp-ch">
-              {tk.text}
-            </span>
-          ))}
+          <span ref={hostRef} className="is-grad" />
         </div>
       </div>
       <span className="rp-tag">{pick.idx >= 0 ? '实时预览 · 当前歌曲' : '实时预览'}</span>
@@ -936,10 +927,8 @@ export const AccountDock = memo(function AccountDock({
   onCoverMode,
   onOpenWallpapers,
   onFontSize,
-  onHighlightStyle,
   onLayerMode,
   onCurrentScale,
-  onWordRise,
   onLyricLayout,
   onLyricColorSource,
   onCustomColor,
@@ -1134,21 +1123,6 @@ export const AccountDock = memo(function AccountDock({
           <span className="lbl">加粗</span>
           <Tg checked={!!lyricSettings.bold} onChange={onLyricBold} label="歌词加粗" />
         </div>
-      </div>
-      <div className="g-title">高亮与动效</div>
-      <div className="group">
-        <div className="row">
-          <span className="lbl">高亮风格</span>
-          <Seg
-            label="高亮风格"
-            value={lyricSettings.highlightStyle}
-            options={[
-              { value: 'sweep', label: '扫光填充' },
-              { value: 'float', label: '上浮发光' },
-            ]}
-            onChange={onHighlightStyle}
-          />
-        </div>
         <Slider
           label="当前句放大"
           value={lyricSettings.currentScale}
@@ -1158,15 +1132,8 @@ export const AccountDock = memo(function AccountDock({
           format={(v) => `${v.toFixed(2)}×`}
           onChange={onCurrentScale}
         />
-        <Slider
-          label="逐字上浮"
-          value={lyricSettings.wordRise}
-          min={0}
-          max={12}
-          step={1}
-          format={(v) => `${v}px`}
-          onChange={onWordRise}
-        />
+        {/* #124：扫光 / 上浮两种模式换成听音空间的逐字效果；着色与字体两处共用一套设置 */}
+        <p className="hint-line">逐字效果、着色和字体与听音空间是同一套，在下方「听音空间」里调整。</p>
       </div>
       <div className="g-title">布局与颜色</div>
       <div className="group">
@@ -1259,6 +1226,21 @@ export const AccountDock = memo(function AccountDock({
                   { value: '10', label: '10 秒' },
                 ]}
                 onChange={(v) => onListenSettings({ listenDelay: Number(v) })}
+              />
+            </div>
+            <div className="row">
+              <span className="lbl">
+                漫游时歌词<small>聆听时都换成完整的三句</small>
+              </span>
+              <Seg
+                label="漫游时歌词"
+                value={lyricSettings.roamLyrics}
+                options={[
+                  { value: 'ambient', label: '氛围' },
+                  { value: 'caption', label: '字幕' },
+                  { value: 'both', label: '都显示' },
+                ]}
+                onChange={(v) => onListenSettings({ roamLyrics: v })}
               />
             </div>
             <div className="row">

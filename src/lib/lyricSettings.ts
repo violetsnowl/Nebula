@@ -1,13 +1,10 @@
 /** 歌词视觉设置（docs/project/ARCHITECTURE.md：共享类型，LyricsLayer 与 useLyrics 均从 lib 取）。 */
 export interface LyricVisualSettings {
   fontSize: number;
-  highlightStyle: 'sweep' | 'float';
   /** 悬浮层次：under = 卡片云之下（Z1）；over = 覆盖在卡片云之上。 */
   layerMode: 'under' | 'over';
   /** 当前句放大系数（可 DIY）。 */
   currentScale: number;
-  /** 逐字已唱字上浮幅度 px（可 DIY）。 */
-  wordRise: number;
   /** 三句布局：stacked = 依次在上；offset = 上下错落。 */
   lyricLayout: 'stacked' | 'offset';
   /** 歌词取色源：cover = 封面自动取色；custom = 自定义基色。 */
@@ -24,9 +21,14 @@ export interface LyricVisualSettings {
   listenStyle: 'sink' | 'part' | 'ebb';
   /** 聆听时播放条一起变淡。 */
   listenDimBar: boolean;
+  /**
+   * 漫游时的歌词（#124）：ambient = 只留当前句、缩小半透明微虚，退成氛围；
+   * caption = 播放条上方一行字幕；both = 两者都有。聆听时都换成完整的三句。
+   */
+  roamLyrics: 'ambient' | 'caption' | 'both';
 }
 
 /** 交接相关的设置项（设置页一次改一项）。 */
 export type ListenSettingsPatch = Partial<
-  Pick<LyricVisualSettings, 'listenHandoff' | 'listenDelay' | 'listenStyle' | 'listenDimBar'>
+  Pick<LyricVisualSettings, 'listenHandoff' | 'listenDelay' | 'listenStyle' | 'listenDimBar' | 'roamLyrics'>
 >;

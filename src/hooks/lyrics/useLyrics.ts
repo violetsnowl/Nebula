@@ -45,10 +45,8 @@ function loadLyricSettings(): LyricVisualSettings {
   const maxFont = Math.max(28, Math.round((typeof window !== 'undefined' ? window.innerHeight : 900) / 4));
   // 衬线 Display 歌词（NEBULA_UI_SYSTEM §7）默认 44px；旧默认 24 视为"从没调过"，自动迁移到新默认，用户自己调过的值保留
   let fontSize = DEFAULT_LYRIC_FONT_SIZE;
-  let highlightStyle: LyricVisualSettings['highlightStyle'] = 'sweep';
   let layerMode: LyricVisualSettings['layerMode'] = 'under';
   let currentScale = 1.22;
-  let wordRise = 4;
   let lyricLayout: LyricVisualSettings['lyricLayout'] = 'stacked';
   let lyricColorSource: LyricVisualSettings['lyricColorSource'] = 'cover';
   let customColor = '#3aa0ff';
@@ -58,6 +56,7 @@ function loadLyricSettings(): LyricVisualSettings {
   let listenDelay = 6;
   let listenStyle: LyricVisualSettings['listenStyle'] = 'sink';
   let listenDimBar = true;
+  let roamLyrics: LyricVisualSettings['roamLyrics'] = 'ambient';
   try {
     const s = typeof localStorage !== 'undefined' ? localStorage.getItem('music-nebula.lyric-settings') : null;
     if (s) {
@@ -65,10 +64,8 @@ function loadLyricSettings(): LyricVisualSettings {
       if (typeof p.fontSize === 'number' && p.fontSize >= 14 && p.fontSize <= maxFont && p.fontSize !== LEGACY_LYRIC_FONT_SIZE) {
         fontSize = p.fontSize;
       }
-      if (p.highlightStyle === 'sweep' || p.highlightStyle === 'float') highlightStyle = p.highlightStyle;
       if (p.layerMode === 'under' || p.layerMode === 'over') layerMode = p.layerMode;
       if (typeof p.currentScale === 'number' && p.currentScale >= 1 && p.currentScale <= 1.6) currentScale = p.currentScale;
-      if (typeof p.wordRise === 'number' && p.wordRise >= 0 && p.wordRise <= 12) wordRise = p.wordRise;
       if (p.lyricLayout === 'stacked' || p.lyricLayout === 'offset') lyricLayout = p.lyricLayout;
       if (p.lyricColorSource === 'cover' || p.lyricColorSource === 'custom') lyricColorSource = p.lyricColorSource;
       if (typeof p.customColor === 'string' && /^#?[0-9a-f]{6}$/i.test(p.customColor)) customColor = p.customColor;
@@ -77,16 +74,15 @@ function loadLyricSettings(): LyricVisualSettings {
       if (p.listenDelay === 3 || p.listenDelay === 6 || p.listenDelay === 10) listenDelay = p.listenDelay;
       if (p.listenStyle === 'sink' || p.listenStyle === 'part' || p.listenStyle === 'ebb') listenStyle = p.listenStyle;
       if (typeof p.listenDimBar === 'boolean') listenDimBar = p.listenDimBar;
+      if (p.roamLyrics === 'ambient' || p.roamLyrics === 'caption' || p.roamLyrics === 'both') roamLyrics = p.roamLyrics;
     }
   } catch {
     /* 用默认值 */
   }
   return {
     fontSize,
-    highlightStyle,
     layerMode,
     currentScale,
-    wordRise,
     lyricLayout,
     lyricColorSource,
     customColor,
@@ -95,6 +91,7 @@ function loadLyricSettings(): LyricVisualSettings {
     listenDelay,
     listenStyle,
     listenDimBar,
+    roamLyrics,
   };
 }
 
@@ -178,16 +175,11 @@ export function useLyrics() {
   );
 
   const handleLyricFontSize = useCallback((n: number) => patchSettings({ fontSize: n }), [patchSettings]);
-  const handleHighlightStyle = useCallback(
-    (s: LyricVisualSettings['highlightStyle']) => patchSettings({ highlightStyle: s }),
-    [patchSettings],
-  );
   const handleLayerMode = useCallback(
     (m: LyricVisualSettings['layerMode']) => patchSettings({ layerMode: m }),
     [patchSettings],
   );
   const handleCurrentScale = useCallback((n: number) => patchSettings({ currentScale: n }), [patchSettings]);
-  const handleWordRise = useCallback((n: number) => patchSettings({ wordRise: n }), [patchSettings]);
   const handleLyricLayout = useCallback(
     (m: LyricVisualSettings['lyricLayout']) => patchSettings({ lyricLayout: m }),
     [patchSettings],
@@ -218,10 +210,8 @@ export function useLyrics() {
     lyricSettings,
     lyricTranslationEnabled,
     handleLyricFontSize,
-    handleHighlightStyle,
     handleLayerMode,
     handleCurrentScale,
-    handleWordRise,
     handleLyricLayout,
     handleLyricColorSource,
     handleCustomColor,

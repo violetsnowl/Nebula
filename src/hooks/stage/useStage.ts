@@ -198,7 +198,9 @@ export function useStage({
     const spawnSet = spawnFromCenterRef.current;
     // 漫游 / 聆听交接「散开」（NEBULA_UI_SYSTEM §7.1）：卡片中心按离歌词区的远近向外推，景深按推开后的位置算
     const partK = listenBus.style === 'part' ? listenBus.k : 0;
-    partActiveRef.current = partK > 0;
+    // 「退潮」（#124）：卡片像退去的潮水，向外、略向下漂散（离中心越远漂得越多），材质由 CSS 化成薄雾
+    const ebbK = listenBus.style === 'ebb' ? listenBus.k : 0;
+    partActiveRef.current = partK > 0 || ebbK > 0;
 
     const metaPool = metaPoolRef.current;
     let metaN = 0;
@@ -260,6 +262,11 @@ export function useStage({
         y += p.y - cy;
         dist = Math.hypot(p.x - frame.vw / 2, p.y - frame.vh / 2);
         pushDim = p.push;
+      } else if (ebbK > 0) {
+        const cx = pos.x + CARD_WIDTH / 2;
+        const cy = pos.y + CARD_HEIGHT / 2;
+        x += (cx - frame.vw / 2) * 0.18 * ebbK;
+        y += (cy - frame.vh * 0.45) * 0.14 * ebbK + frame.vh * 0.05 * ebbK;
       }
       const depthFilter = fisheyeFilter(dist, maxDist);
       el.style.setProperty('--x', `${x}px`);
@@ -374,11 +381,11 @@ export function useStage({
 
   useEffect(() => initGlassGlow(), []);
 
-  // 交接进行中每帧刷新一次卡片位置（只有「散开」会移动卡片；切走「散开」时再刷新一次把卡片放回原位）
+  // 交接进行中每帧刷新一次卡片位置（「散开」「退潮」会移动卡片；切走时再刷新一次把卡片放回原位）
   useEffect(
     () =>
       onListenFrame(() => {
-        if (listenBus.style === 'part' || partActiveRef.current) controllerRef.current?.refresh();
+        if (listenBus.style === 'part' || listenBus.style === 'ebb' || partActiveRef.current) controllerRef.current?.refresh();
       }),
     [controllerRef],
   );

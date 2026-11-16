@@ -1,5 +1,20 @@
-import type { EngineEntry, EngineUnit } from './model';
+import type { EngineEntry } from './model';
 import type { ListenSettings } from './settings';
+import {
+  TYPO,
+  Vars,
+  clamp,
+  measureUnits,
+  renderUnits,
+  sm,
+  unitFrame,
+  waveOf,
+  wholeLift,
+  type LyricScript,
+  type UnitRt,
+} from './words';
+
+export type { LyricScript } from './words';
 
 /**
  * 听音空间歌词阅读栏引擎（docs/design/NEBULA_UI_SYSTEM.md §7.2，样张 J 第 6 版的移植）。
@@ -11,30 +26,12 @@ import type { ListenSettings } from './settings';
  * 上下边缘的淡出因此改成逐句算透明度，而不是遮罩。
  */
 
-export type LyricScript = 'zh' | 'en' | 'ja' | 'ko';
-
 export interface LyricEngineOptions {
   /** 设置里的预览：小尺寸（约 316×150）、三句可见、不接收滚轮 / 点击；动效与正式版完全一致。 */
   compact?: boolean;
   /** 点某一句：跳到该句开始（秒）。 */
   onSeek: (sec: number) => void;
 }
-
-// 字体与字号（§7.2 字体表；字号是 760px 高的栏下的值，按栏高等比缩放）
-const TYPO: Record<ListenSettings['font'], Record<LyricScript, { f: string; size: number; lh: number; ls: string; w: number }>> = {
-  serif: {
-    zh: { f: "'Newsreader',Georgia,'Noto Serif SC','Songti SC',serif", size: 36, lh: 1.32, ls: '0.02em', w: 600 },
-    en: { f: "'Newsreader',Georgia,'Noto Serif SC',serif", size: 38, lh: 1.16, ls: '0em', w: 600 },
-    ja: { f: "'Newsreader',Georgia,'Noto Serif JP','Yu Mincho',serif", size: 34, lh: 1.38, ls: '0.03em', w: 600 },
-    ko: { f: "'Newsreader',Georgia,'Noto Serif KR','Batang','Malgun Gothic',serif", size: 34, lh: 1.38, ls: '0em', w: 600 },
-  },
-  sans: {
-    zh: { f: "'Inter','Segoe UI','Noto Sans SC','Microsoft YaHei',sans-serif", size: 36, lh: 1.3, ls: '0.01em', w: 700 },
-    en: { f: "'Inter','Segoe UI',sans-serif", size: 36, lh: 1.14, ls: '-0.012em', w: 700 },
-    ja: { f: "'Inter','Segoe UI','Noto Sans JP','Yu Gothic','Meiryo',sans-serif", size: 34, lh: 1.36, ls: '0.02em', w: 700 },
-    ko: { f: "'Inter','Segoe UI','Noto Sans KR','Malgun Gothic',sans-serif", size: 34, lh: 1.36, ls: '-0.01em', w: 700 },
-  },
-};
 
 /** 基准栏高 760px（1600×900 下的听音空间）。 */
 const REF_H = 760;
@@ -47,38 +44,6 @@ const COMPACT_K = 0.56;
 /** 回到当前按钮里的准星图标（lib 不能 import components，用内联 SVG 字符串）。 */
 const BACK_ICON =
   '<svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" aria-hidden="true"><circle cx="12" cy="12" r="6"/><path d="M12 2.5v5M12 16.5v5M2.5 12h5M16.5 12h5"/><circle cx="12" cy="12" r="1.5" fill="currentColor" stroke="none"/></svg>';
-
-const clamp = (v: number, a: number, b: number) => Math.max(a, Math.min(b, v));
-const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
-const sm = (x: number) => x * x * (3 - 2 * x);
-
-/** 样式变量写入缓存：值没变就不碰 DOM（每帧要写很多变量）。 */
-class Vars {
-  private m: Record<string, string> = {};
-  private g = false;
-  constructor(readonly el: HTMLElement) {}
-  set(name: string, val: string): void {
-    if (this.m[name] === val) return;
-    this.m[name] = val;
-    this.el.style.setProperty(name, val);
-  }
-  glow(on: boolean): void {
-    if (on === this.g) return;
-    this.g = on;
-    this.el.classList.toggle('glow', on);
-  }
-}
-
-interface UnitRt {
-  u: EngineUnit;
-  v: Vars;
-  /** 拉丁长音按字母拆开的子节点。 */
-  chs: Vars[] | null;
-  w: number;
-  left: number;
-  fs: number;
-  lineW: number;
-}
 
 interface Row {
   e: EngineEntry;
@@ -143,7 +108,7 @@ export class LyricEngine {
     this.host = host;
     this.opts = opts;
     this.compact = !!opts.compact;
-    host.classList.add('lc-root');
+    host.classList.add('lc-root', 'lw');
     if (this.compact) host.dataset.compact = '1';
     host.dataset.scheme = this.settings.scheme;
     host.dataset.tr = this.settings.translation ? 'on' : 'off';
@@ -323,7 +288,7 @@ export class LyricEngine {
     main.className = 'ly-main';
     row.main = main;
     if (e.units) {
-      row.rts = this.renderUnits(main, e.units);
+      row.rts = renderUnits(main, e.units);
     } else {
       // 没有逐字时间：整句一个节点，不伪造时间
       main.classList.add('ly-whole');
@@ -345,33 +310,6 @@ export class LyricEngine {
       this.opts.onSeek(e.s + 0.01);
     });
     return row;
-  }
-
-  private renderUnits(host: HTMLElement, units: EngineUnit[]): UnitRt[] {
-    return units.map((u, k) => {
-      const sp = document.createElement('span');
-      sp.className = 'u';
-      sp.style.setProperty('--k', String(k));
-      sp.style.setProperty('--f', u.cjk ? '42%' : '26%');
-      let chs: Vars[] | null = null;
-      if (u.emph && !u.cjk) {
-        // 拉丁长音：按字母拆开，依次起伏、依次扫光
-        sp.classList.add('has-ch');
-        chs = [...u.t].map((c) => {
-          const c1 = document.createElement('span');
-          c1.className = 'ch';
-          c1.textContent = c;
-          c1.style.setProperty('--k', String(k));
-          sp.appendChild(c1);
-          return new Vars(c1);
-        });
-      } else {
-        sp.textContent = u.t;
-      }
-      host.appendChild(sp);
-      if (u.sp) host.appendChild(document.createTextNode(' '));
-      return { u, v: new Vars(sp), chs, w: 0, left: 0, fs: 36, lineW: 0 };
-    });
   }
 
   // ---------------------------------------------------------------- 尺寸与排版
@@ -421,21 +359,8 @@ export class LyricEngine {
       r.h = r.el.offsetHeight;
       r.top = top;
       top += r.h + gap;
-      if (r.rts) this.measureUnits(r.rts);
+      if (r.rts) measureUnits(r.rts);
     }
-  }
-
-  private measureUnits(rts: UnitRt[]): void {
-    if (!rts.length) return;
-    const fs = parseFloat(getComputedStyle(rts[0]!.v.el).fontSize) || 36;
-    let x = 0;
-    for (const r of rts) {
-      r.w = r.v.el.offsetWidth;
-      r.left = x;
-      r.fs = fs;
-      x += r.w + (r.u.sp ? fs * 0.26 : 0);
-    }
-    for (const r of rts) r.lineW = x;
   }
 
   /** 位置、缩放、透明度直接落到目标（初次排版、换字体、改尺寸时不走弹簧）。 */
@@ -583,21 +508,18 @@ export class LyricEngine {
       });
     } else if (C.rts) {
       const D = e.dens;
-      const w = this.waveOf(C.rts, D);
-      for (const rt of C.rts) this.unitFrame(rt, true, w, D);
+      const w = waveOf(C.rts, D, t);
+      for (const rt of C.rts) unitFrame(rt, t, this.settings.scheme, true, w, D);
     } else if (C.whole) {
       // 整句：波浪改整句轻浮
       const D = e.dens;
-      const lead = 0.35 - 0.2 * D;
-      const settle = 0.7 - 0.35 * D;
-      const A = 0.035 * (1 - 0.25 * D) * sm(clamp((t - e.s + lead) / (lead + 0.1), 0, 1)) * sm(clamp((e.e + settle - t) / settle, 0, 1));
-      C.whole.set('--lift', A.toFixed(4));
+      C.whole.set('--lift', wholeLift(e.s, e.e, D, t).toFixed(4));
     }
     // 上一句的尾韵还在褪
     for (const r of this.tails) {
       if (r.gradUntil > t) {
         const D = this.dOf(r);
-        for (const rt of r.rts!) this.unitFrame(rt, false, null, D);
+        for (const rt of r.rts!) unitFrame(rt, t, this.settings.scheme, false, null, D);
       } else {
         r.el.classList.remove('is-grad');
         this.tails.delete(r);
@@ -609,126 +531,6 @@ export class LyricEngine {
       N.pre = true;
       N.to = 0.72;
     }
-  }
-
-  /**
-   * 逐字波浪：沿一句的阅读顺序（按每个字实际宽度累计）找到正在唱的位置 S，在 S 隆起一道非对称高斯波。
-   * 唱过的一侧更宽（慢慢落回），没唱的一侧更窄（快唱到时才升起）；S 在字间停顿里平滑移动；句首提前淡入、句尾落平。
-   */
-  private waveOf(rts: UnitRt[], D: number): (c: number) => number {
-    const t = this.t;
-    const a = rts[0]!;
-    const z = rts[rts.length - 1]!;
-    let S = a.left;
-    if (t >= z.u.e) S = z.left + z.w;
-    else if (t >= a.u.s) {
-      for (let k = 0; k < rts.length; k++) {
-        const r = rts[k]!;
-        if (t < r.u.s) {
-          const pv = rts[k - 1]!;
-          const f = clamp((t - pv.u.e) / Math.max(0.01, r.u.s - pv.u.e), 0, 1);
-          S = lerp(pv.left + pv.w, r.left, sm(f));
-          break;
-        }
-        if (t < r.u.e) {
-          S = r.left + clamp((t - r.u.s) / Math.max(0.001, r.u.e - r.u.s), 0, 1) * r.w;
-          break;
-        }
-      }
-    }
-    const lead = 0.35 - 0.2 * D;
-    const settle = 0.7 - 0.35 * D;
-    const A = 0.075 * (1 - 0.25 * D) * sm(clamp((t - a.u.s + lead) / (lead + 0.1), 0, 1)) * sm(clamp((z.u.e + settle - t) / settle, 0, 1));
-    const fs = a.fs || 36;
-    const gb = (1.7 - 0.5 * D) * fs;
-    const ga = (1.05 - 0.25 * D) * fs;
-    return (c) => {
-      const d = c - S;
-      const g = d < 0 ? gb : ga;
-      return A * Math.exp(-(d / g) * (d / g));
-    };
-  }
-
-  /**
-   * 着色（§7.2 视觉模式）。sung = 唱过的字，edge = 正在唱的那道光，un = 还没唱到的字；tint = 刚唱完的余光（0–1）。
-   * 两种模式互为反色：封面色 = 唱过的染色；同色系 = 没唱的染色。
-   */
-  private colors(tint: number): { sung: string; edge: string; un: string } {
-    const T = tint > 0.01;
-    if (this.settings.scheme === 'mono') {
-      return {
-        sung: `color-mix(in srgb, var(--lc-a) ${T ? 8 + Math.round(tint * 50) : 8}%, #fff)`,
-        edge: 'color-mix(in srgb, var(--lc-a) 35%, #fff)',
-        un: 'color-mix(in srgb, color-mix(in srgb, var(--lc-a) 58%, #fff) 52%, transparent)',
-      };
-    }
-    return {
-      sung: T ? `color-mix(in srgb, #fff ${Math.round(tint * 55)}%, var(--lc-a))` : 'var(--lc-a)',
-      edge: 'color-mix(in srgb, var(--lc-a) 30%, #fff)',
-      un: 'rgba(255,255,255,.42)',
-    };
-  }
-
-  /** 一个字在这一帧的状态：扫光进度、尾韵、波浪浮起、长音放大与白光。 */
-  private unitFrame(rt: UnitRt, active: boolean, wave: ((c: number) => number) | null, D: number): void {
-    const t = this.t;
-    const u = rt.u;
-    // 长音光固定白光（白 72% + 主色）
-    const GC = 'color-mix(in srgb, #fff 72%, var(--lc-a))';
-    const dur = Math.max(0.001, u.e - u.s);
-    const p = clamp((t - u.s) / dur, 0, 1);
-    // 尾韵：褪去时间 clamp(字时长×2, 0.22s, 0.7s)，字唱得越快褪得越快
-    const tailDur = clamp(dur * 2, 0.22, 0.7);
-    const tint = t > u.e ? clamp(1 - (t - u.e) / tailDur, 0, 1) : 0;
-    const col = this.colors(tint);
-    const setGrad = (v: Vars, pp: number) => {
-      v.set('--p', pp.toFixed(3));
-      v.set('--sung', col.sung);
-      v.set('--edge', col.edge);
-      v.set('--un', col.un);
-    };
-    const singing = t >= u.s && t < u.e;
-    if (rt.chs) {
-      const n = rt.chs.length;
-      rt.chs.forEach((c, ci) => {
-        setGrad(c, clamp(p * n - ci, 0, 1));
-        if (!active) return;
-        const base = wave ? wave(rt.left + ((ci + 0.5) * rt.w) / n) : 0;
-        const lp = clamp((p - (ci / n) * 0.55) / 0.45, 0, 1);
-        const bump = Math.sin(Math.PI * lp);
-        c.set('--lift', (base + 0.05 * bump).toFixed(4));
-        c.set('--sc', (1 + 0.06 * bump).toFixed(4));
-        const g = singing ? Math.sin(Math.PI * Math.min(1, p * 1.05)) : 0;
-        if (g > 0.02) {
-          c.glow(true);
-          c.set('--gr', (6 + 12 * g).toFixed(1) + 'px');
-          c.set('--gc', `color-mix(in srgb, ${GC} ${Math.round(60 * g)}%, transparent)`);
-        } else c.glow(false);
-      });
-      return;
-    }
-    setGrad(rt.v, p);
-    if (!active) return;
-    let lift = wave ? wave(rt.left + rt.w / 2) : 0;
-    let sc = 1;
-    let g = 0;
-    if (u.emph) {
-      // 中日韩长音：叠在波浪上再浮 0.045em、放大到 107%
-      const k = Math.sin(Math.PI * Math.min(1, p * 1.04));
-      lift += 0.045 * k;
-      sc = 1 + 0.07 * (p < 1 ? Math.sin(Math.PI * Math.min(1, p * 0.95)) : 0);
-      g = singing ? k : 0;
-    } else if (singing) g = 0.45 * (1 - 0.45 * D);
-    rt.v.set('--lift', lift.toFixed(4));
-    rt.v.set('--sc', sc.toFixed(4));
-    // 唱完后的余光：渐弱
-    const tailGlow = t > u.e ? clamp(1 - (t - u.e) / (tailDur * 1.3), 0, 1) * 0.5 : 0;
-    const G = Math.max(g, tailGlow * (u.emph ? 1.4 : 0.6));
-    if (G > 0.03) {
-      rt.v.glow(true);
-      rt.v.set('--gr', ((u.emph ? 8 : 5) + (u.emph ? 12 : 4) * G).toFixed(1) + 'px');
-      rt.v.set('--gc', `color-mix(in srgb, ${GC} ${Math.round((u.emph ? 62 : 45) * G)}%, transparent)`);
-    } else rt.v.glow(false);
   }
 
   // ---------------------------------------------------------------- 物理与落样式

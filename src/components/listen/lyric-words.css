@@ -1,0 +1,49 @@
+/* 逐字层（NEBULA_UI_SYSTEM §7.2「每个字」）：听音空间的歌词阅读栏与星云上的空域歌词共用（#124）。
+   逐帧状态由 lib/listen/words.ts 写入：--p 扫光进度、--sung / --edge / --un 三段颜色、
+   --lift 浮起（em）、--sc 放大、.glow + --gr / --gc 长音白光。
+   根元素带 .lw，并提供 --lc-a（歌词主色）与 --lc-rest（没在扫的字的颜色）。 */
+
+/* 每个字：inline-block 才能单独位移 / 放大；浮起量按字号（em）算 */
+.lw .u {
+  display: inline-block;
+  white-space: pre;
+  color: var(--lc-rest, #fff);
+  transform: translate3d(0, calc(var(--lift, 0) * -1em), 0) scale(var(--sc, 1));
+  transform-origin: 50% 85%;
+}
+.lw .u .ch {
+  display: inline-block;
+  white-space: pre;
+  transform: translate3d(0, calc(var(--lift, 0) * -1em), 0) scale(var(--sc, 1));
+  transform-origin: 50% 85%;
+}
+
+/* 扫光：已唱 → 波前 → 未唱，三段渐变随 --p 移动；--f 是羽化宽度（中日韩 42% 字宽，拉丁 26% 词宽） */
+.lw .is-grad .u:not(.has-ch),
+.lw .is-grad .u .ch {
+  color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+  --P: calc(var(--p, 0) * (100% + 2 * var(--f, 34%)) - var(--f, 34%));
+  background-image: linear-gradient(90deg, var(--sung, #fff) 0, var(--sung, #fff) calc(var(--P) - var(--f, 34%)), var(--edge) var(--P), var(--un) calc(var(--P) + var(--f, 34%)));
+}
+
+/* 长音的白光 */
+.lw .u.glow,
+.lw .u .ch.glow {
+  filter: drop-shadow(0 0 var(--gr, 8px) var(--gc, transparent));
+}
+
+/* 退场：字依次落回（每字晚 14ms） */
+.lw .is-settle .u,
+.lw .is-settle .u .ch {
+  transition: transform 0.55s cubic-bezier(0.2, 0.8, 0.2, 1);
+  transition-delay: calc(var(--k, 0) * 14ms);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lw .u,
+  .lw .u .ch {
+    transform: none;
+  }
+}
