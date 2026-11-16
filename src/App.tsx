@@ -271,18 +271,11 @@ export default function App() {
     }),
     [lyricSettings, uiHideCards, uiHideLyrics],
   );
-  // 正在操作时不进入聆听：悬停卡片、右键菜单、弹窗、二级播放页、壁纸、Dock / 顶部面板、导入中
+  // 不进入聆听的情况只剩：右键菜单、覆盖全局的页面（信息弹窗、听音空间、壁纸）、导入中。
   // 指针静止在卡片上也能进入聆听（2026-11-14 用户确认，NEBULA_UI_SYSTEM §7.1）：悬停不再阻断；
-  // 聆听中悬停态由 CSS 压回普通态（.app[data-lk] .music-card.is-hovered），一动鼠标自然恢复
-  const listenBlocked =
-    !!contextMenu ||
-    !!infoModal ||
-    nowPlayingOpen ||
-    wallpaperOpen ||
-    edge.top ||
-    edge.left ||
-    edge.right ||
-    importing;
+  // 聆听中悬停态由 CSS 压回普通态（.app[data-lk] .music-card.is-hovered），一动鼠标自然恢复。
+  // 侧栏 / 设置 / 顶部搜索面板开着、鼠标不动也算静止（#125，用户确认）；在搜索框里打字由引擎的输入框判断挡住
+  const listenBlocked = !!contextMenu || !!infoModal || nowPlayingOpen || wallpaperOpen || importing;
   useListenMode(appRef, listenConfig, listenBlocked);
 
   /** 全网搜索点播：仅播放该曲，不影响当前队列；播完自动接回歌单（playTransient）。 */

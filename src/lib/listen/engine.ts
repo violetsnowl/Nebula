@@ -35,6 +35,17 @@ export interface LyricEngineOptions {
 
 /** 基准栏高 760px（1600×900 下的听音空间）。 */
 const REF_H = 760;
+/**
+ * 字号跟栏高的关系（#125，用户反馈）：原来严格成正比，2K 全屏下每个字比中等窗口大将近一倍。
+ * 改成阻尼缩放：比基准矮时按 0.6 次方缩小（小窗口不至于挤），比基准高时只按 0.3 次方长一点，
+ * 多出来的高度用来多显示几句。1600×900 → 1；1280×800 → .93；2K 全屏 → 1.15（原 1.6）。
+ */
+const K_EXP_DOWN = 0.6;
+const K_EXP_UP = 0.3;
+export function columnScale(H: number): number {
+  const r = H / REF_H;
+  return clamp(Math.pow(r, r < 1 ? K_EXP_DOWN : K_EXP_UP), 0.5, 1.35);
+}
 /** 当前句顶边停在栏高的 28%（预览 22%）。 */
 const ANCHOR = 0.28;
 const ANCHOR_COMPACT = 0.22;
@@ -323,7 +334,7 @@ export class LyricEngine {
     this.sized = true;
     this.H = H;
     this.W = W;
-    this.k = this.compact ? COMPACT_K : clamp(H / REF_H, 0.4, 2);
+    this.k = this.compact ? COMPACT_K : columnScale(H);
     this.anchor = H * (this.compact ? ANCHOR_COMPACT : ANCHOR);
     return true;
   }

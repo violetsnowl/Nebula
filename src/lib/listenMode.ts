@@ -60,8 +60,13 @@ const LYR_DIP = 0.22;
 const MOVE_PX = 6;
 const MOVE_WINDOW_MS = 400;
 const CHECK_MS = 250;
-/** 这些弹层存在时不进入聆听（正在操作）。 */
-const BUSY_SELECTOR = '.queue-pop, .quality-pop, .vol-pop, .ctx-menu, .info-modal, .ls-root.is-shown';
+/**
+ * 这些弹层存在时不进入聆听：只剩覆盖全局的（听音空间、信息弹窗）和右键菜单。
+ * 侧栏、设置、播放队列 / 音质 / 音量小弹层里鼠标不动也算静止（#125，用户反馈「在设置面板里一直不进入」）。
+ */
+const BUSY_SELECTOR = '.ctx-menu, .info-modal, .ls-root.is-shown';
+/** 这些输入框获得焦点才算「正在打字」；滑杆、复选框、按钮点过后留着焦点不算。 */
+const TEXT_INPUT = /^(text|search|email|url|tel|password|number)$/;
 
 /**
  * 「散开」：把屏幕坐标 (x, y) 处的卡片中心向外推。返回推开后的位置和推开量（0~1，用于压暗）。
@@ -114,12 +119,17 @@ const easeInOut = (t: number): number => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow
 const easeOut = (t: number): number => 1 - Math.pow(1 - t, 3);
 const lerp = (a: number, b: number, t: number): number => a + (b - a) * t;
 
-/** 有可见、可操作的输入框处于焦点（正在打字）。收起的面板里残留焦点的输入框不算（面板收起后 pointer-events 为 none）。 */
+/**
+ * 有可见、可操作的文字输入框处于焦点（正在打字）。收起的面板里残留焦点的输入框不算（面板收起后 pointer-events 为 none）。
+ * 只认打字用的输入框：设置里拖过的滑杆（input[type=range]）、点过的颜色框会一直留着焦点，以前因此一直不进入聆听（#125）。
+ */
 function editableFocused(): boolean {
   const el = document.activeElement as HTMLElement | null;
   if (!el) return false;
   const tag = el.tagName;
-  if (!(tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable)) return false;
+  const typing =
+    tag === 'TEXTAREA' || el.isContentEditable || (tag === 'INPUT' && TEXT_INPUT.test((el as HTMLInputElement).type));
+  if (!typing) return false;
   return el.getClientRects().length > 0 && getComputedStyle(el).pointerEvents !== 'none';
 }
 

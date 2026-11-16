@@ -948,6 +948,45 @@ async function main() {
     (z1.listening || z1.op <= 0.66);
   log('空域歌词逐字层', JSON.stringify(z1));
 
+  // 10c--. 字幕暗晕只压亮处（#125）：字幕根上不能有 opacity / filter（否则 backdrop-filter 看不到身后），
+  // 暗晕用色调曲线滤镜
+  const capHaze = await page.evaluate(() => {
+    const cap = document.querySelector('.lyric-caption');
+    const haze = cap?.querySelector('.lc-haze');
+    if (!cap || !haze) return null;
+    const cs = getComputedStyle(cap);
+    return {
+      rootOp: cs.opacity,
+      rootFilter: cs.filter,
+      backdrop: getComputedStyle(haze).backdropFilter,
+      tone: !!document.getElementById('lc-cap-tone'),
+    };
+  });
+  const capHazeOk =
+    !!capHaze && capHaze.rootOp === '1' && capHaze.rootFilter === 'none' && /url\(/.test(capHaze.backdrop) && capHaze.tone;
+  log('字幕暗晕只压亮处', JSON.stringify(capHaze));
+
+  // 10c---. 设置面板开着、刚拖过滑杆（焦点留在 range 上），鼠标不动也要进入聆听（#125）
+  await page.mouse.move(1596, 420);
+  await page.waitForTimeout(600);
+  await page.locator('.sd-rail.sd-right .sd-orb[aria-label="设置"]').click();
+  await page.waitForTimeout(600);
+  await page.locator('.sd-panel.sd-right .seg.wide button', { hasText: '歌词' }).click();
+  await page.waitForTimeout(300);
+  await page.locator('.sd-panel.sd-right button', { hasText: '3 秒' }).first().click();
+  await page.evaluate(() => document.querySelector('.sd-panel.sd-right input[type="range"]')?.focus());
+  const idleStart = await page.evaluate(() => ({
+    panel: !!document.querySelector('.sd-panel.sd-right'),
+    focusRange: document.activeElement?.getAttribute('type') === 'range',
+  }));
+  await page.waitForFunction(() => !!document.querySelector('.app[data-listen]'), null, { timeout: 6000 }).catch(() => {});
+  const idleInPanel = await page.evaluate(() => ({
+    listening: !!document.querySelector('.app[data-listen]'),
+    panelStill: !!document.querySelector('.sd-panel.sd-right'),
+  }));
+  const idleOk = idleStart.panel && idleInPanel.listening && idleInPanel.panelStill;
+  log('设置面板里静止也进入聆听', JSON.stringify({ idleStart, idleInPanel }));
+
   log('控制台错误数', errors.length);
   if (errors.length) console.log(errors.join('\n'));
 
@@ -995,6 +1034,8 @@ async function main() {
     !volOk ||
     !volUiOk ||
     !z1Ok ||
+    !capHazeOk ||
+    !idleOk ||
     !progSmoothOk ||
     !barLayoutOk ||
     !barNewOk ||
@@ -1031,6 +1072,8 @@ async function main() {
     volHover: !volOk,
     volSlider: !volUiOk,
     z1Words: !z1Ok,
+    captionHaze: !capHazeOk,
+    idleInPanel: !idleOk,
     progressSmooth: !progSmoothOk,
     barLayout: !barLayoutOk,
     barSpec: !barNewOk,

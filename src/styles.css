@@ -2777,18 +2777,33 @@ body {
   font-size: 22px;
   letter-spacing: calc(var(--lc-ls, 0.02em) + 0.03em);
   line-height: 1.35;
-  opacity: 0;
-  filter: drop-shadow(0 1px 2.4px rgba(4, 6, 12, 0.62)) drop-shadow(0 0 5px rgba(4, 6, 12, 0.34));
   --lc-rest: #fff;
+  --cap-o: 0;
 }
-.lyric-caption::before {
-  content: '';
+/* 根上不放 opacity / filter（会成为 backdrop 根，暗晕就只看得到自己）；透明度由 --cap-o 分给两个子元素 */
+.lyric-caption > .is-grad {
+  position: relative;
+  display: inline-block;
+  opacity: var(--cap-o);
+  filter: drop-shadow(0 1px 2.4px rgba(4, 6, 12, 0.62)) drop-shadow(0 0 5px rgba(4, 6, 12, 0.34));
+}
+/* 暗晕（#125）：不再叠一层半透明黑（空背景上显出一团浓雾），改成对身后做色调曲线：
+   暗部不动、亮部压下去，再轻虚化掉细节；边缘用椭圆遮罩羽化 */
+.lyric-caption > .lc-haze {
   position: absolute;
-  inset: -10px -40px;
+  inset: -22px -72px;
   z-index: -1;
-  border-radius: 50%;
-  background: radial-gradient(closest-side, rgba(4, 6, 12, 0.66), rgba(4, 6, 12, 0.36) 60%, rgba(4, 6, 12, 0));
-  filter: blur(12px);
+  opacity: var(--cap-o);
+  backdrop-filter: url(#lc-cap-tone) blur(8px);
+  -webkit-mask-image: radial-gradient(closest-side, #000 20%, rgba(0, 0, 0, 0.5) 58%, transparent);
+  mask-image: radial-gradient(closest-side, #000 20%, rgba(0, 0, 0, 0.5) 58%, transparent);
+}
+.lc-defs {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+  pointer-events: none;
 }
 /* 听音空间打开时不出字幕（那里有自己的歌词栏） */
 .app[data-ls] .lyric-caption {

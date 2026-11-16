@@ -88,6 +88,11 @@ const VERTICAL_P = 0.12;
  * 进场从 16–24° 收到等候角，离场转出 10–16°——动感留在运动里。
  */
 const ANG_CUR = [0, 3] as const;
+/**
+ * 字幕暗晕的色调曲线（输入 0 / .25 / .5 / .75 / 1 → 输出）：暗部原样，只把亮部往下压。
+ * 压在白封面上字被托出来；暗色、中灰的空背景几乎不变，不会显出一团黑（#125，用户反馈 #124 的暗晕太重）。
+ */
+const CAP_TONE = '0 .25 .42 .55 .62';
 const ANG_NEXT = [5, 9] as const;
 const ANG_NN_EXTRA = 3;
 const ANG_ENTRY = [16, 24] as const;
@@ -447,7 +452,8 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
       const cap = captionRef.current;
       if (!cap) return;
       if (show <= 0.001 || cur < 0) {
-        if (cap.style.opacity !== '0') cap.style.opacity = '0';
+        // 透明度写成变量给子元素用：字幕根上不能有 opacity / filter，否则暗晕的 backdrop-filter 只看得到自己（#125）
+        if (cap.style.getPropertyValue('--cap-o') !== '0') cap.style.setProperty('--cap-o', '0');
         return;
       }
       const e = engineLinesRef.current[cur];
@@ -460,7 +466,7 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
       }
       if (captionDom.rts) for (const rt of captionDom.rts) unitFrame(rt, tSec, schemeRef.current, false, null, e.dens);
       else captionDom.whole?.el.classList.toggle('is-on', tSec >= e.s);
-      cap.style.opacity = show.toFixed(3);
+      cap.style.setProperty('--cap-o', show.toFixed(3));
     };
 
     const frame = (now: number): void => {
@@ -699,7 +705,18 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
       {/* 漫游时的字幕（§7.1，#124）：播放条上方一行，压在卡片之上 */}
       <div ref={captionRef} className="lyric-caption lw" data-scheme={listen.scheme} style={fontVars} aria-hidden="true">
         <span className="is-grad" />
+        {/* 暗晕：只压亮处（色调曲线 + 轻虚化），暗 / 中灰的空背景上看不出来（#125） */}
+        <i className="lc-haze" />
       </div>
+      <svg className="lc-defs" width="0" height="0" aria-hidden="true" focusable="false">
+        <filter id="lc-cap-tone" colorInterpolationFilters="sRGB">
+          <feComponentTransfer>
+            <feFuncR type="table" tableValues={CAP_TONE} />
+            <feFuncG type="table" tableValues={CAP_TONE} />
+            <feFuncB type="table" tableValues={CAP_TONE} />
+          </feComponentTransfer>
+        </filter>
+      </svg>
     </>
   );
 }
