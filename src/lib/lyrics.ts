@@ -228,6 +228,17 @@ const CREDIT_CN =
 const CREDIT_EN =
   /^(lyrics?|composed|composer|produced|producer|written|writer|mixed|mastered|recorded|arranged|engineered|programmed|published|performed|vocals?|backing vocals?|executive producer|additional|guitar|bass|drums?|keyboards?|strings?|piano|chorus|background vocals?)\b(\s*by|\s*[:：])/i;
 const CREDIT_OP_SP = /^(op|sp)\s*[:：]/i;
+/**
+ * 通用的英文制作人员行：「标签：名字」，且标签里有制作类关键词（2026-11-16，真实数据里漏掉了
+ * 「Programming：Cirkut」「Recording Engineers：…」这类写法）。标签限 40 个字符内、只含字母 / 空格 / & / -，
+ * 避免误伤正文里带冒号的句子。
+ */
+const CREDIT_LABEL = /^([A-Za-z][A-Za-z&\-\s]{1,40})\s*[:：]/;
+const CREDIT_WORDS = /\b(lyric|compos|produc|writ|mix|master|record|arrang|engineer|program|publish|perform|vocal|guitar|bass|drum|keyboard|string|piano|synth|chorus|assist|studio|editor|director|coordinat|supervis|a&r)/i;
+function isEnglishCreditLabel(text: string): boolean {
+  const m = text.match(CREDIT_LABEL);
+  return !!m && CREDIT_WORDS.test(m[1]!);
+}
 /** 纯音乐符号行（♪♫…）。 */
 const NOTE_ONLY = /^[♪♫♬♩𝄞𝄢♭♮\s]+$/;
 const NOTE_CHARS = /[♪♫♬♩𝄞𝄢♭♮]/g;
@@ -248,7 +259,7 @@ export function filterCreditLines(lines: LyricLineUI[], title?: string, artist?:
       continue;
     }
     if (NOTE_ONLY.test(text)) continue;
-    if (CREDIT_CN.test(text) || CREDIT_EN.test(text) || CREDIT_OP_SP.test(text)) continue;
+    if (CREDIT_CN.test(text) || CREDIT_EN.test(text) || CREDIT_OP_SP.test(text) || isEnglishCreditLabel(text)) continue;
     // 开头“歌名 - 歌手”标题行：仅清正文开始前的最多 2 行
     if (
       droppedHeader < 2 &&

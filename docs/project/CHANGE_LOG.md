@@ -6,6 +6,27 @@
 
 ---
 
+## #119 — 2026-11-16 — 打包 Newsreader / Inter / 思源宋体 KR；补英文制作人员行过滤
+
+**背景**：用户同意下载并随软件打包字体（#118 遗留）。
+
+**改动**
+- 从 Google Fonts 下载三套 SIL OFL 1.1 字体：
+  - Newsreader（500–700，拉丁 + 拉丁扩展）；
+  - Inter（500–700，同上）；
+  - 思源宋体 KR（600–700，按 Google 的 unicode-range 切成 120 块）。
+- 共 124 个 woff2，约 6.2MB；同时从 google/fonts 仓库取了三份 OFL 授权文件。全部放在 `public/fonts/`。
+- 生成 `public/fonts/fonts.css`（124 个 @font-face，带 unicode-range）；新增 `lib/fonts.ts`，由 `main.tsx` 在渲染前插入样式表链接。Vite 把 public 原样复制到网页版和桌面版输出目录，不会内联进 index.html（体积不变）。韩文只在用到时按块加载。
+- 歌词制作人员行过滤：新增通用规则，「英文标签 + 冒号」且标签含制作类关键词（programming、recording engineers、mixing…）的行视为制作人员信息，星云歌词与听音空间都生效；正文里带冒号的句子不受影响。
+- 文档：真源 §7.2 字体说明更新；ARCHITECTURE 登记 `public/fonts` 与 `lib/fonts.ts`；NOTES 记录单文件构建与字体放置、Python 补丁里 `（单词边界）` 变退格符的坑。
+
+**验证**
+- `pnpm build` ✔（index.html 体积不变，`fonts/` 128 个文件复制到输出）；`pnpm qa` ✔。
+- 桌面端：`fonts.css` 按 file:// 地址加载；Newsreader、Inter 各加载 1 套，思源宋体 KR 按需加载 4–5 块。韩文与系统黑体对比，确认字形为衬线；英文歌词已是 Newsreader；日文歌用思源宋体 JP，排版正确；控制台无错误。
+- 过滤规则样例测试：两条制作人员行被去掉，三条带冒号的正文保留。
+
+---
+
 ## #118 — 2026-11-16 — Player P2 落地：新播放条、整屏听音空间、歌词阅读栏、设置与实时预览、评论头像、分段控件等宽
 
 **背景**：样张 I（播放条）与样张 J 第 1–6 版（听音空间与歌词）用户确认后开工；另带三处小改：评论头像拿不到就不显示、设置预览要带全部动效、分段控件等宽。设计依据见 #117 写入的真源 §9.1 / §9.9 / §7.2。播放条与歌词引擎交给两个 implementer 并行，主对话做听音空间外壳、右栏、设置组和整合。
