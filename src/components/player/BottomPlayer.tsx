@@ -61,7 +61,7 @@ export const BottomPlayer = memo(function BottomPlayer({
   const timeText = `${formatTime(state.currentTime)} / ${formatTime(state.duration)}`;
   return (
     <div className={`bp-shell${state.loading ? ' is-loading' : ''}`}>
-      <ProgressLine current={state.currentTime} duration={state.duration} disabled={!hasSong} />
+      <ProgressLine current={state.currentTime} duration={state.duration} disabled={!hasSong} playing={state.playing} />
       {/* 悬停播放条时显示在进度线右端下方；听音空间里由左侧的 .bp-left-time 代替 */}
       <span className="bp-time" aria-hidden="true">
         {timeText}

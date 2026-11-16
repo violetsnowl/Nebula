@@ -1957,14 +1957,18 @@ body {
   background: rgba(255, 255, 255, 0.18);
 }
 
-/* 进度填充：环境强调色（来自封面，§4.2） */
+/* 进度填充：环境强调色（来自封面，§4.2）。满宽、按进度向左平移（ProgressLine 逐帧写 translate3d），
+   右端保留圆角，左侧被轨道裁掉；单独上合成层，位移按亚像素走 */
 .bp-progress-fill {
   position: absolute;
   left: 0;
   top: 0;
   bottom: 0;
+  width: 100%;
   border-radius: inherit;
   background: var(--acc);
+  transform: translate3d(-100%, 0, 0);
+  will-change: transform;
 }
 
 /* 时间点气泡：跟随指针，显示该位置的时间 */

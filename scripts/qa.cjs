@@ -682,6 +682,34 @@ async function main() {
   await page.waitForFunction(() => window.__nebula.player.getState().playing);
   log('恢复播放 playing=true', 'ok');
 
+  // 10c+. 进度填充逐帧亚像素推进（2026-11-16）：连续 40 帧采样填充右缘，应基本每帧都在动、出现小数像素、整体单调
+  await page.waitForTimeout(600);
+  const progSmooth = await page.evaluate(
+    () =>
+      new Promise((res) => {
+        const fill = document.querySelector('.bp-progress-fill');
+        const xs = [];
+        const step = () => {
+          xs.push(fill.getBoundingClientRect().right);
+          if (xs.length < 40) requestAnimationFrame(step);
+          else {
+            let moved = 0;
+            let back = 0;
+            let frac = 0;
+            for (let i = 1; i < xs.length; i++) {
+              if (xs[i] > xs[i - 1] + 1e-4) moved++;
+              if (xs[i] < xs[i - 1] - 0.5) back++;
+              if (Math.abs(xs[i] - Math.round(xs[i])) > 0.01) frac++;
+            }
+            res({ frames: xs.length - 1, moved, back, frac, tf: fill.style.transform.slice(0, 40) });
+          }
+        };
+        requestAnimationFrame(step);
+      }),
+  );
+  const progSmoothOk = progSmooth.moved >= progSmooth.frames * 0.6 && progSmooth.back === 0 && progSmooth.frac > 0;
+  log('进度填充逐帧推进', JSON.stringify(progSmooth));
+
   // 10d. 下一首 / 上一首
   const idBefore = await page.evaluate(() => window.__nebula.player.getState().song.id);
   await page.locator('.player-surface .bp-ctrl[aria-label="下一首"]').click();
@@ -915,6 +943,7 @@ async function main() {
     !seekOk ||
     !volOk ||
     !volUiOk ||
+    !progSmoothOk ||
     !barLayoutOk ||
     !barNewOk ||
     !localOk.title ||
@@ -949,6 +978,7 @@ async function main() {
     seek: !seekOk,
     volHover: !volOk,
     volSlider: !volUiOk,
+    progressSmooth: !progSmoothOk,
     barLayout: !barLayoutOk,
     barSpec: !barNewOk,
     localImport: !localOk.title || !localOk.source || !localOk.audio,
