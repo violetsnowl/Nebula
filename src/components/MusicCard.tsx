@@ -5,6 +5,7 @@ import type { CardSpec, LayoutMetrics } from '../lib/layout';
 import { fisheyeFilter, fisheyeMetaAlpha, fisheyeScale, fisheyeZIndex } from '../lib/fisheye';
 import { registerGlass } from '../lib/glass';
 import { placeholderBg } from '../lib/coverPlaceholder';
+import { boundedCardStyle, getActiveWorld } from '../lib/space/active';
 
 interface MusicCardProps {
   card: CardSpec;
@@ -15,6 +16,8 @@ interface MusicCardProps {
   hovered: boolean;
   isCurrent: boolean;
   isFailed: boolean;
+  /** 有边界星云里的搜索命中 */
+  matched?: boolean;
   onPlay: (songId: number) => void;
   onContextMenu?: (e: MouseEvent, track: CardSpec['track']) => void;
   onHoverChange: (id: number, hovered: boolean) => void;
@@ -30,6 +33,7 @@ function MusicCardImpl({
   hovered,
   isCurrent,
   isFailed,
+  matched = false,
   onPlay,
   onContextMenu,
   onHoverChange,
@@ -47,7 +51,9 @@ function MusicCardImpl({
   const pos = cardScreenPos(card, pan, metrics.tileWidth, metrics.tileHeight, vw, vh, buffer, zoom);
   const maxDist = Math.hypot(vw, vh) / 2;
 
-  const style = {
+  // 有边界星云（#133）：初始位置按透镜投影算，和舞台帧循环一致；透明度从 0 起，下一帧淡入
+  const bounded = boundedCardStyle(card, pan, zoom);
+  const style = bounded ?? {
     '--x': `${pos?.x ?? 0}px`,
     '--y': `${pos?.y ?? 0}px`,
     '--rz': `${card.rotateZ}deg`,
@@ -64,7 +70,7 @@ function MusicCardImpl({
       ref={(el) => registerEl(card.id, el)}
       className={`music-card${hovered ? ' is-hovered' : ''}${isCurrent ? ' is-current' : ''}${
         isFailed ? ' is-failed' : ''
-      }${pos ? '' : ' is-offscreen'}`}
+      }${matched ? ' is-match' : ''}${pos || bounded ? '' : ' is-offscreen'}`}
       style={style}
       data-x={card.x}
       data-y={card.y}
@@ -123,4 +129,17 @@ function MusicCardImpl({
   );
 }
 
-export const MusicCard = memo(MusicCardImpl);
+/**
+ * 有边界星云（#133）里卡片位置全由舞台帧循环写入，平移 / 缩放不需要重渲染卡片：
+ * 只因 pan / zoom 变了就跳过（一屏几百张时，每次可见集合变化都整批重渲染会让拖动掉帧）。现有模式照旧比较全部属性。
+ */
+function sameCard(prev: MusicCardProps, next: MusicCardProps): boolean {
+  for (const k of Object.keys(next) as (keyof MusicCardProps)[]) {
+    if (prev[k] === next[k]) continue;
+    if ((k === 'pan' || k === 'zoom') && getActiveWorld()) continue;
+    return false;
+  }
+  return true;
+}
+
+export const MusicCard = memo(MusicCardImpl, sameCard);

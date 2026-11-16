@@ -13,6 +13,17 @@ export interface PanControllerOptions {
   tileHeight: number;
   initialX: number;
   initialY: number;
+  initialZoom?: number;
+  /**
+   * 有边界的星云（#133 方向原型）：不周期回绕，镜头中心限制在半径内；滚轮缩放以屏幕中心为锚（透镜中心）；
+   * 拖动按手下那一点的局部放大率换算，手下的卡片跟着手走。不传 = 现有卡片墙，行为不变。
+   */
+  bounded?: {
+    radius: number;
+    zoomMin: number;
+    zoomMax: number;
+    worldPerPixel: (sx: number, sy: number, frame: PanFrame) => number;
+  };
   /** 每帧回调：用于视口查询与卡片 CSS 变量更新（含静止后的最后一帧）。 */
   onFrame: (frame: PanFrame) => void;
   /** 拖拽真正开始（越过阈值）时回调，用于清除 hover。 */
@@ -49,6 +60,9 @@ export class PanController {
   private dragging = false;
   private samples: { x: number; y: number; t: number }[] = [];
   private disposed = false;
+  /** 拖动换算：1 屏幕像素 = 多少世界坐标（现有卡片墙恒为 1）。 */
+  private dragK = 1;
+  private anim = 0;
 
   constructor(
     private container: HTMLElement,
@@ -56,6 +70,40 @@ export class PanController {
   ) {
     this.pan.x = opts.initialX;
     this.pan.y = opts.initialY;
+    this.zoom = opts.initialZoom ?? 1;
+  }
+
+  private size(): { vw: number; vh: number } {
+    return {
+      vw: this.container.clientWidth || window.innerWidth,
+      vh: this.container.clientHeight || window.innerHeight,
+    };
+  }
+
+  /** 平滑飞到某个镜头中心（世界坐标），可同时改缩放（有边界星云的搜索、回到正在播放、看全貌）。 */
+  animateToCenter(cx: number, cy: number, zoom = this.zoom, ms = ANIMATE_MS): void {
+    this.mode = 'idle';
+    this.velocity = { x: 0, y: 0 };
+    const { vw, vh } = this.size();
+    const z0 = this.zoom;
+    const c0x = this.pan.x + vw / (2 * z0);
+    const c0y = this.pan.y + vh / (2 * z0);
+    const start = performance.now();
+    const token = ++this.anim;
+    const step = (now: number): void => {
+      if (token !== this.anim || this.disposed) return;
+      const t = Math.min(1, Math.max(0, (now - start) / ms));
+      const e = t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+      // 缩放按对数插值，远近变化听起来是匀速的
+      const z = Math.exp(Math.log(z0) + (Math.log(zoom) - Math.log(z0)) * e);
+      const { vw: w, vh: h } = this.size();
+      this.zoom = z;
+      this.pan.x = c0x + (cx - c0x) * e - w / (2 * z);
+      this.pan.y = c0y + (cy - c0y) * e - h / (2 * z);
+      this.requestFrame();
+      if (t < 1) requestAnimationFrame(step);
+    };
+    requestAnimationFrame(step);
   }
 
   start(): void {
@@ -86,9 +134,17 @@ export class PanController {
   reset(): void {
     const vw = this.container.clientWidth || window.innerWidth;
     const vh = this.container.clientHeight || window.innerHeight;
-    this.pan.x = (this.opts.tileWidth - vw) / 2;
-    this.pan.y = (this.opts.tileHeight - vh) / 2;
-    this.zoom = 1;
+    this.anim++;
+    if (this.opts.bounded) {
+      // 有边界星云：回到星云中心
+      this.zoom = 0.92;
+      this.pan.x = -vw / (2 * this.zoom);
+      this.pan.y = -vh / (2 * this.zoom);
+    } else {
+      this.pan.x = (this.opts.tileWidth - vw) / 2;
+      this.pan.y = (this.opts.tileHeight - vh) / 2;
+      this.zoom = 1;
+    }
     this.velocity = { x: 0, y: 0 };
     this.mode = 'idle';
     this.container.classList.remove('is-panning', 'is-grabbing');
@@ -128,6 +184,15 @@ export class PanController {
   private onPointerDown = (e: PointerEvent): void => {
     if (this.activePointer) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
+    const b = this.opts.bounded;
+    if (b) {
+      // 有边界星云：手一按下就停住正在进行的飞行；按手下那一点的放大率换算拖动距离
+      this.anim++;
+      const { vw, vh } = this.size();
+      this.dragK = b.worldPerPixel(e.clientX, e.clientY, { x: this.pan.x, y: this.pan.y, vw, vh, zoom: this.zoom });
+    } else {
+      this.dragK = 1;
+    }
     this.activePointer = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() };
     this.downPos = { x: e.clientX, y: e.clientY };
     this.dragging = false;
@@ -155,8 +220,8 @@ export class PanController {
     }
 
     if (this.dragging) {
-      this.pan.x -= dx;
-      this.pan.y -= dy;
+      this.pan.x -= dx * this.dragK;
+      this.pan.y -= dy * this.dragK;
       this.samples.push({ x: e.clientX, y: e.clientY, t: now });
       this.trimSamples(now);
       this.requestFrame();
@@ -197,8 +262,23 @@ export class PanController {
     }
     const delta =
       e.deltaMode === 1 ? e.deltaY * 40 : e.deltaMode === 2 ? e.deltaY * this.container.clientHeight : e.deltaY;
-    // 滚轮缩放（以光标为锚点，光标下的世界点保持不动）
     const factor = Math.exp(-delta * 0.0014);
+    const b = this.opts.bounded;
+    if (b) {
+      // 有边界星云：以屏幕中心（透镜中心）为锚缩放，镜头中心不动
+      this.anim++;
+      const nextZoom = Math.min(b.zoomMax, Math.max(b.zoomMin, this.zoom * factor));
+      const { vw, vh } = this.size();
+      const cx = this.pan.x + vw / (2 * this.zoom);
+      const cy = this.pan.y + vh / (2 * this.zoom);
+      this.zoom = nextZoom;
+      this.pan.x = cx - vw / (2 * nextZoom);
+      this.pan.y = cy - vh / (2 * nextZoom);
+      this.lastWheelAt = performance.now();
+      this.requestFrame();
+      return;
+    }
+    // 滚轮缩放（以光标为锚点，光标下的世界点保持不动）
     const nextZoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, this.zoom * factor));
     if (Math.abs(nextZoom - this.zoom) > 1e-4) {
       const mx = e.clientX;
@@ -225,8 +305,8 @@ export class PanController {
       keep = true;
     } else if (this.mode === 'inertia') {
       const dt = Math.min(0.05, Math.max(0.001, (now - this.lastFrame) / 1000));
-      this.pan.x += this.velocity.x * dt * 1000;
-      this.pan.y += this.velocity.y * dt * 1000;
+      this.pan.x += this.velocity.x * dt * 1000 * this.dragK;
+      this.pan.y += this.velocity.y * dt * 1000 * this.dragK;
       const decay = Math.exp(-INERTIA_DECAY * dt);
       this.velocity.x *= decay;
       this.velocity.y *= decay;
@@ -240,9 +320,28 @@ export class PanController {
 
     if (now - this.lastWheelAt < WHEEL_SETTLE_MS) keep = true;
 
-    // 周期回绕：把 pan 收进 [0, tile)，内容周期性重复 → 视觉无边界
-    this.pan.x = wrap(this.pan.x, this.opts.tileWidth);
-    this.pan.y = wrap(this.pan.y, this.opts.tileHeight);
+    const b = this.opts.bounded;
+    if (b) {
+      // 有边界星云：镜头中心不出星云半径（惯性撞到边缘就停）
+      const { vw, vh } = this.size();
+      const cx = this.pan.x + vw / (2 * this.zoom);
+      const cy = this.pan.y + vh / (2 * this.zoom);
+      const d = Math.hypot(cx, cy);
+      if (d > b.radius) {
+        const k = b.radius / d;
+        this.pan.x = cx * k - vw / (2 * this.zoom);
+        this.pan.y = cy * k - vh / (2 * this.zoom);
+        if (this.mode === 'inertia') {
+          this.mode = 'idle';
+          this.velocity = { x: 0, y: 0 };
+          keep = now - this.lastWheelAt < WHEEL_SETTLE_MS;
+        }
+      }
+    } else {
+      // 周期回绕：把 pan 收进 [0, tile)，内容周期性重复 → 视觉无边界
+      this.pan.x = wrap(this.pan.x, this.opts.tileWidth);
+      this.pan.y = wrap(this.pan.y, this.opts.tileHeight);
+    }
 
     this.opts.onFrame({
       x: this.pan.x,

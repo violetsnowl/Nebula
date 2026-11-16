@@ -1,0 +1,192 @@
+/* 舞台实验室（#133 方向原型，开发者面板）：G3 浓玻璃小面板，左上角，Ctrl+Shift+M 开关 */
+.space-lab {
+  position: fixed;
+  left: 76px;
+  top: 76px;
+  z-index: 85;
+  width: 292px;
+  padding: 14px 16px 12px;
+  border-radius: 18px;
+  color: var(--fg, #eef0f6);
+  font-size: 12.5px;
+  line-height: 1.45;
+  user-select: none;
+}
+.space-lab .sl-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+.space-lab h2 {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+.space-lab button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: 0;
+  cursor: pointer;
+}
+.space-lab .sl-x {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  color: var(--fg-3, rgba(238, 240, 246, 0.5));
+  transition: color 0.2s ease, transform 0.2s ease;
+}
+.space-lab .sl-x:hover {
+  color: var(--fg, #eef0f6);
+  transform: scale(1.08);
+}
+
+/* 三段切换：同宽，选中的那段底色提亮 */
+.space-lab .sl-seg {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 2px;
+  padding: 2px;
+  border-radius: 11px;
+  background: rgba(255, 255, 255, 0.06);
+}
+.space-lab .sl-seg button {
+  height: 28px;
+  border-radius: 9px;
+  color: var(--fg-2, rgba(238, 240, 246, 0.72));
+  transition: background-color 0.25s ease, color 0.2s ease;
+}
+.space-lab .sl-seg button:hover {
+  color: var(--fg, #eef0f6);
+}
+.space-lab .sl-seg button[aria-pressed='true'] {
+  background: rgba(255, 255, 255, 0.16);
+  color: var(--fg, #eef0f6);
+}
+.space-lab .sl-hint {
+  margin: 8px 2px 10px;
+  min-height: 3em;
+  color: var(--fg-3, rgba(238, 240, 246, 0.55));
+  font-size: 11.5px;
+}
+
+.space-lab .sl-body {
+  display: grid;
+  gap: 6px;
+  transition: opacity 0.25s ease;
+}
+.space-lab .sl-body.is-off {
+  opacity: 0.38;
+  pointer-events: none;
+}
+.space-lab .sl-row {
+  display: grid;
+  grid-template-columns: 4.6em 1fr 3.2em;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  text-align: left;
+}
+.space-lab .sl-row > span {
+  color: var(--fg-2, rgba(238, 240, 246, 0.72));
+}
+.space-lab .sl-row em {
+  font-style: normal;
+  text-align: right;
+  color: var(--fg-3, rgba(238, 240, 246, 0.55));
+  font-variant-numeric: tabular-nums;
+}
+
+/* 细滑杆：3px 轨道 + 14px 白点 */
+.space-lab input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 18px;
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.space-lab input[type='range']::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.18);
+}
+.space-lab input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px;
+  height: 14px;
+  margin-top: -5.5px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.4);
+  transition: transform 0.15s ease;
+}
+.space-lab input[type='range']:hover::-webkit-slider-thumb {
+  transform: scale(1.12);
+}
+
+/* 开关：整行可点，行尾一个小开关 */
+.space-lab .sl-tg {
+  grid-template-columns: 1fr auto;
+}
+.space-lab .sl-tg i {
+  position: relative;
+  width: 30px;
+  height: 17px;
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.18);
+  transition: background-color 0.25s ease;
+}
+.space-lab .sl-tg i::after {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: 2px;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: #fff;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+.space-lab .sl-tg[aria-pressed='true'] i {
+  background: var(--acc, rgba(140, 170, 255, 0.9));
+}
+.space-lab .sl-tg[aria-pressed='true'] i::after {
+  transform: translateX(13px);
+}
+
+.space-lab .sl-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+  margin-top: 4px;
+}
+.space-lab .sl-actions button {
+  height: 30px;
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--fg-2, rgba(238, 240, 246, 0.72));
+  transition: background-color 0.2s ease, color 0.2s ease;
+}
+.space-lab .sl-actions button:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: var(--fg, #eef0f6);
+}
+.space-lab .sl-foot {
+  margin-top: 10px;
+  padding-top: 9px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--fg-3, rgba(238, 240, 246, 0.5));
+  font-size: 11px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .space-lab *,
+  .space-lab *::after {
+    transition: none !important;
+  }
+}

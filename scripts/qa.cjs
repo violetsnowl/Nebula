@@ -657,6 +657,49 @@ async function main() {
     !lsClosed.dataLs && !lsClosed.root && !lsClosed.hero && lsClosed.coverVisible;
   log('听音空间进出', JSON.stringify({ lsOpen, lsClosed }));
 
+  // 主舞台方向原型（#133）：开发者面板切换的两种有边界星云能排布（位置都是有限数）、有星层画布、
+  // 缩小到全貌时 DOM 卡片全部卸掉只剩星；切回现有卡片墙后一切照旧
+  const spaceLab = await page.evaluate(async () => {
+    // 每次换模式舞台都会重建 __nebula，所以每次都取最新的
+    const n = () => window.__nebula;
+    if (!n() || !n().stageMode) return { ok: false };
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const probe = () => {
+      const st = document.querySelector('.stage-3d');
+      const cards = [...document.querySelectorAll('.stage-3d .music-card')];
+      const bad = cards.filter((c) => !Number.isFinite(parseFloat(c.style.getPropertyValue('--x')))).length;
+      const sp = n().space();
+      return { bounded: !!(st && st.classList.contains('is-bounded')), canvas: !!document.querySelector('.space-stars'), cards: cards.length, bad, zoom: +sp.zoom.toFixed(3), radius: Math.round(sp.radius), clusters: sp.clusters };
+    };
+    const out = { ok: true };
+    for (const m of ['cluster', 'chroma']) {
+      n().stageMode(m);
+      await wait(1000);
+      const a = probe();
+      const st = document.querySelector('.stage-3d');
+      const r = st.getBoundingClientRect();
+      for (let i = 0; i < 20; i++) st.dispatchEvent(new WheelEvent('wheel', { deltaY: 120, clientX: r.width / 2, clientY: r.height / 2, bubbles: true, cancelable: true }));
+      await wait(1000);
+      out[m] = { a, b: probe() };
+    }
+    n().stageMode('classic');
+    await wait(1000);
+    out.classic = probe();
+    return out;
+  });
+  const spaceOk =
+    spaceLab.ok &&
+    ['cluster', 'chroma'].every((m) => {
+      const v = spaceLab[m];
+      return v.a.bounded && v.a.canvas && v.a.cards >= 3 && v.a.bad === 0 && v.a.radius > 0 && v.b.cards === 0 && v.b.zoom <= 0.2;
+    }) &&
+    spaceLab.cluster.a.clusters > 1 &&
+    !spaceLab.classic.bounded &&
+    !spaceLab.classic.canvas &&
+    spaceLab.classic.cards >= 8;
+  log('主舞台方向原型', JSON.stringify(spaceLab));
+
+
   // 10b. 点击卡片播放
   const cardCenter = await page.evaluate(() => {
     const vw = innerWidth;
@@ -1050,6 +1093,7 @@ async function main() {
 
   const failed =
     !listenOk ||
+    !spaceOk ||
     !lsLayoutOk ||
     stats.total !== 1000 ||
     stats.mounted > 60 ||
@@ -1105,6 +1149,7 @@ async function main() {
   const diagnostics = {
     listenSpace: !listenOk,
     listenLayout: !lsLayoutOk,
+    spaceLab: !spaceOk,
     total: stats.total !== 1000,
     mounted: stats.mounted > 60,
     onScreen: stats.onScreen < 8 || stats.onScreen > 30,
