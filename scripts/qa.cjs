@@ -971,9 +971,35 @@ async function main() {
   await page.waitForTimeout(600);
   await page.locator('.sd-rail.sd-right .sd-orb[aria-label="设置"]').click();
   await page.waitForTimeout(600);
+  // 设置面板重排（#128）：「鼠标停多久」在「聆听」页；滑杆在「歌词」页
+  await page.locator('.sd-panel.sd-right .seg.wide button', { hasText: '聆听' }).click();
+  await page.waitForTimeout(300);
+  const listenPage = await page.evaluate(() => ({
+    tiles: document.querySelectorAll('.sd-panel.sd-right [data-listen-tile]').length,
+    intro: !!document.querySelector('.sd-panel.sd-right .intro'),
+  }));
+  await page.locator('.sd-panel.sd-right button', { hasText: '3 秒' }).first().click();
   await page.locator('.sd-panel.sd-right .seg.wide button', { hasText: '歌词' }).click();
   await page.waitForTimeout(300);
-  await page.locator('.sd-panel.sd-right button', { hasText: '3 秒' }).first().click();
+  // 歌词页：一张预览 + 手动切换；同页两段控件左右对齐；「更多排版」默认收起
+  const lyricPage = await page.evaluate(() => {
+    const p = document.querySelector('.sd-panel.sd-right');
+    const segs = [...p.querySelectorAll('.group .seg')].filter((s) => s.querySelectorAll(':scope > button').length === 2 && s.getClientRects().length && s.closest('.more-body:not(.open)') === null);
+    const rs = segs.map((s) => s.getBoundingClientRect());
+    return {
+      head: p.querySelectorAll('.pv-head button').length,
+      previews: p.querySelectorAll('.pv-box').length,
+      oldListenPreview: !!p.querySelector('.set-page > .lsp-prev'),
+      segs: segs.length,
+      aligned: rs.every((r) => Math.abs(r.left - rs[0].left) < 1 && Math.abs(r.right - rs[0].right) < 1),
+      moreOpen: !!p.querySelector('.more-body.open'),
+      nativeColor: !!p.querySelector('input[type="color"]'),
+    };
+  });
+  const setOk =
+    listenPage.tiles === 3 && listenPage.intro && lyricPage.head === 2 && lyricPage.previews === 1 && !lyricPage.oldListenPreview &&
+    lyricPage.segs >= 3 && lyricPage.aligned && !lyricPage.moreOpen && !lyricPage.nativeColor;
+  log('设置面板重排', JSON.stringify({ listenPage, lyricPage }));
   await page.evaluate(() => document.querySelector('.sd-panel.sd-right input[type="range"]')?.focus());
   const idleStart = await page.evaluate(() => ({
     panel: !!document.querySelector('.sd-panel.sd-right'),
@@ -1036,6 +1062,7 @@ async function main() {
     !z1Ok ||
     !capHazeOk ||
     !idleOk ||
+    !setOk ||
     !progSmoothOk ||
     !barLayoutOk ||
     !barNewOk ||
@@ -1074,6 +1101,7 @@ async function main() {
     z1Words: !z1Ok,
     captionHaze: !capHazeOk,
     idleInPanel: !idleOk,
+    settingsLayout: !setOk,
     progressSmooth: !progSmoothOk,
     barLayout: !barLayoutOk,
     barSpec: !barNewOk,

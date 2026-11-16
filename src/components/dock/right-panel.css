@@ -605,3 +605,480 @@
   color: rgba(255, 255, 255, 0.5);
   pointer-events: none;
 }
+
+/* ============================================================
+   设置面板重排（样张 L，#126–#128，用户确认）
+   ============================================================ */
+
+/* 歌词页顶部预览：上方一行「星云上 · 听音空间」手动切换，选中的下面一条 2px 细线滑过去 */
+.sd-panel .pv-head {
+  position: relative;
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  margin: 4px 6px 7px;
+}
+.sd-panel .pv-head button {
+  appearance: none;
+  border: 0;
+  background: none;
+  padding: 2px 0 5px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--fg-3s);
+  transition: color 0.15s ease;
+}
+.sd-panel .pv-head button:hover,
+.sd-panel .pv-head button[aria-pressed='true'] {
+  color: var(--fg);
+}
+.sd-panel .pv-head button[aria-pressed='true'] {
+  font-weight: 600;
+}
+.sd-panel .pv-head button:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.55);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.sd-panel .pv-head .pv-ul {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  height: 2px;
+  border-radius: 1px;
+  background: var(--acc);
+  width: var(--uw, 0px);
+  translate: var(--ux, 0px) 0;
+  opacity: 0;
+}
+.sd-panel .pv-head.is-placed .pv-ul {
+  opacity: 1;
+  transition:
+    translate 0.32s var(--ease-jelly),
+    width 0.32s var(--ease-jelly);
+}
+.sd-panel .pv-head .pv-live {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--fg-3);
+  letter-spacing: 0.04em;
+}
+/* 两种预览同高，切换不顶动下面的设置；各自的角标由上面的「实时预览」代替 */
+.sd-panel .pv-box {
+  animation: pv-in 0.28s var(--ease-std) both;
+}
+.sd-panel .pv-box > .rp-preview,
+.sd-panel .pv-box > .lsp-prev {
+  height: 128px;
+}
+.sd-panel .pv-box .rp-preview .rp-next {
+  top: 26px;
+}
+.sd-panel .pv-box .rp-preview .rp-cur {
+  top: 40px;
+}
+.sd-panel .pv-box .rp-tag,
+.sd-panel .pv-box .lsp-prev-tag {
+  display: none;
+}
+@keyframes pv-in {
+  from {
+    opacity: 0;
+    translate: 0 4px;
+  }
+}
+
+/* 说明随选项变（像背景页那样），不另占固定提示行 */
+.sd-panel .row-hint {
+  display: block;
+  font-size: 12px;
+  color: var(--fg-3s);
+  padding: 0 14px 11px;
+  margin-top: -4px;
+  line-height: 1.5;
+}
+
+/* 颜色：色块在分段控件左边，选「跟随封面」时收起（同一行，不跳） */
+.sd-panel .color-ctl {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.sd-panel button.rp-swatch {
+  background: var(--sw);
+  transition:
+    width 0.22s var(--ease-std),
+    opacity 0.18s ease,
+    margin 0.22s var(--ease-std),
+    transform 0.18s var(--ease-std);
+}
+.sd-panel .color-ctl.is-cover .rp-swatch {
+  width: 0;
+  opacity: 0;
+  margin-right: -8px;
+  pointer-events: none;
+}
+.sd-panel button.rp-swatch[aria-expanded='true'] {
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.22),
+    0 0 0 3px rgba(0, 0, 0, 0.35);
+}
+
+/* 取色区（不用系统取色器）：封面里的颜色 + 常用色 + 色相 / 浓淡两根细滑杆，行下展开 */
+.sd-panel .pick-body,
+.sd-panel .more-body {
+  display: grid;
+  grid-template-rows: 0fr;
+  transition: grid-template-rows 0.26s var(--ease-std);
+}
+.sd-panel .pick-body.open,
+.sd-panel .more-body.open {
+  grid-template-rows: 1fr;
+}
+.sd-panel .pick-body > div,
+.sd-panel .more-body > div {
+  overflow: hidden;
+  min-height: 0;
+}
+.sd-panel .pick-body:not(.open),
+.sd-panel .more-body:not(.open) {
+  visibility: hidden;
+  transition:
+    grid-template-rows 0.26s var(--ease-std),
+    visibility 0s linear 0.26s;
+}
+.sd-panel .pick {
+  padding: 2px 14px 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.sd-panel .pk-lbl {
+  font-size: 11.5px;
+  color: var(--fg-3s);
+}
+.sd-panel .pk-row {
+  display: grid;
+  grid-template-columns: repeat(8, 22px);
+  justify-content: space-between;
+  row-gap: 8px;
+}
+.sd-panel .pk-dot {
+  appearance: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  background: var(--c);
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.18),
+    0 1px 3px rgba(0, 0, 0, 0.35);
+  display: grid;
+  place-items: center;
+  color: rgba(10, 10, 16, 0.78);
+  transition: transform 0.18s var(--ease-std);
+}
+.sd-panel .pk-dot:hover {
+  transform: scale(1.1);
+}
+.sd-panel .pk-dot svg {
+  opacity: 0;
+  transform: scale(0.6);
+  transition:
+    opacity 0.15s ease,
+    transform 0.22s var(--ease-jelly);
+}
+.sd-panel .pk-dot[aria-pressed='true'] svg {
+  opacity: 1;
+  transform: none;
+}
+.sd-panel .pk-dot:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.55);
+  outline-offset: 2px;
+}
+.sd-panel .pk-fine {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  column-gap: 12px;
+  row-gap: 4px;
+  margin-top: 2px;
+}
+.sd-panel .rng.hue,
+.sd-panel .rng.tone {
+  height: 18px;
+  background-size: 100% 6px;
+  background-position: center;
+  background-repeat: no-repeat;
+  border-radius: 3px;
+}
+.sd-panel .rng.hue {
+  background-image: linear-gradient(
+    90deg,
+    hsl(0 80% 66%),
+    hsl(60 80% 66%),
+    hsl(120 80% 66%),
+    hsl(180 80% 66%),
+    hsl(240 80% 66%),
+    hsl(300 80% 66%),
+    hsl(360 80% 66%)
+  );
+}
+.sd-panel .rng.tone {
+  background-image: linear-gradient(90deg, hsl(var(--hue) 40% 80%), hsl(var(--hue) 92% 58%));
+}
+.sd-panel .rng.hue::-webkit-slider-thumb,
+.sd-panel .rng.tone::-webkit-slider-thumb {
+  background: var(--sw, #fff);
+  box-shadow:
+    0 0 0 2px #fff,
+    0 1px 4px rgba(0, 0, 0, 0.5);
+}
+.sd-panel .pick-body + .more-btn {
+  border-top: 1px solid var(--sep);
+}
+
+/* 「更多排版」：行尾是展开图标（不是进入下一页的箭头），展开时转 180° */
+.sd-panel .more-chev {
+  display: grid;
+  color: var(--fg-3s);
+  transition: rotate 0.22s var(--ease-std);
+}
+.sd-panel .more-chev.is-open {
+  rotate: 180deg;
+}
+.sd-panel .more-body > div > .row:first-child {
+  border-top: 1px solid var(--sep);
+}
+
+/* 聆听页 */
+.sd-panel .intro {
+  padding: 12px 14px 13px;
+}
+.sd-panel .intro .row {
+  padding: 0;
+  border: 0;
+  min-height: 0;
+}
+.sd-panel .intro .lbl.big {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--fg);
+}
+.sd-panel .intro p {
+  margin: 6px 0 0;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--fg-2);
+}
+.sd-panel .intro p em {
+  font-style: normal;
+  color: var(--fg);
+}
+.sd-panel .tiles-3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+.sd-panel .tiles-3 .rp-art {
+  height: 84px;
+}
+.sd-panel .tiles-3 .rp-name {
+  line-height: 1.35;
+}
+.sd-panel .tiles-3 .rp-name small {
+  display: block;
+  font-size: 11px;
+  color: var(--fg-3s);
+}
+.sd-panel .dimmable {
+  transition:
+    opacity 0.25s var(--ease-std),
+    filter 0.25s var(--ease-std);
+}
+.sd-panel .dimmable.is-off {
+  opacity: 0.38;
+  filter: saturate(0.5);
+  pointer-events: none;
+}
+
+/* 三种让开方式的小场景：六张卡片 + 一句歌词，选中或悬停时 4.2 秒一个来回（漫游 → 聆听 → 漫游） */
+.sd-panel .mini {
+  position: absolute;
+  inset: 0;
+}
+.sd-panel .mini .cards {
+  position: absolute;
+  inset: 0;
+  transform-origin: 50% 45%;
+}
+.sd-panel .mini .c {
+  position: absolute;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  left: var(--x);
+  top: var(--y);
+  background: var(--cc);
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.45);
+}
+.sd-panel .mini .c:nth-child(1) {
+  --x: 10%;
+  --y: 14%;
+  --cc: #c9a24a;
+  --dx: -9px;
+  --dy: -7px;
+}
+.sd-panel .mini .c:nth-child(2) {
+  --x: 42%;
+  --y: 8%;
+  --cc: #4a8fc9;
+  --dx: 0px;
+  --dy: -9px;
+}
+.sd-panel .mini .c:nth-child(3) {
+  --x: 72%;
+  --y: 16%;
+  --cc: #c94a6d;
+  --dx: 9px;
+  --dy: -7px;
+}
+.sd-panel .mini .c:nth-child(4) {
+  --x: 16%;
+  --y: 58%;
+  --cc: #e8e6e1;
+  --dx: -9px;
+  --dy: 7px;
+}
+.sd-panel .mini .c:nth-child(5) {
+  --x: 46%;
+  --y: 62%;
+  --cc: #4ac99a;
+  --dx: 0px;
+  --dy: 9px;
+}
+.sd-panel .mini .c:nth-child(6) {
+  --x: 74%;
+  --y: 56%;
+  --cc: #f0d6a8;
+  --dx: 9px;
+  --dy: 7px;
+}
+.sd-panel .mini .ly {
+  position: absolute;
+  left: 50%;
+  top: 47%;
+  translate: -50% -50%;
+  width: 46%;
+  height: 5px;
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.5);
+}
+.sd-panel .mini .ly::after {
+  content: '';
+  position: absolute;
+  left: 10%;
+  right: 10%;
+  top: 9px;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.22);
+}
+.sd-panel .rp-tile[aria-pressed='true'] .mini .ly,
+.sd-panel .rp-tile:hover .mini .ly {
+  animation: mini-ly 4.2s var(--ease-std) infinite;
+}
+.sd-panel .rp-tile[data-v='sink']:is([aria-pressed='true'], :hover) .cards {
+  animation: mini-sink 4.2s var(--ease-std) infinite;
+}
+.sd-panel .rp-tile[data-v='part']:is([aria-pressed='true'], :hover) .c {
+  animation: mini-part 4.2s var(--ease-std) infinite;
+}
+.sd-panel .rp-tile[data-v='ebb']:is([aria-pressed='true'], :hover) .c {
+  animation: mini-ebb 4.2s var(--ease-std) infinite;
+}
+@keyframes mini-ly {
+  0%,
+  22%,
+  92%,
+  100% {
+    background: rgba(255, 255, 255, 0.5);
+  }
+  42%,
+  78% {
+    background: #fff;
+  }
+}
+@keyframes mini-sink {
+  0%,
+  22%,
+  92%,
+  100% {
+    transform: none;
+    filter: none;
+  }
+  42%,
+  78% {
+    transform: translateY(4px) scale(0.86);
+    filter: brightness(0.38) saturate(0.55);
+  }
+}
+@keyframes mini-part {
+  0%,
+  22%,
+  92%,
+  100% {
+    translate: 0 0;
+  }
+  42%,
+  78% {
+    translate: var(--dx) var(--dy);
+  }
+}
+@keyframes mini-ebb {
+  0%,
+  22%,
+  92%,
+  100% {
+    translate: 0 0;
+    opacity: 1;
+    filter: none;
+  }
+  42%,
+  78% {
+    translate: calc(var(--dx) * 0.6) calc(var(--dy) * 0.4 + 4px);
+    opacity: 0.32;
+    filter: blur(1.4px);
+  }
+}
+
+/* 背景方案卡：Wallpaper Engine 没选时是官方标志图，选了是那张壁纸；自己的视频也显示第一帧 */
+.sd-panel .we-og {
+  position: absolute;
+  inset: 0;
+  background: #0a1a52 center / cover no-repeat;
+}
+.sd-panel .rp-thumb {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sd-panel .mini *,
+  .sd-panel .pv-box,
+  .sd-panel .pv-head .pv-ul,
+  .sd-panel .pick-body,
+  .sd-panel .more-body,
+  .sd-panel .more-chev,
+  .sd-panel .dimmable {
+    animation: none !important;
+    transition: none !important;
+  }
+}

@@ -10,6 +10,8 @@ import type { ListenSettingsPatch, LyricVisualSettings } from '../lib/lyricSetti
 import { audioPlayer } from '../lib/audio/AudioPlayer';
 import { currentLyricIndex, type LyricLineUI } from '../lib/lyrics';
 import { SideDock } from './dock/SideDock';
+import { hslToRgb, rgbToHsl, sampleCover } from '../lib/coverColors';
+import weLogo from '../../docs/logo/wallpaper-engine.webp';
 import { DOCK_PLATFORM_ORDER, platformMeta } from './platforms';
 import { IconCheck, IconChevronLeft, IconChevronRight, IconExternal, IconImage, IconRefresh } from './icons';
 import { setListenSettings as setListenSpaceSettings, useListenSettings as useListenSpaceSettings } from '../lib/listen/settings';
@@ -19,7 +21,7 @@ import { TYPO, measureUnits, renderUnits, unitFrame, waveOf, wholeLift, type Uni
 import './listen/lyric-words.css';
 import './dock/right-panel.css';
 
-export type DockSettingsPage = 'lyrics' | 'bg' | 'look';
+export type DockSettingsPage = 'lyrics' | 'listen' | 'bg' | 'look';
 
 interface AccountDockProps {
   visible: boolean;
@@ -871,9 +873,9 @@ type BgChoice = 'env' | 'fog' | 'custom' | 'wallpaper';
 
 const BG_DESC: Record<BgChoice, string> = {
   env: '颜色取自封面，换歌时整个空间一起换色',
-  fog: '环境光里隐约浮着一层雾化的封面',
+  fog: '在封面色调里隐约浮着一层放大、模糊的封面',
   custom: '用自己的图片或视频铺满背景',
-  wallpaper: '从 Wallpaper Engine 壁纸库里选一张',
+  wallpaper: '从 Wallpaper Engine 的壁纸库里选一张',
 };
 
 function Tile({
@@ -883,10 +885,10 @@ function Tile({
   data,
   children,
 }: {
-  name: string;
+  name: ReactNode;
   selected: boolean;
   onClick: () => void;
-  data: { 'data-bg': string } | { 'data-theme': string };
+  data: Record<`data-${string}`, string>;
   children: ReactNode;
 }) {
   return (
@@ -900,6 +902,254 @@ function Tile({
       <span className="rp-name">{name}</span>
     </button>
   );
+}
+
+/* ---------- 设置：预览（样张 L 方案 A，#128） ---------- */
+
+type PvMode = 'stage' | 'listen';
+const PV_NAME: Record<PvMode, string> = { stage: '星云上', listen: '听音空间' };
+
+/**
+ * 歌词页顶部的一张预览：上方一行「星云上 · 听音空间」手动切换（用户定：不随改动的设置自动切），
+ * 选中的下面一条 2px 细线滑过去（果冻缓动）。两种预览同高，切换时不顶动下面的设置。
+ */
+function SettingsPreview({
+  settings,
+  maxFont,
+  active,
+  lines,
+  lsSettings,
+}: {
+  settings: LyricVisualSettings;
+  maxFont: number;
+  active: boolean;
+  lines: LyricLineUI[];
+  lsSettings: ReturnType<typeof useListenSpaceSettings>;
+}) {
+  const [mode, setMode] = useState<PvMode>('stage');
+  const headRef = useRef<HTMLDivElement>(null);
+  useLayoutEffect(() => {
+    const h = headRef.current;
+    if (!h) return;
+    const place = () => {
+      const on = h.querySelector<HTMLButtonElement>('button[aria-pressed="true"]');
+      if (!on || !on.offsetWidth) return;
+      h.style.setProperty('--ux', `${on.offsetLeft}px`);
+      h.style.setProperty('--uw', `${on.offsetWidth}px`);
+      h.classList.add('is-placed');
+    };
+    place();
+    const ro = new ResizeObserver(place);
+    ro.observe(h);
+    return () => ro.disconnect();
+  }, [mode]);
+  return (
+    <>
+      <div ref={headRef} className="pv-head" role="group" aria-label="预览哪里">
+        {(['stage', 'listen'] as const).map((m) => (
+          <button key={m} type="button" aria-pressed={mode === m} onClick={() => setMode(m)}>
+            {PV_NAME[m]}
+          </button>
+        ))}
+        <span className="pv-ul" aria-hidden="true" />
+        <span className="pv-live">实时预览</span>
+      </div>
+      <div key={mode} className="pv-box" data-mode={mode}>
+        {mode === 'stage' ? (
+          <LyricPreview settings={settings} maxFont={maxFont} active={active} lines={lines} />
+        ) : (
+          <ListenPreview lines={lines} settings={lsSettings} />
+        )}
+      </div>
+    </>
+  );
+}
+
+/* ---------- 设置：自定义颜色的取色区（样张 L 第 2 版，#128） ---------- */
+
+/** 常用色：都够亮，压在深色星云上当歌词主色读得清。 */
+const COMMON_COLORS = ['#3aa0ff', '#4cc9e8', '#5ad1a4', '#a6e06b', '#f5d36b', '#ff9a5c', '#ff6b7f', '#f2f4f8'];
+
+const toHex = (c: [number, number, number]) =>
+  `#${c.map((v) => Math.min(255, Math.max(0, Math.round(v))).toString(16).padStart(2, '0')).join('')}`;
+const fromHex = (hex: string): [number, number, number] => {
+  const n = parseInt(hex.replace('#', '').padEnd(6, '0').slice(0, 6), 16) || 0;
+  return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+};
+/** 「浓淡」0 → 1：淡（饱和 40%、亮 80%）到浓（饱和 92%、亮 58%）。两根滑杆只用色相和浓淡，不出现数值。 */
+const toneColor = (hue: number, tone: number) => toHex(hslToRgb(hue / 360, 0.4 + 0.52 * tone, 0.8 - 0.22 * tone));
+const hueToneOf = (hex: string) => {
+  const [h, s] = rgbToHsl(...fromHex(hex));
+  return { hue: Math.round(h * 360), tone: clamp((s - 0.4) / 0.52, 0, 1) };
+};
+/** 封面里取出的颜色：调到能当歌词主色的亮度，去掉太接近的。 */
+function coverPicks(sample: Awaited<ReturnType<typeof sampleCover>>): string[] {
+  if (!sample) return [];
+  const raw = [sample.accent, sample.best, sample.warm, sample.cool, sample.light, sample.area, sample.avg, sample.dark];
+  const out: Array<[number, number, number]> = [];
+  for (const c of raw) {
+    const [h, s0, l0] = rgbToHsl(...c);
+    const s = sample.mono ? Math.min(s0, 0.18) : Math.max(s0, 0.38);
+    const l = clamp(l0, 0.6, 0.84);
+    if (out.some(([h2, s2, l2]) => Math.min(Math.abs(h - h2), 1 - Math.abs(h - h2)) < 0.04 && Math.abs(l - l2) < 0.08 && Math.abs(s - s2) < 0.2)) continue;
+    out.push([h, s, l]);
+  }
+  return out.slice(0, 8).map(([h, s, l]) => toHex(hslToRgb(h, s, l)));
+}
+
+function ColorPick({ value, coverUrl, open, onChange }: { value: string; coverUrl: string; open: boolean; onChange: (hex: string) => void }) {
+  const [cover, setCover] = useState<string[]>([]);
+  useEffect(() => {
+    if (!open || !coverUrl) return;
+    let dead = false;
+    sampleCover(coverUrl)
+      .then((smp) => {
+        if (!dead) setCover(coverPicks(smp));
+      })
+      .catch(() => {
+        if (!dead) setCover([]);
+      });
+    return () => {
+      dead = true;
+    };
+  }, [open, coverUrl]);
+  // 滑杆位置跟着当前颜色走；拖滑杆时记住色相（灰色没有色相，不能每次从颜色反推）
+  const [ht, setHt] = useState(() => hueToneOf(value));
+  const lastOut = useRef(value);
+  useEffect(() => {
+    if (value.toLowerCase() !== lastOut.current.toLowerCase()) setHt(hueToneOf(value));
+  }, [value]);
+  const emit = (hex: string) => {
+    lastOut.current = hex;
+    onChange(hex);
+  };
+  const cur = value.toLowerCase();
+  const dot = (c: string) => (
+    <button
+      key={c}
+      type="button"
+      className="pk-dot"
+      style={{ '--c': c } as React.CSSProperties}
+      aria-label={`颜色 ${c}`}
+      aria-pressed={cur === c.toLowerCase()}
+      onClick={() => {
+        setHt(hueToneOf(c));
+        emit(c);
+      }}
+    >
+      <IconCheck size={12} />
+    </button>
+  );
+  return (
+    <div className={`pick-body${open ? ' open' : ''}`} aria-hidden={!open}>
+      <div>
+        <div className="pick" style={{ '--hue': ht.hue, '--sw': value } as React.CSSProperties}>
+          {cover.length > 0 && (
+            <>
+              <span className="pk-lbl">封面里的颜色</span>
+              <div className="pk-row">{cover.map(dot)}</div>
+            </>
+          )}
+          <span className="pk-lbl">常用</span>
+          <div className="pk-row">{COMMON_COLORS.map(dot)}</div>
+          <div className="pk-fine">
+            <span className="pk-lbl">色相</span>
+            <input
+              className="rng hue"
+              type="range"
+              min={0}
+              max={360}
+              step={1}
+              value={ht.hue}
+              aria-label="色相"
+              tabIndex={open ? 0 : -1}
+              onChange={(e) => {
+                const hue = Number(e.target.value);
+                setHt((o) => ({ ...o, hue }));
+                emit(toneColor(hue, ht.tone));
+              }}
+            />
+            <span className="pk-lbl">浓淡</span>
+            <input
+              className="rng tone"
+              type="range"
+              min={0}
+              max={1}
+              step={0.01}
+              value={ht.tone}
+              aria-label="浓淡"
+              tabIndex={open ? 0 : -1}
+              onChange={(e) => {
+                const tone = Number(e.target.value);
+                setHt((o) => ({ ...o, tone }));
+                emit(toneColor(ht.hue, tone));
+              }}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ---------- 设置：让开方式的小场景（样张 L，#128） ---------- */
+
+function MiniScene() {
+  return (
+    <span className="mini" aria-hidden="true">
+      <span className="cards">
+        <i className="c" />
+        <i className="c" />
+        <i className="c" />
+        <i className="c" />
+        <i className="c" />
+        <i className="c" />
+      </span>
+      <span className="ly" />
+    </span>
+  );
+}
+
+/** Wallpaper Engine 方案卡：选了壁纸显示那张的预览图（壁纸库的 preview，取不到退回媒体本身），没选显示官方标志图。 */
+function WallpaperArt({ url, isImage }: { url: string | null; isImage: boolean }) {
+  const preview = url ? url.replace('wallpaper://media/', 'wallpaper://preview/') : '';
+  const [src, setSrc] = useState(preview);
+  useEffect(() => setSrc(preview), [preview]);
+  if (!url || !src) return <span className="we-og" style={{ backgroundImage: `url(${JSON.stringify(weLogo)})` }} />;
+  return (
+    <>
+      <img
+        className="rp-thumb"
+        src={src}
+        alt=""
+        draggable={false}
+        onError={() => setSrc(isImage && src !== url ? url : '')}
+      />
+      <span className="rp-badge">当前壁纸</span>
+    </>
+  );
+}
+
+/**
+ * 同一页里、段数相同的分段控件取同一段宽（按最宽的那段），左右边缘对齐（样张 L 第 3 版，用户反馈）。
+ * 原来只靠每段至少 56px，新叫法变长后对不齐。每次渲染后量一次（只量当前这一页）。
+ */
+function useSegAlign(ref: React.RefObject<HTMLElement>) {
+  useLayoutEffect(() => {
+    const root = ref.current;
+    if (!root) return;
+    const byN = new Map<number, HTMLElement[]>();
+    root.querySelectorAll<HTMLElement>('.group .seg').forEach((sg) => {
+      const n = sg.querySelectorAll(':scope > button').length;
+      byN.set(n, [...(byN.get(n) ?? []), sg]);
+    });
+    byN.forEach((list) => {
+      list.forEach((sg) => (sg.style.gridAutoColumns = ''));
+      let w = 56;
+      list.forEach((sg) => sg.querySelectorAll<HTMLElement>(':scope > button').forEach((b) => (w = Math.max(w, Math.ceil(b.scrollWidth)))));
+      list.forEach((sg) => (sg.style.gridAutoColumns = `${w}px`));
+    });
+  });
 }
 
 /**
@@ -948,6 +1198,10 @@ export const AccountDock = memo(function AccountDock({
 }: AccountDockProps) {
   const [openRow, setOpenRow] = useState<'login' | 'settings' | null>(null);
   const [settingsPage, setSettingsPage] = useState<DockSettingsPage>('lyrics');
+  const [pickOpen, setPickOpen] = useState(false);
+  const [moreOpen, setMoreOpen] = useState(false);
+  const pageRef = useRef<HTMLDivElement>(null);
+  useSegAlign(pageRef);
   // 背景方案完全由实际生效的 bgSetting 推出（不再单独存状态）：
   // 点「自定义」后取消选图、壁纸库里取消、刷新后恢复，高亮都不会和真实背景脱节。
   // 壁纸库的媒体走 wallpaper:// 协议；自己选的图片 / 视频是 data: 或 blob: URL。
@@ -1102,13 +1356,57 @@ export const AccountDock = memo(function AccountDock({
     onSelectBg({ type: 'cover' });
     onCoverMode(mode);
   };
-  const customPhoto = bgScheme === 'custom' && bgSetting.type === 'image' ? bgSetting.url : null;
 
+  const customMedia = bgScheme === 'custom' && bgSetting.type !== 'preset' && bgSetting.type !== 'cover' ? bgSetting : null;
+  const wallUrl = bgScheme === 'wallpaper' && bgSetting.type !== 'preset' && bgSetting.type !== 'cover' ? bgSetting.url : null;
+  const chevDown = (
+    <svg viewBox="0 0 16 16" width={14} height={14} fill="none" stroke="currentColor" strokeWidth={1.8} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M3.5 6l4.5 4.5L12.5 6" />
+    </svg>
+  );
+
+  /* 样张 L（#126–#128）：按「改了影响哪里」分组——两处通用 / 星云上 / 听音空间；
+     「静止时」整组搬到「聆听」页；不常改的收进「更多排版」 */
   const lyricsPage = (
     <>
-      <div className="g-title">星云上的歌词</div>
-      <LyricPreview settings={lyricSettings} maxFont={maxFont} active={openRow === 'settings'} lines={lyricLines} />
-      <div className="g-title">文字</div>
+      <SettingsPreview
+        settings={lyricSettings}
+        maxFont={maxFont}
+        active={openRow === 'settings' && settingsPage === 'lyrics'}
+        lines={lyricLines}
+        lsSettings={lsSettings}
+      />
+      <div className="g-title">两处通用</div>
+      <div className="group">
+        <div className="row">
+          <span className="lbl">字体</span>
+          <Seg
+            label="歌词字体"
+            value={lsSettings.font}
+            options={[
+              { value: 'serif', label: 'Aa 衬线' },
+              { value: 'sans', label: 'Aa 无衬线' },
+            ]}
+            onChange={(v) => setListenSpaceSettings({ font: v })}
+          />
+        </div>
+        <div className="row">
+          <span className="lbl">唱过的字</span>
+          <Seg
+            label="唱过的字"
+            value={lsSettings.scheme}
+            options={[
+              { value: 'accent', label: '染上颜色' },
+              { value: 'mono', label: '变成白色' },
+            ]}
+            onChange={(v) => setListenSpaceSettings({ scheme: v })}
+          />
+        </div>
+        <span className="row-hint">
+          {lsSettings.scheme === 'accent' ? '唱过的字染上颜色，没唱的是白色。' : '没唱的字带一点颜色，唱过的变成白色。'}
+        </span>
+      </div>
+      <div className="g-title">星云上</div>
       <div className="group">
         <Slider
           label="字号"
@@ -1119,12 +1417,8 @@ export const AccountDock = memo(function AccountDock({
           format={(v) => `${v}px`}
           onChange={onFontSize}
         />
-        <div className="row">
-          <span className="lbl">加粗</span>
-          <Tg checked={!!lyricSettings.bold} onChange={onLyricBold} label="歌词加粗" />
-        </div>
         <Slider
-          label="当前句放大"
+          label="正在唱的一句放大"
           value={lyricSettings.currentScale}
           min={1}
           max={1.6}
@@ -1132,175 +1426,179 @@ export const AccountDock = memo(function AccountDock({
           format={(v) => `${v.toFixed(2)}×`}
           onChange={onCurrentScale}
         />
-        {/* #124：扫光 / 上浮两种模式换成听音空间的逐字效果；着色与字体两处共用一套设置 */}
-        <p className="hint-line">逐字效果、着色和字体与听音空间是同一套，在下方「听音空间」里调整。</p>
-      </div>
-      <div className="g-title">布局与颜色</div>
-      <div className="group">
         <div className="row">
-          <span className="lbl">三句布局</span>
-          <Seg
-            label="三句布局"
-            value={lyricSettings.lyricLayout}
-            options={[
-              { value: 'stacked', label: '上下堆叠' },
-              { value: 'offset', label: '上下错落' },
-            ]}
-            onChange={onLyricLayout}
-          />
+          <span className="lbl">加粗</span>
+          <Tg checked={!!lyricSettings.bold} onChange={onLyricBold} label="歌词加粗" />
         </div>
         <div className="row">
-          <span className="lbl">
-            歌词层次<small>相对星云卡片</small>
-          </span>
-          <Seg
-            label="歌词层次"
-            value={lyricSettings.layerMode}
-            options={[
-              { value: 'under', label: '卡片之下' },
-              { value: 'over', label: '卡片之上' },
-            ]}
-            onChange={onLayerMode}
-          />
-        </div>
-        <div className="row">
-          <span className="lbl">歌词颜色</span>
-          <Seg
-            label="歌词颜色"
-            value={lyricSettings.lyricColorSource}
-            options={[
-              { value: 'cover', label: '跟随封面' },
-              { value: 'custom', label: '自定义' },
-            ]}
-            onChange={onLyricColorSource}
-          />
-        </div>
-        {lyricSettings.lyricColorSource === 'custom' && (
-          <div className="row">
-            <span className="lbl">正在唱的字</span>
-            <input
+          <span className="lbl">颜色</span>
+          <div className={`color-ctl${lyricSettings.lyricColorSource === 'custom' ? '' : ' is-cover'}`}>
+            <button
+              type="button"
               className="rp-swatch"
-              type="color"
-              value={lyricSettings.customColor}
-              aria-label="正在唱的字的颜色"
-              onChange={(e) => onCustomColor(e.target.value)}
+              style={{ '--sw': lyricSettings.customColor } as React.CSSProperties}
+              aria-label="自定义颜色"
+              aria-expanded={pickOpen}
+              tabIndex={lyricSettings.lyricColorSource === 'custom' ? 0 : -1}
+              onClick={() => setPickOpen((o) => !o)}
+            />
+            <Seg
+              label="歌词颜色"
+              value={lyricSettings.lyricColorSource}
+              options={[
+                { value: 'cover', label: '跟随封面' },
+                { value: 'custom', label: '自定义' },
+              ]}
+              onChange={(v) => {
+                onLyricColorSource(v);
+                // 选「自定义」顺手展开取色区，切回「跟随封面」收起
+                setPickOpen(v === 'custom');
+              }}
             />
           </div>
-        )}
-      </div>
-      <div className="g-title">静止时</div>
-      <div className="group">
-        <div className="row">
-          <span className="lbl">
-            让歌词成为主角<small>播放中静止一会儿，星云让开</small>
-          </span>
-          <Tg
-            checked={lyricSettings.listenHandoff}
-            onChange={(b) => onListenSettings({ listenHandoff: b })}
-            label="静止时让歌词成为主角"
-          />
         </div>
-        {lyricSettings.listenHandoff && (
-          <>
+        <ColorPick
+          value={lyricSettings.customColor}
+          coverUrl={coverUrl}
+          open={pickOpen && lyricSettings.lyricColorSource === 'custom'}
+          onChange={onCustomColor}
+        />
+        <RowButton className="more-btn" onClick={() => setMoreOpen((o) => !o)}>
+          <span className="lbl">
+            更多排版<small>三句怎么排、歌词和卡片谁在上面</small>
+          </span>
+          <span className={`more-chev${moreOpen ? ' is-open' : ''}`}>{chevDown}</span>
+        </RowButton>
+        <div className={`more-body${moreOpen ? ' open' : ''}`} aria-hidden={!moreOpen}>
+          <div>
             <div className="row">
-              <span className="lbl">让开方式</span>
+              <span className="lbl">三句怎么排</span>
               <Seg
-                label="让开方式"
-                value={lyricSettings.listenStyle}
+                label="三句怎么排"
+                value={lyricSettings.lyricLayout}
                 options={[
-                  { value: 'sink', label: '沉降' },
-                  { value: 'part', label: '散开' },
-                  { value: 'ebb', label: '退潮' },
+                  { value: 'stacked', label: '依次叠放' },
+                  { value: 'offset', label: '上下交错' },
                 ]}
-                onChange={(v) => onListenSettings({ listenStyle: v })}
-              />
-            </div>
-            <div className="row">
-              <span className="lbl">静止多久</span>
-              <Seg
-                label="静止多久"
-                value={String(lyricSettings.listenDelay)}
-                options={[
-                  { value: '3', label: '3 秒' },
-                  { value: '6', label: '6 秒' },
-                  { value: '10', label: '10 秒' },
-                ]}
-                onChange={(v) => onListenSettings({ listenDelay: Number(v) })}
+                onChange={onLyricLayout}
               />
             </div>
             <div className="row">
               <span className="lbl">
-                漫游时歌词<small>聆听时都换成完整的三句</small>
+                歌词浮在卡片上面<small>关掉时歌词从卡片后面穿过</small>
               </span>
-              <Seg
-                label="漫游时歌词"
-                value={lyricSettings.roamLyrics}
-                options={[
-                  { value: 'ambient', label: '氛围' },
-                  { value: 'caption', label: '字幕' },
-                  { value: 'both', label: '都显示' },
-                ]}
-                onChange={(v) => onListenSettings({ roamLyrics: v })}
-              />
-            </div>
-            <div className="row">
-              <span className="lbl">播放条一起变淡</span>
               <Tg
-                checked={lyricSettings.listenDimBar}
-                onChange={(b) => onListenSettings({ listenDimBar: b })}
-                label="聆听时播放条一起变淡"
+                checked={lyricSettings.layerMode === 'over'}
+                onChange={(b) => onLayerMode(b ? 'over' : 'under')}
+                label="歌词浮在卡片上面"
               />
             </div>
-          </>
-        )}
+          </div>
+        </div>
       </div>
-      {/* 听音空间（NEBULA_UI_SYSTEM §9.9）：两种视觉模式互为反色、字体、翻译默认值；预览用同一个引擎实时唱 */}
       <div className="g-title">听音空间</div>
-      <ListenPreview lines={lyricLines} settings={lsSettings} />
-      <div className="group rp-group-gap">
-        <div className="row">
-          <span className="lbl">歌词着色</span>
-          <Seg
-            label="听音空间歌词着色"
-            value={lsSettings.scheme}
-            options={[
-              { value: 'accent', label: '封面色' },
-              { value: 'mono', label: '同色系' },
-            ]}
-            onChange={(v) => setListenSpaceSettings({ scheme: v })}
-          />
-        </div>
-        <div className="row">
-          <span className="lbl">字体</span>
-          <Seg
-            label="听音空间歌词字体"
-            value={lsSettings.font}
-            options={[
-              { value: 'serif', label: '衬线' },
-              { value: 'sans', label: '无衬线' },
-            ]}
-            onChange={(v) => setListenSpaceSettings({ font: v })}
-          />
-        </div>
+      <div className="group">
         <div className="row">
           <span className="lbl">
-            翻译<small>外文歌词下面显示中文；听音空间里也能随时开关</small>
+            翻译<small>外文歌词下面显示中文；在听音空间里也能随时开关</small>
           </span>
           <Tg checked={lsSettings.translation} onChange={(b) => setListenSpaceSettings({ translation: b })} label="听音空间显示翻译" />
         </div>
       </div>
-      <p className="hint-line">封面色：唱过的字染上封面色。同色系：没唱的字带封面色，唱过的变白。</p>
+    </>
+  );
+
+  /* 聆听页（样张 L）：原「静止时」整组。总开关关掉时下面变暗、不能点，不再整块消失 */
+  const listenPage = (
+    <>
+      <div className="group intro">
+        <div className="row">
+          <span className="lbl big">聆听模式</span>
+          <Tg checked={lyricSettings.listenHandoff} onChange={(b) => onListenSettings({ listenHandoff: b })} label="聆听模式" />
+        </div>
+        <p>
+          音乐播放时，<em>鼠标停住几秒</em>，星云就退到后面，让歌词成为主角；一动鼠标立刻回来。侧栏和设置开着也一样。
+        </p>
+      </div>
+      <div className={`dimmable${lyricSettings.listenHandoff ? '' : ' is-off'}`} aria-disabled={!lyricSettings.listenHandoff}>
+        <div className="g-title">星云怎么让开</div>
+        <div className="rp-tiles tiles-3">
+          {(
+            [
+              ['sink', '沉降', '暗下去'],
+              ['part', '散开', '让出中间'],
+              ['ebb', '退潮', '淡成薄雾'],
+            ] as const
+          ).map(([v, n, d]) => (
+            <Tile
+              key={v}
+              name={
+                <>
+                  {n}
+                  <small>{d}</small>
+                </>
+              }
+              selected={lyricSettings.listenStyle === v}
+              data={{ 'data-v': v, 'data-listen-tile': v }}
+              onClick={() => onListenSettings({ listenStyle: v })}
+            >
+              <span className="rp-envbg" />
+              <MiniScene />
+            </Tile>
+          ))}
+        </div>
+        <div className="g-title">细节</div>
+        <div className="group">
+          <div className="row">
+            <span className="lbl">鼠标停多久</span>
+            <Seg
+              label="鼠标停多久"
+              value={String(lyricSettings.listenDelay)}
+              options={[
+                { value: '3', label: '3 秒' },
+                { value: '6', label: '6 秒' },
+                { value: '10', label: '10 秒' },
+              ]}
+              onChange={(v) => onListenSettings({ listenDelay: Number(v) })}
+            />
+          </div>
+          <div className="row">
+            <span className="lbl">平时的歌词</span>
+            <Seg
+              label="平时的歌词"
+              value={lyricSettings.roamLyrics}
+              options={[
+                { value: 'ambient', label: '淡淡一句' },
+                { value: 'caption', label: '底部字幕' },
+                { value: 'both', label: '都要' },
+              ]}
+              onChange={(v) => onListenSettings({ roamLyrics: v })}
+            />
+          </div>
+          <span className="row-hint">
+            {lyricSettings.roamLyrics === 'ambient'
+              ? '还没进入聆听时，星云上只淡淡留着正在唱的一句。'
+              : lyricSettings.roamLyrics === 'caption'
+                ? '还没进入聆听时，星云上不飞歌词，播放条上方显示一行字幕。'
+                : '淡淡的一句和底部字幕同时出现。'}
+          </span>
+          <div className="row">
+            <span className="lbl">播放条也变淡</span>
+            <Tg checked={lyricSettings.listenDimBar} onChange={(b) => onListenSettings({ listenDimBar: b })} label="聆听时播放条也变淡" />
+          </div>
+        </div>
+      </div>
     </>
   );
 
   const bgPage = (
     <>
-      <div className="g-title">跟随正在播放的封面</div>
+      <div className="g-title">跟着正在播放的歌</div>
       <div className="rp-tiles">
-        <Tile name="环境光" selected={bgChoice === 'env'} data={{ 'data-bg': 'env' }} onClick={() => selectCover('nebula')}>
+        <Tile name="封面色调" selected={bgChoice === 'env'} data={{ 'data-bg': 'env' }} onClick={() => selectCover('nebula')}>
           <span className="rp-envbg" />
         </Tile>
-        <Tile name="雾中封面" selected={bgChoice === 'fog'} data={{ 'data-bg': 'fog' }} onClick={() => selectCover('blend')}>
+        <Tile name="封面虚影" selected={bgChoice === 'fog'} data={{ 'data-bg': 'fog' }} onClick={() => selectCover('blend')}>
           <span className="rp-envbg" />
           {coverUrl && <span className="rp-ghost" style={{ backgroundImage: `url(${JSON.stringify(coverUrl)})` }} />}
         </Tile>
@@ -1308,15 +1606,19 @@ export const AccountDock = memo(function AccountDock({
       <div className="g-title">自己的画面</div>
       <div className="rp-tiles">
         <Tile
-          name="自定义图片 / 视频"
+          name="图片 / 视频"
           selected={bgChoice === 'custom'}
           data={{ 'data-bg': 'custom' }}
           onClick={() => bgInputRef.current?.click()}
         >
-          {customPhoto ? (
+          {customMedia ? (
             <>
-              <span className="rp-photo" style={{ backgroundImage: `url(${JSON.stringify(customPhoto)})` }} />
-              <span className="rp-badge">我的图片</span>
+              {customMedia.type === 'video' ? (
+                <video className="rp-thumb" src={customMedia.url} muted playsInline preload="metadata" />
+              ) : (
+                <span className="rp-photo" style={{ backgroundImage: `url(${JSON.stringify(customMedia.url)})` }} />
+              )}
+              <span className="rp-badge">我的{customMedia.type === 'video' ? '视频' : '图片'}</span>
             </>
           ) : (
             <span className="rp-plain">
@@ -1325,12 +1627,12 @@ export const AccountDock = memo(function AccountDock({
           )}
         </Tile>
         <Tile
-          name="Wallpaper"
+          name="Wallpaper Engine"
           selected={bgChoice === 'wallpaper'}
           data={{ 'data-bg': 'wallpaper' }}
           onClick={onOpenWallpapers}
         >
-          <span className="rp-plain">Wallpaper Engine</span>
+          <WallpaperArt url={wallUrl} isImage={bgSetting.type === 'image'} />
         </Tile>
       </div>
       <p className="hint-line">{BG_DESC[bgChoice]}</p>
@@ -1338,7 +1640,7 @@ export const AccountDock = memo(function AccountDock({
         <div className="group rp-group-gap">
           <RowButton onClick={() => bgInputRef.current?.click()}>
             <span className="lbl">
-              选择图片或视频…<small>2.5MB 内的图片会被记住</small>
+              选择图片或视频…<small>2.5MB 以内的图片下次打开还在；更大的图片和视频只在这次有效</small>
             </span>
             <span className="act">
               <IconImage size={15} />
@@ -1371,7 +1673,7 @@ export const AccountDock = memo(function AccountDock({
     <>
       <div className="g-title">材质</div>
       <div className="rp-tiles">
-        {materialTile('liquid', '液态', '液态 · 边缘折射、轻微色散')}
+        {materialTile('liquid', '液态', '液态 · 边缘像玻璃一样折射')}
         {materialTile('frost', '磨砂', '磨砂 · 更柔、更安静')}
       </div>
       <p className="hint-line">播放条、两侧小球、面板、弹窗和菜单一起切换。</p>
@@ -1379,15 +1681,15 @@ export const AccountDock = memo(function AccountDock({
       <div className="group">
         <div className="row">
           <span className="lbl">
-            隐藏歌曲卡片<small>只留背景和歌词</small>
+            隐藏星云卡片<small>只留背景和歌词</small>
           </span>
-          <Tg checked={uiHideCards} onChange={onToggleHideCards} label="隐藏歌曲卡片" />
+          <Tg checked={uiHideCards} onChange={onToggleHideCards} label="隐藏星云卡片" />
         </div>
         <div className="row">
           <span className="lbl">
-            隐藏歌词层<small>只留背景和星云</small>
+            隐藏星云上的歌词<small>只留背景和卡片</small>
           </span>
-          <Tg checked={uiHideLyrics} onChange={onToggleHideLyrics} label="隐藏歌词层" />
+          <Tg checked={uiHideLyrics} onChange={onToggleHideLyrics} label="隐藏星云上的歌词" />
         </div>
       </div>
       <div className="g-title">性能</div>
@@ -1397,17 +1699,17 @@ export const AccountDock = memo(function AccountDock({
             性能优先
             <small>
               {perfPriority
-                ? '已关闭折射、色散和背景漂移'
+                ? '已关掉玻璃折射和背景漂移'
                 : perfAutoLevel > 0
-                  ? `检测到卡顿，已自动降低 ${perfAutoLevel} 级效果`
-                  : '关闭折射、色散和背景漂移'}
+                  ? '检测到卡顿，已自动关掉一部分效果'
+                  : '打开后关掉玻璃折射和背景漂移，更流畅'}
             </small>
           </span>
           <Tg checked={perfPriority} onChange={onPerfPriority} label="性能优先" />
         </div>
       </div>
       <p className="rp-foot">
-        会话记忆已开启 · 下次打开自动恢复歌单和正在播放的歌
+        下次打开会回到这次的歌单和正在播放的歌
         <br />
         Music Nebula v0.1.0
       </p>
@@ -1425,12 +1727,21 @@ export const AccountDock = memo(function AccountDock({
         value={settingsPage}
         options={[
           { value: 'lyrics', label: '歌词' },
+          { value: 'listen', label: '聆听' },
           { value: 'bg', label: '背景' },
           { value: 'look', label: '外观' },
         ]}
         onChange={setSettingsPage}
       />
-      {settingsPage === 'lyrics' ? lyricsPage : settingsPage === 'bg' ? bgPage : lookPage}
+      <div ref={pageRef} className="set-page">
+        {settingsPage === 'lyrics'
+          ? lyricsPage
+          : settingsPage === 'listen'
+            ? listenPage
+            : settingsPage === 'bg'
+              ? bgPage
+              : lookPage}
+      </div>
       {/* 始终在 DOM 里（qa 脚本直接对它 setInputFiles），由「自定义」块和「选择图片或视频…」打开 */}
       <input
         ref={bgInputRef}
