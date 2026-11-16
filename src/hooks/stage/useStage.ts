@@ -22,7 +22,7 @@ import { buildClusterPositions, matchSongs, panForCentering, type SearchMatch } 
 import { PanController } from '../../lib/panEngine';
 import { listenBus, onListenFrame, partOffset } from '../../lib/listenMode';
 import type { PanFrame } from '../../lib/panEngine';
-import { hasDesktopAPI, toBackendTrack, toFrontendTrack } from '../../lib/playlist/ipcClient';
+import { hasDesktopAPI, toBackendTrack, toFrontendTrack, viaOf } from '../../lib/playlist/ipcClient';
 import type { DesktopTrack } from '../../lib/playlist/ipcClient';
 import { libraryService } from '../../lib/library';
 import { preferredQuality } from '../../lib/preferences';
@@ -482,6 +482,7 @@ export function useStage({
           trial: res.data.trial,
           trialEndTime: res.data.trialEndTime,
           quality: res.data.quality,
+          via: viaOf(res.data),
         };
       }
     }

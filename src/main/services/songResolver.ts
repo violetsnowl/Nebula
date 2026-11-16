@@ -2,10 +2,20 @@ import type { AdapterMap } from '../adapters/index';
 import type { PlatformAdapter, ResolveResult, Track } from '../types';
 import type { FallbackTarget } from './platformRouter';
 import { durationSimilarity, titleSimilarity } from '../adapters/mappers';
+import { mapQualityTo } from '../quality';
 
 const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 const ADAPTER_TIMEOUT_MS = 10000;
 const PROBE_TIMEOUT_MS = 6000;
+
+/** 各平台的保真度档位（高到低），用来把偏好换成目标平台的同级档位（见 ../quality.ts）。 */
+const PLATFORM_LEVELS: Record<string, string[]> = {
+  netease: ['jymaster', 'hires', 'lossless', 'exhigh', 'standard'],
+  qq: ['flac', '320k', '128k'],
+  kugou: ['hires', 'flac', '320', '128'],
+  qishui: ['hires', 'lossless', 'exhigh', 'standard'],
+};
+const levelFor = (platform: string, quality?: string) => mapQualityTo(PLATFORM_LEVELS[platform] ?? [], quality);
 
 /** URL probe injected by the main process (platform Referer/UA/Cookie applied). */
 export type UrlProbe = (url: string, platform: Track['platform']) => Promise<boolean>;
@@ -92,7 +102,7 @@ export class SongResolver {
     }
     try {
       const direct = await withTimeout(
-        this.adapters[track.platform].fetchSongUrl(track.sourceId, undefined, quality, track.extra),
+        this.adapters[track.platform].fetchSongUrl(track.sourceId, undefined, levelFor(track.platform, quality), track.extra),
         ADAPTER_TIMEOUT_MS,
         `[${track.platform}] fetchSongUrl`,
       );
@@ -166,7 +176,7 @@ export class SongResolver {
             source.fetchSongUrl(
               candidate.sourceId,
               albumId,
-              tier === 'svip' || tier === 'vip' ? quality : undefined,
+              tier === 'svip' || tier === 'vip' ? levelFor(source.platform, quality) : undefined,
               candidate.extra,
             ),
             ADAPTER_TIMEOUT_MS,

@@ -85,18 +85,26 @@ export function IconModeRepeatOne() {
   );
 }
 
-export function IconVolume({ muted }: { muted: boolean }) {
+/**
+ * 音量图标：声波随音量增减（level 0 无波、1 一道、2 两道），静音画叉。
+ * 三组笔画常驻，靠 pathLength=1 的描边偏移画出 / 收回（样式在 styles.css 的 .vol-ico），切换时有过渡。
+ */
+export function IconVolume({ muted, level = 2 }: { muted: boolean; level?: 0 | 1 | 2 }) {
   return (
-    <svg viewBox="0 0 24 24" width="18" height="18" {...STROKE} aria-hidden="true">
+    <svg
+      className="vol-ico"
+      viewBox="0 0 24 24"
+      width="18"
+      height="18"
+      {...STROKE}
+      aria-hidden="true"
+      data-lv={muted ? 0 : level}
+      data-muted={muted ? '' : undefined}
+    >
       <path d="M4.5 9.5h3l4.5-4v13l-4.5-4h-3z" />
-      {muted ? (
-        <path d="M16 9.6l4.4 4.8M20.4 9.6L16 14.4" />
-      ) : (
-        <>
-          <path d="M15.5 9a4 4 0 0 1 0 6" />
-          <path d="M18 6.5a7.5 7.5 0 0 1 0 11" />
-        </>
-      )}
+      <path className="va1" pathLength={1} d="M15.5 9a4 4 0 0 1 0 6" />
+      <path className="va2" pathLength={1} d="M18 6.5a7.5 7.5 0 0 1 0 11" />
+      <path className="vx" pathLength={1} d="M16 9.6l4.4 4.8M20.4 9.6L16 14.4" />
     </svg>
   );
 }

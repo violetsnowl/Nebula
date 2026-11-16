@@ -2050,19 +2050,191 @@ body {
   bottom: calc(100% + 10px);
   left: 50%;
   transform: translateX(-50%);
+  transform-origin: 50% 100%;
   display: flex;
   align-items: center;
-  padding: 10px 14px;
-  /* 材质：.glass-g3（浓玻璃，§3.3） */
-  border-radius: 20px;
+  gap: 10px;
+  height: 32px;
+  padding: 0 12px 0 14px;
+  /* 材质：.glass-g3（浓玻璃，§3.3）；细胶囊，圆角取高度一半 */
+  border-radius: 16px;
   /* L5（§5.5）：.bp-progress（z-index:2）与本弹层同在 .player-surface 的层叠上下文里且几何可能重叠，
      弹层必须压过进度条热区，否则滑杆中下部拿不到鼠标、点击还会变成进度跳转 */
   z-index: 60;
-  animation: popFade 0.16s var(--ease-std);
+  /* 从图标处升起：略小、略低 → 原位（标准曲线，不回弹） */
+  animation: volPopIn 0.22s var(--ease-std);
 }
 
-.vol-pop .vol-slider {
-  width: 110px;
+.vol-pop.is-closing {
+  animation: volPopOut 0.14s var(--ease-std) forwards;
+  pointer-events: none;
+}
+
+@keyframes volPopIn {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 6px) scale(0.94);
+  }
+}
+
+@keyframes volPopOut {
+  to {
+    opacity: 0;
+    transform: translate(-50%, 3px) scale(0.97);
+  }
+}
+
+/* 滑杆：命中区 20px 高，可见的轨道 3px；拖动 / 调节中加粗到 4px */
+.vol-slider {
+  position: relative;
+  width: 112px;
+  height: 20px;
+  cursor: pointer;
+  touch-action: none;
+  outline: none;
+}
+
+.vol-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 50%;
+  height: 3px;
+  transform: translateY(-50%);
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.14);
+  overflow: hidden;
+  transition:
+    height 0.18s var(--ease-std),
+    background 0.18s var(--ease-std);
+}
+
+.vol-slider:hover .vol-track,
+.vol-pop.is-adjusting .vol-track {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* 填充：与进度线同一个环境强调色（来自封面，§4.2）；展开时从 0 画到当前音量 */
+.vol-fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: calc(var(--v, 0) * 100%);
+  border-radius: inherit;
+  background: var(--acc);
+  transition: width 0.16s var(--ease-std);
+  animation: volFillIn 0.42s var(--ease-std) 0.04s backwards;
+}
+
+/* 小白点：平时 8px，悬停滑杆 10px，调节中 12px；只有一层很淡的投影托住，不发光 */
+.vol-knob {
+  position: absolute;
+  top: 50%;
+  left: calc(var(--v, 0) * 100%);
+  width: 12px;
+  height: 12px;
+  margin: -6px 0 0 -6px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.38);
+  pointer-events: none;
+  transform: scale(0.667);
+  transition:
+    left 0.16s var(--ease-std),
+    transform 0.26s var(--ease-jelly);
+  animation: volKnobIn 0.42s var(--ease-std) 0.04s backwards;
+}
+
+.vol-slider:hover .vol-knob {
+  transform: scale(0.833);
+}
+
+.vol-pop.is-adjusting .vol-knob {
+  transform: scale(1);
+}
+
+/* 拖动时填充与白点跟手，不追曲线 */
+.vol-pop.is-drag .vol-fill,
+.vol-pop.is-drag .vol-knob {
+  transition-property: transform;
+}
+
+.vol-slider:focus-visible .vol-track {
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.28);
+}
+
+@keyframes volFillIn {
+  from {
+    width: 0;
+  }
+}
+
+@keyframes volKnobIn {
+  from {
+    left: 0;
+    opacity: 0;
+  }
+}
+
+/* 数值：平时低一档的灰，调节中提亮 */
+.vol-num {
+  min-width: 2.2em;
+  text-align: right;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  color: var(--fg-3s);
+  transition: color 0.2s var(--ease-std);
+}
+
+.vol-pop.is-adjusting .vol-num {
+  color: var(--fg);
+}
+
+/* 音量图标的声波：pathLength=1，描边偏移 1 = 收起、0 = 画出；第二道比第一道晚 40ms */
+.vol-ico .va1,
+.vol-ico .va2,
+.vol-ico .vx {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 0;
+  transition:
+    stroke-dashoffset 0.3s var(--ease-std),
+    opacity 0.2s var(--ease-std);
+}
+
+.vol-ico .va2 {
+  transition-delay: 0.04s;
+}
+
+.vol-ico[data-lv='0'] .va1,
+.vol-ico[data-lv='0'] .va2,
+.vol-ico[data-lv='1'] .va2 {
+  stroke-dashoffset: 1;
+  opacity: 0;
+  transition-delay: 0s;
+}
+
+.vol-ico .vx {
+  stroke-dashoffset: 1;
+  opacity: 0;
+}
+
+.vol-ico[data-muted] .vx {
+  stroke-dashoffset: 0;
+  opacity: 1;
+  transition-delay: 0.08s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vol-pop,
+  .vol-fill,
+  .vol-knob {
+    animation: none;
+  }
 }
 
 /* 队列：常显入口，面板在播放器上方展开 */
@@ -2159,6 +2331,15 @@ body {
   letter-spacing: 0.1em;
   color: var(--fg-3s);
   padding: 4px 12px 6px;
+}
+
+/* 音质弹层标题后的「某某音源」：跨平台兜底时注明档位来自哪个平台，比标题再低一档 */
+.quality-src {
+  margin-left: 8px;
+  letter-spacing: 0.02em;
+  font-weight: 400;
+  color: var(--fg-3s);
+  opacity: 0.72;
 }
 
 .queue-pop-sub {
@@ -2338,11 +2519,6 @@ body {
   font-size: 11px;
   color: rgba(255, 255, 255, 0.55);
   padding: 2px 6px;
-}
-
-.vol-slider {
-  width: 140px;
-  accent-color: rgba(255, 255, 255, 0.7);
 }
 
 .vol-hint {
@@ -3989,9 +4165,16 @@ body {
 /* 播放条变淡：只降材质（::before）和内容。不能给 .player-surface 本身设 opacity，
    否则它会成为 ::before 的背景采样边界，玻璃采不到背后的画面 */
 .app[data-listen-bar='dim'][data-lk] .player-surface::before,
-.app[data-listen-bar='dim'][data-lk] .player-surface > *,
-.app[data-listen-bar='dim'][data-lk] .center-btn {
+.app[data-listen-bar='dim'][data-lk] .player-surface > * {
   opacity: calc(1 - 0.5 * var(--lk));
+}
+
+/* 「回到中心」在聆听时整个退场（2026-11-16）：星云已经让开，回到中心没有可做的；跟着交接曲线淡出，一动就回来 */
+.app[data-lk] .center-btn {
+  opacity: calc(1 - var(--lk));
+}
+.app[data-listen] .center-btn {
+  pointer-events: none;
 }
 
 /* 聆听中：隐藏指针；卡片不响应悬停和点击（第一下移动先把界面叫回来） */

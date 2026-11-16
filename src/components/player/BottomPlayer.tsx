@@ -5,6 +5,7 @@ import { ProgressLine } from './ProgressLine';
 import { VolumeControl } from './VolumeControl';
 import { QueueControl } from './QueueControl';
 import { QualityControl } from './QualityControl';
+import { platformName } from '../../lib/quality';
 import {
   IconPrev,
   IconNext,
@@ -137,7 +138,12 @@ export const BottomPlayer = memo(function BottomPlayer({
           </button>
           <VolumeControl state={state} />
           <QueueControl />
-          <QualityControl qualities={qualities} quality={quality} onSelectQuality={onSelectQuality} />
+          <QualityControl
+            qualities={qualities}
+            quality={quality}
+            source={state.song?.via ? platformName(state.song.via.platform) : undefined}
+            onSelectQuality={onSelectQuality}
+          />
           <button className="bp-ctrl" aria-label="评论" data-tip="查看评论" disabled={!hasSong} onClick={onOpenComments}>
             <IconComments />
           </button>

@@ -5,6 +5,7 @@ import type { LyricLineUI } from '../../lib/lyrics';
 import type { DesktopTrack } from '../../lib/playlist/ipcClient';
 import { setListenSettings, useListenSettings } from '../../lib/listen/settings';
 import { hiResCover } from '../../lib/listen/coverUrl';
+import { qualityName } from '../../lib/quality';
 import { InfoPane, type InfoPaneState } from '../InfoModals';
 import { IconChevronRight } from '../icons';
 import { LyricColumn } from './LyricColumn';
@@ -203,7 +204,7 @@ export const ListenSpace = memo(function ListenSpace({
     ? { backgroundImage: `url(${JSON.stringify(cover)})` }
     : { background: `linear-gradient(135deg, hsl(${song?.hue1 ?? 220} 70% 58%), hsl(${song?.hue2 ?? 280} 72% 34%))` };
   const artistName = song?.artist ?? '';
-  const albumLine = [song?.album, song?.quality ? qualityLabel(song.quality) : ''].filter(Boolean).join(' · ');
+  const albumLine = [song?.album, qualityName(song?.quality)].filter(Boolean).join(' · ');
 
   return (
     <>
@@ -284,8 +285,3 @@ export const ListenSpace = memo(function ListenSpace({
   );
 });
 
-/** 音质代号对应的全称（左侧专辑行末尾）。 */
-function qualityLabel(q: string): string {
-  const m: Record<string, string> = { lossless: '无损', hires: 'Hi-Res', jymaster: '超清母带', sky: '沉浸环绕声', jyeffect: '高清臻音', exhigh: '极高', higher: '较高', standard: '标准', flac: '无损', '320k': '极高', '128k': '标准' };
-  return m[q] ?? '';
-}

@@ -223,3 +223,15 @@
     transition-duration: 0.01s !important;
   }
 }
+
+/* 预览（设置面板里 150px 高的小窗）：句子居中排，左右留等宽的边；放大、间奏点都以中线为原点 */
+.lc-root[data-compact] .ly-line {
+  left: calc(16px * var(--lc-k, 1) + 8px);
+  width: calc(100% - 2 * (16px * var(--lc-k, 1) + 8px));
+  text-align: center;
+  transform-origin: 50% 50%;
+}
+.lc-root[data-compact] .ly-gap {
+  justify-content: center;
+  transform-origin: 50% 50%;
+}

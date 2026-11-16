@@ -488,6 +488,37 @@ async function main() {
   log('音量面板展开', `0 -> ${volAfter}`);
   const volOk = volAfter > 0;
 
+  // 10a++++. 自绘细滑杆（2026-11-16）：拖到 25% 时音量、读数、图标声波档位跟着变；胶囊高度不超过 34px
+  const vol0 = await page.evaluate(() => window.__nebula.player.getState().volume);
+  const vBox = await page.locator('.vol-pop .vol-slider').boundingBox();
+  await page.mouse.move(vBox.x + vBox.width * 0.4, vBox.y + vBox.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(vBox.x + vBox.width * 0.25, vBox.y + vBox.height / 2, { steps: 4 });
+  await page.mouse.up();
+  await page.waitForTimeout(300);
+  const volUi = await page.evaluate(() => {
+    const sl = document.querySelector('.vol-pop .vol-slider');
+    const pop = document.querySelector('.vol-pop');
+    return {
+      now: Number(sl?.getAttribute('aria-valuenow')),
+      vol: +window.__nebula.player.getState().volume.toFixed(2),
+      num: document.querySelector('.vol-pop .vol-num')?.textContent,
+      lv: document.querySelector('.bp-vol .vol-ico')?.getAttribute('data-lv'),
+      h: pop ? Math.round(pop.getBoundingClientRect().height) : 0,
+      native: !!document.querySelector('.vol-pop input[type=range]'),
+    };
+  });
+  await page.evaluate((v) => window.__nebula.player.setVolume(v), vol0);
+  const volUiOk =
+    Math.abs(volUi.now - 25) <= 3 &&
+    Math.abs(volUi.vol - 0.25) <= 0.03 &&
+    volUi.num === String(volUi.now) &&
+    volUi.lv === '1' &&
+    volUi.h > 0 &&
+    volUi.h <= 34 &&
+    !volUi.native;
+  log('音量细滑杆', JSON.stringify(volUi));
+
   // 10a++++++. 状态提示不改变播放条高度（以前「正在解析音源」插成一行，把整条播放条顶高）；
   // 嵌在播放条里的弹层不能继承播放条的折射贴图（以前队列顶部被套出一块「独立的胶囊」）
   const barLayout = await page.evaluate(async () => {
@@ -883,6 +914,7 @@ async function main() {
     !restorePlay ||
     !seekOk ||
     !volOk ||
+    !volUiOk ||
     !barLayoutOk ||
     !barNewOk ||
     !localOk.title ||
@@ -916,6 +948,7 @@ async function main() {
     restorePlay: !restorePlay,
     seek: !seekOk,
     volHover: !volOk,
+    volSlider: !volUiOk,
     barLayout: !barLayoutOk,
     barSpec: !barNewOk,
     localImport: !localOk.title || !localOk.source || !localOk.audio,

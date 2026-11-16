@@ -223,7 +223,8 @@
   position: relative;
   display: inline-grid;
   grid-auto-flow: column;
-  grid-auto-columns: 1fr;
+  /* 每段等宽，且至少 56px：上下相邻的段控件（如「让开方式」「静止多久」）段数相同时左右边缘对齐 */
+  grid-auto-columns: minmax(56px, 1fr);
   flex: none;
   padding: 3px;
   border-radius: 11px;

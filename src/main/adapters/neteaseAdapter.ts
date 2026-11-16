@@ -17,6 +17,7 @@ import type { CookieStore } from '../cookieStore';
 import { mergeLyric, normalizeJsonLrc } from '../parsers/lyricParser';
 import { mapNeteaseTrack } from './mappers';
 import { callNcmSafe } from '../ncm/ncmApi';
+import { EFFECT_LEVELS, mapQualityTo } from '../quality';
 
 interface NeteasePlaylistResp {
   playlist?: {
@@ -32,8 +33,9 @@ interface NeteasePlaylistResp {
 const PLACEHOLDER_URL = /music\.163\.com\/song\/media/;
 
 const QUALITY_DEFS: Array<QualityOption & { prefix: string }> = [
-  { level: 'jymaster', label: '臻品母带', prefix: 'jymaster', needsSvip: true },
-  { level: 'sky', label: '臻品全景声', prefix: 'sky', needsSvip: true },
+  // 名称按网易云官方：jymaster 超清母带、sky 沉浸环绕声（「臻品」是 QQ 音乐的叫法）
+  { level: 'jymaster', label: '超清母带', prefix: 'jymaster', needsSvip: true },
+  { level: 'sky', label: '沉浸环绕声', prefix: 'sky', needsSvip: true },
   { level: 'hires', label: 'Hi-Res', prefix: 'hires', needsVip: true },
   { level: 'lossless', label: '无损', prefix: 'lossless', needsVip: true },
   { level: 'exhigh', label: '极高', prefix: 'exhigh' },
@@ -112,6 +114,9 @@ export class NeteaseAdapter implements PlatformAdapter {
         | { url?: string; level?: string; freeTrialInfo?: { startTime?: number; endTime?: number } }
         | undefined;
       const url = item?.url;
+      // 请求的档位这首歌没有时，网易云会就近给一档；落到环绕声效果版（jyeffect 高清环绕声等）不算数，
+      // 那是另一种混音而不是更高保真，继续往下取原声档位。用户明确选了效果版时照常给。
+      if (item?.level && item.level !== level && EFFECT_LEVELS.has(item.level)) continue;
       if (url && !PLACEHOLDER_URL.test(url)) {
         return {
           url: url.replace(/^http:/, 'https:'),
@@ -183,10 +188,17 @@ export class NeteaseAdapter implements PlatformAdapter {
     });
   }
 
-  /** Move the user-preferred quality to the front of the try order. */
+  /**
+   * 取链顺序：偏好档位放最前（别的平台的标识先换成同级的网易云档位）；
+   * 沉浸环绕声是效果版，只有用户明确选了才尝试，默认顺序里不放。
+   */
   private orderByPreference(allowed: string[], quality?: string): string[] {
-    if (!quality || !allowed.includes(quality)) return allowed;
-    return [quality, ...allowed.filter((l) => l !== quality)];
+    const want = mapQualityTo(allowed, quality);
+    const base = allowed.filter((l) => !EFFECT_LEVELS.has(l) || l === want);
+    const i = want ? base.indexOf(want) : -1;
+    if (i < 0) return base;
+    // 偏好档位取不到时先往低档走，最后才试更高档
+    return [want!, ...base.slice(i + 1), ...base.slice(0, i)];
   }
 
   /**

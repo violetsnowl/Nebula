@@ -14,6 +14,7 @@ export * from './adapters/neteaseAdapter';
 export * from './adapters/qqAdapter';
 export * from './adapters/kugouAdapter';
 export * from './adapters/spotifyAdapter';
+export * from './quality';
 export * from './services/songResolver';
 export * from './services/lyricService';
 export * from './services/lyricCache';

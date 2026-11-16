@@ -213,7 +213,7 @@ function hueFromId(id: string): number {
 export function toFrontendTrack(
   t: DesktopTrack,
   index: number,
-  extra?: { trial?: boolean; trialEndTime?: number; quality?: string },
+  extra?: { trial?: boolean; trialEndTime?: number; quality?: string; via?: Track['via'] },
 ): Track {
   const hue = hueFromId(t.id);
   return {
@@ -232,7 +232,20 @@ export function toFrontendTrack(
     trial: extra?.trial,
     trialEndTime: extra?.trialEndTime,
     quality: extra?.quality ?? t.quality,
+    via: extra?.via,
   };
+}
+
+/** 解析结果里的兜底平台（主平台直取时为空）。 */
+export function viaOf(r: DesktopResolveResult): Track['via'] {
+  return r.fallback && r.platform && r.sourceId ? { platform: r.platform, sourceId: r.sourceId } : undefined;
+}
+
+/** 实际供流平台上的这首歌（音质列表 / 音质切换用）：有兜底平台时换成兜底平台的身份，不带旧地址。 */
+export function streamTrack(t: Track): DesktopTrack {
+  const b = toBackendTrack(t);
+  if (!t.via) return { ...b, originalUrl: '' };
+  return { ...b, id: `${t.via.platform}:${t.via.sourceId}`, platform: t.via.platform, sourceId: t.via.sourceId, originalUrl: '' };
 }
 
 /** 前端 Track → 后端标准 Track（IPC 用）。 */

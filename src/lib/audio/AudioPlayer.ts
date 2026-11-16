@@ -477,11 +477,16 @@ class AudioPlayer {
   }
 
   /** 不中断播放地切换音源（音质切换用），保留当前进度与播放状态。 */
-  switchSource(url: string, opts?: { quality?: string; keepTime?: boolean }): void {
+  switchSource(url: string, opts?: { quality?: string; keepTime?: boolean; via?: Track['via'] }): void {
     if (!this.state.song) return;
     const keep = opts?.keepTime !== false ? this.el.currentTime || 0 : 0;
     const wasPlaying = !this.el.paused;
-    this.state.song = { ...this.state.song, audio: url, quality: opts?.quality ?? this.state.song.quality };
+    this.state.song = {
+      ...this.state.song,
+      audio: url,
+      quality: opts?.quality ?? this.state.song.quality,
+      via: opts && 'via' in opts ? opts.via : this.state.song.via,
+    };
     this.state.quality = opts?.quality ?? this.state.quality;
     this.state.loading = true;
     this.state.failed = false;

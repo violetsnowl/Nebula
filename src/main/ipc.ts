@@ -72,9 +72,10 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
     return { ...result, url: deps.audioProxy.urlFor(result.url) };
   });
   safe('nebula:song-qualities', async ({ track }: { track: Track }) => {
-    const fn = deps.adapters[track.platform]?.listQualities;
-    if (!fn) return [];
-    return fn(track.sourceId);
+    // 必须带着适配器调用：网易云的 listQualities 要读 this 上的账号权益（拆下来调用时 this 丢失，菜单一直是空的）
+    const adapter = deps.adapters[track.platform];
+    if (!adapter?.listQualities) return [];
+    return adapter.listQualities(track.sourceId);
   });
   safe('nebula:fallback-song', async ({ track }: { track: Track }) => {
     const result = await deps.resolver.enrichFallback(track);

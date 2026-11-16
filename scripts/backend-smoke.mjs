@@ -27,6 +27,8 @@ const {
   validatePlatformCookie,
   looksLikeAudio,
   parseQqRights,
+  mapQualityTo,
+  NeteaseAdapter,
 } = require('../dist-main/index.cjs');
 
 let failed = 0;
@@ -338,6 +340,29 @@ checkAsync('SongResolver passes quality preference to adapter', async () => {
   assert.ok(r);
 });
 
+check('mapQualityTo 跨平台同级档位', () => {
+  const qq = ['flac', '320k', '128k'];
+  const ne = ['jymaster', 'hires', 'lossless', 'exhigh', 'standard'];
+  assert.strictEqual(mapQualityTo(qq, 'lossless'), 'flac');
+  assert.strictEqual(mapQualityTo(qq, 'hires'), 'flac'); // 没有同级 → 低一档里最高的
+  assert.strictEqual(mapQualityTo(qq, 'exhigh'), '320k');
+  assert.strictEqual(mapQualityTo(ne, 'flac'), 'lossless');
+  assert.strictEqual(mapQualityTo(ne, '128k'), 'standard');
+  assert.strictEqual(mapQualityTo(ne, 'jyeffect'), 'jyeffect'); // 效果版不在阶梯上，原样交给平台
+  assert.strictEqual(mapQualityTo(ne, undefined), undefined);
+});
+
+checkAsync('网易云不把环绕声效果版当作更高音质自动落上去', async () => {
+  const a = new NeteaseAdapter({}, { getHeader: () => '' });
+  a.rightsCache = { at: Date.now(), isVip: true, isSvip: true };
+  const order = a.orderByPreference(['jymaster', 'sky', 'hires', 'lossless', 'exhigh', 'standard'], undefined);
+  assert.ok(!order.includes('sky'), `默认顺序不含沉浸环绕声：${order}`);
+  const pref = a.orderByPreference(['jymaster', 'sky', 'hires', 'lossless', 'exhigh', 'standard'], 'flac');
+  assert.deepStrictEqual(pref.slice(0, 3), ['lossless', 'exhigh', 'standard'], `QQ 的 flac 换成 lossless 并先往低档走：${pref}`);
+  const sky = a.orderByPreference(['jymaster', 'sky', 'hires', 'lossless', 'exhigh', 'standard'], 'sky');
+  assert.strictEqual(sky[0], 'sky');
+});
+
 checkAsync('SongResolver probe rejection falls back to error', async () => {
   const fakeAdapters = {
     netease: { fetchSongUrl: async () => ({ url: 'https://dead.example/a.mp3' }) },
@@ -361,7 +386,13 @@ checkAsync('IPC nebula:song-qualities', async () => {
   const handlers = new Map();
   const ipcMain = { handle: (ch, fn) => handlers.set(ch, fn) };
   const fakeAdapters = {
-    netease: { listQualities: async () => [{ level: 'lossless', label: '无损' }] },
+    // 用到 this 的写法（同真实的网易云适配器）：IPC 必须带着适配器调用
+    netease: {
+      rights: [{ level: 'lossless', label: '无损' }],
+      async listQualities() {
+        return this.rights;
+      },
+    },
     qq: {},
     kugou: {},
   };

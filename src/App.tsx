@@ -21,7 +21,8 @@ import { generateTracks, isDemoNebulaEnabled } from './lib/catalog';
 import type { Track } from './lib/catalog';
 import { EmptyNebula, useEmptyPhase } from './components/EmptyNebula';
 import { mulberry32 } from './lib/rng';
-import { hasDesktopAPI, toBackendTrack, toFrontendTrack, type DesktopTrack } from './lib/playlist/ipcClient';
+import { hasDesktopAPI, streamTrack, toBackendTrack, toFrontendTrack, viaOf, type DesktopTrack } from './lib/playlist/ipcClient';
+import { qualityName } from './lib/quality';
 import type { DesktopWallpaperItem, DesktopWallpaperSetResult } from './lib/playlist/ipcClient';
 import { preferredQuality } from './lib/preferences';
 import { useAccounts } from './hooks/accounts/useAccounts';
@@ -319,13 +320,13 @@ export default function App() {
     }
   }, [songs, playerState.song?.id, playerState.song?.sourceId, playlist.currentPlaylist]);
 
-  // 音质档位：随当前歌曲变化拉取可用列表（桌面版）
+  // 音质档位：随当前歌曲变化拉取可用列表（桌面版）。兜底到别的平台供流时，列的是那个平台的档位
   useEffect(() => {
     const song = playerState.song;
     if (!song || !hasDesktopAPI() || !song.sourceId) return;
     let cancelled = false;
     window.nebulaAPI!
-      .songQualities(toBackendTrack(song))
+      .songQualities(streamTrack(song))
       .then((res) => {
         if (cancelled) return;
         if (res.ok && res.data?.length) {
@@ -345,7 +346,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, [playerState.song?.id, playerState.song?.sourceId]);
+  }, [playerState.song?.id, playerState.song?.sourceId, playerState.song?.via?.platform]);
 
   // 组合层接线：导入会话开始 → resetImportState；导入成功 → 曲库 + 歌单身份 + 渐进揭示
   sessionStartRef.current = resetImportState;
@@ -364,7 +365,7 @@ export default function App() {
           return toFrontendTrack(
             { ...toBackendTrack(track), originalUrl: res.data.url },
             track.id,
-            { trial: res.data.trial, trialEndTime: res.data.trialEndTime, quality: res.data.quality },
+            { trial: res.data.trial, trialEndTime: res.data.trialEndTime, quality: res.data.quality, via: viaOf(res.data) },
           );
         }
         const fb = await window.nebulaAPI!.fallbackSong(toBackendTrack(track));
@@ -390,11 +391,26 @@ export default function App() {
     }
     const song = audioPlayer.getState().song;
     if (!song || !hasDesktopAPI() || !song.sourceId || song.quality === level) return;
+    // 按实际供流的平台重新取链，且不带当前地址（带着地址后端会原样返回，等于只改了标签没换音源）
     window.nebulaAPI!
-      .resolveSong(toBackendTrack(song), level)
+      .resolveSong(streamTrack(song), level)
       .then((res) => {
         if (res.ok && res.data?.url) {
-          audioPlayer.switchSource(res.data.url, { quality: level, keepTime: true });
+          // 标签按平台实际给的档位写：这首歌没有所选档位时平台会就近给一档
+          const got = res.data.quality || level;
+          audioPlayer.switchSource(res.data.url, {
+            quality: got,
+            keepTime: true,
+            via: res.data.fallback ? viaOf(res.data) : song.via,
+          });
+          if (got !== level && qualityName(got) && qualityName(level)) {
+            // 临时占用歌手行，3 秒后还给歌手名
+            const msg = `这首歌没有「${qualityName(level)}」，已切到「${qualityName(got)}」`;
+            audioPlayer.setError(msg);
+            window.setTimeout(() => {
+              if (audioPlayer.getState().error === msg) audioPlayer.setError(null);
+            }, 3200);
+          }
         } else {
           audioPlayer.setError(res.ok ? '该音质暂不可用，已保持当前音质' : res.error);
         }
