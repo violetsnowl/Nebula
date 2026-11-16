@@ -18,7 +18,7 @@
 8. `docs/project/CHANGE_LOG.md` 最近 20 条 — 了解最近改动脉络与验证方式
 9. `docs/project/NOTES.md` — 踩坑记录与待办
 
-> 播放器重构的三份设计母稿（`NEBULA_PLAYER_DESIGN_SPEC` / `PLAYER_AGENT_BRIEF` / `PLAYER_IMPL_PLAN`）当前只在 UI 分支的 `docs/design/` 下，接手 Player 相关任务时先切到 UI 工作区再读。
+> 播放器重构的三份设计母稿（`NEBULA_PLAYER_DESIGN_SPEC` / `PLAYER_AGENT_BRIEF` / `PLAYER_IMPL_PLAN`）在 `docs/design/` 下（2026-11-16 随 UI 分支合入 main），其中被推翻的部分以 `NEBULA_UI_SYSTEM.md` §9.9 为准。
 
 ---
 
@@ -37,24 +37,24 @@
 
 ## 2. 工作区拓扑与接手流程
 
-**当前只有两个工作目录**（同一个 git 仓库的两个工作区，共享 `.git`）：
+**只有一个工作目录、一条主线**（2026-11-16 起，用户要求）：
 
 | 目录 | 分支 | 用途 |
 |---|---|---|
-| `E:\CUFE\vibecoding\nebula` | `main` | 主项目 / 生产线 |
-| `E:\CUFE\vibecoding\nebula-ui` | `ui/nebula-design-deepseek-codex` | UI 设计线（播放器重构），当前为 main 的超集 |
+| `E:\CUFE\vibecoding\nebula` | `main` | 唯一的开发线 |
 
-> 2026-11 用户将两个工作区从旧位置 `C:\Users\LIU\Documents\Codex\2026-08-10\wo\work\` 迁到 `E:\CUFE\vibecoding\`；构建产物同步迁到同级 `nebula-outputs`。路径一律以 `git worktree list` 为准，脚本里尽量用相对路径。
+- 新功能直接在 main 上小步提交，每步 `pnpm build` + `pnpm qa` 全绿后提交并推送。
+- 实验性改动（如主舞台方向原型）挂在默认隐藏的开发者开关后面，默认体验不变。
+- 确需分支时用短命分支，合并后立即删除；**不再开长期分支或第二个工作树**（之前 UI 分支领先 main 68 个提交、两个工作区共享 `.git` 互相影响，就是这么来的）。
+- 远端只有 `main`。标签：`v0.1.0-z1-random-checkpoint`；`archive/ui-nebula-design`（原 `ui/nebula-design` 分支：mimo-hermes 独立 HTML 原型、旧 Dock 原型，不作为实现真源；取回用 `git checkout archive/ui-nebula-design -- prototype/`）。
 
-- 因为共享 `.git`，**在任一处 `git checkout` 都会改变另一处的分支**；两个目录各自固定在自己的分支上，不要来回切。
-- 远端三条分支：`main` / `ui/nebula-design-deepseek-codex`（活跃 UI 线）/ `ui/nebula-design`（原型归档，不参与迭代）。
-- UI 分支已是 main 的超集，`git merge-tree` 预演确认将来 branch → main 合并零冲突。
+> 历史：2026-11 用户把工作区从 `C:\Users\LIU\Documents\Codex\2026-08-10\wo\work\` 迁到 `E:\CUFE\vibecoding\`，构建产物在同级 `nebula-outputs`；脚本里尽量用相对路径。2026-11-16 UI 分支 `ui/nebula-design-deepseek-codex` 快进合入 main 后删除，`nebula-ui` 工作树收掉。
 
 **接手流程（建议照做）**
 
 1. 按 §0 顺序读文档（约 10 分钟，token 预算可控）；
 2. `git status` + `git log --oneline -5` + `git worktree list` 确认现场；
-3. `pnpm build && pnpm qa` 确认环境健康（UI 工作树同理）；
+3. `pnpm build && pnpm qa` 确认环境健康；
 4. 打开 `docs/meta/CONTEXT_SNAPSHOT.md` 的「当前状态」，按其指示的下一步继续；
 5. 收尾按用户惯用清单：检查构建与 git → 固化文档 → 提交推送 → 按四问汇报（完成了什么 / 下一步 / 待拍板 / 风险）。
 
@@ -82,7 +82,7 @@
 - pnpm 需带 `$env:pnpm_config_verify_deps_before_run='false'`（Windows PowerShell）。
 - Node 运行时与 QA 用本机 Chrome 的路径见 `PROJECT.md` §3 与 `scripts/qa.cjs` 顶部。
 - 改动 `src/main`（后端）后必须 `pnpm build:main` 才能让 Electron 与冒烟测试生效。
-- `pnpm build` 产物在**仓库外**的同级目录 `../nebula-outputs/`（本机 `E:\CUFE\vibecoding\nebula-outputs`），两个工作区共用该路径、会互相覆盖；`pnpm qa` 读取该产物，所以**先 build 再 qa**。
+- `pnpm build` 产物在**仓库外**的同级目录 `../nebula-outputs/`（本机 `E:\CUFE\vibecoding\nebula-outputs`）；`pnpm qa` 读取该产物，所以**先 build 再 qa**。
 - **换机器的坑**：`scripts/qa.cjs` 与 `scripts/desktop-play-smoke.mjs` 仍硬编码两处本机路径（Chrome 可执行文件、Codex runtime 的 `node_modules`（playwright-core / pngjs））；outputs 目录已改为相对仓库的 `../nebula-outputs`（与 `vite.config.ts` 的 `outDir` 一致）。跨机器接手需先改这两处。
 - **Windows 工作树坑**：删除含 `node_modules` 的工作树可能报 `Filename too long`——先 `git config core.longpaths true`，仍失败则用 robocopy 镜像空目录清空后再删；目录被改名导致注册失效时用 `git worktree repair <新路径>` 修复。
 - 凭证：`qq-cookie.txt` / `.env` 均被 `.gitignore` 排除，切勿提交；仓库内现无任何真实凭证（旧的已过期 `qq-cookie.txt` 已于 2026-10-14 删除，重新做实账号验证需重新导出）。

@@ -1,8 +1,40 @@
 # Music Nebula 变更日志
 
 > 维护约定：每次代码/文档改动后，在文件**顶部**（本说明之下）追加一条最新记录；编号 = 当前最大编号 + 1。
-> 条目编号：`#N` 按时间递增（最早 `#1`、最新最大）；文件为倒序（最新在顶部），编号自上而下递减；编号跨分支统一（暂缺编号为另一分支独有条目占位）。
+> 条目编号：`#N` 按时间递增（最早 `#1`、最新最大）；文件为倒序（最新在顶部），编号自上而下递减；编号跨分支统一（暂缺编号为另一分支独有条目占位）；2026-11-16 起单主线，编号直接递增。
 > 条目格式：`#N — YYYY-MM-DD — 摘要`，内容包含：目标 / 改动点 / 验证方式 / 遗留与风险。
+
+---
+
+## #132 — 2026-11-16 — 项目卫生：UI 分支合入 main，回到单主线
+
+**背景**：前端收尾（#131）验收通过。主舞台要大胆重做（方向原型），开工前用户要求整理分支：UI 分支合入 main，`ui/nebula-design` 整理后删除，回到 main；具体怎么管理交给 agent 判断。
+
+**做了什么**
+- `ui/nebula-design-deepseek-codex` 快进合入 `main`：68 个提交，main 没有自己的新提交，零冲突，已推送。
+- main 工作区里有 3 处 2026-11-08 迁目录时留下、一直没提交的改动（`vite.config.ts`、`scripts/qa.cjs`、`scripts/desktop-play-smoke.mjs` 里的产物路径）。它们和 UI 分支里已提交的版本完全一样，所以先丢弃再合并，没有丢内容。
+- `ui/nebula-design` 并不是空的，有 2 个提交，共约 6300 行：
+  - mimo-hermes 的独立 HTML 原型 `prototype/`；
+  - 旧 Dock 原型 `dock-prototype-v3.html`；
+  - 两份播放器母稿的副本，是 `docs/design/` 里同名文档的旧版本。
+
+  原型不作为实现真源，所以打成带说明的标签 `archive/ui-nebula-design`（已推送）后，删除了分支（本地 + 远端）。要取回：`git checkout archive/ui-nebula-design -- prototype/`。
+- 工作目录收成一个：`E:\CUFE\vibecoding\nebula`（main），会话搬到这里；`nebula-ui` 工作树和已合入的 UI 分支，在会话搬过去后删除。
+- main 工作区的 Electron 依赖里缺程序本体：pnpm 安装时跳过了 Electron 的下载脚本，`pnpm desktop` 会起不来。从旧工作区的同版本（43.3.0）本地复制补齐，没有重新下载。
+- 文档：
+  - `AGENTS.md` 的分支纪律改为单主线；
+  - HANDOFF、CONTEXT_SNAPSHOT、USER_PROFILE、PROJECT、NOTES、README、docs/README 去掉双工作区和 UI 分支的说法，README 进度表更新；
+  - CONTEXT_SNAPSHOT 记下主舞台空间系统的审计结论，以及用户定的方向：做方向原型 A 色彩星图 / B 星团，不做墙。
+
+**以后的规则**
+- 新功能直接在 main 上小步提交，每步 build + qa 全绿。
+- 实验性改动挂在默认隐藏的开发者开关后面，默认体验不变。
+- 确需分支时用短命分支，合并后即删。
+- 不再开长期分支或第二个工作树。
+
+**验证**
+- main 上 `pnpm build` ✔、`pnpm qa` ✔、`pnpm qa:backend` ✔、`pnpm build:desktop` ✔。
+- 用用户资料副本从新位置启动桌面版：1441 首歌单和上次播放的歌都恢复（本地存储和目录位置无关），控制台无错误。
 
 ---
 

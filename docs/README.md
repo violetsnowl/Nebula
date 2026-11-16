@@ -13,7 +13,7 @@
 | `docs/design/` | 设计规格：全局 UI 系统、歌词系统、播放器重设计 | `NEBULA_UI_SYSTEM.md`（全局 UI 真源）· `LYRICS_SYSTEM.md` · `NEBULA_PLAYER_DESIGN_SPEC.md` · `PLAYER_AGENT_BRIEF.md` · `PLAYER_IMPL_PLAN.md`；历史：`UI_SPEC.md`（已被取代）· `NEBULA_DESIGN_REVIEW.md`（审查记录）· `archive/` |
 | `docs/meta/` | 交接与记忆：接手手册、用户画像、上下文快照 | `HANDOFF.md` · `USER_PROFILE.md` · `CONTEXT_SNAPSHOT.md` |
 
-> `NEBULA_PLAYER_DESIGN_SPEC.md` / `PLAYER_AGENT_BRIEF.md` / `PLAYER_IMPL_PLAN.md` 目前在 UI 分支（`ui/nebula-design-deepseek-codex`）维护，合入 main 后归入 `docs/design/`。
+> `NEBULA_PLAYER_DESIGN_SPEC.md` / `PLAYER_AGENT_BRIEF.md` / `PLAYER_IMPL_PLAN.md` 已随 UI 分支合入 main（2026-11-16），在 `docs/design/` 下。
 >
 > 全局 UI 重构（UI 分支）：
 > - `docs/design/NEBULA_UI_SYSTEM.md` —— **全局 UI 系统 v1.0（2026-11-09 已冻结）**，全局 UI 唯一真源，取代 `UI_SPEC.md`。

@@ -73,7 +73,7 @@ pnpm qa:desktop-play  # 桌面播放链路冒烟
 
 > Node 运行时：`C:\Users\LIU\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe`
 >
-> 产物路径易踩：`pnpm build` 输出到仓库外的同级目录 `../nebula-outputs/`（本机 `E:\CUFE\vibecoding\nebula-outputs`），桌面版则用 `pnpm build:desktop`（输出到 `dist/` + `dist-main/`）。`pnpm qa` 读取的是 outputs 里那份产物，**先 build 再 qa**；main 与 UI 两个工作区共用该路径、会互相覆盖。
+> 产物路径易踩：`pnpm build` 输出到仓库外的同级目录 `../nebula-outputs/`（本机 `E:\CUFE\vibecoding\nebula-outputs`），桌面版则用 `pnpm build:desktop`（输出到 `dist/` + `dist-main/`）。`pnpm qa` 读取的是 outputs 里那份产物，**先 build 再 qa**。
 >
 > 远程仓库：`github.com/violetsnowl/Nebula`（2026-11-14 改名；2026-10 由 `a161858970-ux/nebula` 迁移；旧地址都自动重定向）。
 
