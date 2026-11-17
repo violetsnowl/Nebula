@@ -16,6 +16,7 @@ import type {
 } from '../types';
 import { mergeLyric } from '../parsers/lyricParser';
 import { mapQQTrack } from './mappers';
+import { throwIfCancelled } from '../requestScope';
 
 function decodeMaybeBase64(s: string): string {
   if (!s) return '';
@@ -46,18 +47,6 @@ const QQ_QUALITY_TIERS: Array<{ level: string; label: string; prefix: string }> 
   { level: '320k', label: 'HQ 320k', prefix: 'M800' },
   { level: '128k', label: '标准 128k', prefix: 'M500' },
 ];
-
-function qqErrorMessage(code: number | undefined): string {
-  switch (code) {
-    case 1901:
-      return 'QQ 需要登录（缺少有效登录票据）';
-    case 20003:
-    case 202:
-      return 'QQ 该歌曲需要会员或无版权';
-    default:
-      return `QQ 取链失败（code=${code ?? 'unknown'}）`;
-  }
-}
 
 /** musicu.fcg Web comm（歌单/详情/歌手等接口需要）。 */
 const QQ_COMM = {
@@ -100,7 +89,7 @@ async function musicuPost(
 /**
  * QQ music adapter:
  * - playlist: qzone fcg;
- * - audio: mobile express + musicu.fcg, multi-quality (flac/320k/128k);
+ * - audio: musicu.fcg 批量 filename + media_mid + 登录 authst；
  * - failures return explicit errors (never a silent empty url);
  * - keyword search supports cross-platform fallback.
  */
@@ -131,71 +120,50 @@ export class QqAdapter implements PlatformAdapter {
     };
   }
 
-  async fetchSongUrl(songmid: string, _albumId?: string, quality?: string, _extra?: Record<string, unknown>): Promise<SongUrl | null> {
-    const cookie = this.cookies.getHeader('qq') ?? '';
-    const uin = cookie.match(/(?:^|;\s*)uin=o?(\d+)/)?.[1] ?? '';
-
-    // Preferred tier first, then remaining tiers; express endpoint per tier.
-    const tiers = [...QQ_QUALITY_TIERS].sort((a, b) => {
-      if (quality === a.level) return -1;
-      if (quality === b.level) return 1;
-      return 0;
-    });
-    const lastErr: string[] = [];
-
-    for (const tier of tiers) {
-      try {
-        const guid = String(Math.floor(Math.random() * 1e10));
-        const filename = `${tier.prefix}${songmid}.${tier.level === 'flac' ? 'flac' : 'mp3'}`;
-        const data = await this.http.requestJson<{ vkey?: string; sip?: string[] }>(
-          `https://c.y.qq.com/qqmusicopenapi/fcgi-bin/fcg_music_express_mobile3.fcg?format=json&platform=yqq.json&cid=205361747&songmid=${encodeURIComponent(songmid)}&filename=${filename}&guid=${guid}`,
-          { platform: 'qq', cookie },
-        );
-        const vkey = data?.vkey;
-        const sip = data?.sip?.[0];
-        if (!vkey || !sip) throw new Error('express no vkey/sip');
-        return {
-          url: `${sip}${filename}?vkey=${vkey}&guid=${guid}&uin=${uin || '0'}&fromtag=66`,
-          quality: tier.level,
-          playable: true,
-        };
-      } catch (err) {
-        lastErr.push(`express(${tier.level}): ${err instanceof Error ? err.message : String(err)}`);
-      }
+  private mediaIds = new Map<string,string>();
+  async fetchSongUrl(songmid: string, _albumId?: string, quality?: string, extra?: Record<string, unknown>): Promise<SongUrl | null> {
+    const cookie=this.cookies.getHeader('qq') || '';
+    const fields=Object.fromEntries(cookie.split(';').map(s=>{const i=s.indexOf('=');return [s.slice(0,i).trim(),s.slice(i+1).trim()]}));
+    const uin=String(fields.uin || fields.wxuin || fields.qqmusic_uin || '').replace(/^o/,'') || '0';
+    const key=fields.qqmusic_key || fields.qm_keyst || fields.music_key || '';
+    let media=String(extra?.mediaMid || this.mediaIds.get(songmid) || '');
+    if (!media) {
+      const detail=await musicuPost(this.http,'music.pf_song_detail_svr','get_song_detail_yqq',{song_mid:songmid});
+      media=String(detail?.data?.track_info?.file?.media_mid || '');
+      if (media) { this.mediaIds.set(songmid,media);if(this.mediaIds.size>512)this.mediaIds.delete(this.mediaIds.keys().next().value!); }
     }
-
-    // Fallback: musicu.fcg with login cookie (C400 m4a).
+    throwIfCancelled();
+    const index=QQ_QUALITY_TIERS.findIndex(t=>t.level===quality);
+    const tiers=QQ_QUALITY_TIERS.slice(index<0?0:index);
+    const mediaIds=[...new Set([media,songmid].filter(Boolean))];
+    const files=tiers.flatMap(t=>mediaIds.map(id=>({name:t.prefix+id+(t.level==='flac'?'.flac':'.mp3'),level:t.level})));
+    const guid=String(Math.floor(1e9+Math.random()*8e9));
     try {
-      const guid = String(Math.floor(Math.random() * 1e10));
-      const payload = JSON.stringify({
-        req_0: {
-          module: 'vkey.GetVkeyServer',
-          method: 'CgiGetVkey',
-          param: { guid, songmid: [songmid], songtype: [0], uin: uin || '0', loginflag: 1, platform: '20' },
+      const body={comm:{uin,format:'json',ct:key?19:24,cv:0,...(key?{authst:key}:{})},req_0:{
+        module:'vkey.GetVkeyServer',method:'CgiGetVkey',param:{
+          guid,uin,loginflag:1,platform:'20',songmid:files.map(()=>songmid),songtype:files.map(()=>0),filename:files.map(f=>f.name),
         },
-      });
-      const data = await this.http.requestJson<{
-        req_0?: { code?: number; data?: { sip?: string[]; midurlinfo?: Array<{ purl?: string }> } };
-      }>(`https://u.y.qq.com/cgi-bin/musicu.fcg?format=json&data=${encodeURIComponent(payload)}`, {
-        platform: 'qq',
-        cookie,
-      });
-      const purl = data?.req_0?.data?.midurlinfo?.[0]?.purl;
-      const sip = data?.req_0?.data?.sip?.[0];
-      if (purl && sip) {
-        return { url: `${sip}${purl}`, quality: '128k', playable: true };
+      }};
+      const data=await this.http.requestJson<Record<string,any>>('https://u.y.qq.com/cgi-bin/musicu.fcg',{platform:'qq',method:'POST',cookie,body,timeoutMs:2000});
+      const payload=data?.req_0?.data;
+      const rows=Array.isArray(payload?.midurlinfo)?payload.midurlinfo:[];
+      for (const file of files) {
+        const row=rows.find((r:Record<string,any>)=>r.filename===file.name && r.purl);
+        if (!row) continue;
+        const sip=(payload.sip || []).find((v:unknown)=>typeof v==='string' && /^https?:/.test(v)) || 'https://ws.stream.qqmusic.qq.com/';
+        const url=new URL(row.purl,sip).href.replace(/^http:/,'https:');
+        // 档位按服务端实际文件名识别，拒绝无法识别或不属于本次请求的文件。
+        const actual=QQ_QUALITY_TIERS.find(t=>new URL(url).pathname.split('/').pop()?.startsWith(t.prefix));
+        if(!actual)continue;
+        return {url,quality:actual.level,playable:true,trial:false,expiresAt:Date.now()+120000};
       }
-      throw new Error(qqErrorMessage(data?.req_0?.code));
-    } catch (err) {
-      lastErr.push(`musicu: ${err instanceof Error ? err.message : String(err)}`);
+      const code=Number(data?.req_0?.code || data?.code || rows[0]?.result || 0);
+      const missing=uin==='0' || !key || code===1901;
+      return {url:'',playable:false,code:missing?'LOGIN_REQUIRED':'RIGHTS_OR_UNAVAILABLE',error:missing?'QQ 登录票据不完整或已过期':'QQ 当前账号未获该歌曲的播放授权，或歌曲暂无可用音源'};
+    } catch {
+      throwIfCancelled();
+      return {url:'',playable:false,code:'NETWORK',error:'QQ 取链接口暂时不可用'};
     }
-
-    return {
-      url: '',
-      playable: false,
-      trial: false,
-      error: `QQ 取链失败（${lastErr.join('；') || '未知原因'}）`,
-    };
   }
 
   async listQualities(): Promise<QualityOption[]> {

@@ -42,7 +42,9 @@ export function mapNeteaseTrack(raw: Record<string, any> | undefined | null): Tr
 
 export function mapQQTrack(raw: Record<string, any> | undefined | null): Track | null {
   try {
-    if (!raw || raw.songmid == null || !raw.songname) return null;
+    if (!raw) return null;
+    raw = { ...raw, songmid:raw.songmid ?? raw.mid, songname:raw.songname ?? raw.name, albummid:raw.albummid ?? raw.album?.mid, albumname:raw.albumname ?? raw.album?.name };
+    if (raw.songmid == null || !raw.songname) return null;
     const singer: Array<{ name?: string }> = raw.singer ?? [];
     const albummid: string = raw.albummid ?? '';
     return {
@@ -57,6 +59,7 @@ export function mapQQTrack(raw: Record<string, any> | undefined | null): Track |
       sourceId: String(raw.songmid),
       originalUrl: '',
       fallbackUrl: '',
+      extra: { mediaMid:raw.file?.media_mid || raw.strMediaMid || '', songId:raw.songid ?? raw.id, albumId:raw.albumid ?? raw.album?.id, pay:raw.pay },
     };
   } catch {
     return null;

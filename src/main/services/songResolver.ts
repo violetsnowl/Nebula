@@ -1,7 +1,8 @@
 import type { AdapterMap } from '../adapters/index';
 import type { Platform, ResolveResult, Track } from '../types';
 import type { FallbackTarget } from './platformRouter';
-import { durationSimilarity, titleSimilarity } from '../adapters/mappers';
+import { matchScore, recordingMatch as filterCandidate } from './recordingMatch';
+export { matchScore } from './recordingMatch';
 import { mapQualityTo } from '../quality';
 import { requestScope, RequestCancelled, throwIfCancelled, withRequestScope } from '../requestScope';
 
@@ -25,41 +26,6 @@ const remember = <T>(map: Map<string, T>, key: string, value: T, max = 256): voi
   map.delete(key); map.set(key, value);
   if (map.size > max) map.delete(map.keys().next().value!);
 };
-
-/** Match score: title 70% + duration 30%. */
-export function matchScore(candidate: Track, target: Track): number {
-  return 0.7 * titleSimilarity(candidate.title, target.title) + 0.3 * durationSimilarity(candidate.duration, target.duration);
-}
-
-/** 归一化标题（小写 + 去空白/标点），用于精确命中判定。 */
-function normTitle(s: string): string {
-  return String(s || '')
-    .toLowerCase()
-    .replace(/[\s\u3000·・/\\\-–—()（）[\]【】"'“”‘’!！?？,，.。:：]/g, '');
-}
-
-/**
- * 兜底候选的防翻唱/盗版保护：
- * - 标题归一化完全相等优先（严格对照）；
- * - 时长与目标相差 > 8s 或 > 10% 直接剔除（防 Remix/翻唱/错误版本）；
- * - 时长 ≤ 2s 视为严格匹配；歌手包含校验加分。
- */
-function filterCandidate(candidate: Track, target: Track): { ok: boolean; rank: number; note?: string } {
-  const titleEq = normTitle(candidate.title) === normTitle(target.title);
-  const dur = Number(target.duration) || 0;
-  const cDur = Number(candidate.duration) || 0;
-  const durDiff = Math.abs(cDur - dur);
-  if (dur && cDur && durDiff > 8 && durDiff > dur * 0.1) {
-    return { ok: false, rank: 9, note: `时长不符 ${dur}s vs ${cDur}s` };
-  }
-  const durOk = !dur || !cDur || durDiff <= 2;
-  const targetArtist = (target.artist || '').toLowerCase().split(' / ')[0] || '';
-  const candArtist = (candidate.artist || '').toLowerCase();
-  const artistHit = !targetArtist || !candArtist || candArtist.includes(targetArtist) || targetArtist.includes(candArtist);
-  const rank = titleEq ? 0 : artistHit && durOk ? 1 : artistHit ? 2 : 3;
-  return { ok: true, rank, note: `${titleEq ? '精确' : '相似'} 时长${durOk ? '匹配' : '偏离'} 歌手${artistHit ? '命中' : '未命中'}` };
-}
-
 
 /** 唯一解析入口：有界主源 → 并发安全候选 → 探测；缓存只保存已验证地址。 */
 export class SongResolver {

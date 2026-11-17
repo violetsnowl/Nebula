@@ -106,3 +106,12 @@
 - [ ] `README.md` 目前是开发期版本；正式定稿与 CI/CD 流程留到收工阶段。
 
 > 已废弃（不再排期）：Z1 大字号左→右长句「提前检测 + 提前入场」方案（旧第 9/10 点，2026-08-19 用户确认不需要，详见 `docs/design/LYRICS_SYSTEM.md` §8）。
+
+
+## 后端整修 #B4：平台接口与匹配
+
+- QQ 旧 express_mobile3 不再调用；musicu 的取链参数必须有 filename，文件 ID 优先 file.media_mid，不能把所有 songmid 当 media_mid。登录播放票据放 comm.authst，与 uin/Cookie 配套。只借鉴 Mineradio 的协议参数，无复制实现。
+- QQ 无 purl 时区分 LOGIN_REQUIRED / RIGHTS_OR_UNAVAILABLE / NETWORK；不能将没有 purl 一律视为版权缺失，也不能用匿名结果确认会员能力。
+- 网易云旧 search/get/web 在本机返回空结果，成熟库 cloudsearch 返回候选；取流与查询都继承 RequestScope。
+- 酷狗不同档位对应不同 hash，不能无视 quality 总选最高 hash；bitRate 同时兼容 bit/s 与 kbit/s。
+- 兜底采用“宁缺毋滥”：recordingMatch 拒绝歌手集合不一致、版本不一致、时长差超过 max(2s,min(6s,2%)) 的结果；无时长还需同专辑。歌词补全必须复用该门禁。

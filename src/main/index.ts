@@ -25,3 +25,5 @@ export * from './services/platformRouter';
 export * from './login/index';
 export { registerIpcHandlers } from './ipc';
 export type { IpcLike, IpcDeps } from './ipc';
+
+export { recordingMatch, identityText } from './services/recordingMatch';

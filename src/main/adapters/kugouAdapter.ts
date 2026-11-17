@@ -1,6 +1,6 @@
-﻿import crypto from 'node:crypto';
+import crypto from 'node:crypto';
 import type { HttpClient } from '../http';
-import { requestScope, throwIfCancelled } from '../requestScope';
+import { requestScope, throwIfCancelled, withRequestScope } from '../requestScope';
 import type { CookieStore } from '../cookieStore';
 import type { Lyric, Playlist, PlaylistSummary, PlatformAdapter, QualityOption, SongUrl, Track } from '../types';
 import { parseLrc } from '../parsers/lyricParser';
@@ -90,7 +90,7 @@ interface UrlCacheEntry {
 }
 
 const VIP_TTL_MS = 5 * 60 * 1000;
-const URL_CACHE_TTL_MS = 10 * 60 * 1000;
+
 
 /** H5 网关歌单歌曲映射（对齐 Mineradio mapKugouPlaylistTrack） */
 function mapKugouPlaylistTrack(item: Record<string, any>): Track | null {
@@ -340,12 +340,10 @@ export class KugouAdapter implements PlatformAdapter {
    * H5 为主路径，音质受限时逐路降级补偿。
    */
   async fetchSongUrl(hash: string, albumId?: string, quality?: string, extra?: Record<string, unknown>): Promise<SongUrl | null> {
-    // 构建 hash 候选链（质量从高到低）
-    const candidates: string[] = [];
-    if (extra?.resHash && extra.resHash !== hash) candidates.push(extra.resHash as string);
-    if (extra?.sqHash && extra.sqHash !== hash) candidates.push(extra.sqHash as string);
-    if (extra?.hqHash && extra.hqHash !== hash) candidates.push(extra.hqHash as string);
-    candidates.push(hash);
+    // 指定档位向下尝试；不同音质的 hash 不能总从最高档开始。
+    const all=[{level:'hires',hash:extra?.resHash},{level:'flac',hash:extra?.sqHash},{level:'320',hash:extra?.hqHash},{level:'128',hash}];
+    const at=all.findIndex(x=>x.level===quality);
+    const candidates=[...new Set(all.slice(at<0?0:at).map(x=>String(x.hash || '')).filter(Boolean))];
 
     const cookie = this.cookies.getHeader('kugou') || '';
     const rec = this.cookies.get('kugou');
@@ -362,26 +360,28 @@ export class KugouAdapter implements PlatformAdapter {
         return { url: cached.url, quality: cached.quality };
       }
 
-      // 四路依次尝试
+      // 不让失效的旧 mobile 路由挡住 web/H5；每路都继承父预算。
       const routes: Array<() => Promise<SongUrl | null>> = [
         () => this.fetchH5(h, albumId, quality, userid, token, mid, dfid, cookie),
         () => this.fetchMobile(h, albumId, userid, token),
         () => this.fetchWeb(h, albumId, mid, dfid, userid, token),
         () => this.fetchGateway(h, albumId, quality, userid, token, mid, dfid),
       ];
-
-      for (const route of routes) {
-        throwIfCancelled();
-        try {
-          const result = await route();
-          if (result?.url) {
-            // 缓存结果
-            this.urlCache.set(ck, { url: result.url, quality: result.quality || '', expireAt: Date.now() + URL_CACHE_TTL_MS });
-            if (this.urlCache.size > 256) this.urlCache.delete(this.urlCache.keys().next().value!);
-            return result;
-          }
-        } catch { /* 继续下一路 */ }
-      }
+      const control=new AbortController();
+      try {
+        const result=await new Promise<SongUrl>((resolve,reject)=> {
+          let remaining=routes.length;
+          routes.forEach(route=> {
+            void withRequestScope(1500,route,{signal:control.signal}).then(r=> {
+              if(r?.url)resolve(r);else if(--remaining===0)reject(new Error('NO_SOURCE'));
+            }).catch(()=>{if(--remaining===0)reject(new Error('NO_SOURCE'))});
+          });
+        });
+        this.urlCache.set(ck,{url:result.url,quality:result.quality || '',expireAt:Date.now()+120000});
+        if(this.urlCache.size>256)this.urlCache.delete(this.urlCache.keys().next().value!);
+        return {...result,expiresAt:Date.now()+120000};
+      } catch { throwIfCancelled(); }
+      finally { control.abort(); }
     }
 
     return { url: '', playable: false, trial: false, error: '酷狗四路取链均失败' };
@@ -422,7 +422,9 @@ export class KugouAdapter implements PlatformAdapter {
       },
     );
     if (data?.status === 1 && data.url) {
-      const q = data.bitRate ? (data.bitRate >= 900 ? 'lossless' : data.bitRate >= 320 ? 'hq' : 'sq') : '';
+      const bitrate=Number(data.bitRate || 0);
+      const kbps=bitrate>10000?bitrate/1000:bitrate;
+      const q=kbps>=900?'flac':kbps>=256?'320':kbps>0?'128':'';
       return { url: data.url.replace(/^http:/, 'https:'), quality: q };
     }
     return null;
@@ -446,7 +448,9 @@ export class KugouAdapter implements PlatformAdapter {
     // vip=65530 表示 VIP 限制
     if (data?.vip === 65530) return null;
     if (data?.url) {
-      const q = data.bitRate ? (data.bitRate >= 900 ? 'lossless' : data.bitRate >= 320 ? 'hq' : 'sq') : '';
+      const bitrate=Number(data.bitRate || 0);
+      const kbps=bitrate>10000?bitrate/1000:bitrate;
+      const q=kbps>=900?'flac':kbps>=256?'320':kbps>0?'128':'';
       return { url: data.url.replace(/^http:/, 'https:'), quality: q };
     }
     return null;
@@ -515,7 +519,9 @@ export class KugouAdapter implements PlatformAdapter {
       },
     );
     if (data?.status === 1 && data.url) {
-      const q = data.bitRate ? (data.bitRate >= 900 ? 'lossless' : data.bitRate >= 320 ? 'hq' : 'sq') : '';
+      const bitrate=Number(data.bitRate || 0);
+      const kbps=bitrate>10000?bitrate/1000:bitrate;
+      const q=kbps>=900?'flac':kbps>=256?'320':kbps>0?'128':'';
       return { url: data.url.replace(/^http:/, 'https:'), quality: q };
     }
     return null;

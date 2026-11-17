@@ -256,18 +256,8 @@ export class NeteaseAdapter implements PlatformAdapter {
 
   /** Keyword search (for cross-platform fallback). */
   async searchSongs(keyword: string, pageSize = 10): Promise<Track[]> {
-    try {
-      const data = await this.http.requestJson<{
-        result?: { songs?: Array<Record<string, any>> };
-      }>(
-        `https://music.163.com/api/search/get/web?s=${encodeURIComponent(keyword)}&type=1&offset=0&limit=${pageSize}`,
-        { platform: 'netease' },
-      );
-      return (data?.result?.songs ?? []).map(mapNeteaseTrack).filter((t): t is Track => !!t);
-    } catch (err) {
-      console.warn('[NeteaseAdapter] search failed:', err instanceof Error ? err.message : err);
-      return [];
-    }
+    const res=await callNcmSafe('cloudsearch',{keywords:keyword,type:1,limit:Math.min(100,pageSize),offset:0,cookie:this.cookies.getHeader('netease') || ''});
+    return ((res?.body?.result as {songs?:Array<Record<string,any>>})?.songs || []).map(mapNeteaseTrack).filter((t):t is Track=>!!t);
   }
 
   async searchArtists(keyword: string, pageSize = 5): Promise<ArtistSearchHit[]> {
