@@ -666,8 +666,8 @@ async function main() {
     !lsClosed.dataLs && !lsClosed.root && !lsClosed.hero && lsClosed.coverVisible;
   log('听音空间进出', JSON.stringify({ lsOpen, lsClosed }));
 
-  // 主舞台方向原型（#133）：开发者面板切换的两种有边界星云能排布（位置都是有限数）、有星层画布、
-  // 缩小到全貌时 DOM 卡片全部卸掉只剩星；切回现有卡片墙后一切照旧
+  // 主舞台星云（#133 / #134 / #135）：三种排法都能排布（位置都是有限数）、有封面层画布；
+  // 滚轮一直往外缩会停在下限（最远约 0.28 倍，封面还认得出；小歌单停在默认 0.62），看不到整片星云；切回旧卡片墙后一切照旧
   const spaceLab = await page.evaluate(async () => {
     // 每次换模式舞台都会重建 __nebula，所以每次都取最新的
     const n = () => window.__nebula;
@@ -700,7 +700,7 @@ async function main() {
     spaceLab.ok &&
     ['cluster', 'chroma', 'random'].every((m) => {
       const v = spaceLab[m];
-      return v.a.bounded && v.a.canvas && v.a.cards >= 3 && v.a.bad === 0 && v.a.radius > 0 && v.b.cards === 0 && v.b.zoom <= 0.2;
+      return v.a.bounded && v.a.canvas && v.a.cards >= 3 && v.a.bad === 0 && v.a.radius > 0 && v.b.zoom >= 0.279 && v.b.bad === 0;
     }) &&
     spaceLab.cluster.a.clusters > 1 &&
     !spaceLab.classic.bounded &&

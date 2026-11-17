@@ -537,8 +537,3 @@ export function searchTarget(
   const id = focus != null && focus >= 0 && focus < w.cards.length ? focus : ids[0]!;
   return { cx: w.px[id]!, cy: w.py[id]!, zoom: 1 };
 }
-
-/** 看全貌：整片星云装进屏幕。 */
-export function overviewZoom(w: BoundedWorld, vw: number, vh: number): number {
-  return Math.max(0.04, (0.47 * Math.min(vw, vh)) / w.radius);
-}

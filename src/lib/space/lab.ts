@@ -95,8 +95,8 @@ export function useSpaceLab(): SpaceLab {
   return useSyncExternalStore(subscribe, getSpaceLab, getSpaceLab);
 }
 
-/** 面板上的按钮要让舞台做事（看全貌、回到正在播放）：舞台挂载时登记处理函数。 */
-type SpaceCommand = 'overview' | 'focusCurrent';
+/** 面板上的按钮要让舞台做事（回到正在播放）：舞台挂载时登记处理函数。 */
+type SpaceCommand = 'focusCurrent';
 const commands = new Map<SpaceCommand, () => void>();
 export function registerSpaceCommand(name: SpaceCommand, fn: () => void): () => void {
   commands.set(name, fn);

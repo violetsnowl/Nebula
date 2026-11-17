@@ -86,9 +86,6 @@ export const SpaceLabPanel = memo(function SpaceLabPanel({ songCount }: { songCo
           <i aria-hidden="true" />
         </button>
         <div className="sl-actions">
-          <button type="button" disabled={!bounded} onClick={() => runSpaceCommand('overview')}>
-            看全貌
-          </button>
           <button type="button" disabled={!bounded} onClick={() => runSpaceCommand('focusCurrent')}>
             回到正在播放
           </button>
@@ -99,7 +96,7 @@ export const SpaceLabPanel = memo(function SpaceLabPanel({ songCount }: { songCo
         {bounded && sampling
           ? `正在给封面取色 ${tones.done} / ${tones.total}（第一次要等一会儿，取完 A 会重新排一次）`
           : bounded
-            ? `${songCount} 首 · 滚轮缩小看全貌 · 排法也可以在「设置 › 外观」里换`
+            ? `${songCount} 首 · 最远缩到封面还认得出 · 排法也可以在「设置 › 外观」里换`
             : 'Ctrl+Shift+M 开关这个面板 · 旧卡片墙只在验收期间保留'}
       </footer>
     </section>

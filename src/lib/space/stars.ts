@@ -3,6 +3,7 @@ import { CARD_HEIGHT, CARD_WIDTH } from '../layout';
 import { project, type CamLike, type Proj } from './lens';
 import { thumbOf } from './thumbs';
 import { oklabToRgb, toneOf } from './tone';
+import { placeholderFill } from '../coverPlaceholder';
 import type { BoundedWorld } from './world';
 
 /**
@@ -13,11 +14,10 @@ import type { BoundedWorld } from './world';
  *   - 一直画真封面：屏幕上 72px 以下到最远的 6px 左右，都是圆角小封面（远处用 18px 的小图）；
  *     和 DOM 卡片同位置、同圆角、同样的边缘 / 外圈淡出，56–72px 之间和 DOM 卡片交叉淡化；
  *     缩略图还没到时先画一块封面代表色的小方块，到了自然换成封面；
- *   - 缩小看全貌时，底下铺一层很淡的色雾：每首歌的封面色在世界坐标里晕开、模糊，越密的地方越亮，
- *     远看是一团发光的云（预先画好的一张小图，每帧只画一次）；
- *   - 按歌手时在缩小时标出星团（歌手）名，大星团先占位，重叠的不写。
+ *   - #135：不再允许缩到看见整片星云（最远约 0.28 倍，封面约 48px），看全貌用的色雾去掉；
+ *   - 按歌手时拉远会标出较大星团（6 首以上）的歌手名，大星团先占位，重叠的不写。
  */
-const GRAY: [number, number, number] = [150, 154, 166];
+const GRAY: [number, number, number] = [96, 100, 112];
 
 function smoothstep(a: number, b: number, x: number): number {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -34,7 +34,7 @@ export interface StarFrame {
   boxH: number;
   match: ReadonlySet<number> | null;
   currentId: number | null;
-  /** 封面色调的版本（取完一批加一）：色雾据此重画 */
+  /** 封面色调的版本（取完一批加一） */
   toneVersion: number;
 }
 
@@ -46,9 +46,6 @@ export class StarField {
   private chip = new Map<string, string>();
   private p: Proj = { sx: 0, sy: 0, s: 0, u: 0 };
   private empty = true;
-  private haze: HTMLCanvasElement | null = null;
-  private hazeWorld: BoundedWorld | null = null;
-  private hazeVersion = -1;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d');
@@ -64,9 +61,10 @@ export class StarField {
     this.canvas.height = Math.round(vh * dpr);
   }
 
-  /** 缩略图没到时的小方块颜色：封面代表色（略提亮），没有色调先用灰。 */
+  /** 缩略图没到时的小方块颜色：封面代表色（略提亮），没有色调先用灰；没有封面的歌用和卡片占位一样的深色。 */
   private chipOf(track: Track): string {
-    const key = track.cover ?? '';
+    if (!track.cover) return placeholderFill(track.hue1);
+    const key = track.cover;
     const hit = this.chip.get(key);
     if (hit) return hit;
     const t = toneOf(track.cover);
@@ -74,43 +72,6 @@ export class StarField {
     const css = `rgb(${r},${g},${b})`;
     if (t) this.chip.set(key, css); // 灰色不缓存，取到色调后自然换色
     return css;
-  }
-
-  /** 色雾：每首歌的封面色在世界坐标里晕开，叠加后模糊。世界或色调变了才重画（一张 384px 的小图）。 */
-  private hazeOf(world: BoundedWorld, version: number): HTMLCanvasElement | null {
-    if (this.haze && this.hazeWorld === world && this.hazeVersion === version) return this.haze;
-    const N = 384;
-    const R = world.radius;
-    const k = N / (2 * R);
-    const raw = document.createElement('canvas');
-    raw.width = N;
-    raw.height = N;
-    const g = raw.getContext('2d');
-    if (!g) return null;
-    g.globalCompositeOperation = 'lighter';
-    const rad = Math.max(4, 300 * k);
-    for (let i = 0; i < world.cards.length; i++) {
-      const t = toneOf(world.cards[i]!.track.cover);
-      const [r, gg, b] = t ? oklabToRgb(0.5 + 0.35 * t[0], t[1] * 2.2, t[2] * 2.2) : GRAY;
-      const x = (world.px[i]! + R) * k;
-      const y = (world.py[i]! + R) * k;
-      const grad = g.createRadialGradient(x, y, 0, x, y, rad);
-      grad.addColorStop(0, `rgba(${r},${gg},${b},0.11)`);
-      grad.addColorStop(1, `rgba(${r},${gg},${b},0)`);
-      g.fillStyle = grad;
-      g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
-    }
-    const out = document.createElement('canvas');
-    out.width = N;
-    out.height = N;
-    const o = out.getContext('2d');
-    if (!o) return null;
-    o.filter = 'blur(7px)';
-    o.drawImage(raw, 0, 0);
-    this.haze = out;
-    this.hazeWorld = world;
-    this.hazeVersion = version;
-    return out;
   }
 
   clear(): void {
@@ -158,22 +119,6 @@ export class StarField {
     ctx.clearRect(0, 0, cam.vw, cam.vh);
     let drew = false;
 
-    // 色雾：缩小看全貌时才出现（缩放 0.34 → 0.14 渐入）；这时透镜已经退成平面，按线性换算即可
-    const hazeA = 1 - smoothstep(0.14, 0.34, cam.zoom);
-    if (hazeA > 0.02) {
-      const haze = this.hazeOf(world, f.toneVersion);
-      if (haze) {
-        const R = world.radius;
-        const z = cam.zoom;
-        ctx.globalCompositeOperation = 'screen';
-        ctx.globalAlpha = 0.85 * hazeA * (match ? 0.5 : 1);
-        ctx.drawImage(haze, (-R - cam.x) * z, (-R - cam.y) * z, 2 * R * z, 2 * R * z);
-        ctx.globalAlpha = 1;
-        ctx.globalCompositeOperation = 'source-over';
-        drew = true;
-      }
-    }
-
     // 小封面
     const p = this.p;
     const n = world.cards.length;
@@ -219,14 +164,14 @@ export class StarField {
       ctx.stroke();
     }
 
-    // 按歌手：缩小时标星团名（4 首以上的歌手）。大星团先占位，和已放的名字重叠的就不写
-    const labelA = world.mode === 'cluster' ? 1 - smoothstep(0.3, 0.5, cam.zoom) : 0;
+    // 按歌手：拉远时标星团名（6 首以上的歌手）。大星团先占位，和已放的名字重叠的就不写
+    const labelA = world.mode === 'cluster' ? 1 - smoothstep(0.3, 0.46, cam.zoom) : 0;
     if (labelA > 0.02) {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'bottom';
       const taken: number[] = [];
       for (const c of world.clusters) {
-        if (c.ids.length < 4) continue;
+        if (c.ids.length < 6) continue;
         project(c.cx, c.cy - c.r, cam, delta, p);
         if (p.sx < -200 || p.sy < -40 || p.sx > cam.vw + 200 || p.sy > cam.vh + 40) continue;
         const size = Math.round(Math.min(20, 10.5 + Math.sqrt(c.ids.length) * 1.1));

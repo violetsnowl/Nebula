@@ -15,12 +15,15 @@ export interface PanControllerOptions {
   initialY: number;
   initialZoom?: number;
   /**
-   * 有边界的星云（#133 方向原型）：不周期回绕，镜头中心限制在半径内；滚轮缩放以屏幕中心为锚（透镜中心）；
-   * 拖动按手下那一点的局部放大率换算，手下的卡片跟着手走。不传 = 现有卡片墙，行为不变。
+   * 有边界的星云（#133 / #135）：不周期回绕；滚轮缩放以屏幕中心为锚（透镜中心）；
+   * 拖动按手下那一点的局部放大率换算，手下的卡片跟着手走。不传 = 旧卡片墙，行为不变。
+   * 最小缩放和镜头能走多远都随窗口大小变（#135：不让人缩到能看见整片星云、也不让星云的边缘进画面）。
    */
   bounded?: {
-    radius: number;
-    zoomMin: number;
+    /** 镜头中心离星云中心最远多少（世界坐标） */
+    clampRadius: (zoom: number, vw: number, vh: number) => number;
+    /** 最小缩放 */
+    zoomMin: (vw: number, vh: number) => number;
     zoomMax: number;
     worldPerPixel: (sx: number, sy: number, frame: PanFrame) => number;
   };
@@ -137,7 +140,7 @@ export class PanController {
     this.anim++;
     if (this.opts.bounded) {
       // 有边界星云：回到星云中心
-      this.zoom = 0.92;
+      this.zoom = Math.max(0.62, this.opts.bounded.zoomMin(vw, vh));
       this.pan.x = -vw / (2 * this.zoom);
       this.pan.y = -vh / (2 * this.zoom);
     } else {
@@ -267,8 +270,8 @@ export class PanController {
     if (b) {
       // 有边界星云：以屏幕中心（透镜中心）为锚缩放，镜头中心不动
       this.anim++;
-      const nextZoom = Math.min(b.zoomMax, Math.max(b.zoomMin, this.zoom * factor));
       const { vw, vh } = this.size();
+      const nextZoom = Math.min(b.zoomMax, Math.max(b.zoomMin(vw, vh), this.zoom * factor));
       const cx = this.pan.x + vw / (2 * this.zoom);
       const cy = this.pan.y + vh / (2 * this.zoom);
       this.zoom = nextZoom;
@@ -322,13 +325,23 @@ export class PanController {
 
     const b = this.opts.bounded;
     if (b) {
-      // 有边界星云：镜头中心不出星云半径（惯性撞到边缘就停）
       const { vw, vh } = this.size();
+      // 缩放不低于下限（窗口变大后下限会变高）；以屏幕中心为锚
+      const zMin = b.zoomMin(vw, vh);
+      if (this.zoom < zMin) {
+        const ccx = this.pan.x + vw / (2 * this.zoom);
+        const ccy = this.pan.y + vh / (2 * this.zoom);
+        this.zoom = zMin;
+        this.pan.x = ccx - vw / (2 * zMin);
+        this.pan.y = ccy - vh / (2 * zMin);
+      }
+      // 镜头中心不走出允许的半径（惯性撞到边缘就停）
       const cx = this.pan.x + vw / (2 * this.zoom);
       const cy = this.pan.y + vh / (2 * this.zoom);
       const d = Math.hypot(cx, cy);
-      if (d > b.radius) {
-        const k = b.radius / d;
+      const maxD = b.clampRadius(this.zoom, vw, vh);
+      if (d > maxD) {
+        const k = maxD / d;
         this.pan.x = cx * k - vw / (2 * this.zoom);
         this.pan.y = cy * k - vh / (2 * this.zoom);
         if (this.mode === 'inertia') {

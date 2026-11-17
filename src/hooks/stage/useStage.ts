@@ -28,7 +28,7 @@ import { libraryService } from '../../lib/library';
 import { preferredQuality } from '../../lib/preferences';
 import type { ImportStatus } from '../../lib/playlistTypes';
 import { getSpaceLab, registerSpaceCommand, setSpaceLab, useSpaceLab, type StageMode } from '../../lib/space/lab';
-import { buildChroma, buildCluster, buildRandom, overviewZoom, queryDisc, type BoundedWorld } from '../../lib/space/world';
+import { buildChroma, buildCluster, buildRandom, queryDisc, type BoundedWorld } from '../../lib/space/world';
 import { camCenter, lensDelta, project, worldPerPixel, type Proj } from '../../lib/space/lens';
 import { ensureTones, oklabToRgb, toneOf, useToneProgress } from '../../lib/space/tone';
 import { setActiveWorld } from '../../lib/space/active';
@@ -641,8 +641,13 @@ export function useStage({
       initialZoom,
       bounded: w
         ? {
-            radius: w.radius * 0.96,
-            zoomMin: Math.min(0.2, overviewZoom(w, window.innerWidth, window.innerHeight)),
+            // 不让人缩到看见整片星云（#135，用户反馈：全貌「一言难尽」，放大进星云里才好看）：
+            //   - 最远也要认得出封面：卡片在屏幕上约 48px（0.28 倍，正好是一面小封面拼成的墙）；
+            //   - 大屏幕视野更大，再收一点：视野半径不超过星云半径的 60%；
+            //   - 小歌单一屏装得下，就停在默认缩放（0.62）。
+            zoomMin: (vw, vh) => Math.max(0.28, Math.min(0.62, Math.hypot(vw, vh) / 2 / (0.6 * w.radius))),
+            // 镜头走到边上时，视野里星云外的空处不超过约三分之一：边缘只是变稀，看不到整团的轮廓
+            clampRadius: (z, vw, vh) => Math.max(0, w.radius * 0.96 - (0.68 * Math.hypot(vw, vh)) / 2 / z),
             zoomMax: 2.4,
             worldPerPixel: (sx, sy, f) => worldPerPixel(sx, sy, f, lensDelta(getSpaceLab().lens, f.zoom)),
           }
@@ -654,9 +659,6 @@ export function useStage({
     controller.start();
     const offCommands = w
       ? [
-          registerSpaceCommand('overview', () =>
-            controller.animateToCenter(0, 0, overviewZoom(w, window.innerWidth, window.innerHeight), 1300),
-          ),
           registerSpaceCommand('focusCurrent', () => {
             const sid = audioPlayer.getState().song?.id ?? -1;
             if (sid >= 0 && sid < w.cards.length) controller.animateToCenter(w.px[sid]!, w.py[sid]!, 1);
