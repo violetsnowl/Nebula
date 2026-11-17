@@ -21,6 +21,7 @@ export * from './services/lyricService';
 export * from './services/lyricCache';
 export * from './services/wallpaperLibrary';
 export * from './services/qqRights';
+export * from './services/qqSession';
 export * from './services/platformRouter';
 export * from './login/index';
 export { registerIpcHandlers } from './ipc';

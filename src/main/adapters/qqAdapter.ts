@@ -19,6 +19,7 @@ import { mapQQTrack } from './mappers';
 import { throwIfCancelled } from '../requestScope';
 import { decodeQqLyric, fromTimed } from '../parsers/timedLyrics';
 import { expiresAfterSeconds, sourceTiming } from '../../lib/audio/sourceLifetime';
+import { QQ_AUTH_EXPIRED, qqComm, qqCredential, qqLoginProbe, qqSession } from '../services/qqSession';
 
 export function cleanQqComment(text:string):string {
   return String(text || '').replace(/\[em\]([\s\S]*?)\[\/em\]/gi,(_,code)=>/^[\p{Extended_Pictographic}\uFE0F\u200D]+$/u.test(code)?code:'［表情］').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&');
@@ -127,11 +128,11 @@ export class QqAdapter implements PlatformAdapter {
   }
 
   private mediaIds = new Map<string,string>();
+  getAuthStatus() {return qqSession(this.http).peek(this.cookies.getHeader('qq') || '');}
   async fetchSongUrl(songmid: string, _albumId?: string, quality?: string, extra?: Record<string, unknown>): Promise<SongUrl | null> {
     const cookie=this.cookies.getHeader('qq') || '';
-    const fields=Object.fromEntries(cookie.split(';').map(s=>{const i=s.indexOf('=');return [s.slice(0,i).trim(),s.slice(i+1).trim()]}));
-    const uin=String(fields.uin || fields.wxuin || fields.qqmusic_uin || '').replace(/^o/,'') || '0';
-    const key=fields.qqmusic_key || fields.qm_keyst || fields.music_key || '';
+    const credential=qqCredential(cookie),{uin,key}=credential,session=qqSession(this.http);
+    if(session.peek(cookie)==='expired')return {url:'',playable:false,code:'AUTH_EXPIRED',error:QQ_AUTH_EXPIRED};
     let media=String(extra?.mediaMid || this.mediaIds.get(songmid) || '');
     if (!media) {
       const detail=await musicuPost(this.http,'music.pf_song_detail_svr','get_song_detail_yqq',{song_mid:songmid});
@@ -145,13 +146,18 @@ export class QqAdapter implements PlatformAdapter {
     const files=tiers.flatMap(t=>mediaIds.map(id=>({name:t.prefix+id+(t.level==='flac'?'.flac':'.mp3'),level:t.level})));
     const guid=String(Math.floor(1e9+Math.random()*8e9));
     try {
-      const body={comm:{uin,format:'json',ct:key?19:24,cv:0,...(key?{authst:key}:{})},req_0:{
+      const probeLogin=session.needsProbe(cookie);
+      const body={comm:qqComm(credential,key?19:24),...(probeLogin?{req_login:qqLoginProbe()}:{}),req_0:{
         module:'vkey.GetVkeyServer',method:'CgiGetVkey',param:{
           guid,uin,loginflag:1,platform:'20',songmid:files.map(()=>songmid),songtype:files.map(()=>0),filename:files.map(f=>f.name),
         },
       }};
       const requestedAt=Date.now();
       const data=await this.http.requestJson<Record<string,any>>('https://u.y.qq.com/cgi-bin/musicu.fcg',{platform:'qq',method:'POST',cookie,body,timeoutMs:2000});
+      if(probeLogin)session.observe(cookie,data?.req_login);
+      // 通用鉴权失败码与登录探针分开；空purl、1901和参数错误不证明票据过期。
+      if(key && [1000,104401].includes(Number(data?.req_0?.code || data?.code)))session.remember(cookie,'expired');
+      if(session.peek(cookie)==='expired')return {url:'',playable:false,code:'AUTH_EXPIRED',error:QQ_AUTH_EXPIRED};
       const payload=data?.req_0?.data;
       const rows=Array.isArray(payload?.midurlinfo)?payload.midurlinfo:[];
       for (const file of files) {
@@ -164,9 +170,14 @@ export class QqAdapter implements PlatformAdapter {
         if(!actual)continue;
         return {url,quality:actual.level,playable:true,trial:false,...sourceTiming('qq',requestedAt,expiresAfterSeconds(payload.expiration,requestedAt))};
       }
-      const code=Number(data?.req_0?.code || data?.code || rows[0]?.result || 0);
-      const missing=uin==='0' || !key || code===1901;
-      return {url:'',playable:false,code:missing?'LOGIN_REQUIRED':'RIGHTS_OR_UNAVAILABLE',error:missing?'QQ 登录票据不完整或已过期':'QQ 当前账号未获该歌曲的播放授权，或歌曲暂无可用音源'};
+      const missing=uin==='0' || !key;
+      if(missing)return {url:'',playable:false,code:'LOGIN_REQUIRED',error:'QQ 音乐播放票据不完整，请重新登录'};
+      if(Number(data?.req_0?.code || data?.code || 0)!==0)
+        return {url:'',playable:false,code:'UPSTREAM_ERROR',error:'QQ 取链接口返回异常，不能据此判断会员权限'};
+      const verified=session.peek(cookie)==='valid';
+      return {url:'',playable:false,code:verified?'RIGHTS_OR_UNAVAILABLE':'AUTH_UNVERIFIED',error:verified
+        ?'QQ 登录有效，但当前歌曲未返回可用音源（版权、地区、音质或单曲授权）'
+        :'QQ 登录状态暂未核验，无法判断是播放票据还是歌曲授权问题'};
     } catch {
       throwIfCancelled();
       return {url:'',playable:false,code:'NETWORK',error:'QQ 取链接口暂时不可用'};

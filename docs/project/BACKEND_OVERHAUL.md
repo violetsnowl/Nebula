@@ -440,3 +440,51 @@ git switch review/backend-playback-overhaul
 - **根因**：图标直接使用playing；第一轮已让playing只在真正媒体playing事件后为true，因此取链或waiting期间虽有播放意图，按钮却回到播放形状。
 - **修正**：公开快照增加playIntent，直接取内部wantsPlay，不另存一份易不同步的状态；BottomPlayer只替换aria-label和图标的两个条件。进度条仍按playing推进，未改样式。toggle主动emit，暂停/恢复不等浏览器事件才更新按钮。
 - **验证**：新增2项状态机检查；真实React/Chrome运行生产BottomPlayer，验证未完成取链显示暂停并可取消、真实WAV已播放后waiting仍显示暂停且可停、失败停止后显示播放，共3项。歌词2项保留，界面5/5、后端253项以及完整build/qa通过。
+
+### 13.5 QQ会员识别、登录票据与单曲授权（#B13）
+
+**从代码和契约已查清的部分**：
+
+1. `getAccount` 原来只见uin就返回loggedIn=true，两个公开资料接口能取昵称也不证明音乐票据有效。现增加GetLoginUserInfo核验，返回valid/expired/unknown/missing；仅确认有效后返回loggedIn=true，网络或协议未知不冒充过期。
+2. 会员请求原来没有正确的comm/authst/uin_list，只试无身份参数的接口和公开资料；并且只有正会员才返回结果，明确普通账号也变null。现使用当前账号的VipQueryServer V2/V1，按infoMap/uin_map选中该账号，必要时尝试带身份的VipLogin。解析只认固定会员字段及包装层；明确普通返回false，缺字段/非成功码/错账号返回null。会员自身到期会失效，OAuth到期、会员宣传、积分不能证明会员；HugeVip豪华绿钻也不再误算SVIP。
+3. 播放、会员、歌单原来使用不同票据顺序和uin提取；qqmusic_key可能盖过qm_keyst，微信wxuin与长musicid不受一致处理。现共享qqCredential：Web优先qm_keyst，其次qqmusic_key等音乐票据；成对原生musicid/musickey整体使用，微信按登录类型取wxuin，全程字符串保留长ID。comm带一致uin/authst/登录类型及Web校验值。p_skey/skey、access_token、refresh_token不作为播放票据。Cookie结构校验和官方登录窗口同步收紧，避免QQ网页授权刚完成就提前关窗；另修复关闭窗口的closed事件抢先把成功改成取消。
+4. 空purl原来统一记RIGHTS_OR_UNAVAILABLE，不能说明用户不是绿钻。现分别为：明确登录核验失败→AUTH_EXPIRED；已核验登录有效但空purl→RIGHTS_OR_UNAVAILABLE（仍可能是版权、地区、音质或单曲授权）；核验未知→AUTH_UNVERIFIED；接口非零且非明确鉴权错误→UPSTREAM_ERROR。1901和一般参数错误不单独作为过期证据。登录探针可与首次vkey请求同批发送；有效状态短缓存，避免每首额外串行查询。
+5. 已确认过期会阻止QQ主源缓存复用、跨平台兜底及播放器自动跳歌，既有提示行显示准确文案“QQ 登录已过期，请重新登录”；音质切换同样保留该原因。Cookie更新、换号、退出会清空解析/会话/权益缓存。未知状态不会被说成已确认普通会员，也不会用另一账号的旧权益保底。
+
+协议参考为原作者实现，不把公开资料页当私有授权证明：[Mineradio会员请求与票据选择](https://github.com/XxHuberrr/Mineradio-paused/blob/649c787d22fd283b5431899eca3ee6a509319247/server.js)、[QQMusicApi登录核验](https://github.com/L-1124/QQMusicApi/blob/main/qqmusic_api/modules/login.py)、[QQMusicApi请求版本参数](https://github.com/L-1124/QQMusicApi/blob/main/qqmusic_api/core/versioning.py)。新逻辑独立实现，未引入参考项目GPL源码或新依赖。
+
+**不能从现有材料推出的结论**：本机默认用户数据位置不存在cookies.json，附件目录只有本轮任务书，没有新登录的凭据副本。`qa:qq-session`在隔离测试profile返回not-run-missing-credential、0首、0次联网调用，证据为qq-session.json。用户的musickey创建日期2026-09-26、OAuth到期2026-11-25来自任务书，只说明不同凭据的元数据；没有音乐key自己的有效期与服务器核验，不能断言它仍有效或一定已过期。本轮确认并修复上述代码缺陷，**未确定那35首的逐首实际原因，未宣称会员直取已恢复，也未虚构新的80首成功率**。
+
+**自动续期评估**：有完整授权材料时技术上可行。当前成熟实现走music.login.LoginServer/Login、loginMode=2；依登录类型使用openid、refresh_token、refresh_key、musicid或str_musicid、musickey，QQ/微信的unionid/access_token要求不同。旧QQConnectLogin/QQLogin只传musicid/musickey的续期尝试不是通用保证；仅有OAuth到期时间或一个refresh token不足以保证生成有效音乐key。应在旧key接近它自己的期限或服务器明确拒绝时尝试一次，核验完整新身份和新key后原子替换，失败保留旧文件并要求重新登录，不修改/伪造期限。本轮只评估并在诊断中输出这些字段的存在性，**未启用未经真实账号验证的自动写回续期**。参考：[QQMusicApi续期方法与分登录类型参数](https://github.com/L-1124/QQMusicApi/blob/main/qqmusic_api/modules/login.py)、[凭据字段模型](https://github.com/L-1124/QQMusicApi/blob/main/qqmusic_api/models/request.py)、[独立Java实现的原子续期约定](https://github.com/EllanStudio/qqmusic-api/blob/main/docs/qq-music-allmusic-api.md)（2026-11-17查阅）。
+
+**凭据到位后的最短复核**：只把用户数据中的cookies.json复制到仓库外测试目录，不写原文件。运行下列命令；qq样本沿用主对话那80首文件，先用limit=10定位三档取链，再按需要改80。诊断不打印账号ID、昵称、Cookie值、token、直链或原始异常，仅记录接口码、状态、字段存在性和样本下标。返回码2表示未完成有效登录核验，不当作通过。
+
+```powershell
+pnpm qa:qq-session --profile=../qq-copy --samples=../qq-samples.json --limit=10 --out=../qq-session.json
+pnpm qa:playback-live --profile=../qq-copy --samples=../qq-samples.json --out=../qq-playback.json
+```
+
+### 13.6 第二轮验证与证据
+
+- 每个提交独立执行build、qa:backend和qa；最终后端275项通过：冒烟26、播放器25、路由20、录音匹配143、原QQ批量取链5、映射到路由2、有效期7、QQ会话权益21、歌词13、元数据5、导入8。真实组件6项通过；原有完整UI QA控制台错误0，qa.cjs原样保留。
+- 真实125秒前后对照记录在valid-source.json；严格匹配新增27例的第一轮/第二轮计数记录在matching.json。未重复第一轮209条公网数据集，也未用受控结果替换第一轮统计。
+- 真实Electron复核使用隐藏窗口和隔离userData，验证本地文件导入、实际播放、seek到8秒后、IPC取消；结果electron.json。它不等于QQ真实会员验证。
+- 发现并修复一次截止时间真实边界竞态（#B11）；另将“合并请求、取消一个调用者”测试中的20ms定时响应改为显式释放Promise，避免Windows计时粒度使30ms预算用例偶发超时，所有原断言保留。没有改动z1Words/idleInPanel或放松原有UI验收条件。
+- `docs/project/backend-overhaul-round2-evidence/`保存上述脱敏证据和validation.txt；没有Cookie文件、私人样本、原始错误或媒体URL。只有任务书和公开歌曲元数据进入Git。
+
+### 13.7 第二轮交付与合入边界
+
+- 继续原`backend/playback-overhaul`，基于第一轮`41c1404`新增#B9–#B13：`a6dab95`歌词防护，`ebf8163`录音匹配，`c7346ef`有效期，`4b447ee`按钮意图，最后#B13为QQ会话与最终报告。没有合并origin/main，主线集成由主对话完成。
+- 第二轮bundle名`music-nebula-backend-round2.bundle`，仅导出该分支引用，包含完整可达历史，可离线克隆。放在本次工作目录`outputs/round2/`，同目录有完整报告副本、第二轮证据及交付清单/校验值；第一轮交付保留。
+- GitHub推送当前认证账号仍为403，无远端写权限；未推到main，也未声称远端已更新。bundle通过verify并在新目录clone核对HEAD及fsck；准确最终SHA和校验值见交付清单。
+- 本轮仍需QQ新凭据和同一私人样本的在线复核；第一轮列出的其他账号验收限制仍保留。无凭据不阻塞其余已授权修正交付。额外接口风险：QQ登录/会员协议可能变化，未知返回保持unknown/null，不根据不认识的字段推断会员。
+
+主对话可先取到审阅分支，避免覆盖正在进行的main：
+
+```powershell
+git bundle verify '完整路径\music-nebula-backend-round2.bundle'
+git fetch '完整路径\music-nebula-backend-round2.bundle' backend/playback-overhaul:review/backend-playback-round2
+git diff --stat 41c1404..review/backend-playback-round2
+```
+
+界面冲突只需审阅两个获准例外：AccountDock/LyricPreview的数组判空，以及BottomPlayer按钮的两个状态条件；不带CSS、舞台/搜索引擎、听音空间或设计文档的变更。先看这两个最小改动再逐提交合入，并在main的当前上下文重新跑构建和回归。

@@ -29,7 +29,7 @@ class FakeAudio extends EventTarget {
 }
 globalThis.Audio = FakeAudio;
 globalThis.window = { setTimeout, clearTimeout };
-const { audioPlayer } = require(path.join(temp, 'player.cjs'));
+const { audioPlayer, PlaybackResolutionError } = require(path.join(temp, 'player.cjs'));
 const make = () => new audioPlayer.constructor();
 const track = (id, audio = '') => ({ id, source: 'netease', sourceId: String(id), title: `测试${id}`, artist: '测试歌手', style: '', hue1: 0, hue2: 0, audio });
 const resolved = t => ({ ...t, audio: `https://audio.test/${t.sourceId}.mp3`, resolvedAt: Date.now(), expiresAt: Date.now() + 300000 });
@@ -38,6 +38,13 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 const defer = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 const cases = [];
 const test = (name, run) => cases.push({ name, run });
+test('确认登录过期停在原曲并保留提示，不能自动跳歌掩盖',async p=>{
+ const songs=[track(1),track(2)];let calls=0;
+ p.emptyResolver=async()=>{calls++;throw new PlaybackResolutionError('QQ 登录已过期，请重新登录',true)};
+ p.playSong(songs[0],songs);await wait(450);
+ assert.equal(calls,1);assert.equal(p.state.song.id,1);assert.equal(p.state.failed,true);
+ assert.equal(p.state.error,'QQ 登录已过期，请重新登录');assert.equal(p.getState().playIntent,false);
+});
 test('取链和缓冲期间保持播放意图，点击暂停立即清除', async p => {
  const t=track(1),d=defer();p.emptyResolver=()=>d.promise;p.playSong(t,[t]);
  assert.equal(p.getState().playIntent,true);assert.equal(p.getState().playing,false);

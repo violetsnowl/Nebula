@@ -1,0 +1,19 @@
+{
+  "elapsedMs": 125010,
+  "variants": {
+    "before": {
+      "requests": 2,
+      "fetches": 2,
+      "sameUrl": false,
+      "timeBefore": 125.467331,
+      "timeAfter": 170.003656
+    },
+    "after": {
+      "requests": 1,
+      "fetches": 1,
+      "sameUrl": true,
+      "timeBefore": 125.14681,
+      "timeAfter": 170
+    }
+  }
+}

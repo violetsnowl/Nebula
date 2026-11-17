@@ -128,6 +128,8 @@ view blocks（同层互不依赖，组合只由 App 完成）
 - `AudioProxy.start()` 为 Promise，Electron 必须等监听成功；只回传当前实例代理地址。每实例 16 个活动请求、每协议代理最多 16 个 socket/每域 8 个。
 - `resolveSong(track,quality,{requestId,forceRefresh})` 与 `cancelResolve(requestId)`：请求标识只在发起它的 webContents 内生效，销毁窗口会取消；旧调用方式仍可用。
 - AudioPlayer 临近结束预取下一首，不预播放；新媒体接管前解除旧元素监听，始终只有当前媒体出声。
+- `AudioPlayerState.playIntent` 从内部播放意图直接生成；按钮使用它，进度和可听状态仍使用playing。终止型PlaybackResolutionError保留现有错误栏，停止自动跳歌。
+- `qqSession.ts` 统一音乐身份/票据、登录探针和状态缓存：valid5分钟、expired30秒、unknown15秒，最多16个凭据摘要；不缓存明文票据值。首次取链把登录探针合并到同批请求，成功缓存期内不额外核验。QQ会员查询采用当前账号的VipQuery V2/V1及VipLogin，正值最多5分钟且不越过会员期限、明确普通30秒、未知15秒；Cookie变更清空登录和权益缓存。AUTH_EXPIRED阻止QQ主源缓存与兜底，不将未知网络结果说成无权限。
 
 
 ## 后端整修 #B5：歌词路由

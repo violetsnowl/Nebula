@@ -6,6 +6,7 @@ export { matchScore } from './recordingMatch';
 import { mapQualityTo } from '../quality';
 import { requestScope, RequestCancelled, throwIfCancelled, withRequestScope } from '../requestScope';
 import { sourceTiming } from '../../lib/audio/sourceLifetime';
+import { QQ_AUTH_EXPIRED } from './qqSession';
 
 const PLAYABLE: Platform[] = ['netease', 'qq', 'kugou'];
 const LEVELS: Record<string, string[]> = {
@@ -20,7 +21,7 @@ type Timings = NonNullable<ResolveResult['timings']>;
 let sequence = 0;
 const failure = (t: Track, code: ResolveResult['code'] = 'NO_SOURCE'): ResolveResult => ({
   url: '', platform: t.platform, sourceId: t.sourceId, fallback: false, playable: false, code,
-    error: code === 'CANCELLED' ? '播放请求已取消' : code === 'TIMEOUT' ? '音源解析超时' : '主平台与兜底平台均未获取到可播音源（含音源探测过滤）',
+    error: code === 'AUTH_EXPIRED' ? QQ_AUTH_EXPIRED : code === 'CANCELLED' ? '播放请求已取消' : code === 'TIMEOUT' ? '音源解析超时' : '主平台与兜底平台均未获取到可播音源（含音源探测过滤）',
 });
 const codeOf = (e: unknown): 'TIMEOUT' | 'CANCELLED' | 'NO_SOURCE' => e instanceof RequestCancelled ? e.code : 'NO_SOURCE';
 const remember = <T>(map: Map<string, T>, key: string, value: T, max = 256): void => {
@@ -51,6 +52,10 @@ export class SongResolver {
   }
   resolve(track: Track, quality?: string, options: ResolveOptions = {}): Promise<ResolveResult> {
     if (options.signal?.aborted) return Promise.resolve(failure(track, 'CANCELLED'));
+    if(this.adapters[track.platform]?.getAuthStatus?.()==='expired'){
+      const result={...failure(track,'AUTH_EXPIRED'),traceId:`play-${++sequence}`,timings:[{stage:'auth',platform:track.platform,ms:0,outcome:'AUTH_EXPIRED'}]};
+      this.report(result,Date.now());return Promise.resolve(result);
+    }
     const key = this.key(track,quality), hit = this.cache.get(key);
     if (!options.forceRefresh && hit && hit.cachedUntil > Date.now() && (hit.result.expiresAt ?? 0) > Date.now() + 5000) {
       const result:ResolveResult={ ...hit.result, traceId: `play-${++sequence}`, timings: [{stage:'cache',platform:hit.result.platform,ms:0,outcome:'hit'}] };
@@ -107,7 +112,10 @@ export class SongResolver {
       const direct = await this.stage(timings,'fetch',platform,this.policy.candidateMs,() => this.adapters[platform].fetchSongUrl(
         track.sourceId, track.extra?.albumId == null ? undefined : String(track.extra.albumId), mapQualityTo(LEVELS[platform] || [],quality),track.extra,
       ));
-      if (!direct?.url || direct.playable === false) { timings.push({stage:'availability',platform,ms:0,outcome:direct?.code || 'NO_SOURCE'}); return null; }
+      if (!direct?.url || direct.playable === false) {
+        timings.push({stage:'availability',platform,ms:0,outcome:direct?.code || 'NO_SOURCE'});
+        return direct?.code==='AUTH_EXPIRED'?failure(track,'AUTH_EXPIRED'):null;
+      }
       const accepted = !this.probe || await this.stage(timings,'probe',platform,this.policy.probeMs,() => this.probe!(direct.url,platform,requestScope()?.signal));
       if (!accepted) { timings.push({stage:'availability',platform,ms:0,outcome:'PROBE_REJECTED'}); return null; }
       this.health.delete(platform);
@@ -129,13 +137,15 @@ export class SongResolver {
       if (!fallbackOnly && PLAYABLE.includes(track.platform)) {
         try { direct=await this.stage(timings,'primary',track.platform,this.policy.primaryMs,()=>this.source(track,track.platform,quality,false,timings)); } catch { throwIfCancelled(); }
       }
-      result = direct?.url && !direct.trial ? direct : await this.fallback(track,quality,timings) || direct || failure(track);
+      result = direct?.code==='AUTH_EXPIRED' || direct?.url && !direct.trial ? direct : await this.fallback(track,quality,timings) || direct || failure(track);
     } catch(e) { result=direct?.url ? direct : failure(track,codeOf(e)); }
     if(!result.url && result.code==='NO_SOURCE'){
       const cause=timings.find(t=>t.stage==='availability'&&t.platform===track.platform)?.outcome;
       if(cause==='LOGIN_REQUIRED')result.error='当前平台需要登录，其他平台也未找到可用音源';
       if(cause==='RIGHTS_OR_UNAVAILABLE')result.error='当前账号没有可用音源，可能受权限或版权限制；其他平台也不可用';
       if(cause==='NETWORK')result.error='平台连接失败，其他平台也暂时不可用';
+      if(cause==='AUTH_UNVERIFIED')result.error='QQ 登录状态暂未核验，无法判定歌曲授权；其他平台也未找到可用音源';
+      if(cause==='UPSTREAM_ERROR')result.error='QQ 取链接口返回异常，其他平台也未找到可用音源';
     }
     const complete={...result,traceId,timings:[...timings]};
     return complete;

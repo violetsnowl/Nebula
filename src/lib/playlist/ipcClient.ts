@@ -73,6 +73,8 @@ export interface DesktopLoginPlatform {
 
 export interface DesktopAccountInfo {
   loggedIn: boolean;
+  authStatus?: 'missing' | 'valid' | 'expired' | 'unknown';
+  error?: string;
   userId?: string;
   nickname?: string;
   avatarUrl?: string;

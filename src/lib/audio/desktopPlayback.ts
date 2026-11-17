@@ -1,4 +1,4 @@
-import { audioPlayer, type ResolveContext } from './AudioPlayer';
+import { audioPlayer, PlaybackResolutionError, type ResolveContext } from './AudioPlayer';
 import type { Track } from '../catalog';
 import { hasDesktopAPI, streamTrack, toBackendTrack, toFrontendTrack, viaOf, type DesktopTrack } from '../playlist/ipcClient';
 import { preferredQuality } from '../preferences';
@@ -18,7 +18,8 @@ export async function resolveTrackForPlay(track: Track, _reason: 'empty' | 'erro
   if (!hasDesktopAPI() || context?.signal.aborted) return null;
   const res = await resolveDesktop(toBackendTrack(track), preferredQuality() || undefined, context?.signal, !!context?.forceRefresh);
   if (context?.signal.aborted) return null;
-  if (!res.ok || !res.data?.url || res.data.playable === false) throw new Error(res.ok ? res.data?.error || '未获取到可播音源' : '播放服务暂时不可用');
+  if (!res.ok || !res.data?.url || res.data.playable === false)
+    throw new PlaybackResolutionError(res.ok ? res.data?.error || '未获取到可播音源' : '播放服务暂时不可用',res.ok && res.data?.code==='AUTH_EXPIRED');
   return toFrontendTrack({ ...toBackendTrack(track), originalUrl: res.data.url }, track.id, {
     trial: res.data.trial, trialEndTime: res.data.trialEndTime, quality: res.data.quality,
     via: viaOf(res.data), resolvedAt: res.data.resolvedAt, expiresAt: res.data.expiresAt,
@@ -40,6 +41,7 @@ export function selectQuality(level: string): void {
     unsubscribe();
     if (!current()) return;
     if (!res.ok || !res.data?.url || res.data.playable === false) {
+      if(res.ok && res.data?.code==='AUTH_EXPIRED'){audioPlayer.setError(res.data.error || 'QQ 登录已过期，请重新登录');return;}
       audioPlayer.setError('该音质暂不可用，已保持当前音质'); return;
     }
     const got = res.data.quality || '';

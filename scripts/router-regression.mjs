@@ -38,9 +38,11 @@ await test('总预算退出保留 traceId 和阶段，登录失败给出具体�
 });
 await test('合并并发请求，取消一人不影响另一人',async()=>{
  const a=adapters();let count=0,aborted=false;
- a.qq.fetchSongUrl=async()=>{count++;requestScope().signal.addEventListener('abort',()=>{aborted=true});await wait(20);return {url:'https://test/a'}};
+ let release,started;const entered=new Promise(r=>{started=r});
+ a.qq.fetchSongUrl=()=>{count++;requestScope().signal.addEventListener('abort',()=>{aborted=true});started();return new Promise(r=>{release=r})};
  const r=make(a),control=new AbortController();const p=r.resolve(song,undefined,{signal:control.signal}),q=r.resolve(song);
- await wait(2);control.abort();assert.equal((await p).code,'CANCELLED');assert.equal((await q).playable,true);assert.equal(count,1);assert.equal(aborted,true);
+ await entered;control.abort();assert.equal((await p).code,'CANCELLED');release({url:'https://test/a'});
+ assert.equal((await q).playable,true);assert.equal(count,1);assert.equal(aborted,true);
 });
 await test('最后一人取消回收请求且禁止缓存迟到结果',async()=>{
  const a=adapters();let count=0,signal;a.qq.fetchSongUrl=async()=>{count++;signal=requestScope().signal;await wait(20);return {url:'https://test/a'}};

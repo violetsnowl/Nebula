@@ -1,0 +1,11 @@
+{
+  "pass": true,
+  "electron": "43.3.0",
+  "hidden": true,
+  "isolatedProfile": true,
+  "localImport": 1,
+  "localDuration": 12,
+  "realFilePlayback": true,
+  "seekPast8": true,
+  "ipcCancelled": true
+}

@@ -27,6 +27,10 @@ export interface AudioPlayerState {
 
 type Listener = () => void;
 export interface ResolveContext { signal: AbortSignal; forceRefresh: boolean }
+/** 需要用户处理的登录失败不能用自动跳歌掩盖。 */
+export class PlaybackResolutionError extends Error {
+  constructor(message:string,readonly terminal=false){super(message);this.name='PlaybackResolutionError';}
+}
 
 export function formatTime(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) return '0:00';
@@ -678,7 +682,8 @@ class AudioPlayer {
       // 换歌单会重映射曲库下标；异步结果不能把旧下标写回。
       this.acceptResolved({ ...resolved, id: this.state.song?.id ?? resolved.id }, generation, this.pendingSeek);
     }).catch((error:unknown) => {
-      if (generation === this.generation && !request.signal.aborted) this.skipAfterFail(error instanceof Error ? error.message : undefined);
+      if (generation === this.generation && !request.signal.aborted)
+        this.skipAfterFail(error instanceof Error ? error.message : undefined,error instanceof PlaybackResolutionError && error.terminal);
     });
   }
 
@@ -825,7 +830,7 @@ class AudioPlayer {
     this.resolveTrack(track, 'error', true);
   };
 
-  private skipAfterFail(reason?:string): void {
+  private skipAfterFail(reason?:string,terminal=false): void {
     const continueQueue = this.wantsPlay;
     this.cancelLoad();
     const generation = this.generation;
@@ -835,7 +840,7 @@ class AudioPlayer {
     this.state.error = reason || '未获取到可播音源';
     this.failStreak++;
     this.consecutiveSkips++;
-    if (this.consecutiveSkips >= 6 || this.failStreak >= Math.max(1, this.queue.length)) {
+    if (terminal || this.consecutiveSkips >= 6 || this.failStreak >= Math.max(1, this.queue.length)) {
       this.state.error = reason || `连续 ${this.failStreak} 首播放失败，已停止自动跳歌`;
       this.emit();
       return;

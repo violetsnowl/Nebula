@@ -3,6 +3,7 @@
 ## 已知坑（遇事优先查这里）
 
 - **URL缓存期限不等于音频失效期限（#B11）**：解析缓存两分钟仅决定是否重用解析结果，不得用 min(cacheTTL, upstreamExpiry) 给播放器写 expiresAt。播放器按每首每个URL记取源时间，不能沿用上一首的全局 loadedAt。无上游期限时的平台默认值只是客户端保守策略，不是实测CDN承诺；真实125秒对照可用 `qa:valid-source` 复测。
+- **QQ网页授权、音乐登录、会员和单曲授权是不同证据（#B13）**：有uin或公开昵称不能证明音乐票据有效；p_skey/skey及OAuth token不能替代authst。统一使用qqCredential取身份/播放票据，会员查询只解析当前账号块；空purl本身不能证明过期或无会员。明确AUTH_EXPIRED停止兜底/自动跳歌；未知保持unknown。诊断用 `qa:qq-session --profile=仓库外副本 --out=仓库外结果`，不要在命令行粘贴真实Cookie。
 
 ### 网易云接口（重要）
 
@@ -14,7 +15,7 @@
 - 无版权/VIP 时 `/api/song/enhance/player/url` 返回占位地址（`music.163.com/song/media/outer/url...`），需判定为失败并触发兜底。
 - 取链音质：`song_url_v1` 的 level 体系（jymaster/sky 需 SVIP，hires/lossless 需 VIP），匿名仅 standard/exhigh；`freeTrialInfo` 存在即试听片段。
 - 音频播放必须走主进程 `AudioProxy`（`http://127.0.0.1:port/api/audio?url=...`），禁止把平台原始 URL 直接喂给 `<audio>`；代理白名单外域名返回 403。
-- Cookie 校验：netease 必须含 `MUSIC_U`；qq 必须含 `uin` + 播放票据（music_key/qm_keyst/p_skey/skey 至少其一），否则 `setCookie` IPC 拒绝写入。
+- Cookie 校验：netease 必须含 `MUSIC_U`；qq 必须含有效音乐账号（uin/wxuin或成对musicid）与音乐播放票据（qm_keyst/qqmusic_key/music_key/musickey/wxskey），否则 `setCookie` IPC 拒绝写入。p_skey/skey不再算音乐登录成功。
 
 ### 构建 / 运行
 

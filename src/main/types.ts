@@ -113,7 +113,7 @@ export interface ResolveResult {
   quality?: string;
   playable?: boolean;
   error?: string;
-  code?: 'NO_SOURCE' | 'TIMEOUT' | 'CANCELLED' | 'TRIAL_ONLY';
+  code?: 'NO_SOURCE' | 'TIMEOUT' | 'CANCELLED' | 'TRIAL_ONLY' | 'AUTH_EXPIRED';
   resolvedAt?: number;
   expiresAt?: number;
   traceId?: string;
@@ -131,6 +131,8 @@ export interface QualityOption {
 /** Unified platform adapter interface. */
 export interface PlatformAdapter {
   platform: Platform;
+  /** 已核验的会话状态；不发网络请求，用于阻止失效账号复用解析缓存。 */
+  getAuthStatus?(): 'missing' | 'valid' | 'expired' | 'unknown';
   fetchPlaylist(playlistId: string): Promise<Playlist>;
   fetchSongUrl(songId: string, albumId?: string, quality?: string, extra?: Record<string, unknown>): Promise<SongUrl | null>;
   fetchLyric(songId: string, timeMs?: number): Promise<Lyric | null>;
@@ -164,6 +166,8 @@ export interface PlaylistSummary {
 export interface AccountInfo {
   /** Login probe result: false means cookie invalid / not logged in. */
   loggedIn: boolean;
+  authStatus?: 'missing' | 'valid' | 'expired' | 'unknown';
+  error?: string;
   userId?: string;
   nickname?: string;
   avatarUrl?: string;

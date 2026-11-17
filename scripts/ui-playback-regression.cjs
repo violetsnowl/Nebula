@@ -21,6 +21,7 @@ import { flushSync } from 'react-dom';
 import { LyricPreview } from './preview';
 import { audioPlayer } from ${JSON.stringify(path.join(root, 'src/lib/audio/AudioPlayer.ts'))};
 import { BottomPlayer } from ${JSON.stringify(path.join(root, 'src/components/player/BottomPlayer.tsx'))};
+import { resolveTrackForPlay } from ${JSON.stringify(path.join(root, 'src/lib/audio/desktopPlayback.ts'))};
 const root = createRoot(document.getElementById('root')!);
 const settings = {fontSize:44,currentScale:1.22,bold:false,lyricColorSource:'cover',customColor:'#ffffff'} as any;
 window.__uiTest = {
@@ -41,6 +42,15 @@ window.__uiTest = {
     audioPlayer.playSong(t,[t]);
   },
   waiting() {audioPlayer.el.dispatchEvent(new Event('waiting'));},
+  expired() {
+    audioPlayer.stop();let requests=0;
+    window.nebulaAPI={importPlaylist:async()=>({ok:false}),resolveSong:async()=>{
+      requests++;return {ok:true,data:{url:'',playable:false,code:'AUTH_EXPIRED',error:'QQ 登录已过期，请重新登录'}};
+    },cancelResolve:async()=>({ok:true})} as any;
+    const t={id:1,source:'qq',sourceId:'fixture',title:'过期提示回归',artist:'测试',audio:'',hue1:0,hue2:0} as any;
+    audioPlayer.emptyResolver=resolveTrackForPlay;audioPlayer.playSong(t,[t,{...t,id:2,sourceId:'fixture-2'}]);
+    window.__authRequests=()=>requests;
+  },
   state() {const {playIntent,playing,loading,failed}=audioPlayer.getState();return {playIntent,playing,loading,failed};},
   stop() { flushSync(() => root.unmount()); audioPlayer.stop(); }
 };`;
@@ -98,9 +108,15 @@ const server = http.createServer((req, res) => {
     await page.evaluate(()=>window.__uiTest.load('fail'));
     await page.waitForFunction(()=>window.__uiTest.state().failed);
     assert.equal(await page.locator('.bp-play').getAttribute('aria-label'),'播放');
+    await page.evaluate(()=>window.__uiTest.expired());
+    await page.waitForFunction(()=>document.querySelector('.bp-status')?.textContent==='QQ 登录已过期，请重新登录');
+    await page.waitForTimeout(450);
+    assert.equal(await page.evaluate(()=>window.__authRequests()),1,'过期不能自动跳到下一首');
+    assert.equal(await page.locator('.bp-status').textContent(),'QQ 登录已过期，请重新登录');
+    assert.equal(await page.locator('.bp-play').getAttribute('aria-label'),'播放');
     assert.deepEqual(errors, [], '按钮真实组件运行不得报错');
     await page.evaluate(() => window.__uiTest.stop());
-    console.log('界面播放回归：歌词换数组2项、取链按钮/缓冲按钮/失败按钮3项，5/5 通过');
+    console.log('界面播放回归：歌词换数组2项、按钮3项、过期提示及停止跳歌1项，6/6 通过');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error.message); process.exitCode = 1; })
   .finally(() => { server.closeAllConnections(); server.close(); });

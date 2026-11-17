@@ -19,6 +19,7 @@ const {
   KugouLogin,
   QishuiLogin,
   QqRightsService,
+  qqSession,
   createKugouLoginAdapter,
   createQishuiLoginAdapter,
   AudioProxy,
@@ -172,8 +173,8 @@ function createQqLoginWindow(cookies) {
         const v = validatePlatformCookie('qq', normalized);
         if (v.ok) {
           cookies.set('qq', normalized, undefined, 'QQ 音乐');
-          if (!win.isDestroyed()) win.close();
           finish({ ok: true, message: 'QQ 音乐登录成功' });
+          if (!win.isDestroyed()) win.close();
         }
       } catch {
         /* keep polling */
@@ -575,7 +576,8 @@ app.whenReady().then(async () => {
   const wallpaperLibrary = new WallpaperLibrary();
   protocol.handle('wallpaper', (request) => wallpaperLibrary.handle(request));
   const login = new NeteaseLogin(http, cookies);
-  const qqLogin = new QqLogin(http, cookies, new QqRightsService(http));
+  const qqRights = new QqRightsService(http);
+  const qqLogin = new QqLogin(http, cookies, qqRights);
   const kugouLogin = new KugouLogin(cookies);
   const qishuiLogin = new QishuiLogin(cookies, { BrowserWindow, session });
 
@@ -616,7 +618,7 @@ app.whenReady().then(async () => {
   // 多平台 VIP 路由：按已登录账号的 SVIP/VIP 状态决定音源兜底顺序（汽水仅作歌单来源）
   const fallbackPriority = createFallbackPriorityProvider(loginAdapters);
   resolver.setFallbackTargets(fallbackPriority);
-  cookies.onChange(() => { resolver.invalidate(); fallbackPriority.invalidate(); clearProbeCache(); });
+  cookies.onChange(() => { resolver.invalidate(); fallbackPriority.invalidate(); clearProbeCache(); qqSession(http).clear(); qqRights.clear(); });
 
   registerIpcHandlers(ipcMain, {
     adapters,
