@@ -69,7 +69,10 @@ pnpm check:arch       # 架构依赖守卫（pnpm qa 已包含）
 pnpm qa:live-new      # 在线链路验证（跨平台转译 / 歌手全曲 / 评论分页 / 头像）
 pnpm qa:qq-live       # QQ 实账号链路验证（需 --cookie=... 或 scripts/qq-cookie.txt）
 pnpm qa:desktop-play  # 桌面播放链路冒烟
+pnpm qa:playback-live # 100 首公开样本联网统计（先运行下述 prepare）
 ```
+
+播放回归：`node scripts/player-regression.mjs`（已纳入 `qa:backend`）。联网基线：先 `pnpm build:main`，再 `node scripts/playback-benchmark.mjs --prepare`，最后 `pnpm qa:playback-live`；数据集和统计默认在仓库同级 `benchmark-samples.json` / `benchmark-result.json`。可用 `--samples=... --out=... --backend=... --profile=...` 指定同一测试集、冻结后端或只含测试凭据副本的目录；脚本不打印直链或歌词原文。
 
 换机器运行浏览器 QA 时，可设置 `NEBULA_QA_MODULES` 为包含 `playwright-core` 与 `pngjs` 的依赖目录，`NEBULA_CHROME` 为 Chromium/Chrome 可执行文件；不设置时保留原机器路径。也可在项目本地安装这两个测试依赖。原有 QA 使用 SoundHelix 公开演示音频，需要联网。
 

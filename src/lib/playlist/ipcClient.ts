@@ -13,6 +13,15 @@ export interface DesktopTrack {
   originalUrl: string;
   fallbackUrl: string;
   quality?: string;
+  artists?: string[];
+  extra?: Record<string, unknown>;
+}
+
+export interface PlaybackMetadata {
+  artists?: string[];
+  extra?: Record<string, unknown>;
+  resolvedAt?: number;
+  expiresAt?: number;
 }
 
 export interface DesktopResolveResult {
@@ -25,6 +34,9 @@ export interface DesktopResolveResult {
   quality?: string;
   playable?: boolean;
   error?: string;
+  code?: string;
+  resolvedAt?: number;
+  expiresAt?: number;
 }
 
 export interface DesktopQualityOption {
@@ -213,8 +225,8 @@ function hueFromId(id: string): number {
 export function toFrontendTrack(
   t: DesktopTrack,
   index: number,
-  extra?: { trial?: boolean; trialEndTime?: number; quality?: string; via?: Track['via'] },
-): Track {
+  extra?: { trial?: boolean; trialEndTime?: number; quality?: string; via?: Track['via']; resolvedAt?: number; expiresAt?: number },
+): Track & PlaybackMetadata {
   const hue = hueFromId(t.id);
   return {
     id: index,
@@ -223,7 +235,9 @@ export function toFrontendTrack(
     style: t.platform,
     hue1: hue,
     hue2: (hue + 80) % 360,
-    audio: t.originalUrl || t.fallbackUrl || '',
+    // 旧会话留下的随机代理端口不能跨进程恢复；实时解析时 extra 明确标识本次结果。
+    audio: !extra && t.platform !== 'local' && /^http:\/\/127\.0\.0\.1:\d+\/api\/audio/.test(t.originalUrl)
+      ? '' : t.originalUrl || t.fallbackUrl || '',
     source: t.platform,
     sourceId: t.sourceId,
     album: t.album,
@@ -233,6 +247,10 @@ export function toFrontendTrack(
     trialEndTime: extra?.trialEndTime,
     quality: extra?.quality ?? t.quality,
     via: extra?.via,
+    artists: t.artists,
+    extra: t.extra,
+    resolvedAt: extra?.resolvedAt,
+    expiresAt: extra?.expiresAt,
   };
 }
 
@@ -245,7 +263,7 @@ export function viaOf(r: DesktopResolveResult): Track['via'] {
 export function streamTrack(t: Track): DesktopTrack {
   const b = toBackendTrack(t);
   if (!t.via) return { ...b, originalUrl: '' };
-  return { ...b, id: `${t.via.platform}:${t.via.sourceId}`, platform: t.via.platform, sourceId: t.via.sourceId, originalUrl: '' };
+  return { ...b, id: `${t.via.platform}:${t.via.sourceId}`, platform: t.via.platform, sourceId: t.via.sourceId, originalUrl: '', extra: undefined };
 }
 
 /** 前端 Track → 后端标准 Track（IPC 用）。 */
@@ -259,7 +277,10 @@ export function toBackendTrack(t: Track): DesktopTrack {
     duration: t.duration ?? 0,
     platform: t.source,
     sourceId: t.sourceId ?? String(t.id),
-    originalUrl: t.audio,
+    // 远程音源只在内存使用：IPC 重取与会话记忆均不携带过期直链/随机代理端口。
+    originalUrl: t.source === 'local' || t.source === 'demo' ? t.audio : '',
     fallbackUrl: '',
+    artists: (t as Track & PlaybackMetadata).artists,
+    extra: (t as Track & PlaybackMetadata).extra,
   };
 }

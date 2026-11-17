@@ -23,6 +23,7 @@ export interface AudioPlayerState {
 }
 
 type Listener = () => void;
+export interface ResolveContext { signal: AbortSignal; forceRefresh: boolean }
 
 export function formatTime(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) return '0:00';
@@ -56,6 +57,13 @@ class AudioPlayer {
   private retriedSongId: number | null = null;
   private trialEndedId: number | null = null;
   private stallTimer: number | null = null;
+  private generation = 0;
+  private request: AbortController | null = null;
+  private skipTimer: number | null = null;
+  private wantsPlay = false;
+  private activeSource = false;
+  private pendingSeek = 0;
+  private loadedAt = 0;
   /** 临时单曲（网络搜索点播）备份：播放结束后自动接回原队列。 */
   private transientBackup: { queue: Track[]; order: number[]; pos: number } | null = null;
 
@@ -63,9 +71,9 @@ class AudioPlayer {
    * 音源失败重试器（由 App 注入）：
    * 主平台取流失败 / <audio> onerror 时，先尝试兜底检索再决定是否跳歌。
    */
-  retryResolver?: (track: Track, reason: 'empty' | 'error') => Promise<Track | null>;
+  retryResolver?: (track: Track, reason: 'empty' | 'error', context?: ResolveContext) => Promise<Track | null>;
   /** 空音源快速解析器（next/prev/ended 遇未解析歌曲时走主平台取链，避免搜索兜底拖慢切歌）。 */
-  emptyResolver?: (track: Track, reason: 'empty') => Promise<Track | null>;
+  emptyResolver?: (track: Track, reason: 'empty' | 'error', context?: ResolveContext) => Promise<Track | null>;
 
   state: AudioPlayerState = {
     song: null,
@@ -84,7 +92,7 @@ class AudioPlayer {
 
   constructor() {
     this.el = new Audio();
-    this.el.preload = 'metadata';
+    this.el.preload = 'auto';
     this.el.volume = 0.9;
     this.el.addEventListener('timeupdate', this.onTimeUpdate);
     this.el.addEventListener('loadedmetadata', this.onMeta);
@@ -106,6 +114,9 @@ class AudioPlayer {
   getState(): AudioPlayerState {
     return { ...this.state };
   }
+
+  /** 音质等异步操作必须绑定当前播放代次，曲目 id 本身可能被曲库复用。 */
+  getGeneration(): number { return this.generation; }
 
   /** 当前播放位置（秒）：直接读音频元素，比 state.currentTime（timeupdate 约 4Hz）更实时；没有音源时退回 state。 */
   position(): number {
@@ -155,7 +166,7 @@ class AudioPlayer {
       return;
     }
     this.viaNextIdx.clear();
-    this.transientBackup = { queue: this.queue, order: [...this.order], pos: this.pos };
+    this.transientBackup ??= { queue: this.queue, order: [...this.order], pos: this.pos };
     this.queue = [track];
     this.order = [0];
     this.pos = 0;
@@ -203,6 +214,7 @@ class AudioPlayer {
    * 按插播的方式还原：屏幕上是那首歌，播完后接回歌单，从 resumeAfter 的下一首继续（-1 = 从第一首开始）。
    */
   restoreTransient(track: Track, queue: Track[], resumeAfter: number): void {
+    this.cancelLoad();
     this.viaNextIdx.clear();
     const order = this.buildIdentityOrderFor(queue.length);
     this.transientBackup = { queue, order, pos: resumeAfter >= 0 && resumeAfter < queue.length ? resumeAfter : -1 };
@@ -232,6 +244,7 @@ class AudioPlayer {
 
   /** 恢复上次会话：设置当前歌曲与队列，但不自动播放、不加载音源。 */
   restore(track: Track, queue?: Track[]): void {
+    this.cancelLoad();
     this.viaNextIdx.clear();
     if (queue && queue.length) {
       this.queue = queue;
@@ -333,6 +346,14 @@ class AudioPlayer {
 
   toggle(): void {
     if (!this.state.song) return;
+    if (this.wantsPlay && this.state.loading) {
+      this.cancelLoad();
+      this.state.loading = false;
+      this.state.playing = false;
+      this.state.error = null;
+      this.emit();
+      return;
+    }
     // 会话恢复（restore）只设状态、不加载音源：第一次点播放时走完整的加载流程（解析音源、卡顿计时），
     // 以前直接对空 src 调 play()，会卡在「播放中 + 加载中」且没有声音
     if (!this.el.getAttribute('src')) {
@@ -342,10 +363,17 @@ class AudioPlayer {
       return;
     }
     if (this.el.paused) {
-      this.el.play().catch(() => {
-        /* error 事件会处理 */
-      });
+      if (this.expired(this.state.song)) {
+        this.loadTrack(this.state.song, this.el.currentTime || this.state.currentTime, true);
+      } else {
+        this.wantsPlay = true;
+        this.state.loading = true;
+        this.armStallTimer();
+        this.playCurrent(this.generation);
+      }
     } else {
+      this.wantsPlay = false;
+      this.clearStallTimer();
       this.el.pause();
     }
   }
@@ -360,8 +388,7 @@ class AudioPlayer {
     }
     if (!this.queue.length) return;
     if (this.queue.length === 1) {
-      this.el.currentTime = 0;
-      this.el.play().catch(() => {});
+      this.loadAtOrder(0);
       return;
     }
     this.pos++;
@@ -385,8 +412,7 @@ class AudioPlayer {
       return;
     }
     if (this.queue.length === 1) {
-      this.el.currentTime = 0;
-      this.el.play().catch(() => {});
+      this.loadAtOrder(0);
       return;
     }
     this.pos = (this.pos - 1 + this.order.length) % this.order.length;
@@ -396,7 +422,20 @@ class AudioPlayer {
   seek(time: number): void {
     const d = this.state.duration;
     if (!(d > 0)) return;
-    this.el.currentTime = Math.min(d, Math.max(0, time));
+    if (!Number.isFinite(time)) return;
+    const at = Math.min(d, Math.max(0, time));
+    if (this.state.song && this.expired(this.state.song)) {
+      const play = this.wantsPlay;
+      this.loadTrack(this.state.song, at, true, play);
+    } else if (this.activeSource) {
+      this.pendingSeek = at;
+      this.el.currentTime = at;
+      this.state.currentTime = at;
+    } else {
+      this.pendingSeek = at;
+      this.state.currentTime = at;
+    }
+    this.emit();
   }
 
   setVolume(v: number): void {
@@ -480,29 +519,17 @@ class AudioPlayer {
   switchSource(url: string, opts?: { quality?: string; keepTime?: boolean; via?: Track['via'] }): void {
     if (!this.state.song) return;
     const keep = opts?.keepTime !== false ? this.el.currentTime || 0 : 0;
-    const wasPlaying = !this.el.paused;
+    const wasPlaying = this.wantsPlay;
     this.state.song = {
       ...this.state.song,
       audio: url,
       quality: opts?.quality ?? this.state.song.quality,
       via: opts && 'via' in opts ? opts.via : this.state.song.via,
     };
-    this.state.quality = opts?.quality ?? this.state.quality;
-    this.state.loading = true;
-    this.state.failed = false;
-    this.state.error = null;
-    this.retriedSongId = null;
-    this.trialEndedId = null;
-    this.emit();
-    this.armStallTimer();
-    this.el.src = url;
-    this.el.currentTime = keep;
-    if (wasPlaying) {
-      const p = this.el.play();
-      p?.catch(() => {
-        /* error 事件会再处理 */
-      });
-    }
+    const track = this.state.song;
+    this.cancelLoad();
+    this.wantsPlay = wasPlaying;
+    this.acceptResolved(track, this.generation, keep);
   }
 
   /** 手动设置提示信息（如音质切换失败）。 */
@@ -513,10 +540,8 @@ class AudioPlayer {
 
   /** 停止并清空播放状态（导入新歌单时调用）。 */
   stop(): void {
-    this.clearStallTimer();
-    this.el.pause();
-    this.el.removeAttribute('src');
-    this.el.load();
+    this.cancelLoad();
+    this.transientBackup = null;
     this.queue = [];
     this.order = [];
     this.pos = -1;
@@ -543,144 +568,184 @@ class AudioPlayer {
     this.loadTrack(this.queue[i]!);
   }
 
-  /** 加载并播放一首歌（不改动队列位置）。loadAt 和「换歌单后留下的那首」都走这里。 */
-  private loadTrack(track: Track): void {
-    this.state.song = track;
-    this.state.currentTime = 0;
-    this.state.duration = 0;
+  /** 取消这一代的网络、计时器与媒体；先静音，再发布新曲目信息。 */
+  private cancelLoad(): void {
+    this.generation++;
+    this.request?.abort();
+    this.request = null;
+    this.clearStallTimer();
+    if (this.skipTimer !== null) window.clearTimeout(this.skipTimer);
+    this.skipTimer = null;
+    this.wantsPlay = false;
+    this.activeSource = false;
+    this.el.pause();
+    this.el.removeAttribute('src');
+    this.el.load();
+  }
+
+  private expired(track: Track): boolean {
+    if (track.source === 'local' || track.source === 'demo') return false;
+    const expires = (track as Track & { expiresAt?: number }).expiresAt;
+    return expires ? expires <= Date.now() + 5000 : this.loadedAt > 0 && Date.now() - this.loadedAt > 5 * 60_000;
+  }
+
+  private loadTrack(track: Track, at = 0, forceRefresh = false, play = true): void {
+    const refresh = forceRefresh || this.expired(track);
+    this.cancelLoad();
+    this.wantsPlay = play;
+    this.pendingSeek = at;
+    this.retriedSongId = null;
     this.trialEndedId = null;
+    this.state.song = track;
+    this.state.currentTime = at;
+    this.state.duration = track.duration ?? 0;
+    this.state.playing = false;
+    this.state.loading = true;
+    this.state.failed = false;
     this.state.qualities = [];
     this.state.quality = track.quality ?? '';
-    if (!track.audio) {
-      // 无直链：先走一次兜底解析
-      this.state.failed = false;
-      // 歌名就在上一行，这里不再重复（审查第 15 条）
-      this.state.error = '正在获取音源…';
-      this.emit();
-      this.tryResolveEmpty(track);
-      return;
-    }
-    this.state.failed = false;
-    this.state.loading = true;
-    this.state.error = null;
+    this.state.error = !track.audio || refresh ? '正在获取音源…' : null;
     this.emit();
-    this.armStallTimer();
-    this.el.src = track.audio;
-    this.el.currentTime = 0;
-    const p = this.el.play();
-    if (p) {
-      p.catch(() => {
-        /* error 事件会触发容错跳歌 */
-      });
-    }
+    if (!track.audio || refresh) this.resolveTrack(track, refresh ? 'error' : 'empty', refresh);
+    else this.acceptResolved(track, this.generation, at);
   }
 
-  private emit(): void {
-    for (const fn of this.listeners) fn();
+  private resolveTrack(track: Track, reason: 'empty' | 'error', forceRefresh: boolean): void {
+    const resolver = reason === 'error' ? this.retryResolver ?? this.emptyResolver : this.emptyResolver ?? this.retryResolver;
+    if (!resolver) { this.skipAfterFail(); return; }
+    const generation = this.generation;
+    const request = new AbortController();
+    this.request?.abort();
+    this.request = request;
+    this.armStallTimer();
+    void Promise.resolve().then(() => resolver(track, reason, { signal: request.signal, forceRefresh })).then(resolved => {
+      if (generation !== this.generation || request.signal.aborted) return;
+      this.request = null;
+      if (!resolved?.audio) { this.skipAfterFail(); return; }
+      // 换歌单会重映射曲库下标；异步结果不能把旧下标写回。
+      this.acceptResolved({ ...resolved, id: this.state.song?.id ?? resolved.id }, generation, this.pendingSeek);
+    }).catch(() => {
+      if (generation === this.generation && !request.signal.aborted) this.skipAfterFail();
+    });
   }
+
+  private acceptResolved(track: Track, generation: number, at: number): void {
+    if (generation !== this.generation) return;
+    this.clearStallTimer();
+    this.state.song = track;
+    this.state.quality = track.quality ?? '';
+    this.state.failed = false;
+    this.state.loading = this.wantsPlay;
+    this.state.playing = false;
+    this.state.error = null;
+    this.pendingSeek = at;
+    this.loadedAt = Date.now();
+    this.activeSource = true;
+    this.el.src = track.audio;
+    try { this.el.currentTime = at; } catch { /* 元数据就绪时再定位 */ }
+    this.emit();
+    if (this.wantsPlay) { this.armStallTimer(); this.playCurrent(generation); }
+  }
+
+  private playCurrent(generation: number): void {
+    void this.el.play()?.catch((error: unknown) => {
+      if (generation !== this.generation || !this.wantsPlay) return;
+      if (error instanceof DOMException && error.name === 'AbortError') return;
+      if (error instanceof DOMException && error.name === 'NotAllowedError') {
+        this.wantsPlay = false;
+        this.clearStallTimer();
+        this.el.pause();
+        this.state.playing = false;
+        this.state.loading = false;
+        this.state.error = '请点播放继续';
+        this.emit();
+      } else this.onError();
+    });
+  }
+
+  private emit(): void { for (const fn of this.listeners) fn(); }
 
   private onTimeUpdate = (): void => {
+    if (!this.activeSource || !this.el.getAttribute('src')) return;
     this.state.currentTime = this.el.currentTime || 0;
     const song = this.state.song;
-    if (
-      song?.trialEndTime &&
-      this.state.playing &&
-      song.id !== this.trialEndedId &&
-      this.state.currentTime * 1000 >= song.trialEndTime
-    ) {
-      // 试听边界：干净停止，不触发 error/重试循环
-      this.trialEndedId = song.id;
-      this.el.pause();
-      this.state.playing = false;
-      this.state.error = '试听片段已结束（完整播放需更高会员权益或登录）';
-      this.emit();
+    if (song?.trialEndTime && this.wantsPlay && this.state.currentTime * 1000 >= song.trialEndTime) {
+      this.endTrial();
       return;
     }
     this.emit();
   };
 
   private onMeta = (): void => {
+    if (!this.activeSource) return;
     if (Number.isFinite(this.el.duration)) this.state.duration = this.el.duration;
+    if (this.pendingSeek > 0) {
+      try {
+        this.el.currentTime = Math.min(this.pendingSeek, this.state.duration || this.pendingSeek);
+        this.state.currentTime = this.el.currentTime;
+        this.pendingSeek = 0;
+      } catch { /* 等待下一次有效元数据 */ }
+    }
     this.emit();
   };
 
   private onPlay = (): void => {
-    this.state.playing = true;
+    if (!this.activeSource || !this.wantsPlay) return;
+    // play 只表示收到播放请求，真正出流由 playing 事件确认。
+    this.state.loading = true;
     this.emit();
   };
 
   private onPlaying = (): void => {
-    this.trialEndedId = null;
+    if (!this.activeSource || !this.wantsPlay || this.el.paused) return;
     this.state.loading = false;
     this.state.failed = false;
     this.state.playing = true;
     this.failStreak = 0;
     this.consecutiveSkips = 0;
     this.state.error = null;
-    this.retriedSongId = null;
     this.clearStallTimer();
     this.emit();
   };
 
   private onPause = (): void => {
+    if (!this.activeSource || !this.el.paused) return;
     this.state.playing = false;
+    if (!this.wantsPlay) this.state.loading = false;
     this.emit();
   };
 
   private onWaiting = (): void => {
+    if (!this.activeSource || !this.wantsPlay) return;
+    this.state.playing = false;
     this.state.loading = true;
+    this.armStallTimer();
     this.emit();
   };
 
+  private endTrial(): void {
+    if (this.trialEndedId === this.state.song?.id) return;
+    this.trialEndedId = this.state.song?.id ?? null;
+    this.wantsPlay = false;
+    this.clearStallTimer();
+    this.el.pause();
+    this.state.playing = false;
+    this.state.loading = false;
+    this.state.error = '试听片段已结束（完整播放需更高会员权益或登录）';
+    this.emit();
+  }
+
   private onEnded = (): void => {
+    if (!this.activeSource || !this.wantsPlay || !this.el.ended) return;
+    if (this.state.song?.trial) { this.endTrial(); return; }
     this.state.playing = false;
     this.emit();
-    // 单曲循环只循环队列里的歌；换歌单后留下的那首（pos < 0）播完就接新歌单
     if (this.mode === 'repeat-one' && !this.transientBackup && this.pos >= 0) {
-      this.el.currentTime = 0;
-      const p = this.el.play();
-      p?.catch(() => {
-        /* error 事件会再处理 */
-      });
+      if (this.state.song) this.loadTrack(this.state.song);
       return;
     }
     this.next();
   };
-
-  /** 空音源：先走快路径 emptyResolver（主平台取链），失败再走 retryResolver（兜底搜索）。 */
-  private tryResolveEmpty(track: Track): void {
-    const resolver = this.emptyResolver ?? this.retryResolver;
-    if (!resolver) {
-      this.skipAfterFail();
-      return;
-    }
-    this.state.loading = true;
-    this.emit();
-    resolver(track, 'empty')
-      .then((resolved) => {
-        const url = resolved?.audio;
-        if (!resolved || !url) {
-          this.skipAfterFail();
-          return;
-        }
-        this.state.song = resolved;
-        this.state.quality = resolved.quality ?? this.state.quality;
-        this.state.failed = false;
-        this.state.loading = true;
-        this.state.error = null;
-        this.retriedSongId = null;
-        this.trialEndedId = null;
-        this.emit();
-        this.armStallTimer();
-        this.el.src = url;
-        this.el.currentTime = 0;
-        const p = this.el.play();
-        p?.catch(() => {
-          /* error 事件会再次处理 */
-        });
-      })
-      .catch(() => this.skipAfterFail());
-  }
 
   private onVolume = (): void => {
     this.state.volume = this.el.volume;
@@ -688,106 +753,63 @@ class AudioPlayer {
     this.emit();
   };
 
-  /** 加载失败：置灰标记 → 自动尝试下一首；连续失败达队列长度则停止。 */
   private onError = (): void => {
-    this.clearStallTimer();
+    if (!this.activeSource || !this.wantsPlay) return;
     const track = this.state.song;
-    if (track) {
-      this.state.failed = true;
-      this.state.loading = false;
-      this.state.playing = false;
-      this.state.error = `「${track.title}」加载失败（${this.el.error?.message ?? '未知错误'}），正在尝试兜底…`;
-      console.warn('[AudioPlayer] 音频加载失败:', track.title, track.audio, this.el.error);
-      this.emit();
-      this.tryRetry(track, 'error');
-      return;
-    }
-    this.skipAfterFail();
+    if (!track) return;
+    const at = this.el.currentTime || this.state.currentTime;
+    this.activeSource = false;
+    this.el.pause();
+    this.el.removeAttribute('src');
+    this.el.load();
+    this.state.playing = false;
+    this.state.loading = true;
+    this.state.error = '音源中断，正在重新获取…';
+    this.pendingSeek = at;
+    this.emit();
+    if (this.retriedSongId === track.id) { this.skipAfterFail(); return; }
+    this.retriedSongId = track.id;
+    this.resolveTrack(track, 'error', true);
   };
 
-  /** 有兜底解析器时先重试一次；失败/无解析器再跳歌。 */
-  private tryRetry(track: Track, reason: 'empty' | 'error'): void {
-    if (!this.retryResolver || this.retriedSongId === track.id) {
-      this.skipAfterFail();
-      return;
-    }
-    this.retriedSongId = track.id;
-    this.state.loading = true;
-    this.emit();
-    this.retryResolver(track, reason)
-      .then((resolved) => {
-        const url = resolved?.audio;
-        if (!resolved || !url) {
-          this.skipAfterFail();
-          return;
-        }
-        this.state.song = resolved;
-        this.state.quality = resolved.quality ?? this.state.quality;
-        this.state.failed = false;
-        this.state.loading = true;
-        this.state.error = null;
-        this.emit();
-        this.armStallTimer();
-        this.el.src = url;
-        this.el.currentTime = 0;
-        const p = this.el.play();
-        p?.catch(() => {
-          /* error 事件会再次处理 */
-        });
-      })
-      .catch(() => this.skipAfterFail());
-  }
-
   private skipAfterFail(): void {
-    this.clearStallTimer();
+    const continueQueue = this.wantsPlay;
+    this.cancelLoad();
+    const generation = this.generation;
     this.state.failed = true;
     this.state.loading = false;
     this.state.playing = false;
-    this.emit();
-
+    this.state.error = '未获取到可播音源';
     this.failStreak++;
     this.consecutiveSkips++;
-    if (
-      this.consecutiveSkips >= 6 ||
-      this.failStreak >= Math.max(1, this.queue.length)
-    ) {
-      this.state.loading = false;
-      this.state.error =
-        this.consecutiveSkips >= 6
-          ? '连续多首无法播放（无可用音源），已停止自动跳歌，请换一首试试'
-          : `连续 ${this.failStreak} 首播放失败，已停止自动跳歌`;
+    if (this.consecutiveSkips >= 6 || this.failStreak >= Math.max(1, this.queue.length)) {
+      this.state.error = `连续 ${this.failStreak} 首播放失败，已停止自动跳歌`;
       this.emit();
       return;
     }
-    window.setTimeout(() => {
-      if (this.el.error || !this.el.src) this.next();
+    this.emit();
+    if (continueQueue) this.skipTimer = window.setTimeout(() => {
+      this.skipTimer = null;
+      if (generation === this.generation && this.state.failed) this.next();
     }, 350);
-  };
+  }
 
-  /** 加载挂起保护：CDN 死链/卡网时 error 事件可能不来，超时按失败处理。 */
+  /** 取链与播放缓冲均有上限；waiting 时也重新启动保护。 */
   private armStallTimer(): void {
     this.clearStallTimer();
+    const generation = this.generation;
     this.stallTimer = window.setTimeout(() => {
       this.stallTimer = null;
-      if (!this.state.loading || this.state.playing) return;
-      const track = this.state.song;
-      this.state.failed = true;
-      this.state.loading = false;
-      this.state.playing = false;
-      this.state.error = `「${track?.title ?? '当前曲目'}」加载超时，正在尝试兜底…`;
-      console.warn('[AudioPlayer] 加载超时:', track?.title, this.el.currentSrc);
-      this.emit();
-      if (track) this.tryRetry(track, 'error');
+      if (generation !== this.generation || !this.state.loading) return;
+      if (this.activeSource) this.onError();
       else this.skipAfterFail();
-    }, 9000);
+    }, 10000);
   }
 
   private clearStallTimer(): void {
-    if (this.stallTimer !== null) {
-      window.clearTimeout(this.stallTimer);
-      this.stallTimer = null;
-    }
-  };
+    if (this.stallTimer !== null) window.clearTimeout(this.stallTimer);
+    this.stallTimer = null;
+  }
 }
 
 export const audioPlayer = new AudioPlayer();
