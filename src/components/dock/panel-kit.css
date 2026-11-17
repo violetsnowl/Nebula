@@ -8,6 +8,7 @@
 :root {
   --sep: rgba(255, 255, 255, 0.065);
   --danger: #ff6b6b;
+  --warn: #ffd166;
   --success: #34d399;
 }
 
@@ -214,6 +215,11 @@
 
 .sd-panel .hint-inline .btn.text:hover:not(:disabled) {
   color: var(--fg);
+}
+
+/* 登录已过期（#157） */
+.sd-panel .hint-inline .is-warn {
+  color: var(--warn);
 }
 
 /* 分段控件（§9.5）：滑轨 + 一块会滑动的选中滑块（P4 动效回归）。

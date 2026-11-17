@@ -1111,6 +1111,38 @@ async function main() {
   log('音质菜单项数', qualityItems);
   log('音质切换后 quality/switched', JSON.stringify(qualityState));
 
+  // 10g+. QQ 登录过期（#157）：播放条那句提示本身是按钮 → 打开 QQ 详情并说明过期；
+  // 同时重查 QQ 账号，账号列表那一行变成警告色的点 +「登录已过期」
+  await page.evaluate(() => {
+    window.nebulaAPI.loginAccount = async (p) =>
+      p === 'qq'
+        ? { ok: true, data: { loggedIn: false, authStatus: 'expired', error: 'QQ 登录已过期，请重新登录' } }
+        : { ok: true, data: { loggedIn: false } };
+    window.__nebula.player.setError('QQ 登录已过期，请重新登录');
+  });
+  const lapseBtn = await page
+    .waitForSelector('.bp-status.is-warn.is-action', { timeout: 3000 })
+    .then(() => true)
+    .catch(() => false);
+  if (lapseBtn) await page.locator('.bp-status.is-warn.is-action').click();
+  await page.waitForTimeout(1000);
+  const lapse = await page.evaluate(() => {
+    const d = document.querySelector('.sd-panel.sd-right .rp-detail');
+    const row = [...document.querySelectorAll('.sd-panel.sd-right .rp-status')].find((s) => /登录已过期/.test(s.textContent || ''));
+    return {
+      title: d?.querySelector('h3')?.textContent || '',
+      note: d?.querySelector('.rp-lapsed')?.textContent || '',
+      row: !!row && !!row.querySelector('.rp-dot.is-warn'),
+    };
+  });
+  const lapseOk = lapseBtn && /QQ/.test(lapse.title) && /登录已过期/.test(lapse.note) && lapse.row;
+  log('QQ 登录过期提示', JSON.stringify({ btn: lapseBtn, ...lapse }));
+  await page.evaluate(() => window.__nebula.player.setError(null));
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(400);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(900);
+
   // 10h. 本地音乐导入：顶部边缘感应 → 圆形按钮 → 星云卡片生成
   await page.mouse.move(800, 4);
   await page.waitForTimeout(600);
@@ -1236,6 +1268,7 @@ async function main() {
   await browser.close();
 
   const failed =
+    !lapseOk ||
     !listenOk ||
     !spaceOk ||
     !lsLayoutOk ||
@@ -1326,6 +1359,7 @@ async function main() {
     failedCard: failedCount < 1,
     failedRecover: !failedRecovered,
     qualityMenu: qualityItems < 3 || !qualityState.quality || !qualityState.switched,
+    authLapse: !lapseOk,
     firstRunEmpty: !emptyOk,
     edgeHide: !edgeHideOk,
     panelStays: !panelStays,

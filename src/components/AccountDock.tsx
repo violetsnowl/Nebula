@@ -272,6 +272,12 @@ function vipText(a: AccountState | undefined): string {
   return a?.isSvip ? 'SVIP' : a?.isVip ? 'VIP' : '普通用户';
 }
 
+/** 登录失效时列表里的一句话（#157）：过期 / 票据缺失都要重新登录，用户只需要知道这一点。 */
+function lapseText(a: AccountState | undefined): string | null {
+  if (!a || a.loggedIn || !a.auth) return null;
+  return a.auth === 'expired' ? '登录已过期' : '需要重新登录';
+}
+
 /* ---------- 登录流程（逻辑 / IPC 与原来一致，外观换成新语言） ---------- */
 
 /** 网易云：官方库二维码登录（主项目既有实现）。 */
@@ -650,6 +656,11 @@ function AccountDetail({
         <img src={meta.logo} alt="" draggable={false} />
       </span>
       <h3>{meta.name}</h3>
+      {account?.auth && (
+        <p className="rp-lapsed" role="status">
+          {account.auth === 'expired' ? '登录已过期' : '登录信息不完整'}，重新登录后歌单和会员歌就会回来
+        </p>
+      )}
       <p className="rp-how">{LOGIN_HOW[platform] ?? '登录后可以导入这个平台的歌单'}</p>
       {info ? <PlatformLogin platform={platform} info={info} onRefresh={onRefresh} /> : null}
     </div>
@@ -1309,6 +1320,7 @@ export const AccountDock = memo(function AccountDock({
             const meta = platformMeta(p);
             const acc = accounts[p];
             const on = !!acc?.loggedIn;
+            const lapsed = lapseText(acc);
             const reason = platforms.find((x) => x.platform === p)?.unavailableReason ?? null;
             const nick = acc?.nickname ?? '已登录';
             return (
@@ -1325,8 +1337,8 @@ export const AccountDock = memo(function AccountDock({
                 <span className="lbl">
                   {meta.name}
                   <small className="rp-status">
-                    <i className={`rp-dot${on ? ' on' : ''}`} />
-                    {on ? `${nick} · ${vipText(acc)}` : (reason ?? '未登录')}
+                    <i className={`rp-dot${on ? ' on' : lapsed ? ' is-warn' : ''}`} />
+                    {on ? `${nick} · ${vipText(acc)}` : (lapsed ?? reason ?? '未登录')}
                   </small>
                 </span>
                 {on && (

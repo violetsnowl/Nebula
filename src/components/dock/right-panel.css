@@ -46,6 +46,18 @@
   background: var(--success);
 }
 
+/* 登录失效（#157）：警告色，只用在这一个点和详情页的一句话上 */
+.sd-panel .rp-dot.is-warn {
+  background: var(--warn);
+}
+
+.sd-panel .rp-lapsed {
+  margin: -4px 0 0;
+  font-size: 12.5px;
+  color: var(--warn);
+  max-width: 28ch;
+}
+
 .sd-panel .rp-av {
   width: 24px;
   height: 24px;

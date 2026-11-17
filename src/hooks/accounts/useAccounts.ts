@@ -23,7 +23,9 @@ export function useAccounts() {
     }));
     try {
       const acc = await api.loginAccount(platform);
-      const loggedIn = !!(acc.ok && acc.data?.loggedIn);
+      const data = acc.ok ? acc.data : null;
+      const loggedIn = !!data?.loggedIn;
+      const auth = !loggedIn && (data?.authStatus === 'expired' || data?.authStatus === 'missing') ? data.authStatus : undefined;
       let playlists: DesktopPlaylistSummary[] = [];
       if (loggedIn) {
         const pl = await api.loginPlaylists(platform);
@@ -38,6 +40,7 @@ export function useAccounts() {
           avatarUrl: acc.ok ? acc.data?.avatarUrl : undefined,
           isVip: acc.ok ? acc.data?.isVip : undefined,
           isSvip: acc.ok ? acc.data?.isSvip : undefined,
+          auth,
           playlists,
           loading: false,
         },

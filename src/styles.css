@@ -1846,6 +1846,26 @@ body {
   color: var(--danger);
 }
 
+/* 登录过期（#157）：警告色的一句话本身就是按钮；悬停时字自己变亮 */
+.bp-status.is-warn {
+  color: var(--warn);
+}
+
+.bp-status.is-action {
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+  transition: color 0.15s ease;
+}
+
+.bp-status.is-action:hover {
+  color: color-mix(in srgb, var(--warn) 55%, #fff);
+}
+
 /* 中：Playback Core。上一首 / 下一首 19px、.6；播放 / 暂停无底，图形 28px 白（样张 J 方案 B） */
 .bp-core {
   display: flex;

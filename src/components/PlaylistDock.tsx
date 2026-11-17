@@ -271,6 +271,9 @@ export const PlaylistDock = memo(function PlaylistDock({
   const loggedIn = DOCK_PLATFORM_ORDER.filter((p) => accounts[p]?.loggedIn);
   const loadingPfs = DOCK_PLATFORM_ORDER.filter((p) => accounts[p]?.loading);
   const notLoggedIn = DOCK_PLATFORM_ORDER.filter((p) => !accounts[p]?.loggedIn && !accounts[p]?.loading);
+  // 登录已过期的平台（#157）：提示行优先说它，按钮直接去重新登录
+  const lapsed = notLoggedIn.find((p) => !!accounts[p]?.auth);
+  const lapsedLine = lapsed ? `${platformMeta(lapsed).name}登录已过期` : null;
   const totalPlaylists = loggedIn.reduce((n, p) => n + (accounts[p]?.playlists.length ?? 0), 0);
   // 筛选的平台退出登录后自动回到「全部」
   const curFilter = loggedIn.some((p) => p === filter) ? filter : 'all';
@@ -366,10 +369,10 @@ export const PlaylistDock = memo(function PlaylistDock({
       {loggedIn.length === 0 && loadingPfs.length === 0 && (
         <>
           <div className="hint-inline">
-            <span>还没有歌单</span>
+            <span className={lapsedLine ? 'is-warn' : undefined}>{lapsedLine ?? '还没有歌单'}</span>
             <span>
-              <button type="button" className="btn text" onClick={() => onGoLogin(DOCK_PLATFORM_ORDER[0]!)}>
-                去登录
+              <button type="button" className="btn text" onClick={() => onGoLogin(lapsed ?? DOCK_PLATFORM_ORDER[0]!)}>
+                {lapsed ? '重新登录' : '去登录'}
               </button>
               <button type="button" className="btn text" onClick={() => setActive('import')}>
                 去导入
@@ -382,9 +385,9 @@ export const PlaylistDock = memo(function PlaylistDock({
       {loggedIn.length > 0 && notLoggedIn.length > 0 && (
         // 一行：短句 + 文字按钮（审查第 22 条），不再写满两行
         <div className="hint-inline">
-          <span>还有 {notLoggedIn.length} 个平台未登录</span>
-          <button type="button" className="btn text" onClick={() => onGoLogin(notLoggedIn[0]!)}>
-            去登录
+          <span className={lapsedLine ? 'is-warn' : undefined}>{lapsedLine ?? `还有 ${notLoggedIn.length} 个平台未登录`}</span>
+          <button type="button" className="btn text" onClick={() => onGoLogin(lapsed ?? notLoggedIn[0]!)}>
+            {lapsed ? '重新登录' : '去登录'}
           </button>
         </div>
       )}

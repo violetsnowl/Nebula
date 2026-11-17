@@ -28,6 +28,14 @@ interface BottomPlayerProps {
   onOpenComments: () => void;
   onOpenSongDetail: () => void;
   onOpenArtist: (artistName: string) => void;
+  /** 提示「登录已过期」时点它去重新登录（#157） */
+  onRelogin: (platform: string) => void;
+}
+
+/** 播放失败是因为登录过期：返回要重新登录的平台（后端只对 QQ 报这个错，文案里带「QQ」）。 */
+export function lapsedPlatformOf(error: string | null | undefined, source: string | undefined): string | null {
+  if (!error || !/登录已过期/.test(error)) return null;
+  return /QQ/.test(error) ? 'qq' : source || null;
 }
 
 const MODE_ICON = {
@@ -51,6 +59,7 @@ export const BottomPlayer = memo(function BottomPlayer({
   onOpenComments,
   onOpenSongDetail,
   onOpenArtist,
+  onRelogin,
 }: BottomPlayerProps) {
   const state = useAudioPlayer();
   const hasSong = !!state.song;
@@ -84,7 +93,18 @@ export const BottomPlayer = memo(function BottomPlayer({
             <button className="bp-title" disabled={!hasSong} onClick={onOpenSongDetail} data-tip="查看歌曲详情">
               {state.song?.title ?? '未在播放'}
             </button>
-            {state.error ? (
+            {state.error && lapsedPlatformOf(state.error, state.song?.source) ? (
+              // 登录过期（#157）：警告色，整句可点，直接打开该平台的登录
+              <button
+                type="button"
+                className="bp-status is-warn is-action"
+                role="status"
+                data-tip="重新登录"
+                onClick={() => onRelogin(lapsedPlatformOf(state.error, state.song?.source)!)}
+              >
+                {state.error}
+              </button>
+            ) : state.error ? (
               // 状态提示临时占用歌手这一行，不新增一行、不把播放条顶高（#106）；
               // 进行中的提示用中性灰，只有真的失败才用警示色（审查第 15 条）
               <span

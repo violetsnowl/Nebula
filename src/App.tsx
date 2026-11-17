@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { IconLocate } from './components/icons';
 import { BackgroundLayer } from './components/BackgroundLayer';
   import { PlayerSurface } from './components/player/PlayerSurface';
-  import { BottomPlayer } from './components/player/BottomPlayer';
+  import { BottomPlayer, lapsedPlatformOf } from './components/player/BottomPlayer';
 import { SearchBar } from './components/SearchBar';
 import { LyricsLayer } from './components/LyricsLayer';
 import { StageCanvas } from './components/StageCanvas';
@@ -433,6 +433,12 @@ export default function App() {
     [requestLogin, showPanel],
   );
 
+  // 播放时才发现登录过期（#157）：马上重查这个平台的账号，账号区和歌单面板跟着显示「登录已过期」
+  const lapsedPlatform = lapsedPlatformOf(playerState.error, playerState.song?.source);
+  useEffect(() => {
+    if (lapsedPlatform) void refreshAccount(lapsedPlatform);
+  }, [lapsedPlatform, refreshAccount]);
+
   /** 空状态「登录音乐平台」：打开右侧账号页、停在平台列表（第一次用，不替用户选平台）。 */
   const [accountListNonce, setAccountListNonce] = useState(0);
   const handleEmptyLogin = useCallback(() => {
@@ -669,6 +675,7 @@ export default function App() {
           onOpenComments={openCommentsModal}
           onOpenSongDetail={openSongDetailModal}
           onOpenArtist={openArtistByName}
+          onRelogin={handleGoLogin}
         />
       </PlayerSurface>
 
