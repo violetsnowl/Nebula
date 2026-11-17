@@ -720,8 +720,12 @@ export function useStage({
           center: c ? { x: c.pan.x + vw / (2 * c.zoom), y: c.pan.y + vh / (2 * c.zoom) } : null,
           period: w?.period ?? 0,
           clusters: w?.clusters.length ?? 0,
+          labels: (w?.clusters ?? [])
+            .filter((c) => c.label)
+            .map((c) => ({ name: c.name, kind: c.label!.kind, x: c.label!.x, y: c.label!.y, songs: c.ids.length })),
         };
       },
+      lookAt: (x: number, y: number, z: number) => controller.animateToCenter(x, y, z, 1),
     };
 
     return () => {

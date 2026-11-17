@@ -25,6 +25,51 @@ export interface SpaceCluster {
   cy: number;
   r: number;
   ids: number[];
+  /** 歌手名（6 首以上的星团才有） */
+  label?: ClusterLabel;
+}
+
+/**
+ * 星团的歌手名（#138，用户要求）：不再一律写在星团上方，按歌手随机放在上方、下方或星团中间（被这一团的歌围住）。
+ * 不管放在哪里，名字都有一块自己的空地：星团中间的会在排点时挖空，上方 / 下方的单曲和别的星团都绕开，封面不会压住名字。
+ *
+ * 名字的字号随缩放变化但比封面慢（封面放大到 2 倍时字放大到约 1.5 倍，最大 3.2 倍），所以缩得最远时名字相对封面最大；
+ * 空地按最远缩放（LABEL_S_MIN）时名字的大小留，再近都放得下；放近时名字也跟着长，空地不会显得空。
+ */
+export interface ClusterLabel {
+  kind: 'top' | 'bottom' | 'inside';
+  /** 名字中心（世界坐标，可能落在一个周期外，投影时会取最近的那一份） */
+  x: number;
+  y: number;
+  /** 最远缩放下名字占的世界尺寸（留给它的空地，不含边距） */
+  w: number;
+  h: number;
+  /** 最远缩放时的字号（px） */
+  font: number;
+}
+
+/** 至少几首歌的星团才写歌手名 */
+export const LABEL_MIN_SONGS = 6;
+/** 名字空地按这个投影缩放留（缩放下限 0.28，这时透镜不生效，投影缩放 = 缩放） */
+export const LABEL_S_MIN = 0.28;
+
+/** 名字在屏幕上的字号：投影缩放 s 下，比封面放大得慢；s 低于 LABEL_S_MIN 时和封面同比缩小，保证放得进空地。 */
+export function labelFontPx(base: number, s: number): number {
+  return base * Math.min(3.2, Math.pow(s / LABEL_S_MIN, s >= LABEL_S_MIN ? 0.6 : 1));
+}
+
+/** 估算名字的宽度（以字号为单位，600 字重）：中日韩字约 1 个字号宽，拉丁字母约 0.6。实际画的时候再量一次，放不下就缩字。 */
+function textEm(name: string): number {
+  let em = 0;
+  for (const ch of name) {
+    const c = ch.codePointAt(0)!;
+    if (c >= 0x2e80) em += 1;
+    else if (ch === ' ') em += 0.28;
+    else if (/[A-Z0-9mw]/.test(ch)) em += 0.68;
+    else if (/[iljtf.'|!:;,]/.test(ch)) em += 0.32;
+    else em += 0.58;
+  }
+  return em * 1.08 + 0.3;
 }
 
 export type WorldMode = 'chroma' | 'cluster' | 'random';
@@ -338,16 +383,31 @@ function primaryArtist(artist: string | undefined): { key: string; name: string 
   return { key: name.toLowerCase() || '(未知歌手)', name: name || '未知歌手' };
 }
 
-/** 一团歌的形状：蓝噪声取最靠里的 m 个，带一点轮廓起伏（团是一块完整的形状，不首尾相接）。 */
-function blobPoints(m: number, s: number, rng: RNG): Pt[] {
+/** 星团中间给歌手名挖的空地：卡片盒中心落在这个矩形里就不放（ex / ey 已含卡片半宽 / 半高和边距）。 */
+interface Hole {
+  x: number;
+  y: number;
+  ex: number;
+  ey: number;
+}
+
+/**
+ * 一团歌的形状：蓝噪声取最靠里的 m 个，带一点轮廓起伏（团是一块完整的形状，不首尾相接）。
+ * hole：歌手名放在星团中间时挖掉的空地（#138），歌围着它排。
+ */
+function blobPoints(m: number, s: number, rng: RNG, hole?: Hole): Pt[] {
   const cell = s / Math.SQRT2;
-  const R = Math.sqrt(m * AREA_PER_POINT * 1.6) * s * 0.62 + s;
+  const R0 = Math.sqrt(m * AREA_PER_POINT * 1.6) * s * 0.62 + s;
+  // 挖了空地就把圆放大，补上空地的面积
+  const R = hole ? Math.sqrt(R0 * R0 + (4 * hole.ex * hole.ey * 1.5) / Math.PI) + Math.hypot(hole.x, hole.y) : R0;
+  const inHole = (x: number, y: number) => !!hole && Math.abs(x - hole.x) < hole.ex && Math.abs(y - hole.y) < hole.ey;
   const grid = new Map<number, number>();
   const key = (gx: number, gy: number) => (gx + 4096) * 8192 + (gy + 4096);
   const pts: Pt[] = [];
   const active: number[] = [];
   const fits = (x: number, y: number) => {
     if (x * x + y * y > R * R) return false;
+    if (inHole(x, y)) return false;
     const gx = Math.floor(x / cell);
     const gy = Math.floor(y / cell);
     for (let dy = -2; dy <= 2; dy++)
@@ -364,7 +424,9 @@ function blobPoints(m: number, s: number, rng: RNG): Pt[] {
     pts.push({ x, y });
     active.push(pts.length - 1);
   };
-  add(0, 0);
+  // 种子放在空地外面（空地在正中时原点就在空地里）
+  if (inHole(0, 0)) add(hole!.x, hole!.y + hole!.ey + 1);
+  else add(0, 0);
   while (active.length) {
     const ai = Math.floor(rng() * active.length);
     const p = pts[active[ai]!]!;
@@ -408,8 +470,23 @@ export function buildCluster(songs: Track[]): SpaceWorld {
   });
   const S = 186;
   const list = [...groups.entries()]
-    .map(([key, g]) => ({ key, name: g.name, ids: g.ids, r: 0, cx: 0, cy: 0, lx: [] as number[], ly: [] as number[] }))
+    .map(([key, g]) => ({
+      key,
+      name: g.name,
+      ids: g.ids,
+      r: 0,
+      /** 放星团时用的半径（含上方 / 下方歌手名的空地） */
+      rPlace: 0,
+      cx: 0,
+      cy: 0,
+      lx: [] as number[],
+      ly: [] as number[],
+      /** 歌手名相对星团中心的位置 */
+      label: null as ClusterLabel | null,
+    }))
     .sort((a, b) => b.ids.length - a.ids.length || (a.key < b.key ? -1 : 1));
+  const HALF_W = CARD_WIDTH / 2;
+  const HALF_H = CARD_HEIGHT / 2;
 
   for (const c of list) {
     const m = c.ids.length;
@@ -417,10 +494,39 @@ export function buildCluster(songs: Track[]): SpaceWorld {
       c.lx = [0];
       c.ly = [0];
       c.r = 98;
+      c.rPlace = 98;
       continue;
     }
-    let raw = blobPoints(m, S, mulberry32(hash(c.key)));
-    if (raw.length < m) raw = blobPoints(m, S * 0.98, mulberry32(hash(c.key) + 1));
+    // 歌手名放哪（#138）：按歌手固定随机——星团中间（被歌围住）/ 上方 / 下方
+    let hole: Hole | undefined;
+    let kind: ClusterLabel['kind'] | null = null;
+    let font = 0;
+    let lw = 0;
+    let lh = 0;
+    if (m >= LABEL_MIN_SONGS) {
+      const lr = mulberry32(hash(c.key + '#label'));
+      font = Math.round(Math.min(16, 10.5 + Math.sqrt(m) * 0.8));
+      lw = (font * textEm(c.name)) / LABEL_S_MIN;
+      lh = (font * 1.3) / LABEL_S_MIN;
+      const roll = lr();
+      kind = roll < 0.42 ? 'inside' : roll < 0.71 ? 'top' : 'bottom';
+      if (kind === 'inside') {
+        // 边距：透镜让卡片在径向上比切向挤一点（这时名字相对空地已经小了，大部分余量由它承担），纵向再多留一点
+        const ex = lw / 2 + HALF_W + 16 + 0.06 * lw;
+        const ey = lh / 2 + HALF_H + 26 + 0.1 * lh;
+        // 要围得住：空地一圈至少要有约四分之三圈的歌，歌不够（名字太长、歌太少）就改放上方 / 下方
+        const ring = (4 * (ex + ey)) / SPACING;
+        if (m < ring * 0.75) kind = lr() < 0.5 ? 'top' : 'bottom';
+        else {
+          // 大星团的空地不一定在正中，稍微偏一点
+          const off = m >= 14 ? lr() * 0.22 * Math.sqrt(m) * S * 0.5 : 0;
+          const th = lr() * TAU;
+          hole = { x: off * Math.cos(th), y: off * Math.sin(th) * 0.6, ex, ey };
+        }
+      }
+    }
+    let raw = blobPoints(m, S, mulberry32(hash(c.key)), hole);
+    if (raw.length < m) raw = blobPoints(m, S * 0.98, mulberry32(hash(c.key) + 1), hole);
     const gx = raw.reduce((s, p) => s + p.x, 0) / raw.length;
     const gy = raw.reduce((s, p) => s + p.y, 0) / raw.length;
     const pts = raw.map((p) => ({ x: p.x - gx, y: p.y - gy, a: angle01(Math.atan2(p.y - gy, p.x - gx)) }));
@@ -443,6 +549,19 @@ export function buildCluster(songs: Track[]): SpaceWorld {
       c.ly[j] = pts[k]!.y;
     });
     c.r = Math.max(...pts.map((p) => Math.hypot(p.x, p.y))) + 98;
+    c.rPlace = c.r;
+    if (kind === 'inside' && hole) {
+      c.label = { kind, x: hole.x - gx, y: hole.y - gy, w: lw, h: lh, font };
+    } else if (kind) {
+      // 上方：名字下沿离最高那张卡片盒的上沿 10；下方：名字上沿离最低那张卡片盒的下沿（含标题区）10
+      const y =
+        kind === 'top'
+          ? Math.min(...pts.map((p) => p.y)) - HALF_H - 10 - lh / 2
+          : Math.max(...pts.map((p) => p.y)) + HALF_H + 10 + lh / 2;
+      c.label = { kind, x: 0, y, w: lw, h: lh, font };
+      // 放星团时把名字也算进去，别的星团不会压到它
+      c.rPlace = Math.max(c.r, Math.hypot(lw / 2, Math.abs(y) + lh / 2) + 20);
+    }
   }
 
   const singles = list.filter((c) => c.ids.length === 1);
@@ -452,7 +571,7 @@ export function buildCluster(songs: Track[]): SpaceWorld {
 
   // 周期按面积估：星团（含一半间距）+ 单曲歌手的点；放不下就放大重来
   let area = singles.length * AREA_PER_POINT * SP * SP;
-  for (const c of multi) area += Math.PI * (c.r + gapOf(c.r, 98) / 2) ** 2 * 1.25;
+  for (const c of multi) area += Math.PI * (c.rPlace + gapOf(c.r, 98) / 2) ** 2 * 1.25;
   let T = Math.max(MIN_PERIOD, Math.sqrt(area));
   const px = new Float64Array(n);
   const py = new Float64Array(n);
@@ -474,7 +593,7 @@ export function buildCluster(songs: Track[]): SpaceWorld {
           const o = multi[oi]!;
           const dx = wrapDelta(o.cx - x, T);
           const dy = wrapDelta(o.cy - y, T);
-          const need = c.r + o.r + gapOf(c.r, o.r);
+          const need = c.rPlace + o.rPlace + gapOf(c.r, o.r);
           if (dx * dx + dy * dy < need * need) {
             clear = false;
             break;
@@ -493,13 +612,20 @@ export function buildCluster(songs: Track[]): SpaceWorld {
       }
     }
     if (!ok) continue;
-    // 单曲歌手：团外的空位撒蓝噪声（离星团边缘至少 98 + 30px），够数就按颜色分色带
+    // 单曲歌手：团外的空位撒蓝噪声（离星团边缘至少 98 + 30px），够数就按颜色分色带；
+    // 上方 / 下方的歌手名也绕开（卡片盒不压到名字，#138）
     const blocked = (x: number, y: number) => {
       for (const o of multi) {
         const dx = wrapDelta(o.cx - x, T);
         const dy = wrapDelta(o.cy - y, T);
         const need = o.r + 98 + 30;
         if (dx * dx + dy * dy < need * need) return true;
+        const L = o.label;
+        if (L && L.kind !== 'inside') {
+          const ldx = wrapDelta(o.cx + L.x - x, T);
+          const ldy = wrapDelta(o.cy + L.y - y, T);
+          if (Math.abs(ldx) < L.w / 2 + HALF_W + 30 && Math.abs(ldy) < L.h / 2 + HALF_H + 30) return true;
+        }
       }
       return false;
     };
@@ -527,7 +653,8 @@ export function buildCluster(songs: Track[]): SpaceWorld {
         py[id] = c.cy + c.ly[j]!;
         clusterOf[id] = ci;
       });
-      return { key: c.key, name: c.name, cx: c.cx, cy: c.cy, r: c.r, ids: c.ids };
+      const label = c.label ? { ...c.label, x: c.cx + c.label.x, y: c.cy + c.label.y } : undefined;
+      return { key: c.key, name: c.name, cx: c.cx, cy: c.cy, r: c.r, ids: c.ids, label };
     });
     return finish('cluster', songs, px, py, T, clusters, clusterOf);
   }

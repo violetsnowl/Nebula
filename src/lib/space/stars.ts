@@ -5,7 +5,7 @@ import { thumbOf } from './thumbs';
 import { oklabToRgb, toneOf } from './tone';
 import { placeholderFill } from '../coverPlaceholder';
 import { airAlpha } from './active';
-import type { SpaceWorld } from './world';
+import { labelFontPx, type SpaceWorld } from './world';
 
 /**
  * 封面层（#133 星层 → #134 重做）：画在 DOM 卡片下面的一张画布，承接所有「不挂 DOM」的歌。
@@ -18,6 +18,7 @@ import type { SpaceWorld } from './world';
  *     缩略图还没到时先画一块封面代表色的小方块，到了自然换成封面；
  *   - #135：不再允许缩到看见整片星云（最远约 0.28 倍，封面约 48px），看全貌用的色雾去掉；
  *   - 按歌手时标出较大星团（6 首以上）的歌手名：正常缩放下很淡，拉远时清楚一些；大星团先占位，重叠的不写。
+ *     #138：名字按歌手随机放在星团上方、下方或中间，位置和空地由排布时定好（world.ts ClusterLabel），封面不会压住名字。
  */
 const GRAY: [number, number, number] = [96, 100, 112];
 
@@ -163,24 +164,33 @@ export class StarField {
       ctx.stroke();
     }
 
-    // 按歌手：拉远时标星团名（6 首以上的歌手）。大星团先占位，和已放的名字重叠的就不写
+    // 按歌手：标星团名（6 首以上的歌手）。大星团先占位，和已放的名字重叠的就不写
     // #136：正常缩放下也淡淡写出歌手名（像地图上的地名），一眼知道这一团是谁；拉远时清楚一些
+    // #138：位置（上方 / 下方 / 星团中间）和名字的空地在排布时定好；字号比封面放大得慢，放不进空地就缩字
     const labelA = world.mode === 'cluster' ? 0.42 + 0.58 * (1 - smoothstep(0.32, 0.6, cam.zoom)) : 0;
     if (labelA > 0.02) {
       ctx.textAlign = 'center';
-      ctx.textBaseline = 'bottom';
+      ctx.textBaseline = 'middle';
       const taken: number[] = [];
       for (const c of world.clusters) {
-        if (c.ids.length < 6) continue;
-        project(c.cx, c.cy - c.r, cam, delta, p, world.period);
-        if (p.sx < -200 || p.sy < -40 || p.sx > cam.vw + 200 || p.sy > cam.vh + 40) continue;
-        const size = Math.round(Math.min(16, 10.5 + Math.sqrt(c.ids.length) * 0.8));
-        ctx.font = `600 ${size}px Inter, "Segoe UI", "Noto Sans SC", "Microsoft YaHei", sans-serif`;
-        const w = ctx.measureText(c.name).width;
+        const L = c.label;
+        if (!L) continue;
+        project(L.x, L.y, cam, delta, p, world.period);
+        if (p.sx < -400 || p.sy < -80 || p.sx > cam.vw + 400 || p.sy > cam.vh + 80) continue;
+        let size = labelFontPx(L.font, p.s);
+        ctx.font = `600 ${size.toFixed(1)}px Inter, "Segoe UI", "Noto Sans SC", "Microsoft YaHei", sans-serif`;
+        let w = ctx.measureText(c.name).width;
+        // 排布时按估算的字宽留的空地；量出来更宽就缩字，保证不出空地、不被封面压住
+        const room = L.w * p.s;
+        if (w > room) {
+          size *= room / w;
+          w = room;
+          ctx.font = `600 ${size.toFixed(1)}px Inter, "Segoe UI", "Noto Sans SC", "Microsoft YaHei", sans-serif`;
+        }
         const x0 = p.sx - w / 2 - 6;
         const x1 = p.sx + w / 2 + 6;
-        const y0 = p.sy - 4 - size - 4;
-        const y1 = p.sy;
+        const y0 = p.sy - size / 2 - 4;
+        const y1 = p.sy + size / 2 + 4;
         let overlap = false;
         for (let k = 0; k < taken.length; k += 4) {
           if (x0 < taken[k + 2]! && x1 > taken[k]! && y0 < taken[k + 3]! && y1 > taken[k + 1]!) {
@@ -192,11 +202,11 @@ export class StarField {
         taken.push(x0, y0, x1, y1);
         let a = labelA * (0.55 + 0.3 * smoothstep(6, 30, c.ids.length));
         if (match) a *= c.ids.some((id) => match.has(id)) ? 1.6 : 0.35;
-        // 名字压在封面上，带一点暗影保证读得清
+        // 带一点暗影：缩远时名字边上可能挨着小封面，保证读得清
         ctx.shadowColor = 'rgba(0,0,0,0.65)';
         ctx.shadowBlur = 6;
         ctx.fillStyle = `rgba(240,242,248,${Math.min(1, a).toFixed(3)})`;
-        ctx.fillText(c.name, p.sx, p.sy - 4);
+        ctx.fillText(c.name, p.sx, p.sy);
         ctx.shadowBlur = 0;
       }
       drew = true;

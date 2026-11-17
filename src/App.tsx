@@ -82,7 +82,11 @@ declare global {
         center: { x: number; y: number } | null;
         period: number;
         clusters: number;
+        /** 按歌手时的歌手名位置（#138） */
+        labels: { name: string; kind: 'top' | 'bottom' | 'inside'; x: number; y: number; songs: number }[];
       };
+      /** 镜头飞到世界坐标 (x, y)，缩放 zoom（QA / 调试用） */
+      lookAt: (x: number, y: number, zoom: number) => void;
     };
   }
 }
