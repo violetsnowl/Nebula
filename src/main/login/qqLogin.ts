@@ -92,8 +92,9 @@ export class QqLogin {
     if(!cookie)return null;
     const {uin}=qqCredential(cookie),session=qqSession(this.http);
     const authStatus=await session.check(cookie);
-    if(authStatus!=='valid')return {loggedIn:false,authStatus,error:authStatus==='expired'?QQ_AUTH_EXPIRED:
-      authStatus==='missing'?'QQ 音乐播放票据不完整，请重新登录':'QQ 登录状态暂时无法确认'};
+    // 只有确认过期或票据缺失才算登出；核验接口超时 / 异常（unknown）不能让 QQ 歌单整片消失。
+    if(authStatus==='expired' || authStatus==='missing')return {loggedIn:false,authStatus,
+      error:authStatus==='expired'?QQ_AUTH_EXPIRED:'QQ 音乐播放票据不完整，请重新登录'};
     let nickname = `QQ ${uin}`;
     try {
       const data = await this.http.requestJson<{ data?: { nick?: string } }>(
@@ -129,7 +130,7 @@ export class QqLogin {
     // QQ 头像走 qlogo 官方头像地址（无需额外接口，uin 即 key）。
     const avatarUrl = `https://q1.qlogo.cn/g?b=qq&nk=${uin}&s=640`;
     if(session.peek(cookie)==='expired')return {loggedIn:false,authStatus:'expired',error:QQ_AUTH_EXPIRED};
-    return { loggedIn: true, authStatus:'valid',userId: uin, nickname, avatarUrl, ...vip };
+    return { loggedIn: true, authStatus:session.peek(cookie),userId: uin, nickname, avatarUrl, ...vip };
   }
 
   async getMyPlaylists(): Promise<PlaylistSummary[]> {

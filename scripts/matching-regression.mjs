@@ -42,6 +42,18 @@ pair('无括号DJ拒绝','群青','YOASOBI',{title:'群青 DJ版'},false);
 pair('词尾不同拒绝','Lie','NF',{title:'Lies'},false);
 pair('高亮不能掩盖不同歌手','In The End','Linkin Park',{artist:'<em>其他歌手</em>'},false);
 pair('合作名单不能忽略','合唱作品','甲 / 乙',{artist:'甲 (feat. 丙)'},false);
+// 合并复核补充：括注里的「版」与伴奏 / 语种 / 器乐 / 剪辑词仍是版本，时长相同也不能顶替原曲。
+for(const version of ['国语版','钢琴版','女声版','抖音版','Off Vocal','Inst.','TV Size','Extended Mix','Clean','0.8x'])pair('合并复核版本门禁'+version,'群青','YOASOBI',{title:`群青 (${version})`,duration:220},false);
+pair('合并复核粤语版不顶替国语版','K歌之王 (国语版)','陈奕迅',{title:'K歌之王 (粤语版)'},false);
+pair('合并复核同语种版本允许','K歌之王 (国语版)','陈奕迅',{title:'K歌之王 (国语版)'});
+pair('合并复核主题曲注释不算版本','群青','YOASOBI',{title:'群青 (电影《X》主题曲)'});
+assert.equal(api.searchKeyword({title:'花びらたちのマーチ (花瓣的游行)',artist:'Aimer (エメ)',artists:['Aimer (エメ)']}),'花びらたちのマーチ Aimer');
+assert.equal(api.searchKeyword({title:'Lemon',artist:'米津玄師 (よねづ けんし)',artists:['米津玄師 (よねづ けんし)']}),'Lemon 米津玄師');
+assert.equal(api.searchKeyword({title:'DDU-DU DDU-DU (Korean Ver.)',artist:'BLACKPINK (블랙핑크)'}),'DDU-DU DDU-DU (Korean Ver.) BLACKPINK');
+assert.equal(api.searchKeyword({title:'The Other Side Of Paradise（天堂彼岸） (Explicit)',artist:'Glass Animals'}),'The Other Side Of Paradise Glass Animals');
+pair('合并复核酷狗kwinst不顶替Explicit原曲','Dancing in My Room (Explicit)','347aidan',{title:'Dancing in My Room (kwinst)'},false);
+pair('合并复核英文标题未知英文括注保守拦截','Demons','Imagine Dragons',{title:'Demons (SingleVersion)'},false);
+pair('合并复核中文标题英文译名不算版本','再见','G.E.M.邓紫棋',{title:'再见（good bye）'});
 cases.push(...round2);
 for(const c of cases)assert.equal(api.recordingMatch(c.candidate,c.target).ok,c.expected,c.kind);
 console.log(`严格录音匹配 ${cases.length}/${cases.length}`);

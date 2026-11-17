@@ -1,7 +1,7 @@
 import type { AdapterMap } from '../adapters/index';
 import type { Platform, ResolveResult, Track } from '../types';
 import type { FallbackTarget } from './platformRouter';
-import { matchScore, recordingMatch as filterCandidate } from './recordingMatch';
+import { matchScore, recordingMatch as filterCandidate, searchKeyword } from './recordingMatch';
 export { matchScore } from './recordingMatch';
 import { mapQualityTo } from '../quality';
 import { requestScope, RequestCancelled, throwIfCancelled, withRequestScope } from '../requestScope';
@@ -164,7 +164,7 @@ export class SongResolver {
         let candidates: Track[];
         if (hit && Date.now()-hit.at<24*3600_000) candidates=hit.tracks;
         else {
-          const rows=await this.stage(timings,'search',platform,this.policy.searchMs,()=>this.adapters[platform].searchSongs!(`${track.title} ${track.artist}`.trim(),12));
+          const rows=await this.stage(timings,'search',platform,this.policy.searchMs,()=>this.adapters[platform].searchSongs!(searchKeyword(track),12));
           candidates=rows.map(c=>({c,score:matchScore(c,track),guard:filterCandidate(c,track)}))
             .filter(x=>x.guard.ok && x.score>=.55).sort((a,b)=>a.guard.rank-b.guard.rank || b.score-a.score).slice(0,2).map(x=>x.c);
           if (candidates.length) remember(this.matches,matchKey,{at:Date.now(),tracks:candidates},512);

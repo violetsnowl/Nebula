@@ -27,17 +27,31 @@ function artists(t:Track):Set<string> {
   const feat=cleanMetadataText(t.title).match(/(?:feat\.?|featuring)\s+([^()（）\[\]]+)/i);if(feat)source.push(feat[1]!);
   return new Set(source.flatMap(s=>withoutArtistAlias(s).split(/\s*(?:\/|、|，|,|&|\bfeat\.?\b|\bfeaturing\b|\bx\b)\s*/i)).map(s=>canonicalArtist(s)).filter(s=>s && !/^(未知歌手|unknownartist|variousartists)$/.test(s)));
 }
-const VERSION=/\b(live|remix|mix|remaster(?:ed)?|acoustic|instrumental|karaoke|cover|demo|edit|ver\.?|version|dj|the\s+first\s+take|sped\s*up|slowed|mono|stereo)\b|现场|現場|演唱会|演唱會|伴奏|纯音乐|純音樂|翻唱|混音|重制|重製|重录|重錄|不插电|不插電|加速|降速|改编|改編/i;
+// 「版」和伴奏 / 语种 / 器乐 / 剪辑类词都算版本：国语版≠粤语版，Off Vocal 与原曲同长也不能顶替。
+const VERSION=/\b(live|remix|mix|remaster(?:ed)?|acoustic|instrumental|inst\.?|off\s*vocal|karaoke|cover|demo|edit|ver\.?|version|dj|the\s+first\s+take|tv\s*size|short|extended|clean|piano|guitar|orchestral?|sped\s*up|slowed|mono|stereo|\d+(?:\.\d+)?x)\b|版|现场|現場|演唱会|演唱會|伴奏|纯音乐|純音樂|翻唱|混音|重制|重製|重录|重錄|不插电|不插電|加速|降速|改编|改編|钢琴|鋼琴|吉他|女声|女聲|男声|男聲|片段|铃声|鈴聲|抖音/i;
 function versionText(s:string):string {
   return identityText(s.replace(/现场(?:版)?|現場(?:版)?|演唱[会會](?:版)?/g,'live').replace(/remastered/gi,'remaster').replace(/伴奏(?:版)?/g,'instrumental'));
 }
+const CJK=/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+const NOTES=/\(([^()]*)\)|\[([^\[\]]*)\]|【([^【】]*)】/g;
+/**
+ * 括注是否构成版本约束：版本词一定算；feat / Explicit 不算；
+ * 中日韩文括注多为译名或出处，不算；英文括注只在标题本身是中日韩文（英文译名）时不算，
+ * 英文标题后认不出的英文括注（如酷狗的 kwinst）保守地算版本。
+ */
+function versionNote(note:string,full:string):boolean {
+  const s=note.trim();
+  if (!s || /^(?:feat\.?|featuring|with)\s/i.test(s) || /^explicit$/i.test(s)) return false;
+  if (VERSION.test(s)) return true;
+  if (CJK.test(s)) return false;
+  return !CJK.test(full.replace(NOTES,''));
+}
 function title(t:Track):{names:Set<string>;version:string} {
   const versions:string[]=[];
-  let base=cleanMetadataText(t.title).normalize('NFKC');
-  base=base.replace(/\(([^()]*)\)|\[([^\[\]]*)\]|【([^【】]*)】/g,(_whole,...groups)=>{
+  const full=cleanMetadataText(t.title).normalize('NFKC');
+  let base=full.replace(NOTES,(_whole,...groups)=>{
     const s=groups.slice(0,3).find(x=>typeof x==='string' && x) || '';
-    // 译名/Explicit 等显示括注不等于录音版本；仅明确版本词构成约束。
-    if (!/^(?:feat\.?|featuring)\s/i.test(s) && VERSION.test(s)) versions.push(versionText(s));
+    if (versionNote(s,full)) versions.push(versionText(s));
     return ' ';
   });
   const suffix=base.match(/\s[-–—]\s(.+)$/);
@@ -46,6 +60,12 @@ function title(t:Track):{names:Set<string>;version:string} {
   if (bare) {versions.push(versionText(bare[1]!));base=base.slice(0,bare.index);}
   const aliases=Array.isArray(t.extra?.titleAliases)?t.extra.titleAliases.filter((x):x is string=>typeof x==='string'):[];
   return {names:new Set([base,...aliases].map(identityText).filter(Boolean)),version:versions.filter(Boolean).sort().join('|')};
+}
+/** 兜底搜索词：去掉译名、Explicit 等不构成版本的括注和歌手末尾的读音别名；版本括注保留。 */
+export function searchKeyword(t:Track):string {
+  const raw=cleanMetadataText(t.title).normalize('NFKC');
+  const name=raw.replace(NOTES,(whole,...groups)=>versionNote(groups.slice(0,3).find(x=>typeof x==='string' && x) || '',raw)?whole:' ').replace(/\s+/g,' ').trim();
+  return `${name || raw} ${withoutArtistAlias(t.artists?.[0] || t.artist || '')}`.trim();
 }
 export interface MatchDecision { ok:boolean; score:number; rank:number; note:string }
 /** 共用的录音身份门禁：标题、全部歌手、版本、时长都满足才打分。 */
