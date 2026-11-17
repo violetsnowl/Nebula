@@ -1,4 +1,5 @@
 import type { Track } from '../types';
+import { coverCandidates } from '../services/coverService';
 
 /**
  * 纯函数字段映射：把各平台原始 JSON 中的不同字段统一转换为标准 Track。
@@ -29,6 +30,7 @@ export function mapNeteaseTrack(raw: Record<string, any> | undefined | null): Tr
       artists: ar.map((a) => a.name ?? '').filter(Boolean),
       album: al.name ?? '',
       cover,
+      coverInfo:cover?{url:coverCandidates({platform:'netease',cover})[0] || cover,verified:false}:undefined,
       duration,
       platform: 'netease',
       sourceId: String(raw.id),
@@ -59,6 +61,7 @@ export function mapQQTrack(raw: Record<string, any> | undefined | null): Track |
       sourceId: String(raw.songmid),
       originalUrl: '',
       fallbackUrl: '',
+      coverInfo:albummid?{url:`https://y.gtimg.cn/music/photo_new/T002M000${albummid}.jpg`,verified:false}:undefined,
       extra: { mediaMid:raw.file?.media_mid || raw.strMediaMid || '', songId:raw.songid ?? raw.id, albumId:raw.albumid ?? raw.album?.id, pay:raw.pay },
     };
   } catch {
@@ -75,7 +78,7 @@ export function mapKugouTrack(raw: Record<string, any> | undefined | null): Trac
       artist: raw.SingerName ?? '未知歌手',
       artists: (raw.SingerName ?? '').split(',').map((s: string) => s.trim()).filter(Boolean),
       album: raw.AlbumName ?? '',
-      cover: '',
+      cover: String(raw.Image || raw.AlbumImg || raw.trans_param?.union_cover || '').replace(/\{size\}/g,'0').replace(/^http:/,'https:'),
       duration: typeof raw.Duration === 'number' ? raw.Duration : 0,
       platform: 'kugou',
       sourceId: String(raw.FileHash),
@@ -108,7 +111,7 @@ export function mapKugouMobileTrack(raw: Record<string, any> | undefined | null)
         .map((s: string) => s.trim())
         .filter(Boolean),
       album: raw.album_name ?? '',
-      cover: '',
+      cover: String(raw.imgurl || raw.album_img || '').replace(/\{size\}/g,'0').replace(/^http:/,'https:'),
       duration: Number(raw.duration) || 0,
       platform: 'kugou',
       sourceId: String(raw.hash),

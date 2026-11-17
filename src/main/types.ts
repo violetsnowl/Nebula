@@ -2,6 +2,8 @@
 
 export type Platform = 'netease' | 'qq' | 'kugou' | 'spotify' | 'qishui';
 
+export interface CoverInfo { url:string; width?:number; height?:number; verified:boolean }
+
 export interface Track {
   /** Unified id (`${platform}:${sourceId}`, stable across platforms). */
   id: string;
@@ -11,6 +13,7 @@ export interface Track {
   album: string;
   /** https cover URL (empty when none). */
   cover: string;
+  coverInfo?: CoverInfo;
   /** Duration in seconds. */
   duration: number;
   platform: Platform;

@@ -8,13 +8,15 @@ function mapSpotifyTrack(raw: Record<string, any> | undefined | null): Track | n
   try {
     if (!raw || !raw.id || !raw.name) return null;
     const artists: Array<{ name?: string }> = raw.artists ?? [];
+    const image=[...(raw.album?.images || [])].sort((a,b)=>(b.width || 0)*(b.height || 0)-(a.width || 0)*(a.height || 0))[0];
     return {
       id: `spotify:${raw.id}`,
       title: raw.name,
       artist: artists[0]?.name ?? '未知歌手',
       artists: artists.map((a) => a.name ?? '').filter(Boolean),
       album: raw.album?.name ?? '',
-      cover: raw.album?.images?.[0]?.url ?? '',
+      cover: image?.url ?? '',
+      coverInfo:image?.url?{url:image.url,width:image.width,height:image.height,verified:false}:undefined,
       duration: Math.round((raw.duration_ms ?? 0) / 1000),
       platform: 'spotify',
       sourceId: String(raw.id),
@@ -128,7 +130,7 @@ export class SpotifyAdapter implements PlatformAdapter {
         tracks,
       };
     } catch (err) {
-      console.warn('[SpotifyAdapter] 专辑详情失败:', err instanceof Error ? err.message : err);
+      console.warn("[SpotifyAdapter] 专辑详情失败:");
       return null;
     }
   }

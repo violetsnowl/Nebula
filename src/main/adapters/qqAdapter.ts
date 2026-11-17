@@ -19,6 +19,10 @@ import { mapQQTrack } from './mappers';
 import { throwIfCancelled } from '../requestScope';
 import { decodeQqLyric, fromTimed } from '../parsers/timedLyrics';
 
+export function cleanQqComment(text:string):string {
+  return String(text || '').replace(/\[em\]([\s\S]*?)\[\/em\]/gi,(_,code)=>/^[\p{Extended_Pictographic}\uFE0F\u200D]+$/u.test(code)?code:'［表情］').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&');
+}
+
 function decodeMaybeBase64(s: string): string {
   if (!s) return '';
   try {
@@ -182,7 +186,7 @@ export class QqAdapter implements PlatformAdapter {
       );
       return (data?.data?.song?.list ?? []).map(mapQQTrack).filter((t): t is Track => !!t);
     } catch (err) {
-      console.warn('[QqAdapter] search failed:', err instanceof Error ? err.message : err);
+      console.warn("[QqAdapter] search failed:");
       return [];
     }
   }
@@ -206,7 +210,7 @@ export class QqAdapter implements PlatformAdapter {
         }))
         .filter((a) => a.id && a.name);
     } catch (err) {
-      console.warn('[QqAdapter] searchArtists failed:', err instanceof Error ? err.message : err);
+      console.warn("[QqAdapter] searchArtists failed:");
       return [];
     }
   }
@@ -260,7 +264,7 @@ export class QqAdapter implements PlatformAdapter {
         }
       }
     } catch (err) {
-      console.warn('[QqAdapter] PlayLyricInfo failed:', err instanceof Error ? err.message : err);
+      console.warn("[QqAdapter] PlayLyricInfo failed:");
     }
     try {
       const data = await this.http.requestJson<{ lyric?: string; trans?: string }>(
@@ -272,7 +276,7 @@ export class QqAdapter implements PlatformAdapter {
       const trans = decodeMaybeBase64(data?.trans ?? '');
       return { lines: mergeLyric(raw, trans), raw, translationRaw: trans, source: 'qq', lrc: raw, tlyric: trans };
     } catch (err) {
-      console.warn('[QqAdapter] lyric failed:', err instanceof Error ? err.message : err);
+      console.warn("[QqAdapter] lyric failed:");
       return null;
     }
   }
@@ -295,7 +299,7 @@ export class QqAdapter implements PlatformAdapter {
           id: String(c.commentid ?? ''),
           nickname: c.rootcommentnick || c.nick || '匿名用户',
           avatarUrl: String(c.avatarurl ?? '').replace(/^http:\/\//, 'https://'),
-          content: c.rootcommentcontent || c.middlecommentcontent || '',
+          content: cleanQqComment(c.rootcommentcontent || c.middlecommentcontent || ''),
           likedCount: c.praisenum ?? c.rootcommentlikenum ?? 0,
         }));
 
@@ -313,7 +317,7 @@ export class QqAdapter implements PlatformAdapter {
         hasMoreLatest: (latestData?.morecomment ?? 0) > 0,
       };
     } catch (err) {
-      console.warn('[QqAdapter] comments failed:', err instanceof Error ? err.message : err);
+      console.warn("[QqAdapter] comments failed:");
       return null;
     }
   }
@@ -439,7 +443,7 @@ export class QqAdapter implements PlatformAdapter {
         if (list.length < 30 || added === 0 || out.length >= totalNum) break;
       }
     } catch (err) {
-      console.warn('[QqAdapter] 歌手全部歌曲失败:', err instanceof Error ? err.message : err);
+      console.warn("[QqAdapter] 歌手全部歌曲失败:");
     }
     return out;
   }
@@ -477,7 +481,7 @@ export class QqAdapter implements PlatformAdapter {
         tracks,
       };
     } catch (err) {
-      console.warn('[QqAdapter] 专辑详情失败:', err instanceof Error ? err.message : err);
+      console.warn("[QqAdapter] 专辑详情失败:");
       return null;
     }
   }

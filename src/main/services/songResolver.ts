@@ -94,7 +94,8 @@ export class SongResolver {
   private async source(track: Track, platform: Platform, quality: string | undefined, fallback: boolean, timings: Timings): Promise<ResolveResult | null> {
     throwIfCancelled();
     const breaker = this.health.get(platform);
-    if (breaker && breaker.until > Date.now()) { timings.push({stage:'circuit',platform,ms:0,outcome:'open'}); return null; }
+    // 用户主动点播始终给主源恢复机会；单曲超时不代表整个平台不可用。
+    if (fallback && breaker && breaker.until > Date.now()) { timings.push({stage:'circuit',platform,ms:0,outcome:'open'}); return null; }
     try {
       const direct = await this.stage(timings,'fetch',platform,this.policy.candidateMs,() => this.adapters[platform].fetchSongUrl(
         track.sourceId, track.extra?.albumId == null ? undefined : String(track.extra.albumId), mapQualityTo(LEVELS[platform] || [],quality),track.extra,
@@ -107,7 +108,7 @@ export class SongResolver {
       return { url:direct.url, fallback, platform, sourceId:track.sourceId, trial:direct.trial, trialEndTime:direct.trialEndTime,
         quality:direct.quality, playable:true, resolvedAt:now, expiresAt:Math.min(direct.expiresAt || Infinity, now+this.policy.cacheMs), ...(direct.trial ? {code:'TRIAL_ONLY' as const} : {}) };
     } catch(e) {
-      if (codeOf(e) !== 'CANCELLED') {
+      if (codeOf(e) === 'NO_SOURCE') {
         const n=(this.health.get(platform)?.failures || 0)+1;
         this.health.set(platform,{failures:n,until:n>=3?Date.now()+30000:0});
       }

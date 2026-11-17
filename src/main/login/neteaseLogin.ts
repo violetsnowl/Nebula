@@ -141,14 +141,12 @@ export class NeteaseLogin {
     try {
       const account = await this.getAccount();
       if (account.loggedIn) {
-        console.log(
-          `[Netease][Probe] 已登录：${account.nickname}（VIP=${account.isVip ? '是' : '否'}, SVIP=${account.isSvip ? '是' : '否'}）`,
-        );
+        console.log("[neteaseLogin.ts] 接口状态变化");
       } else {
-        console.log('[Netease][Probe] 未登录或 Cookie 已失效');
+        console.log("[Netease][Probe] 未登录或 Cookie 已失效");
       }
     } catch (err) {
-      console.warn('[Netease][Probe] 探活异常（忽略）:', err instanceof Error ? err.message : err);
+      console.warn("[Netease][Probe] 探活异常（忽略）:");
     }
   }
 }

@@ -168,7 +168,7 @@ export class CookieStore {
       fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2), 'utf-8');
       fs.renameSync(tmp, this.file);
     } catch (err) {
-      console.warn('[CookieStore] 保存失败:', err instanceof Error ? err.message : err);
+      console.warn("[CookieStore] 保存失败:");
     }
   }
 }

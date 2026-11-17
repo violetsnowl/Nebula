@@ -50,15 +50,15 @@ export class KugouLogin {
   async getAccount(): Promise<AccountInfo | null> {
     const rec = this.cookies.get('kugou');
     if (!rec?.cookies) {
-      console.log('[KugouLogin] getAccount: 无存储 cookie');
+      console.log("[KugouLogin] getAccount: 无存储 cookie");
       return null;
     }
     const cookie = rec.cookies;
-    console.log('[KugouLogin] getAccount: cookie 长度=', cookie.length, '字段=', cookie.split(';').map(s => s.split('=')[0].trim()).join(', '));
+    console.log("[KugouLogin] getAccount: cookie 长度=");
 
     const kugouId = extractKugouUserId(cookie);
     if (!kugouId) {
-      console.log('[KugouLogin] getAccount: 未找到 KugooID');
+      console.log("[KugouLogin] getAccount: 未找到 KugooID");
       return null;
     }
 

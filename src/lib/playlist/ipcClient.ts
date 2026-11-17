@@ -1,12 +1,15 @@
 import type { Track } from '../catalog';
 
 /** 与 src/main/types.ts 对齐的桌面端数据结构（渲染进程侧只读映射）。 */
+export interface DesktopCoverInfo {url:string;width?:number;height?:number;verified:boolean}
+
 export interface DesktopTrack {
   id: string;
   title: string;
   artist: string;
   album: string;
   cover: string;
+  coverInfo?: DesktopCoverInfo;
   duration: number;
   platform: string;
   sourceId: string;
@@ -18,6 +21,7 @@ export interface DesktopTrack {
 }
 
 export interface PlaybackMetadata {
+  coverInfo?: DesktopCoverInfo;
   artists?: string[];
   extra?: Record<string, unknown>;
   resolvedAt?: number;
@@ -169,6 +173,7 @@ export interface DesktopApi {
   songQualities: (track: DesktopTrack) => IpcResult<DesktopQualityOption[]>;
   fallbackSong: (track: DesktopTrack) => IpcResult<DesktopTrack | null>;
   fetchLyric: (track: DesktopTrack, options?: {requestId:string}) => IpcResult<unknown>;
+  coverInfo?: (track:DesktopTrack) => IpcResult<DesktopCoverInfo|null>;
   fetchComments: (track: DesktopTrack, page?: number) => IpcResult<DesktopCommentResult | null>;
   songDetail: (track: DesktopTrack) => IpcResult<DesktopSongDetail | null>;
   artistInfo: (platform: string, artistId: string) => IpcResult<DesktopArtistInfo | null>;
@@ -243,6 +248,7 @@ export function toFrontendTrack(
     sourceId: t.sourceId,
     album: t.album,
     cover: t.cover,
+    coverInfo: t.coverInfo,
     duration: t.duration,
     trial: extra?.trial,
     trialEndTime: extra?.trialEndTime,
@@ -281,6 +287,7 @@ export function toBackendTrack(t: Track): DesktopTrack {
     // 远程音源只在内存使用：IPC 重取与会话记忆均不携带过期直链/随机代理端口。
     originalUrl: t.source === 'local' || t.source === 'demo' ? t.audio : '',
     fallbackUrl: '',
+    coverInfo: (t as Track & PlaybackMetadata).coverInfo,
     artists: (t as Track & PlaybackMetadata).artists,
     extra: (t as Track & PlaybackMetadata).extra,
   };

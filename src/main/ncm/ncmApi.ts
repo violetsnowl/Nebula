@@ -62,11 +62,23 @@ async function bootstrap(): Promise<void> {
 
 function ensureBoot(): Promise<void> {
   if (!bootPromise) {
+    // 库在加载 request.js 时读取已有匿名 token；新进程无需再等一次注册和公钥刷新。
+    // 过期/不存在的配置仍走原初始化，不能用固定匿名 token 替代。
+    try {
+      const stat = fs.statSync(path.join(os.tmpdir(), 'anonymous_token'));
+      if (stat.size > 0 && Date.now() - stat.mtimeMs < 24 * 3600_000) return bootPromise = Promise.resolve();
+    } catch { /* 第一次启动 */ }
     bootPromise = withRequestScope(5000, bootstrap, { detached: true }).catch(() => {
       bootPromise = null;
     });
   }
   return bootPromise;
+}
+
+/** 桌面启动时预热，首次点播与匿名注册并行；错误由具体请求处理。 */
+export function primeNcmApi(): void {
+  installTransport();
+  void privateLogs.run(true, ensureBoot);
 }
 
 function loadModule(name: string): NcmModule {

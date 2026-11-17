@@ -17,7 +17,6 @@ import { LyricCache } from './lyricCache';
 import { withRequestScope, throwIfCancelled } from '../requestScope';
 import { enrichAligned, lyricCoverage } from './lyricAlignment';
 
-const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /** 歌词/评论统一入口：平台失败返回 null，不向上抛错。 */
 /** 去掉搜索接口返回的高亮标签（<em>…</em> 等），并还原常见 HTML 实体。 */
@@ -98,7 +97,7 @@ export class LyricService {
         const fn = this.adapters[track.platform].fetchComments;
         return fn ? await fn.call(this.adapters[track.platform], track.sourceId, page) : null;
       } catch (err) {
-        console.warn('[LyricService] 评论获取失败:', errMsg(err));
+        console.warn("[LyricService] 评论获取失败:");
         return null;
       }
     }
@@ -109,7 +108,7 @@ export class LyricService {
       const adapter = this.adapters[platform];
       return adapter.fetchArtistAllSongs ? await adapter.fetchArtistAllSongs(artistId) : [];
     } catch (err) {
-      console.warn('[LyricService] 歌手全部歌曲失败:', errMsg(err));
+      console.warn("[LyricService] 歌手全部歌曲失败:");
       return [];
     }
   }
@@ -168,7 +167,7 @@ export class LyricService {
       }
       return detail;
     } catch (err) {
-      console.warn('[LyricService] 歌曲详情失败:', errMsg(err));
+      console.warn("[LyricService] 歌曲详情失败:");
       return null;
     }
   }
@@ -178,7 +177,7 @@ export class LyricService {
       const adapter = this.adapters[platform];
       return adapter.fetchArtistInfo ? await adapter.fetchArtistInfo(artistId) : null;
     } catch (err) {
-      console.warn('[LyricService] 歌手信息失败:', errMsg(err));
+      console.warn("[LyricService] 歌手信息失败:");
       return null;
     }
   }
@@ -188,7 +187,7 @@ export class LyricService {
       const adapter = this.adapters[platform];
       return adapter.fetchArtistSongs ? await adapter.fetchArtistSongs(artistId) : [];
     } catch (err) {
-      console.warn('[LyricService] 歌手歌曲失败:', errMsg(err));
+      console.warn("[LyricService] 歌手歌曲失败:");
       return [];
     }
   }
@@ -198,7 +197,7 @@ export class LyricService {
       const adapter = this.adapters[platform];
       return adapter.fetchArtistAlbums ? await adapter.fetchArtistAlbums(artistId) : [];
     } catch (err) {
-      console.warn('[LyricService] 歌手专辑失败:', errMsg(err));
+      console.warn("[LyricService] 歌手专辑失败:");
       return [];
     }
   }
@@ -208,7 +207,7 @@ export class LyricService {
       const adapter = this.adapters[platform];
       return adapter.fetchAlbumDetail ? await adapter.fetchAlbumDetail(albumId) : null;
     } catch (err) {
-      console.warn('[LyricService] 专辑详情失败:', errMsg(err));
+      console.warn("[LyricService] 专辑详情失败:");
       return null;
     }
   }
@@ -233,7 +232,7 @@ export class LyricService {
           const list = await adapter.searchSongs(keyword, per);
           list.forEach(push);
         } catch (err) {
-          console.warn('[LyricService] searchSongs', adapter.platform, errMsg(err));
+          console.warn("[LyricService] searchSongs");
         }
       }),
     );
@@ -258,7 +257,7 @@ export class LyricService {
             out.push({ ...hit, name: stripMarkup(hit.name) });
           }
         } catch (err) {
-          console.warn('[LyricService] searchArtists', adapter.platform, errMsg(err));
+          console.warn("[LyricService] searchArtists");
         }
       }),
     );

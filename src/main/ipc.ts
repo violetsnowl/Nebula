@@ -7,6 +7,7 @@ import type { LyricService } from './services/lyricService';
 import type { Platform, Track } from './types';
 import type { LoginAdapter } from './login/index';
 import type { AudioProxy } from './audioProxy';
+import { CoverService,coverCandidates } from './services/coverService';
 import type { WallpaperLibrary } from './services/wallpaperLibrary';
 import { normalizeCookieHeader, validatePlatformCookie } from './cookieStore';
 
@@ -33,6 +34,7 @@ export interface IpcDeps {
 }
 
 export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
+  const covers=new CoverService();
   const owners = new WeakMap<object, Map<string, AbortController>>();
   const testingOwner = {};
   const requestsFor = (event: unknown) => {
@@ -55,6 +57,8 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
     });
   };
 
+  safe('nebula:cover-info',async({track}:{track:Track})=>covers.inspect(track));
+
   safe('nebula:import-playlist', async ({ url }: { url?: string }) => {
     if (!url) throw new Error('缺少歌单链接');
     const target: UrlTarget | null = resolveAdapterByUrl(url);
@@ -64,7 +68,7 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
       platformName: target.platform,
       name: playlist.name,
       cover: playlist.cover,
-      tracks: playlist.tracks,
+      tracks: playlist.tracks.map(t=>({...t,coverInfo:t.coverInfo || (t.cover?{url:coverCandidates(t)[0] || t.cover,verified:false}:undefined)})),
     };
   });
 
@@ -74,7 +78,7 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
       platformName: platform,
       name: playlist.name,
       cover: playlist.cover,
-      tracks: playlist.tracks,
+      tracks: playlist.tracks.map(t=>({...t,coverInfo:t.coverInfo || (t.cover?{url:coverCandidates(t)[0] || t.cover,verified:false}:undefined)})),
     };
   });
 
@@ -169,16 +173,16 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
   });
 
   safe('nebula:cookie:set', async ({ platform, cookie, token, nickname }: { platform: Platform; cookie: string; token?: string; nickname?: string }) => {
-    console.log('[IPC] cookie:set platform=' + platform + ' rawLength=' + (cookie?.length ?? 0) + ' first100=' + (cookie?.substring(0, 100) ?? ''));
+    console.log("[ipc.ts] 接口状态变化");
     const normalized = normalizeCookieHeader(cookie);
-    console.log('[IPC] cookie:set normalizedLength=' + normalized.length + ' first100=' + normalized.substring(0, 100));
+    console.log("[ipc.ts] 接口状态变化");
     const validation = validatePlatformCookie(platform, normalized);
     if (!validation.ok) {
-      console.log('[IPC] cookie:set VALIDATION FAILED:', validation.error);
+      console.log("[IPC] cookie:set VALIDATION FAILED:");
       throw new Error(validation.error);
     }
     deps.cookies.set(platform, normalized, token, nickname);
-    console.log('[IPC] cookie:set SUCCESS for', platform);
+    console.log("[IPC] cookie:set SUCCESS for");
     return true;
   });
   safe('nebula:cookie:get', async ({ platform }: { platform: Platform }) => deps.cookies.get(platform) ?? null);

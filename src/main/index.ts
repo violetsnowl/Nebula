@@ -31,3 +31,5 @@ export { recordingMatch, identityText } from './services/recordingMatch';
 export * from './parsers/timedLyrics';
 
 export * from './services/lyricAlignment';
+
+export * from './services/coverService';

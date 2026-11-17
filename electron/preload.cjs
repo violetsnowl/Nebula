@@ -9,6 +9,7 @@ contextBridge.exposeInMainWorld('nebulaAPI', {
   fallbackSong: (track) => ipcRenderer.invoke('nebula:fallback-song', { track }),
   fetchLyric: (track, options) => ipcRenderer.invoke('nebula:lyric', { track, ...options }),
   fetchComments: (track, page) => ipcRenderer.invoke('nebula:comments', { track, page }),
+  coverInfo: (track) => ipcRenderer.invoke('nebula:cover-info', { track }),
   songDetail: (track) => ipcRenderer.invoke('nebula:song-detail', { track }),
   artistInfo: (platform, artistId) => ipcRenderer.invoke('nebula:artist-info', { platform, artistId }),
   artistSongs: (platform, artistId) => ipcRenderer.invoke('nebula:artist-songs', { platform, artistId }),

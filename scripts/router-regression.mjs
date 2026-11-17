@@ -19,6 +19,12 @@ await test('HTTP 请求上下文继承并真正触发取消',async()=>{
  const p=withRequestScope(500,()=>new Promise(r=>requestScope().signal.addEventListener('abort',()=>{cancelled=true;r(null)})),{signal:control.signal});
  await wait(2);control.abort();await p.catch(()=>{});assert.equal(cancelled,true);
 });
+await test('三次超时不熔断后续主源，平台恢复立即可播',async()=>{
+ const a=adapters();let count=0;
+ a.qq.fetchSongUrl=async()=>{if(++count<=3)await wait(80);return {url:'https://test/recovered'}};
+ const r=make(a);for(let i=0;i<3;i++)await r.resolve({...song,sourceId:String(i)});
+ assert.equal((await r.resolve({...song,sourceId:'recovered'})).playable,true);assert.equal(count,4);
+});
 await test('合并并发请求，取消一人不影响另一人',async()=>{
  const a=adapters();let count=0,aborted=false;
  a.qq.fetchSongUrl=async()=>{count++;requestScope().signal.addEventListener('abort',()=>{aborted=true});await wait(20);return {url:'https://test/a'}};

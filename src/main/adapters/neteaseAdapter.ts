@@ -225,7 +225,7 @@ export class NeteaseAdapter implements PlatformAdapter {
         romalrc = normalizeJsonLrc(nb.romalrc?.lyric ?? '');
       }
     } catch (err) {
-      console.warn('[NeteaseAdapter] lyric_new failed:', err instanceof Error ? err.message : err);
+      console.warn("[NeteaseAdapter] lyric_new failed:");
     }
     try {
       // 2) lyric：普通 LRC 补充（lyric_new 缺失时兜底）
@@ -237,7 +237,7 @@ export class NeteaseAdapter implements PlatformAdapter {
         if (!romalrc) romalrc = rb.romalrc?.lyric ?? '';
       }
     } catch (err) {
-      console.warn('[NeteaseAdapter] lyric failed:', err instanceof Error ? err.message : err);
+      console.warn("[NeteaseAdapter] lyric failed:");
     }
     if (!lrc && !yrc && !tlyric) return null;
     return {
@@ -277,7 +277,7 @@ export class NeteaseAdapter implements PlatformAdapter {
         }))
         .filter((a) => a.id && a.name);
     } catch (err) {
-      console.warn('[NeteaseAdapter] searchArtists failed:', err instanceof Error ? err.message : err);
+      console.warn("[NeteaseAdapter] searchArtists failed:");
       return [];
     }
   }
@@ -303,7 +303,7 @@ export class NeteaseAdapter implements PlatformAdapter {
         }))
         .filter((a) => a.id && a.name);
     } catch (err) {
-      console.warn('[NeteaseAdapter] searchAlbums failed:', err instanceof Error ? err.message : err);
+      console.warn("[NeteaseAdapter] searchAlbums failed:");
       return [];
     }
   }
@@ -334,7 +334,7 @@ export class NeteaseAdapter implements PlatformAdapter {
         hasMoreLatest: data?.more ?? false,
       };
     } catch (err) {
-      console.warn('[NeteaseAdapter] comments failed:', err instanceof Error ? err.message : err);
+      console.warn("[NeteaseAdapter] comments failed:");
       return null;
     }
   }
@@ -443,7 +443,7 @@ export class NeteaseAdapter implements PlatformAdapter {
         tracks,
       };
     } catch (err) {
-      console.warn('[NeteaseAdapter] 专辑详情失败:', err instanceof Error ? err.message : err);
+      console.warn("[NeteaseAdapter] 专辑详情失败:");
       return null;
     }
   }
@@ -469,7 +469,7 @@ export class NeteaseAdapter implements PlatformAdapter {
         if (songs.length < 50 || added === 0) break;
       }
     } catch (err) {
-      console.warn('[NeteaseAdapter] 歌手全部歌曲失败:', err instanceof Error ? err.message : err);
+      console.warn("[NeteaseAdapter] 歌手全部歌曲失败:");
     }
     return out;
   }
