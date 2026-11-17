@@ -32,6 +32,11 @@
 6. **文档同步**：每次改动追加 `docs/project/CHANGE_LOG.md`；踩坑更新 `docs/project/NOTES.md`；架构变化更新 `docs/project/ARCHITECTURE.md`；全局 UI 规范变化更新 `docs/design/NEBULA_UI_SYSTEM.md`（已冻结，改动须经用户确认）。
 7. **搜索优先 `rg`**；本项目 Windows PowerShell 下不可用时改用 `Select-String`。
 8. **沟通语言**：中文；结论先行，给可执行步骤。用户自述 git / 工程操作为新手，但产品与审美判断力强——技术细节按新手水平解释，方向性判断尊重用户。
+9. **多个会话并行时**（2026-11-17 起常见：主对话做界面，分叉会话做后端，同一目录、同一条 main）：
+   - **提交前一刻**重读 `CHANGE_LOG.md` 顶部最新编号再取号，日志和提交信息同时用这个号。提前想好的号会因对方先提交而过期，11-17 就撞过 #159 / #160。
+   - 只提交自己的文件（`git commit --only <路径>`），对方可能有没提交的改动。推送后告诉对方下一个空号。
+   - 改对方负责的界面文件之前先打招呼。主对话的界面约定（如来源小字只用现有弱文字）以主对话为准。
+10. **真实账号测试**：用户已授权用他的登录和歌单做测试，但只能用配置的副本，做法见 `docs/project/NOTES.md`「真实数据测试的做法」。凭据、歌单数据、统计结果都不进仓库。
 
 ---
 
@@ -83,6 +88,7 @@
 - Node 运行时与 QA 用本机 Chrome 的路径见 `PROJECT.md` §3 与 `scripts/qa.cjs` 顶部。
 - 改动 `src/main`（后端）后必须 `pnpm build:main` 才能让 Electron 与冒烟测试生效。
 - `pnpm build` 产物在**仓库外**的同级目录 `../nebula-outputs/`（本机 `E:\CUFE\vibecoding\nebula-outputs`）；`pnpm qa` 读取该产物，所以**先 build 再 qa**。
-- **换机器的坑**：`scripts/qa.cjs` 与 `scripts/desktop-play-smoke.mjs` 仍硬编码两处本机路径（Chrome 可执行文件、Codex runtime 的 `node_modules`（playwright-core / pngjs））；outputs 目录已改为相对仓库的 `../nebula-outputs`（与 `vite.config.ts` 的 `outDir` 一致）。跨机器接手需先改这两处。
+- **换机器的坑**：`scripts/qa.cjs` 经 `scripts/qa-env.cjs` 找依赖，可用 `NEBULA_QA_MODULES` / `NEBULA_CHROME` 两个环境变量覆盖（默认仍指本机的 Codex runtime 和 Chrome）；`scripts/desktop-play-smoke.mjs` 可能仍是硬编码，换机先核对。outputs 目录是相对仓库的 `../nebula-outputs`（与 `vite.config.ts` 的 `outDir` 一致）。
+- `pnpm qa:backend` 现在跑十几套后端回归（取链、路由、录音匹配、地址寿命、QQ 会话、歌词、韩语罗马音、酷狗登录、导入契约等），全部离线，不需要账号。
 - **Windows 工作树坑**：删除含 `node_modules` 的工作树可能报 `Filename too long`——先 `git config core.longpaths true`，仍失败则用 robocopy 镜像空目录清空后再删；目录被改名导致注册失效时用 `git worktree repair <新路径>` 修复。
 - 凭证：`qq-cookie.txt` / `.env` 均被 `.gitignore` 排除，切勿提交；仓库内现无任何真实凭证（旧的已过期 `qq-cookie.txt` 已于 2026-10-14 删除，重新做实账号验证需重新导出）。

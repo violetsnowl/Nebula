@@ -144,3 +144,34 @@ view blocks（同层互不依赖，组合只由 App 完成）
 ## 后端整修 #B6：封面元数据
 
 导入 Track 带可选 `coverInfo`，候选 URL 不等于已验证尺寸。`nebulaAPI.coverInfo(track)` → `nebula:cover-info` → CoverService 返回 `{url,width?,height?,verified}`。仅 `verified=true` 的尺寸来自真实图像头；失败保留原图，不重采样。该接口按需使用，不阻塞播放，听音空间尺寸展示由主线接入。网易云匿名初始化在 Electron 启动预热；主平台不受兜底熔断阻止。
+
+## 后端合入主线后的补充（#154–#166，2026-11-17）
+
+- **同一录音判定**（`recordingMatch.ts`）：是取链兜底、歌词补全、评论和详情兜底共用的唯一门禁。
+  - 版本词包括「版」和伴奏 / 语种 / 器乐 / 剪辑 / 倍速类词。
+  - 中日韩文括注当译名；英文标题后认不出的英文括注保守算版本。
+  - `searchKeyword(track)` 生成跨平台搜索词：去掉译名、Explicit 括注和歌手末尾的读音别名。
+- **歌词补全对齐**（`lyricAlignment.ts`）：
+  - 先试固定偏移对齐 `alignTimelines`。
+  - 失败再用 `retimeByText` 按正文逐行配对，同时满足以下条件才改用对方的行时间和逐字时间轴：
+    - 顺序一致、正文相同；
+    - 单行差 ≤1.2 秒；
+    - 配上八成以上；
+    - 中位差 ≤0.6 秒。
+  - 正文行排除所有「短标签 + 冒号」的署名行。
+  - 本平台没有正文时，兜底歌词是同一录音且时长差 ≤2 秒才保留逐字（`lyricService.fetchLyric`）。
+- **韩语罗马音**：`parsers/romanizeKorean.ts`（按发音的修订罗马字，无依赖）+ `lyricService.withKoreanRoman`。
+  - 只补平台没给的韩文行，每行用原文的时间戳；
+  - 缓存读出时也补；
+  - 前端按原文逐字对齐拼词（#167）。
+- **评论 / 歌曲详情兜底**（`lyricService`）：
+  - `counterpart(track)` 去网易云 → QQ 找同一录音，缓存 6 小时。
+  - `fetchComments`：本平台为空或失败才兜底；第 0 页定来源，翻页同源。
+  - `fetchSongDetail(track,{withCredits})`：本平台取不到用对方详情；`withCredits` 时缺制作人员再去别的平台补，上限 3 秒。
+  - 结果带 `source:{platform,sourceId,fallback}` / `creditsFrom`，前端用 `sourceLabel` 写「来自 X」。
+- **酷狗**：
+  - 手机端扫码登录（`kugouLogin.createQr/pollLogin`），票据带 `kg_client=mobile`。
+  - 我的歌单、歌单歌曲走手机端签名：参数按 key 排序后直接拼接，不加 &。
+  - `getAccount` 实际请求歌单接口核验，20017 = 票据失效。
+- **Spotify**：`SPOTIFY_CLIENT_ID` 默认用桌面客户端公开 ID，回调 `http://127.0.0.1:5588/login`；`fetchMe()` 区分 401 过期和暂时查不到。
+- 平台 × 功能完成度：`docs/project/PLATFORM_MATRIX.md`。每补一个缺口就改那张表。

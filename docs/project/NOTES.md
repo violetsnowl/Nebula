@@ -83,16 +83,29 @@
 
 ### QA 脚本的本机依赖（换机器必改）
 
-- `scripts/qa.cjs` 与 `scripts/desktop-play-smoke.mjs` 顶部硬编码了两处路径：Chrome 可执行文件、Codex runtime 的 `node_modules`（`playwright-core` / `pngjs`）。换机器或换 harness 需先改这两处，否则 QA 直接报错（与业务代码无关）。outputs 目录已于 2026-11 改为相对路径 `../nebula-outputs`（与 `vite.config.ts` 的 `outDir` 保持一致，改一处须同步另两处）。
+- `scripts/qa.cjs` 已改为经 `scripts/qa-env.cjs` 找依赖（后端整修 #B1）：可用环境变量 `NEBULA_QA_MODULES`（playwright-core / pngjs 所在的 node_modules）和 `NEBULA_CHROME`（Chrome 路径）覆盖，默认仍指向本机。`scripts/desktop-play-smoke.mjs` 是否同步未核对。outputs 目录已于 2026-11 改为相对路径 `../nebula-outputs`（与 `vite.config.ts` 的 `outDir` 保持一致，改一处须同步另两处）。
 
 ### 平台登录
 
 - QQ 扫码（ptlogin2）为实验性实现，可能随 QQ 风控变化失效。
 - QQ“我的歌单”必须走 musicu.fcg POST（music.musicasset.PlaylistBaseRead/GetPlaylistByUin，备用 UserSonglistService）；旧的 fcg_user_created_diss 登录态下已返回空列表。
 - QQ 退出登录需同时清空 `persist:qq-music-login` 分区（cookies+localstorage），否则官方登录窗口会残留旧账号自动登回。
-- Spotify 需要 `SPOTIFY_CLIENT_ID` 环境变量，未配置时登录按钮提示失败。
-- 酷狗登录：已完成（Electron 独立登录窗口 + 凭证捕获 + 分区 Cookie 清理）；四路取链 + VIP 探测已实现。
-- 汽水登录：已完成（签名引擎 + 扫码 + 凭证捕获；曾遇 2046 二次验证，现正常）。汽水**取链已放弃**（服务端按出口 IP 风控），歌单播放走网易云/QQ 兜底 + 多平台 VIP 路由。
+- Spotify（#165 起）：默认用 Spotify 桌面客户端的公开 Client ID（开源播放器 librespot 等都用它），不用注册；设了 `SPOTIFY_CLIENT_ID` 环境变量则用自己的。回调地址必须是 `http://127.0.0.1:5588/login`。**Spotify 在用户登录之后才检查回调地址**，不登录无法验证它接不接受。旧代码续期读的是那个从没配过的环境变量，登上一小时后必失效（#165 已修）。
+- 酷狗登录（#164 起）：改为手机端扫码。网页登录窗口拿到的是网页票据，「我的歌单」接口（`v7/get_all_list`，云歌单服务）只认手机端票据，网页票据一律返回 20017。旧代码把错误吞掉返回空列表，登录状态又只看本地有没有 Cookie，所以长期「已登录但歌单是空的」。签名排查口诀：签名错误返回 20006，签名对了但票据不认返回 20017。手机端签名是参数按 key 排序后直接拼接，**不加 &**；取链第四路 `fetchGateway` 的旧 `androidSign` 用了 &，大概率一直失败，没改。扫码成功后的路径要用户扫一次才能验证。
+- 汽水登录：已完成（签名引擎 + 扫码 + 凭证捕获；曾遇 2046 二次验证，现正常）。汽水取链曾因服务端按出口 IP 风控放弃，歌单播放走网易云 / QQ 兜底。新的可行路线（2026-11-17 调研，未做）：folia 用的 `qishui-music-api`（MIT）走车机协议，只给未加密的标准音质，需要单独抖音扫码授权。
+
+### 跨平台歌词与内容（2026-11-17，#163）
+
+- **两平台歌词时间轴不是固定偏移**：网易云和 QQ 是两套人工打的时间轴，同一句开头常差几百毫秒，而且每句差得不一样。原来的固定偏移对齐要求 95% 的行误差 ≤180ms，所以几乎全部失败：网易云来源的歌只有 15% 有逐字，补全也救不回来。现在固定偏移失败后再按正文逐行配对（`retimeByText`）。
+- **署名行写法五花八门**：「制作人: X」「音乐设计/监制: X」「Lyrics by：X」，以及没有冒号的「编曲정준일」。它们会拉低配对比例、虚增分母，正文行要把「短标签 + 冒号」的行排除。没有冒号的那种由前端在正文开始前过滤（#167）。
+- **QQ 登录过期时整库 QQ 歌停在「请重新登录」**，不兜底、不跳歌。这是按第二轮任务书故意这么做的；QQ 登录目前不会自动续期。
+- **QQ 歌词的罗马音只给部分行**：韩语歌只有约两成完整；QQ 自带的罗马音是「一个音节一段」的写法。后端补的是按词的写法，前端按原文逐字对齐拼回（#167）。
+
+### 真实数据测试的做法（2026-11-17）
+
+- 只用账号配置的副本（`%APPDATA%\music-nebula` 复制到草稿目录），绝不碰真实目录。脚本 `require('dist-main/index.cjs')` 后先 `setCookieDataDir(副本)`，并把 console 全部屏蔽，只输出统计数字，不打印 Cookie、票据或带签名的地址。
+- 全库统计跑得很快：1442 首歌词约 3.4 分钟（并发 3），没有遇到限流。这类脚本交给便宜的子代理就能完成。
+- 临时目录（`%TEMP%`）里的工作树或 node_modules 可能被系统清理掉一部分（缺 rollup、react 开发版文件）。构建报「找不到模块」时，先删 node_modules 重装。
 
 ## 待办 / 后续方向
 
@@ -107,6 +120,12 @@
 - [ ] 「液态玻璃」主题：已定为默认主题（`docs/design/NEBULA_UI_SYSTEM.md` §3，磨砂 / 液态为同一模型两组参数），随全局重构 P1 实施。
 - [ ] **全局 UI 重构（当前主线）**：真源 `docs/design/NEBULA_UI_SYSTEM.md` v1.0 已于 2026-11-09 冻结；按其 §13 分批实施（P0 清障 → P1 材质与环境 → P2 星云卡片 → P3 歌词字体 → P4 面板与 Dock），全局重构验收合格后回到 Player P2。GPT 母稿已归档（`docs/design/archive/`，非真源）。
 - [ ] `README.md` 目前是开发期版本；正式定稿与 CI/CD 流程留到收工阶段。
+- [ ] **平台功能缺口**（明细与优先级见 `docs/project/PLATFORM_MATRIX.md` 缺陷清单）：
+  - 逐字歌词源（AMLL TTML DB）、专辑页兜底、汽水取链（qishui-music-api）；
+  - 酷狗、汽水会员识别；QQ 登录自动续期；搜索接入汽水 / Spotify；
+  - 酷狗取链第四路签名；
+  - 新平台（波点 / YouTube Music / Apple Music）至少做到歌单来源。
+- [ ] **待用户实测**：酷狗扫码登录后能否读到歌单（#164）；Spotify 授权后能否读到歌单（#165）。
 
 > 已废弃（不再排期）：Z1 大字号左→右长句「提前检测 + 提前入场」方案（旧第 9/10 点，2026-08-19 用户确认不需要，详见 `docs/design/LYRICS_SYSTEM.md` §8）。
 
