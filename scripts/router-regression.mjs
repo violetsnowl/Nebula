@@ -57,6 +57,16 @@ await test('只尝试可供流平台，赢家取消其他兜底请求',async()=>
  a.kugou.searchSongs=async()=>[{...song,platform:'kugou'}];a.kugou.fetchSongUrl=async()=>({url:'https://test/kg'});
  a.spotify.searchSongs=async()=>{throw Error('不应调用 Spotify')};const r=await make(a).resolve(song);assert.equal(r.platform,'kugou');assert.equal(signal.aborted,true);
 });
+await test('主源只有试听时优先安全匹配的完整兜底',async()=>{
+ const a=adapters();a.qq.fetchSongUrl=async()=>({url:'https://test/trial',trial:true,trialEndTime:30000});
+ a.netease.searchSongs=async()=>[{...song,platform:'netease'}];a.netease.fetchSongUrl=async()=>({url:'https://test/full',quality:'exhigh'});
+ const r=await make(a).resolve(song);assert.equal(r.fallback,true);assert.equal(r.platform,'netease');assert.ok(!r.trial);assert.equal(r.quality,'exhigh');
+});
+await test('仅剩试听保留试听标记，权益不足不能报成完整音源',async()=>{
+ const a=adapters();a.qq.fetchSongUrl=async()=>({url:'https://test/trial',trial:true,trialEndTime:30000});
+ const r=await make(a).resolve(song);assert.equal(r.code,'TRIAL_ONLY');assert.equal(r.trialEndTime,30000);
+ a.qq.fetchSongUrl=async()=>({url:'',playable:false,code:'RIGHTS_OR_UNAVAILABLE'});const failed=await make(a).resolve(song);assert.equal(failed.playable,false);assert.match(failed.error,/权限或版权/);
+});
 await test('会员刷新在后台，不阻塞路由，并排除无供流平台',async()=>{
  const p=createFallbackPriorityProvider(Object.fromEntries(['qq','netease','kugou','spotify'].map(k=>[k,{getAccount:()=>new Promise(()=>{})}])));
  const at=Date.now(),order=await p();assert.ok(Date.now()-at<30);assert.equal(order.length,3);assert.ok(!order.some(t=>t.platform==='spotify'));p.invalidate();

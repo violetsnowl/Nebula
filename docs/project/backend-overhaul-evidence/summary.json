@@ -1,0 +1,717 @@
+{
+  "definitions": {
+    "word": "至少一行逐字正文与歌词正文在250ms内相同；原版也用相同测量器重算，不是原版UI观测值",
+    "translation": "翻译字段行数达到全部合并行的50%；接口返回覆盖，不是人工译文质量或音频对齐评分",
+    "time": "取得通过音频签名探测的地址，不是声卡出声；分位数使用nearest-rank"
+  },
+  "sets": {
+    "public": {
+      "before": {
+        "n": 100,
+        "playable": 7,
+        "direct": 7,
+        "fallback": 0,
+        "directP50": 2276,
+        "directP95": 6620,
+        "fallbackP95": null,
+        "failedP50": 9284,
+        "failedP95": 19117,
+        "maxMs": 22247,
+        "wordUsable": 0,
+        "wordRaw": 16,
+        "foreign": 75,
+        "translation": 73
+      },
+      "after": {
+        "n": 100,
+        "playable": 6,
+        "direct": 5,
+        "fallback": 1,
+        "directP50": 1743,
+        "directP95": 2153,
+        "fallbackP95": 5001,
+        "failedP50": 3911,
+        "failedP95": 5020,
+        "maxMs": 5326,
+        "wordUsable": 19,
+        "wordRaw": 19,
+        "foreign": 75,
+        "translation": 72
+      },
+      "byPlatform": {
+        "netease": {
+          "before": {
+            "n": 100,
+            "playable": 7,
+            "direct": 7,
+            "fallback": 0,
+            "directP50": 2276,
+            "directP95": 6620,
+            "fallbackP95": null,
+            "failedP50": 9284,
+            "failedP95": 19117,
+            "maxMs": 22247,
+            "wordUsable": 0,
+            "wordRaw": 16,
+            "foreign": 75,
+            "translation": 73
+          },
+          "after": {
+            "n": 100,
+            "playable": 6,
+            "direct": 5,
+            "fallback": 1,
+            "directP50": 1743,
+            "directP95": 2153,
+            "fallbackP95": 5001,
+            "failedP50": 3911,
+            "failedP95": 5020,
+            "maxMs": 5326,
+            "wordUsable": 19,
+            "wordRaw": 19,
+            "foreign": 75,
+            "translation": 72
+          }
+        }
+      },
+      "byLanguage": {
+        "zh": {
+          "before": {
+            "n": 25,
+            "playable": 7,
+            "direct": 7,
+            "fallback": 0,
+            "directP50": 2276,
+            "directP95": 6620,
+            "fallbackP95": null,
+            "failedP50": 8595,
+            "failedP95": 18037,
+            "maxMs": 18037,
+            "wordUsable": 0,
+            "wordRaw": 4,
+            "foreign": 0,
+            "translation": 0
+          },
+          "after": {
+            "n": 25,
+            "playable": 6,
+            "direct": 5,
+            "fallback": 1,
+            "directP50": 1743,
+            "directP95": 2153,
+            "fallbackP95": 5001,
+            "failedP50": 3944,
+            "failedP95": 5276,
+            "maxMs": 5276,
+            "wordUsable": 5,
+            "wordRaw": 5,
+            "foreign": 0,
+            "translation": 0
+          }
+        },
+        "ja": {
+          "before": {
+            "n": 25,
+            "playable": 0,
+            "direct": 0,
+            "fallback": 0,
+            "directP50": null,
+            "directP95": null,
+            "fallbackP95": null,
+            "failedP50": 9284,
+            "failedP95": 17424,
+            "maxMs": 19656,
+            "wordUsable": 0,
+            "wordRaw": 0,
+            "foreign": 25,
+            "translation": 23
+          },
+          "after": {
+            "n": 25,
+            "playable": 0,
+            "direct": 0,
+            "fallback": 0,
+            "directP50": null,
+            "directP95": null,
+            "fallbackP95": null,
+            "failedP50": 3753,
+            "failedP95": 4596,
+            "maxMs": 5020,
+            "wordUsable": 2,
+            "wordRaw": 2,
+            "foreign": 25,
+            "translation": 23
+          }
+        },
+        "en": {
+          "before": {
+            "n": 25,
+            "playable": 0,
+            "direct": 0,
+            "fallback": 0,
+            "directP50": null,
+            "directP95": null,
+            "fallbackP95": null,
+            "failedP50": 10134,
+            "failedP95": 22147,
+            "maxMs": 22247,
+            "wordUsable": 0,
+            "wordRaw": 12,
+            "foreign": 25,
+            "translation": 25
+          },
+          "after": {
+            "n": 25,
+            "playable": 0,
+            "direct": 0,
+            "fallback": 0,
+            "directP50": null,
+            "directP95": null,
+            "fallbackP95": null,
+            "failedP50": 3915,
+            "failedP95": 4701,
+            "maxMs": 5326,
+            "wordUsable": 12,
+            "wordRaw": 12,
+            "foreign": 25,
+            "translation": 24
+          }
+        },
+        "ko": {
+          "before": {
+            "n": 25,
+            "playable": 0,
+            "direct": 0,
+            "fallback": 0,
+            "directP50": null,
+            "directP95": null,
+            "fallbackP95": null,
+            "failedP50": 8667,
+            "failedP95": 17314,
+            "maxMs": 18178,
+            "wordUsable": 0,
+            "wordRaw": 0,
+            "foreign": 25,
+            "translation": 25
+          },
+          "after": {
+            "n": 25,
+            "playable": 0,
+            "direct": 0,
+            "fallback": 0,
+            "directP50": null,
+            "directP95": null,
+            "fallbackP95": null,
+            "failedP50": 3910,
+            "failedP95": 4865,
+            "maxMs": 5093,
+            "wordUsable": 0,
+            "wordRaw": 0,
+            "foreign": 25,
+            "translation": 25
+          }
+        }
+      }
+    },
+    "challenge": {
+      "before": {
+        "n": 108,
+        "playable": 3,
+        "direct": 3,
+        "fallback": 0,
+        "directP50": 2237,
+        "directP95": 2639,
+        "fallbackP95": null,
+        "failedP50": 7590,
+        "failedP95": 18393,
+        "maxMs": 23264,
+        "wordUsable": 2,
+        "wordRaw": 19,
+        "foreign": 76,
+        "translation": 30
+      },
+      "after": {
+        "n": 108,
+        "playable": 3,
+        "direct": 3,
+        "fallback": 0,
+        "directP50": 2236,
+        "directP95": 2272,
+        "fallbackP95": null,
+        "failedP50": 3810,
+        "failedP95": 4884,
+        "maxMs": 6007,
+        "wordUsable": 71,
+        "wordRaw": 73,
+        "foreign": 76,
+        "translation": 66
+      },
+      "byPlatform": {
+        "netease": {
+          "before": {
+            "n": 48,
+            "playable": 3,
+            "direct": 3,
+            "fallback": 0,
+            "directP50": 2237,
+            "directP95": 2639,
+            "fallbackP95": null,
+            "failedP50": 9113,
+            "failedP95": 20040,
+            "maxMs": 23264,
+            "wordUsable": 2,
+            "wordRaw": 19,
+            "foreign": 33,
+            "translation": 30
+          },
+          "after": {
+            "n": 48,
+            "playable": 3,
+            "direct": 3,
+            "fallback": 0,
+            "directP50": 2236,
+            "directP95": 2272,
+            "fallbackP95": null,
+            "failedP50": 3917,
+            "failedP95": 5191,
+            "maxMs": 5477,
+            "wordUsable": 17,
+            "wordRaw": 19,
+            "foreign": 33,
+            "translation": 30
+          }
+        },
+        "qq": {
+          "before": {
+            "n": 36,
+            "playable": 0,
+            "direct": 0,
+            "fallback": 0,
+            "directP50": null,
+            "directP95": null,
+            "fallbackP95": null,
+            "failedP50": 4971,
+            "failedP95": 15174,
+            "maxMs": 16419,
+            "wordUsable": 0,
+            "wordRaw": 0,
+            "foreign": 27,
+            "translation": 0
+          },
+          "after": {
+            "n": 36,
+            "playable": 0,
+            "direct": 0,
+            "fallback": 0,
+            "directP50": null,
+            "directP95": null,
+            "fallbackP95": null,
+            "failedP50": 2640,
+            "failedP95": 4940,
+            "maxMs": 6007,
+            "wordUsable": 31,
+            "wordRaw": 31,
+            "foreign": 27,
+            "translation": 22
+          }
+        },
+        "kugou": {
+          "before": {
+            "n": 24,
+            "playable": 0,
+            "direct": 0,
+            "fallback": 0,
+            "directP50": null,
+            "directP95": null,
+            "fallbackP95": null,
+            "failedP50": 4675,
+            "failedP95": 12606,
+            "maxMs": 16263,
+            "wordUsable": 0,
+            "wordRaw": 0,
+            "foreign": 16,
+            "translation": 0
+          },
+          "after": {
+            "n": 24,
+            "playable": 0,
+            "direct": 0,
+            "fallback": 0,
+            "directP50": null,
+            "directP95": null,
+            "fallbackP95": null,
+            "failedP50": 3172,
+            "failedP95": 3931,
+            "maxMs": 3933,
+            "wordUsable": 23,
+            "wordRaw": 23,
+            "foreign": 16,
+            "translation": 14
+          }
+        }
+      },
+      "byLanguage": {
+        "zh": {
+          "before": {
+            "n": 25,
+            "playable": 2,
+            "direct": 2,
+            "fallback": 0,
+            "directP50": 2237,
+            "directP95": 2639,
+            "fallbackP95": null,
+            "failedP50": 5511,
+            "failedP95": 19501,
+            "maxMs": 23264,
+            "wordUsable": 0,
+            "wordRaw": 1,
+            "foreign": 0,
+            "translation": 0
+          },
+          "after": {
+            "n": 25,
+            "playable": 2,
+            "direct": 2,
+            "fallback": 0,
+            "directP50": 2236,
+            "directP95": 2272,
+            "fallbackP95": null,
+            "failedP50": 3906,
+            "failedP95": 3933,
+            "maxMs": 5444,
+            "wordUsable": 16,
+            "wordRaw": 16,
+            "foreign": 0,
+            "translation": 0
+          }
+        },
+        "instrumental": {
+          "before": {
+            "n": 6,
+            "playable": 1,
+            "direct": 1,
+            "fallback": 0,
+            "directP50": 2056,
+            "directP95": 2056,
+            "fallbackP95": null,
+            "failedP50": 8464,
+            "failedP95": 9113,
+            "maxMs": 9113,
+            "wordUsable": 0,
+            "wordRaw": 0,
+            "foreign": 0,
+            "translation": 0
+          },
+          "after": {
+            "n": 6,
+            "playable": 1,
+            "direct": 1,
+            "fallback": 0,
+            "directP50": 2054,
+            "directP95": 2054,
+            "fallbackP95": null,
+            "failedP50": 3916,
+            "failedP95": 4605,
+            "maxMs": 4605,
+            "wordUsable": 2,
+            "wordRaw": 2,
+            "foreign": 0,
+            "translation": 0
+          }
+        },
+        "ja": {
+          "before": {
+            "n": 25,
+            "playable": 0,
+            "direct": 0,
+            "fallback": 0,
+            "directP50": null,
+            "directP95": null,
+            "fallbackP95": null,
+            "failedP50": 7605,
+            "failedP95": 15522,
+            "maxMs": 18393,
+            "wordUsable": 1,
+            "wordRaw": 6,
+            "foreign": 25,
+            "translation": 12
+          },
+          "after": {
+            "n": 25,
+            "playable": 0,
+            "direct": 0,
+            "fallback": 0,
+            "directP50": null,
+            "directP95": null,
+            "fallbackP95": null,
+            "failedP50": 3918,
+            "failedP95": 5191,
+            "maxMs": 6007,
+            "wordUsable": 13,
+            "wordRaw": 13,
+            "foreign": 25,
+            "translation": 20
+          }
+        },
+        "en": {
+          "before": {
+            "n": 43,
+            "playable": 0,
+            "direct": 0,
+            "fallback": 0,
+            "directP50": null,
+            "directP95": null,
+            "fallbackP95": null,
+            "failedP50": 8634,
+            "failedP95": 19725,
+            "maxMs": 20220,
+            "wordUsable": 1,
+            "wordRaw": 12,
+            "foreign": 43,
+            "translation": 18
+          },
+          "after": {
+            "n": 43,
+            "playable": 0,
+            "direct": 0,
+            "fallback": 0,
+            "directP50": null,
+            "directP95": null,
+            "fallbackP95": null,
+            "failedP50": 3695,
+            "failedP95": 4816,
+            "maxMs": 5477,
+            "wordUsable": 33,
+            "wordRaw": 35,
+            "foreign": 43,
+            "translation": 39
+          }
+        },
+        "ko": {
+          "before": {
+            "n": 8,
+            "playable": 0,
+            "direct": 0,
+            "fallback": 0,
+            "directP50": null,
+            "directP95": null,
+            "fallbackP95": null,
+            "failedP50": 4675,
+            "failedP95": 10522,
+            "maxMs": 10522,
+            "wordUsable": 0,
+            "wordRaw": 0,
+            "foreign": 8,
+            "translation": 0
+          },
+          "after": {
+            "n": 8,
+            "playable": 0,
+            "direct": 0,
+            "fallback": 0,
+            "directP50": null,
+            "directP95": null,
+            "fallbackP95": null,
+            "failedP50": 2975,
+            "failedP95": 3834,
+            "maxMs": 3834,
+            "wordUsable": 7,
+            "wordRaw": 7,
+            "foreign": 8,
+            "translation": 7
+          }
+        },
+        "mixed": {
+          "before": {
+            "n": 1,
+            "playable": 0,
+            "direct": 0,
+            "fallback": 0,
+            "directP50": null,
+            "directP95": null,
+            "fallbackP95": null,
+            "failedP50": 9131,
+            "failedP95": 9131,
+            "maxMs": 9131,
+            "wordUsable": 0,
+            "wordRaw": 0,
+            "foreign": 0,
+            "translation": 0
+          },
+          "after": {
+            "n": 1,
+            "playable": 0,
+            "direct": 0,
+            "fallback": 0,
+            "directP50": null,
+            "directP95": null,
+            "fallbackP95": null,
+            "failedP50": 3915,
+            "failedP95": 3915,
+            "maxMs": 3915,
+            "wordUsable": 0,
+            "wordRaw": 0,
+            "foreign": 0,
+            "translation": 0
+          }
+        }
+      }
+    },
+    "unavailable": {
+      "before": {
+        "n": 1,
+        "playable": 0,
+        "direct": 0,
+        "fallback": 0,
+        "directP50": null,
+        "directP95": null,
+        "fallbackP95": null,
+        "failedP50": 13506,
+        "failedP95": 13506,
+        "maxMs": 13506,
+        "wordUsable": 0,
+        "wordRaw": 0,
+        "foreign": 0,
+        "translation": 0
+      },
+      "after": {
+        "n": 1,
+        "playable": 0,
+        "direct": 0,
+        "fallback": 0,
+        "directP50": null,
+        "directP95": null,
+        "fallbackP95": null,
+        "failedP50": 3911,
+        "failedP95": 3911,
+        "maxMs": 3911,
+        "wordUsable": 0,
+        "wordRaw": 0,
+        "foreign": 0,
+        "translation": 0
+      },
+      "byPlatform": {
+        "netease": {
+          "before": {
+            "n": 1,
+            "playable": 0,
+            "direct": 0,
+            "fallback": 0,
+            "directP50": null,
+            "directP95": null,
+            "fallbackP95": null,
+            "failedP50": 13506,
+            "failedP95": 13506,
+            "maxMs": 13506,
+            "wordUsable": 0,
+            "wordRaw": 0,
+            "foreign": 0,
+            "translation": 0
+          },
+          "after": {
+            "n": 1,
+            "playable": 0,
+            "direct": 0,
+            "fallback": 0,
+            "directP50": null,
+            "directP95": null,
+            "fallbackP95": null,
+            "failedP50": 3911,
+            "failedP95": 3911,
+            "maxMs": 3911,
+            "wordUsable": 0,
+            "wordRaw": 0,
+            "foreign": 0,
+            "translation": 0
+          }
+        }
+      },
+      "byLanguage": {
+        "zh": {
+          "before": {
+            "n": 1,
+            "playable": 0,
+            "direct": 0,
+            "fallback": 0,
+            "directP50": null,
+            "directP95": null,
+            "fallbackP95": null,
+            "failedP50": 13506,
+            "failedP95": 13506,
+            "maxMs": 13506,
+            "wordUsable": 0,
+            "wordRaw": 0,
+            "foreign": 0,
+            "translation": 0
+          },
+          "after": {
+            "n": 1,
+            "playable": 0,
+            "direct": 0,
+            "fallback": 0,
+            "directP50": null,
+            "directP95": null,
+            "fallbackP95": null,
+            "failedP50": 3911,
+            "failedP95": 3911,
+            "maxMs": 3911,
+            "wordUsable": 0,
+            "wordRaw": 0,
+            "foreign": 0,
+            "translation": 0
+          }
+        }
+      }
+    }
+  },
+  "sampleRecords": 209,
+  "uniqueIds": 202,
+  "coversbefore": {
+    "n": 108,
+    "verified": 29,
+    "large": 0,
+    "largest": {
+      "index": 1,
+      "id": "qq:004Z8Ihr0JIu5s",
+      "platform": "qq",
+      "verified": true,
+      "width": 500,
+      "height": 500
+    }
+  },
+  "coversafter": {
+    "n": 108,
+    "verified": 29,
+    "large": 26,
+    "largest": {
+      "index": 57,
+      "id": "qq:0021b5Px16dwpH",
+      "platform": "qq",
+      "verified": true,
+      "width": 3000,
+      "height": 3000
+    }
+  },
+  "frames": {
+    "baseline": {
+      "frameP50": 6.099999999999454,
+      "frameP95": 6.200000000000273,
+      "frameMax": 66.5,
+      "clickP50": 11.100000023841858,
+      "clickP95": 14.599999964237213,
+      "longTasks": 0,
+      "gapP50": 403.7,
+      "gapP95": 418.1
+    },
+    "after": {
+      "frameP50": 6.099999999999454,
+      "frameP95": 6.199999999999818,
+      "frameMax": 6.400000000000091,
+      "clickP50": 11,
+      "clickP95": 14.5,
+      "longTasks": 0,
+      "gapP50": 0.2,
+      "gapP95": 0.3
+    }
+  }
+}

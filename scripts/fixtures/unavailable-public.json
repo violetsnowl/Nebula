@@ -1,0 +1,29 @@
+[
+  {
+    "id": "netease:186016",
+    "title": "晴天",
+    "artist": "周杰伦",
+    "artists": [
+      "周杰伦"
+    ],
+    "album": "叶惠美",
+    "cover": "https://p3.music.126.net/ZGffiDQZrGj5s_hnR1CNbg==/109951165566379710.jpg?param=500y500",
+    "coverInfo": {
+      "url": "https://p3.music.126.net/ZGffiDQZrGj5s_hnR1CNbg==/109951165566379710.jpg",
+      "verified": false
+    },
+    "duration": 269,
+    "platform": "netease",
+    "sourceId": "186016",
+    "originalUrl": "",
+    "fallbackUrl": "",
+    "language": "zh",
+    "rightsHint": {
+      "fee": 0,
+      "noCopyrightRcmd": null,
+      "st": -100,
+      "pl": 0,
+      "dl": 0
+    }
+  }
+]

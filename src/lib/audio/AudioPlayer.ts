@@ -662,8 +662,8 @@ class AudioPlayer {
       if (!resolved?.audio) { this.skipAfterFail(); return; }
       // 换歌单会重映射曲库下标；异步结果不能把旧下标写回。
       this.acceptResolved({ ...resolved, id: this.state.song?.id ?? resolved.id }, generation, this.pendingSeek);
-    }).catch(() => {
-      if (generation === this.generation && !request.signal.aborted) this.skipAfterFail();
+    }).catch((error:unknown) => {
+      if (generation === this.generation && !request.signal.aborted) this.skipAfterFail(error instanceof Error ? error.message : undefined);
     });
   }
 
@@ -811,18 +811,18 @@ class AudioPlayer {
     this.resolveTrack(track, 'error', true);
   };
 
-  private skipAfterFail(): void {
+  private skipAfterFail(reason?:string): void {
     const continueQueue = this.wantsPlay;
     this.cancelLoad();
     const generation = this.generation;
     this.state.failed = true;
     this.state.loading = false;
     this.state.playing = false;
-    this.state.error = '未获取到可播音源';
+    this.state.error = reason || '未获取到可播音源';
     this.failStreak++;
     this.consecutiveSkips++;
     if (this.consecutiveSkips >= 6 || this.failStreak >= Math.max(1, this.queue.length)) {
-      this.state.error = `连续 ${this.failStreak} 首播放失败，已停止自动跳歌`;
+      this.state.error = reason || `连续 ${this.failStreak} 首播放失败，已停止自动跳歌`;
       this.emit();
       return;
     }

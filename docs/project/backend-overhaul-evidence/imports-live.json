@@ -1,0 +1,37 @@
+[
+  {
+    "platform": "netease",
+    "id": "3778678",
+    "ok": true,
+    "tracks": 200,
+    "ms": 3688
+  },
+  {
+    "platform": "kugou",
+    "id": "3756318",
+    "ok": false,
+    "reason": "公开接口未返回歌单",
+    "ms": 446
+  },
+  {
+    "platform": "spotify",
+    "id": "37i9dQZF1DXcBWIGoYBM5",
+    "ok": false,
+    "reason": "未提供 OAuth 授权",
+    "ms": 820
+  },
+  {
+    "platform": "qishui",
+    "id": "1",
+    "ok": false,
+    "reason": "需要登录",
+    "ms": 0
+  },
+  {
+    "platform": "qq",
+    "id": "7707261125",
+    "ok": true,
+    "tracks": 66,
+    "ms": 2029
+  }
+]

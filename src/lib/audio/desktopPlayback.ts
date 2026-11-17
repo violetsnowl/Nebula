@@ -17,7 +17,8 @@ async function resolveDesktop(track: DesktopTrack, quality?: string, signal?: Ab
 export async function resolveTrackForPlay(track: Track, _reason: 'empty' | 'error', context?: ResolveContext): Promise<Track | null> {
   if (!hasDesktopAPI() || context?.signal.aborted) return null;
   const res = await resolveDesktop(toBackendTrack(track), preferredQuality() || undefined, context?.signal, !!context?.forceRefresh);
-  if (context?.signal.aborted || !res.ok || !res.data?.url || res.data.playable === false) return null;
+  if (context?.signal.aborted) return null;
+  if (!res.ok || !res.data?.url || res.data.playable === false) throw new Error(res.ok ? res.data?.error || '未获取到可播音源' : '播放服务暂时不可用');
   return toFrontendTrack({ ...toBackendTrack(track), originalUrl: res.data.url }, track.id, {
     trial: res.data.trial, trialEndTime: res.data.trialEndTime, quality: res.data.quality,
     via: viaOf(res.data), resolvedAt: res.data.resolvedAt, expiresAt: res.data.expiresAt,

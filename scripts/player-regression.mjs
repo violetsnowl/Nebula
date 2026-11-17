@@ -121,6 +121,23 @@ test('插队后废弃旧预取，按 FIFO 播放新下一首', async p => {
   const old=p.warm.el;p.insertNext(track(3));await tick();assert.equal(old.getAttribute('src'),null);
   p.el.finish();await tick();assert.equal(p.state.song.id,3);
 });
+test('一秒内连续五次下一首只接纳最终队列项',async p=>{
+ const ds=Array.from({length:6},defer),songs=ds.map((_,i)=>track(i));p.emptyResolver=t=>ds[t.id].promise;
+ p.playSong(songs[0],songs);for(let i=0;i<5;i++)p.next();for(let i=5;i>=0;i--){ds[i].resolve(resolved(songs[i]));await tick();}
+ assert.equal(p.state.song.id,5);assert.match(p.el.src,/5\.mp3/);
+});
+test('取链途中再次点同一首不会接纳前一次迟到结果',async p=>{
+ const first=defer(),second=defer();let calls=0;p.emptyResolver=()=>++calls===1?first.promise:second.promise;
+ p.playSong(track(1),[track(1)]);await tick();p.playSong(track(1),[track(1)]);await tick();
+ second.resolve({...resolved(track(1)),audio:'https://audio.test/new.mp3'});await tick();first.resolve({...resolved(track(1)),audio:'https://audio.test/old.mp3'});await tick();assert.match(p.el.src,/new\.mp3/);
+});
+test('试听片段结束明确停止且不伪装完整播放',async p=>{
+ const t={...track(1,'https://audio.test/trial.mp3'),trial:true,trialEndTime:30000};p.playSong(t,[t]);p.el.currentTime=31;p.el.dispatchEvent(new Event('timeupdate'));
+ assert.equal(p.state.playing,false);assert.equal(p.el.paused,true);assert.match(p.state.error,/试听/);assert.equal(p.state.song.id,1);
+});
+test('主平台登录原因能到达现有错误栏而不丢失失败出口',async p=>{
+ p.emptyResolver=async()=>{throw new Error('当前平台需要登录，其他平台也未找到可用音源')};p.playSong(track(1),[track(1)]);await tick();assert.equal(p.state.failed,true);assert.equal(p.state.loading,false);assert.match(p.state.error,/需要登录/);
+});
 let failed=0;
 for (const c of cases) { const p=make(); try { await c.run(p); console.log(`通过 ${c.name}`); } catch(e) { failed++; console.log(`失败 ${c.name}: ${e.message}`); } finally { p.stop(); } }
 audioPlayer.stop();

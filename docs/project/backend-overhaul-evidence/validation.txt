@@ -1,0 +1,25 @@
+Music Nebula 后端整修最终验证摘要
+日期：2026-11-17
+分支：backend/playback-overhaul
+主线基线：c0e44244381cae2610f79a976f999619889ad445
+构建：TypeScript noEmit 与 Vite 通过
+后端检查：210 项通过；以下为执行日志摘录。
+后端冒烟测试全部通过 ✔
+播放回归 18/18
+路由与代理回归 19/19
+严格录音匹配 116/116
+{"baselineFalseAccept":98,"negativeCases":98,"baselineAccepted":113,"afterFalseAccept":0,"afterTrueAccept":18}
+QQ 批量文件、登录 comm、实际档位、向下降级、匿名错误 5/5
+歌词回归 13/13
+封面与隐私回归 5/5
+五平台导入契约 8/8
+[check-arch] 通过 ✔
+[QA] 控制台错误数: 0
+[QA] 全部通过 ✔
+真实 Chrome 最终回归：通过；数据见 media.json。
+原生 Electron 43.3.0 最终回归：通过；数据见 electron.json。
+31 分钟真实暂停：通过；数据见 long-pause.json。
+原任务书 SHA256：99E9FBFEB6EF3CBCD28034555E151245ADA5631866896C7612BF8BB6623B3085，与用户原文件一致。
+范围扫描：未改 CSS、舞台/听音空间组件、docs/meta、docs/design 或 AGENTS.md。
+交付 JSON：语法、敏感键值与 URL 扫描通过；仅公开 ID、计数和阶段耗时。
+上述自动检查不替代真实账号、国内网络和声卡验收，未达标项见报告。
