@@ -20,7 +20,6 @@ const {
   QishuiLogin,
   QqRightsService,
   qqSession,
-  createKugouLoginAdapter,
   createQishuiLoginAdapter,
   AudioProxy,
   LyricCache,
@@ -578,7 +577,7 @@ app.whenReady().then(async () => {
   const login = new NeteaseLogin(http, cookies);
   const qqRights = new QqRightsService(http);
   const qqLogin = new QqLogin(http, cookies, qqRights);
-  const kugouLogin = new KugouLogin(cookies);
+  const kugouLogin = new KugouLogin(cookies, http);
   const qishuiLogin = new QishuiLogin(cookies, { BrowserWindow, session });
 
   // 启动探活：已存 cookie 自动校验登录态，失败仅标记未登录，不抛异常
@@ -602,7 +601,15 @@ app.whenReady().then(async () => {
       getAccount: () => qqLogin.getAccount(),
       getMyPlaylists: () => qqLogin.getMyPlaylists(),
     },
-    kugou: createKugouLoginAdapter({ getAccount: () => kugouLogin.getAccount(), getMyPlaylists: () => adapters.kugou.fetchMyPlaylists() }),
+    kugou: {
+      platform: 'kugou',
+      name: '酷狗音乐',
+      kind: 'qr',
+      createQr: () => kugouLogin.createQr(),
+      pollLogin: (unikey) => kugouLogin.pollLogin(unikey),
+      getAccount: () => kugouLogin.getAccount(),
+      getMyPlaylists: () => adapters.kugou.fetchMyPlaylists(),
+    },
     qishui: createQishuiLoginAdapter({ getAccount: () => qishuiLogin.getAccount(), getMyPlaylists: () => adapters.qishui.fetchMyPlaylists() }),
     spotify: {
       platform: 'spotify',

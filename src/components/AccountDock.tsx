@@ -460,93 +460,81 @@ function SpotifyLogin({ onSuccess }: { onSuccess: () => void }) {
   );
 }
 
-/** 酷狗音乐：官方登录页（BrowserWindow）。 */
+/** 酷狗音乐：手机端扫码登录（用酷狗音乐 App 扫码）。 */
 function KugouLogin({ onSuccess }: { onSuccess: () => void }) {
-  const [busy, setBusy] = useState(false);
+  const [qr, setQr] = useState<string | null>(null);
   const [status, setStatus] = useState('');
-  const [cookieMode, setCookieMode] = useState(false);
-  const [cookieText, setCookieText] = useState('');
+  const unikeyRef = useRef<string | null>(null);
+  const pollRef = useRef<number | null>(null);
+  const failRef = useRef(0);
 
-  const openWindow = useCallback(async () => {
-    if (!window.nebulaAPI) return;
-    setBusy(true);
-    setStatus('已打开官方登录页，请在窗口内登录酷狗账号…');
-    try {
-      const r = await window.nebulaAPI.kugouLoginWindow();
-      const data = r.ok ? r.data : null;
-      if (data?.ok) {
-        setStatus(data.message ?? '登录成功');
-        onSuccess();
-      } else {
-        setStatus(data?.error ?? '登录窗口已关闭');
-      }
-    } finally {
-      setBusy(false);
+  const stopPoll = useCallback(() => {
+    if (pollRef.current !== null) {
+      window.clearInterval(pollRef.current);
+      pollRef.current = null;
     }
-  }, [onSuccess]);
+  }, []);
 
-  const importCookie = useCallback(async () => {
+  const start = useCallback(async () => {
     if (!window.nebulaAPI) return;
-    setBusy(true);
-    try {
-      console.log('[KugouLogin] importCookie raw.length=' + cookieText.trim().length + ' includes=:' + cookieText.includes('='));
-      let raw = cookieText.trim();
-      // 支持多行 name=value 格式（每行一个 cookie）
-      if (raw.includes('\n') && !raw.includes(';')) {
-        raw = raw.split('\n').filter(l => l.includes('=')).join('; ');
-      }
-      // 如果不包含任何 = ，无法解析
-      if (!raw.includes('=')) {
-        setStatus('格式不对。请在 F12 → Network → 任意 kugou 请求 → Headers → Cookie 复制完整值（如 kg_mid=xxx; token=yyy）');
-        setBusy(false);
+    stopPoll();
+    setQr(null);
+    setStatus('正在生成二维码…');
+    const res = await window.nebulaAPI.loginQrFor('kugou');
+    if (!res.ok) {
+      setStatus(`获取二维码失败：${res.error}`);
+      return;
+    }
+    unikeyRef.current = res.data.unikey;
+    if (res.data.imageDataUrl) {
+      setQr(res.data.imageDataUrl);
+    } else {
+      try {
+        setQr(await QRCode.toDataURL(res.data.payload, { width: 296, margin: 1 }));
+      } catch {
+        setStatus('二维码生成失败，请刷新重试');
         return;
       }
-      const r = await window.nebulaAPI.setCookie('kugou', raw);
-      if (!r.ok) {
-        setStatus(`Cookie 无效：${r.error}`);
-        return;
-      }
-      setCookieText('');
-      onSuccess();
-    } catch (err) {
-      setStatus(`导入失败：${err instanceof Error ? err.message : err}`);
-    } finally {
-      setBusy(false);
     }
-  }, [onSuccess, cookieText]);
+    setStatus('用酷狗音乐 App 扫码登录');
+    failRef.current = 0;
+    pollRef.current = window.setInterval(async () => {
+      if (!unikeyRef.current) return;
+      try {
+        const r = await window.nebulaAPI!.loginPollFor('kugou', unikeyRef.current);
+        if (!r.ok) {
+          failRef.current++;
+          if (failRef.current >= 3) {
+            setStatus(`轮询失败：${r.error}，请刷新二维码`);
+            stopPoll();
+          } else {
+            setStatus(`连接波动，自动重试（${failRef.current}/3）`);
+          }
+          return;
+        }
+        failRef.current = 0;
+        if (r.data.ok) {
+          stopPoll();
+          setStatus(r.data.message);
+          onSuccess();
+        } else {
+          setStatus(r.data.message);
+        }
+      } catch {
+        /* ignore */
+      }
+    }, 3000);
+  }, [onSuccess, stopPoll]);
+
+  useEffect(() => stopPoll, [stopPoll]);
 
   return (
     <div className="rp-flow">
-      {!cookieMode ? (
-        <>
-          <button type="button" className="btn primary full" disabled={busy} onClick={openWindow}>
-            {busy ? '等待确认…' : '打开酷狗登录页'}
-          </button>
-          <button type="button" className="btn text" onClick={() => setCookieMode(true)}>
-            粘贴 Cookie 登录
-          </button>
-        </>
-      ) : (
-        <>
-          <textarea
-            className="rp-cookie-input"
-            placeholder="粘贴酷狗 Cookie（F12 → Network → 任意请求 → Cookie 头）"
-            rows={3}
-            value={cookieText}
-            onChange={(e) => setCookieText(e.target.value)}
-            spellCheck={false}
-          />
-          <div className="rp-flow-actions">
-            <button type="button" className="btn sec" disabled={busy || !cookieText.trim()} onClick={importCookie}>
-              确认导入
-            </button>
-            <button type="button" className="btn text" onClick={() => setCookieMode(false)}>
-              返回
-            </button>
-          </div>
-        </>
-      )}
-      {status && <div className="rp-flow-status">{status}</div>}
+      {qr ? <img className="rp-qr" src={qr} alt="酷狗登录二维码" /> : <div className="rp-qr is-empty" />}
+      <div className="rp-flow-status">{status || '未登录酷狗音乐'}</div>
+      <button type="button" className="btn primary full" onClick={start}>
+        {qr ? '刷新二维码' : '开始扫码登录'}
+      </button>
     </div>
   );
 }
@@ -619,7 +607,7 @@ function PlatformLogin({
 const LOGIN_HOW: Record<string, string> = {
   netease: '用网易云音乐 App 扫码登录',
   qq: '在官方登录页用手机 QQ 扫码，登录后自动回到这里',
-  kugou: '在官方登录页扫码或输入账号，登录后自动回到这里',
+  kugou: '用酷狗音乐 App 扫码登录',
   qishui: '在官方登录页扫码，登录后自动回到这里',
   spotify: '在浏览器里授权，授权完成后自动回到这里',
 };

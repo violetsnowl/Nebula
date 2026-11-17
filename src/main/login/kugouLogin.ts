@@ -1,5 +1,29 @@
-﻿import type { CookieStore } from '../cookieStore';
+﻿import crypto from 'node:crypto';
+import { createRequire } from 'node:module';
+import type { CookieStore } from '../cookieStore';
+import { HttpClient } from '../http';
 import type { AccountInfo } from '../types';
+import {
+  KUGOU_TICKET_MARK,
+  KUGOU_TICKET_MOBILE,
+  kugouCommonParams,
+  kugouMobileHeaders,
+  kugouSignedQuery,
+  kugouWebSign,
+  type KugouListResult,
+  parseKugouQrStatus,
+  parseKugouTicket,
+  requestKugouMyPlaylists,
+} from '../adapters/kugouAdapter';
+
+const require_ = createRequire(__filename);
+
+export const KUGOU_AUTH_EXPIRED = '酷狗登录已过期，请重新登录';
+
+const LOGIN_BASE = 'https://login-user.kugou.com';
+/** 二维码里写入的落地页（带 appid=1005：让手机端扫码后发的是手机端票据）。 */
+const QR_LANDING = 'https://h5.kugou.com/apps/loginQRCode/html/index.html?appid=1005&';
+const SRC_APPID = 2919;
 
 /** 解码 KuGoo 复合值：处理 %uXXXX Unicode 编码 + 标准 URI 编码 */
 function decodeKuGoo(raw: string): string {
@@ -22,132 +46,160 @@ function extractCookieValue(cookie: string, name: string): string {
   return '';
 }
 
-/** 提取酷狗用户 ID（兼容多种 cookie 字段名） */
-function extractKugouUserId(cookie: string): string {
-  for (const name of ['KugooID', 'kugooID', 'userid', 'UserId', 'kugouID', 'uid']) {
-    const v = extractCookieValue(cookie, name);
-    if (v && v !== '0') return v.replace(/\D/g, '');
-  }
-  const kuGoo = extractCookieValue(cookie, 'KuGoo');
-  if (kuGoo) {
-    try {
-      const decoded = decodeKuGoo(kuGoo);
-      const match = decoded.match(/(?:KugooID|userid|uid)=(\d+)/);
-      if (match) return match[1];
-    } catch { /* */ }
-  }
-  return '';
+/** 设备 mid：对随机 GUID 取 md5 后当 16 进制数转十进制（与官方客户端同一算法）。 */
+function newMid(): string {
+  return BigInt('0x' + crypto.createHash('md5').update(crypto.randomUUID()).digest('hex')).toString();
 }
 
 /**
- * 酷狗登录：Electron BrowserWindow 加载官方网页，轮询 cookie 提取登录态。
- * 成功标准：cookie 中包含 KugooID + t。
+ * 酷狗登录：手机端扫码（appid 1005）。
+ * - createQr：login-user /v2/qrcode 取 key，本地生成二维码图片；
+ * - pollLogin：轮询 /v2/get_userinfo_qrcode，成功后把 token、userid、mid、dfid 与手机端标记存入 CookieStore；
+ * - getAccount：真实请求一次「我的歌单」核验票据，20017 判过期，网络异常不判登出。
+ * 老的网页登录窗口（electron/main.cjs）与网页票据仍可读；网页票据若被酷狗拒绝（20017）会被核验为过期，提示重新扫码。
  */
 export class KugouLogin {
-  constructor(private cookies: CookieStore) {}
+  private http: Pick<HttpClient, 'requestJson'>;
+  /** 二维码 key → 生成它时用的设备参数；轮询必须沿用同一组 mid/dfid。 */
+  private sessions = new Map<string, { mid: string; dfid: string }>();
 
-  /** 从 partition cookie 中提取登录态，返回 AccountInfo。 */
+  constructor(private cookies: CookieStore, http?: Pick<HttpClient, 'requestJson'>) {
+    this.http = http ?? new HttpClient(cookies);
+  }
+
+  private async loginGet<T>(path: string, mid: string, dfid: string, extra: Record<string, string | number>): Promise<T> {
+    const params = kugouCommonParams({ mid, dfid }, extra);
+    const qs = kugouSignedQuery(params, (p) => kugouWebSign(p));
+    return this.http.requestJson<T>(`${LOGIN_BASE}${path}?${qs}`, {
+      platform: 'kugou',
+      cookie: '',
+      timeoutMs: 15000,
+      headers: kugouMobileHeaders(mid, dfid, params.clienttime),
+    });
+  }
+
+  async createQr(): Promise<{ unikey: string; payload: string; imageDataUrl?: string }> {
+    const mid = newMid();
+    const dfid = '-';
+    const res = await this.loginGet<{ status?: number; error_code?: number; data?: { qrcode?: string } }>(
+      '/v2/qrcode', mid, dfid,
+      { appid: 1001, type: 1, plat: 4, srcappid: SRC_APPID, qrcode_txt: QR_LANDING },
+    );
+    const key = res?.data?.qrcode;
+    if (!key) {
+      throw new Error(`获取酷狗二维码失败 (错误码 ${Number(res?.error_code ?? 0) || 'unknown'})`);
+    }
+    this.sessions.set(key, { mid, dfid });
+    if (this.sessions.size > 16) this.sessions.delete(this.sessions.keys().next().value!);
+    const payload = `${QR_LANDING}qrcode=${key}`;
+    let imageDataUrl: string | undefined;
+    try {
+      const QRCode = require_('qrcode') as { toDataURL: (t: string, o?: object) => Promise<string> };
+      imageDataUrl = await QRCode.toDataURL(payload, { margin: 1 });
+    } catch {
+      /* 前端会回退用 payload 本地渲染二维码 */
+    }
+    return { unikey: key, payload, imageDataUrl };
+  }
+
+  async pollLogin(unikey: string): Promise<{ ok: boolean; message: string; nickname?: string }> {
+    const dev = this.sessions.get(unikey) ?? { mid: newMid(), dfid: '-' };
+    let resp: unknown;
+    try {
+      resp = await this.loginGet('/v2/get_userinfo_qrcode', dev.mid, dev.dfid,
+        { plat: 4, appid: 1005, srcappid: SRC_APPID, qrcode: unikey });
+    } catch (err) {
+      return { ok: false, message: `网络波动（${err instanceof Error ? err.message : String(err)}），正在重试…` };
+    }
+    const st = parseKugouQrStatus(resp);
+    switch (st.state) {
+      case 'expired':
+        this.sessions.delete(unikey);
+        return { ok: false, message: '二维码已过期，请重新生成' };
+      case 'waiting':
+        return { ok: false, message: '等待扫码…' };
+      case 'scanned':
+        return { ok: false, message: '已扫码，请在手机上确认' };
+      case 'unknown':
+        return { ok: false, message: st.message };
+      case 'success': {
+        const cookie = [
+          `t=${st.token}`,
+          `KugooID=${st.userid}`,
+          `kg_mid=${dev.mid}`,
+          `kg_dfid=${dev.dfid}`,
+          `${KUGOU_TICKET_MARK}=${KUGOU_TICKET_MOBILE}`,
+        ].join('; ');
+        this.sessions.delete(unikey);
+        this.cookies.set('kugou', cookie, undefined, st.nickname || undefined);
+        return { ok: true, message: `登录成功${st.nickname ? '：' + st.nickname : ''}`, nickname: st.nickname || undefined };
+      }
+    }
+  }
+
+  /** 真实请求一次「我的歌单」核验票据，返回账号信息。 */
   async getAccount(): Promise<AccountInfo | null> {
     const rec = this.cookies.get('kugou');
-    if (!rec?.cookies) {
-      console.log("[KugouLogin] getAccount: 无存储 cookie");
-      return null;
-    }
+    if (!rec?.cookies) return null;
     const cookie = rec.cookies;
-    console.log("[KugouLogin] getAccount: cookie 长度=");
 
-    const kugouId = extractKugouUserId(cookie);
-    if (!kugouId) {
-      console.log("[KugouLogin] getAccount: 未找到 KugooID");
-      return null;
+    const ticket = parseKugouTicket(cookie);
+    if (!ticket) {
+      // 只有用户 ID、没有票据：无法核验，按「登录信息不完整」处理（没有 ID 则当作未登录）。
+      if (!/(?:KugooID|kugooID|userid|UserId|kugouID|uid)=/.test(cookie) && !extractCookieValue(cookie, 'KuGoo')) return null;
+      return { loggedIn: false, authStatus: 'missing', error: '酷狗登录信息不完整，请重新登录' };
     }
 
-    // 1) 优先从 KuGoo 复合值提取昵称
+    let result: KugouListResult | null = null;
+    try {
+      result = await requestKugouMyPlaylists(this.http, ticket, 1, 5, 10000);
+    } catch (err) {
+      // 网络异常 / 解析失败：不能判登出，也不能确认有效。
+      console.warn('[KugouLogin] 票据核验请求失败，按未知处理:', err instanceof Error ? err.message : '');
+    }
+    if (result?.kind === 'expired') {
+      console.warn(`[KugouLogin] 票据失效 错误码=${result.code}`);
+      return { loggedIn: false, authStatus: 'expired', error: KUGOU_AUTH_EXPIRED };
+    }
+    if (result?.kind === 'error') {
+      console.warn(`[KugouLogin] 核验接口返回错误码=${result.code}，按未知处理`);
+    }
+
+    // 昵称：KuGoo 复合值 → UserName / 登录时存的昵称 → 歌单创建者信息 → 兜底
     let nickname = '';
     let avatar = '';
     const kuGoo = extractCookieValue(cookie, 'KuGoo');
     if (kuGoo) {
       try {
         const decoded = decodeKuGoo(kuGoo);
-        const parts = Object.fromEntries(decoded.split('&').map(p => p.split('=')));
+        const parts = Object.fromEntries(decoded.split('&').map((p) => p.split('=')));
         if (parts.NickName) nickname = parts.NickName;
         if (parts.Pic) avatar = parts.Pic;
       } catch { /* 解析失败 */ }
     }
-
-    // 2) UserName 兜底（可能是数字 ID）
     if (!nickname) nickname = extractCookieValue(cookie, 'UserName') || rec.nickname || '';
-
-    // 3) 如果昵称仍是纯数字或空，调 API 获取真实昵称
-    if (!nickname || /^\d+$/.test(nickname)) {
-      const profile = await this.fetchProfileFromApi(cookie).catch(() => null);
-      if (profile?.nickname && !/^\d+$/.test(profile.nickname)) {
-        nickname = profile.nickname;
+    if ((!nickname || /^\d+$/.test(nickname) || nickname === '酷狗音乐') && result?.kind === 'ok') {
+      const items = result.items;
+      const own = items.filter((it) => String(it.list_create_userid ?? '') === ticket.userid);
+      for (const item of [...own, ...items]) {
+        const name = String(item.list_create_username || item.nickname || item.username || item.user_name || '');
+        if (name && !/^\d+$/.test(name)) {
+          nickname = name;
+          if (!avatar) avatar = String(item.create_user_pic || item.user_pic || item.avatar || '');
+          break;
+        }
       }
-      if (profile?.avatar && !avatar) avatar = profile.avatar;
     }
 
     return {
       loggedIn: true,
-      userId: kugouId,
+      authStatus: result?.kind === 'ok' ? 'valid' : 'unknown',
+      userId: ticket.userid,
       nickname: nickname || '酷狗用户',
       avatarUrl: avatar,
       vipType: 0,
       isVip: false,
       isSvip: false,
     };
-  }
-
-  /** 调用酷狗 H5 网关获取用户昵称（从歌单创建者信息中提取）。 */
-  private async fetchProfileFromApi(cookie: string): Promise<{ nickname?: string; avatar?: string } | null> {
-    const crypto = await import('node:crypto');
-    const userid = extractCookieValue(cookie, 'KugooID');
-    const token = extractCookieValue(cookie, 't');
-    const mid = extractCookieValue(cookie, 'kg_mid') || '';
-    const dfid = extractCookieValue(cookie, 'kg_dfid') || '-';
-    if (!userid || !token) return null;
-
-    const params: Record<string, string> = {
-      srcappid: '2919',
-      clientver: '20000',
-      clienttime: String(Date.now()),
-      mid: mid || String(Date.now()),
-      uuid: String(Date.now()),
-      dfid,
-      appid: '1014',
-      token,
-      userid,
-    };
-    const bodyObj = { userid: Number(userid), token, total_ver: 979, type: 2, page: 1, pagesize: 5 };
-
-    // H5 签名
-    const sorted = Object.keys(params).sort().map(k => k + '=' + params[k]);
-    sorted.push(JSON.stringify(bodyObj));
-    const H5_SALT = 'NVPh5oo715z5DIWAeQlhMDsWXXQV4hwt';
-    params.signature = crypto.createHash('md5').update(H5_SALT + sorted.join('') + H5_SALT).digest('hex');
-
-    const qs = Object.entries(params).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
-    const url = 'https://gateway.kugou.com/v7/get_all_list?' + qs;
-
-    const res = await fetch(url, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-router': 'cloudlist.service.kugou.com',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        Cookie: cookie,
-      },
-      body: JSON.stringify(bodyObj),
-    });
-    const json = await res.json() as { data?: { info?: Array<Record<string, unknown>> } };
-    const items = json?.data?.info ?? [];
-
-    // 从歌单创建者信息中提取昵称
-    for (const item of items) {
-      const name = String(item.nickname || item.username || item.user_name || item.list_create_username || '');
-      const pic = String(item.create_user_pic || item.user_pic || item.avatar || '');
-      if (name) return { nickname: name, avatar: pic || undefined };
-    }
-    return null;
   }
 }

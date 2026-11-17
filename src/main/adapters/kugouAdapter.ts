@@ -65,6 +65,194 @@ function mobileKey(hash: string): string {
   return md5(hash + 'kgcloud');
 }
 
+// --- 手机端协议（扫码登录票据 appid=1005 用；协议细节参考 MIT 许可的 KuGouMusicApi） ---
+type SignParams = Record<string, string | number>;
+
+/** 登录票据里标记「手机端扫码取得」的 cookie 字段。 */
+export const KUGOU_TICKET_MARK = 'kg_client';
+export const KUGOU_TICKET_MOBILE = 'mobile';
+
+/** 酷狗网页签名：每项 "k=v" 后整体排序直接拼接，再接请求体，前后加盐取 md5。 */
+export function kugouWebSign(params: SignParams, body = ''): string {
+  const joined = Object.keys(params).map(k => k + '=' + params[k]).sort().join('');
+  return md5(H5_SALT + joined + body + H5_SALT);
+}
+
+/** 酷狗手机端签名：按 key 排序，"k=v" 直接拼接（不加分隔符），再接请求体，前后加盐取 md5。 */
+export function kugouMobileSign(params: SignParams, body = ''): string {
+  const joined = Object.keys(params).sort().map(k => k + '=' + params[k]).join('');
+  return md5(ANDROID_SALT + joined + body + ANDROID_SALT);
+}
+
+/** 手机端请求头（与客户端一致的内部标识头）。 */
+export function kugouMobileHeaders(mid: string, dfid: string, clienttime: number | string): Record<string, string> {
+  return {
+    'User-Agent': ANDROID_UA,
+    dfid, mid, clienttime: String(clienttime),
+    'kg-rc': '1',
+    'kg-thash': '5d816a0',
+    'kg-rec': '1',
+    'kg-rf': 'B9EDA08A64250DEFFBCADDEE00F8F25F',
+  };
+}
+
+/** 手机端公共参数：dfid / mid / uuid / appid / clientver / clienttime，有票据时带 token、userid。 */
+export function kugouCommonParams(
+  ctx: { mid: string; dfid: string; userid?: string; token?: string },
+  extra: SignParams = {},
+  clienttime = Math.floor(Date.now() / 1000),
+): Record<string, string> {
+  const out: Record<string, string> = {
+    dfid: ctx.dfid || '-',
+    mid: ctx.mid,
+    uuid: '-',
+    appid: String(ANDROID_APPID),
+    clientver: String(ANDROID_CLIENTVER),
+    clienttime: String(clienttime),
+  };
+  if (ctx.token) out.token = ctx.token;
+  if (ctx.userid && ctx.userid !== '0') out.userid = ctx.userid;
+  for (const [k, v] of Object.entries(extra)) out[k] = String(v);
+  return out;
+}
+
+/** 参数加签名后拼成查询串（值做 URI 编码，签名按原始值计算）。 */
+export function kugouSignedQuery(params: Record<string, string>, sign: (p: Record<string, string>) => string): string {
+  const all = { ...params, signature: sign(params) };
+  return Object.entries(all).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
+}
+
+/** 业务错误：status=0 或 error_code 非 0，保留错误码，供上层区分「票据失效」与普通失败。 */
+export class KugouApiError extends Error {
+  constructor(public readonly code: number, message?: string) {
+    super(message || `酷狗接口错误 ${code}`);
+    this.name = 'KugouApiError';
+  }
+}
+
+/** 明确表示票据失效的错误码（20017：token 不被认可）。20006 是签名错误，不算过期。 */
+export const KUGOU_AUTH_ERROR_CODES: ReadonlySet<number> = new Set([20017]);
+
+function readCookieValue(cookie: string | undefined | null, name: string): string {
+  if (!cookie) return '';
+  for (const seg of cookie.split(';')) {
+    const eq = seg.indexOf('=');
+    if (eq <= 0) continue;
+    if (seg.slice(0, eq).trim() === name) return seg.slice(eq + 1).trim();
+  }
+  return '';
+}
+
+export interface KugouTicket {
+  userid: string;
+  token: string;
+  mid: string;
+  dfid: string;
+  /** true：手机端扫码票据（appid 1005）；false：网页登录票据（appid 1014）。 */
+  mobile: boolean;
+}
+
+/** 从已存的 cookie 串读取登录票据；缺 userid 或 token 返回 null。 */
+export function parseKugouTicket(cookie: string | undefined | null): KugouTicket | null {
+  let userid = '';
+  for (const name of ['KugooID', 'kugooID', 'userid', 'UserId', 'kugouID', 'uid']) {
+    const v = readCookieValue(cookie, name);
+    if (v && v !== '0') { userid = v.replace(/\D/g, ''); break; }
+  }
+  let token = '';
+  for (const name of ['t', 'token', 'Token', 'T']) {
+    const v = readCookieValue(cookie, name);
+    if (v) { token = v; break; }
+  }
+  if (!userid || !token) return null;
+  return {
+    userid, token,
+    mid: readCookieValue(cookie, 'kg_mid'),
+    dfid: readCookieValue(cookie, 'kg_dfid'),
+    mobile: readCookieValue(cookie, KUGOU_TICKET_MARK) === KUGOU_TICKET_MOBILE,
+  };
+}
+
+/** 酷狗扫码结果状态：0 过期，1 等待扫码，2 已扫待确认，4 成功。 */
+export type KugouQrState =
+  | { state: 'expired' }
+  | { state: 'waiting' }
+  | { state: 'scanned' }
+  | { state: 'success'; token: string; userid: string; nickname: string }
+  | { state: 'unknown'; message: string };
+
+/** 解析 get_userinfo_qrcode 的返回。 */
+export function parseKugouQrStatus(resp: any): KugouQrState {
+  const d = resp?.data;
+  const status = Number(d?.status);
+  if (status === 0) return { state: 'expired' };
+  if (status === 1) return { state: 'waiting' };
+  if (status === 2) return { state: 'scanned' };
+  if (status === 4) {
+    const token = String(d?.token ?? '');
+    const userid = String(d?.userid ?? '');
+    if (!token || !userid || userid === '0') return { state: 'unknown', message: '扫码已确认，但未拿到登录票据' };
+    return { state: 'success', token, userid, nickname: String(d?.nickname ?? '') };
+  }
+  const code = Number(resp?.error_code ?? 0) || 0;
+  return { state: 'unknown', message: code ? `二维码状态异常（错误码 ${code}）` : '二维码状态未知' };
+}
+
+export type KugouListResult =
+  | { kind: 'ok'; items: Array<Record<string, any>> }
+  | { kind: 'expired'; code: number }
+  | { kind: 'error'; code: number; message: string };
+
+type JsonRequester = Pick<HttpClient, 'requestJson'>;
+
+/**
+ * 读「我的歌单」（POST /v7/get_all_list）。手机端票据用手机端参数与签名；网页票据保持原网页协议。
+ * 业务错误按错误码分类返回（不静默吞掉）；网络 / 解析异常直接抛出，由调用方当作「未知」处理。
+ */
+export async function requestKugouMyPlaylists(http: JsonRequester, ticket: KugouTicket, page = 1, pagesize = 50, timeoutMs?: number): Promise<KugouListResult> {
+  type Resp = { status?: number; error_code?: number; errcode?: number; error?: string; data?: { info?: any[]; list?: any[] } };
+  let data: Resp;
+  if (ticket.mobile) {
+    const params = kugouCommonParams(ticket, { plat: 1, userid: ticket.userid });
+    const bodyObj = { userid: ticket.userid, token: ticket.token, total_ver: 979, type: 2, page, pagesize };
+    const qs = kugouSignedQuery(params, p => kugouMobileSign(p, JSON.stringify(bodyObj)));
+    data = await http.requestJson<Resp>('https://gateway.kugou.com/v7/get_all_list?' + qs, {
+      platform: 'kugou', method: 'POST', body: bodyObj, cookie: '', timeoutMs,
+      headers: { ...kugouMobileHeaders(ticket.mid, ticket.dfid || '-', params.clienttime), 'x-router': 'cloudlist.service.kugou.com' },
+    });
+  } else {
+    const params: Record<string, string> = {
+      srcappid: String(H5_SRC_APPID), clientver: String(H5_CLIENTVER), clienttime: String(Date.now()),
+      mid: ticket.mid || '0', uuid: String(Date.now()), dfid: ticket.dfid || '-',
+      appid: '1014', token: ticket.token, userid: ticket.userid, plat: '1',
+    };
+    const bodyObj = { userid: Number(ticket.userid), token: ticket.token, total_ver: 979, type: 2, page, pagesize };
+    params.signature = h5Sign(params, bodyObj);
+    const qs = Object.entries(params).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
+    data = await http.requestJson<Resp>('https://gateway.kugou.com/v7/get_all_list?' + qs, {
+      platform: 'kugou', method: 'POST', body: bodyObj, timeoutMs, headers: { 'x-router': 'cloudlist.service.kugou.com' },
+    });
+  }
+  const code = Number(data?.error_code ?? data?.errcode ?? 0) || 0;
+  if (data?.status === 0 || code !== 0) {
+    if (KUGOU_AUTH_ERROR_CODES.has(code)) return { kind: 'expired', code };
+    return { kind: 'error', code, message: String(data?.error || '') };
+  }
+  const raw: any = data?.data;
+  const items: Array<Record<string, any>> = raw?.info ?? raw?.list ?? (data as any)?.info ?? [];
+  return { kind: 'ok', items: Array.isArray(items) ? items : [] };
+}
+
+/** get_all_list 条目 → 歌单摘要。 */
+export function mapKugouMyPlaylists(items: Array<Record<string, any>>): PlaylistSummary[] {
+  return items.map(item => ({
+    id: String(item.global_collection_id || item.specialid || item.listid || item.list_id || item.id || ''),
+    name: stripKugouHtml(String(item.name || item.listname || item.specialname || item.title || '酷狗歌单')),
+    cover: kugouCoverUrl(String(item.pic || item.img || item.imgurl || item.sizable_cover || item.create_user_pic || '')),
+    trackCount: Number(item.count || item.m_count || item.song_count || item.total || item.list_count || item.songcount || 0) || 0,
+  }));
+}
+
 /** 解析酷狗歌单 ID：支持纯数字、collection_xxx_xxx_NUM_xxx 格式 */
 function parseKugouListId(playlistId: string): string {
   const id = String(playlistId || '').trim();
@@ -152,8 +340,15 @@ export class KugouAdapter implements PlatformAdapter {
     const userid = this.extractKugouUserId(cookie);
     const token = this.extractKugouToken(cookie);
 
-    // 已登录 → 尝试 H5 网关（支持用户歌单 ID）
-    if (userid && token) {
+    // 已登录 → 手机端票据走手机端协议；网页票据尝试 H5 网关（支持用户歌单 ID）
+    const ticket = parseKugouTicket(cookie);
+    if (ticket?.mobile) {
+      try {
+        return await this.fetchPlaylistViaMobileTicket(playlistId, ticket);
+      } catch (err) {
+        console.warn('[KugouAdapter] 手机端歌单失败，回退公开 API:', err instanceof KugouApiError ? `错误码 ${err.code}` : '');
+      }
+    } else if (userid && token) {
       try {
         return await this.fetchPlaylistViaH5(playlistId, cookie, userid, token);
       } catch (err) {
@@ -163,6 +358,59 @@ export class KugouAdapter implements PlatformAdapter {
 
     // 兜底：mobilecdn 公开歌单 API
     return this.fetchPlaylistViaMobile(playlistId);
+  }
+
+  /**
+   * 手机端票据读歌单歌曲：collection_ 开头的全局歌单 ID 走 pubsongs，纯数字的自建歌单 ID 走云歌单 v3。
+   * 业务错误抛 KugouApiError（带错误码）。
+   */
+  private async fetchMobileTicketTracks(listId: string, ticket: KugouTicket, maxPages = 20): Promise<{ tracks: Track[]; name: string; cover: string }> {
+    const id = String(listId || '').trim();
+    if (!id) throw new Error('无效歌单 ID');
+    const collection = id.startsWith('collection_');
+    const pageSize = 100;
+    const tracks: Track[] = [];
+    let name = '';
+    let cover = '';
+    for (let page = 1; page <= maxPages; page++) {
+      let data: { status?: number; error_code?: number; error?: string; data?: Record<string, any> };
+      if (collection) {
+        const params = kugouCommonParams(ticket, {
+          area_code: 1, begin_idx: (page - 1) * pageSize, plat: 1, type: 1, mode: 1, personal_switch: 1,
+          extend_fields: 'abtags,hot_cmt,popularization', pagesize: pageSize, global_collection_id: id,
+        });
+        const qs = kugouSignedQuery(params, p => kugouMobileSign(p));
+        data = await this.http.requestJson(`https://gateway.kugou.com/pubsongs/v2/get_other_list_file_nofilt?${qs}`, {
+          platform: 'kugou', cookie: '', headers: kugouMobileHeaders(ticket.mid, ticket.dfid || '-', params.clienttime),
+        });
+      } else {
+        const params = kugouCommonParams(ticket);
+        const bodyObj = { listid: id, userid: ticket.userid, type: 0, page, pagesize: pageSize, area_code: 1, allplatform: 1, show_cover: 1, token: ticket.token };
+        const qs = kugouSignedQuery(params, p => kugouMobileSign(p, JSON.stringify(bodyObj)));
+        data = await this.http.requestJson(`https://gateway.kugou.com/v4/get_list_all_file_v3?${qs}`, {
+          platform: 'kugou', method: 'POST', body: bodyObj, cookie: '',
+          headers: { ...kugouMobileHeaders(ticket.mid, ticket.dfid || '-', params.clienttime), 'x-router': 'cloudlist.service.kugou.com' },
+        });
+      }
+      const code = Number(data?.error_code ?? 0) || 0;
+      if (data?.status === 0 || code !== 0) throw new KugouApiError(code, String(data?.error || ''));
+      const body = data?.data ?? {};
+      if (page === 1) {
+        name = stripKugouHtml(String(body.listname || body.list_info?.name || body.name || ''));
+        cover = kugouCoverUrl(String(body.pic || body.list_info?.pic || ''));
+      }
+      const raw: Array<Record<string, any>> = body.songs ?? body.info ?? body.list ?? [];
+      if (!Array.isArray(raw) || !raw.length) break;
+      tracks.push(...raw.map(mapKugouPlaylistTrack).filter((t): t is Track => !!t));
+      if (raw.length < pageSize) break;
+    }
+    return { tracks, name, cover };
+  }
+
+  private async fetchPlaylistViaMobileTicket(playlistId: string, ticket: KugouTicket): Promise<Playlist> {
+    const { tracks, name, cover } = await this.fetchMobileTicketTracks(playlistId, ticket);
+    if (!tracks.length) throw new Error('歌单为空');
+    return { id: playlistId, platform: 'kugou', name: name || '酷狗歌单', cover, tracks };
   }
 
   /** H5 网关取歌单（需登录，支持用户歌单 listid） */
@@ -542,48 +790,25 @@ export class KugouAdapter implements PlatformAdapter {
     return base;
   }
 
-  /** 用户歌单列表（需登录） */
+  /** 最近一次「我的歌单」请求的失败信息；成功或未请求时为 null。供上层区分「没有歌单」和「票据失效 / 接口出错」。 */
+  lastPlaylistError: { code: number; expired: boolean } | null = null;
+
+  /** 用户歌单列表（需登录）。失败返回 []，但错误码记在 lastPlaylistError，不静默吞掉。 */
   async fetchMyPlaylists(): Promise<PlaylistSummary[]> {
-    const rec = this.cookies.get('kugou');
-    const cookie = rec?.cookies || '';
-    const userid = this.extractKugouUserId(cookie);
-    const token = this.extractKugouToken(cookie);
-    const mid = this.extractCookieValue(cookie, 'kg_mid') || '';
-    const dfid = this.extractCookieValue(cookie, 'kg_dfid') || '';
-    if (!userid || !token) return [];
+    const ticket = parseKugouTicket(this.cookies.get('kugou')?.cookies);
+    this.lastPlaylistError = null;
+    if (!ticket) return [];
     try {
-      const params: Record<string, string> = {
-        srcappid: String(H5_SRC_APPID),
-        clientver: String(H5_CLIENTVER),
-        clienttime: String(Date.now()),
-        mid: mid || '0',
-        uuid: String(Date.now()),
-        dfid: dfid || '-',
-        appid: '1014', token, userid, plat: '1',
-      };
-      const bodyObj = { userid: Number(userid), token, total_ver: 979, type: 2, page: 1, pagesize: 50 };
-      params.signature = h5Sign(params, bodyObj);
-      const qs = Object.entries(params).map(([k,v]) => k+'='+encodeURIComponent(v)).join('&');
-      const url = 'https://gateway.kugou.com/v7/get_all_list?' + qs;
-      console.log("[KugouAdapter] fetchMyPlaylists url:");
-      const data = await this.http.requestJson<{
-        status?: number; error?: string;
-        data?: { info?: Array<{ listid: string; specialname: string; imgurl: string; songcount: number }> };
-      }>(url, { platform: 'kugou', method: 'POST', body: bodyObj, headers: { 'x-router': 'cloudlist.service.kugou.com' } });
-      if (data.status === 0) { console.warn("[KugouAdapter] API error:"); return []; }
-      // 响应结构可能为 data.info / data.list / data.data.info
-      const raw = data?.data;
-      const items: Array<Record<string, unknown>> = (raw?.info as any[]) ?? (raw as any)?.list ?? (data as any)?.info ?? [];
-      console.log("[KugouAdapter] fetchMyPlaylists:");
-      if (!items.length) console.log("[KugouAdapter] raw:");
-      return items.map(item => ({
-        id: String(item.global_collection_id || item.specialid || item.listid || item.list_id || item.id || ''),
-        name: stripKugouHtml(String(item.name || item.listname || item.specialname || item.title || '酷狗歌单')),
-        cover: kugouCoverUrl(String(item.pic || item.img || item.imgurl || item.sizable_cover || item.create_user_pic || '')),
-        trackCount: Number(item.count || item.m_count || item.song_count || item.total || item.list_count || item.songcount || 0) || 0,
-      }));
+      const r = await requestKugouMyPlaylists(this.http, ticket, 1, 50);
+      if (r.kind !== 'ok') {
+        this.lastPlaylistError = { code: r.code, expired: r.kind === 'expired' };
+        console.warn(`[KugouAdapter] 歌单接口失败 错误码=${r.code}${r.kind === 'expired' ? '（登录票据失效）' : ''}`);
+        return [];
+      }
+      if (!r.items.length) console.log('[KugouAdapter] 歌单接口成功但没有歌单');
+      return mapKugouMyPlaylists(r.items);
     } catch (err) {
-      console.warn("[KugouAdapter] 歌单获取失败:");
+      console.warn('[KugouAdapter] 歌单获取失败（网络或解析）:', err instanceof Error ? err.message : '');
       return [];
     }
   }
@@ -598,6 +823,8 @@ export class KugouAdapter implements PlatformAdapter {
     const dfid = this.extractCookieValue(cookie, 'kg_dfid') || '';
     if (!userid || !token) return [];
     try {
+      const ticket = parseKugouTicket(cookie);
+      if (ticket?.mobile) return (await this.fetchMobileTicketTracks(listId, ticket)).tracks;
       const params: Record<string, string> = {
         srcappid: String(H5_SRC_APPID),
         clientver: String(H5_CLIENTVER),
@@ -612,7 +839,7 @@ export class KugouAdapter implements PlatformAdapter {
       const data = await this.http.requestJson<{ data?: { info?: Array<Record<string, any>> } }>(url, { platform: 'kugou', method: 'POST', body: bodyObj, headers: { 'x-router': 'cloudlist.service.kugou.com' } });
       return (data?.data?.info ?? []).map(mapKugouTrack).filter((t): t is Track => !!t);
     } catch (err) {
-      console.warn("[KugouAdapter] 歌单歌曲获取失败:");
+      console.warn('[KugouAdapter] 歌单歌曲获取失败:', err instanceof KugouApiError ? `错误码 ${err.code}` : '');
       return [];
     }
   }
