@@ -25,6 +25,12 @@ await test('三次超时不熔断后续主源，平台恢复立即可播',async(
  const r=make(a);for(let i=0;i<3;i++)await r.resolve({...song,sourceId:String(i)});
  assert.equal((await r.resolve({...song,sourceId:'recovered'})).playable,true);assert.equal(count,4);
 });
+await test('总预算退出保留 traceId 和阶段，登录失败给出具体原因',async()=>{
+ const a=adapters();a.qq.fetchSongUrl=()=>new Promise(()=>{});
+ const r=new SongResolver(a,()=>{},undefined,{totalMs:20,primaryMs:100,candidateMs:100});const x=await r.resolve(song);
+ assert.equal(x.code,'TIMEOUT');assert.ok(x.traceId);assert.ok(x.timings.length);
+ a.qq.fetchSongUrl=async()=>({url:'',playable:false,code:'LOGIN_REQUIRED'});assert.match((await make(a).resolve(song)).error,/登录/);
+});
 await test('合并并发请求，取消一人不影响另一人',async()=>{
  const a=adapters();let count=0,aborted=false;
  a.qq.fetchSongUrl=async()=>{count++;requestScope().signal.addEventListener('abort',()=>{aborted=true});await wait(20);return {url:'https://test/a'}};
@@ -56,7 +62,7 @@ await test('会员刷新在后台，不阻塞路由，并排除无供流平台',
  const at=Date.now(),order=await p();assert.ok(Date.now()-at<30);assert.equal(order.length,3);assert.ok(!order.some(t=>t.platform==='spotify'));p.invalidate();
 });
 await test('audio MIME 的 HTML 伪音频拒绝',async()=>{assert.equal(looksLikeAudio(Buffer.from('<html>blocked</html>'),'audio/mpeg'),false)});
-let seen=[],closed=false;
+let seen=[],closed=false,connections=0;
 const data=Buffer.concat([Buffer.from('ID3'),Buffer.alloc(4093,1)]);
 const upstream=http.createServer((req,res)=>{
  seen.push({path:req.url,cookie:req.headers.cookie,range:req.headers.range});
@@ -67,6 +73,7 @@ const upstream=http.createServer((req,res)=>{
  const m=/bytes=(\d+)-(\d*)/.exec(req.headers.range || '');const start=m?+m[1]:0,end=m&&m[2]?+m[2]:data.length-1;
  res.writeHead(m?206:200,{'Content-Type':'audio/mpeg','Content-Length':end-start+1,'Accept-Ranges':'bytes',...(m?{'Content-Range':`bytes ${start}-${end}/${data.length}`}:{})});res.end(data.subarray(start,end+1));
 });
+upstream.on('connection',()=>connections++);
 await new Promise(r=>upstream.listen(0,'127.0.0.1',r));
 const root=`http://127.0.0.1:${upstream.address().port}`;
 const classify=u=>u.origin===root?(u.pathname==='/ncm'?'netease':'qq'):null;
@@ -85,6 +92,10 @@ try {
  await test('探测读取真实签名、限制 Range 并尊重取消',async()=>{
   assert.equal((await probeAudioUrl(root+'/audio',{platform:'qq',classify,timeoutMs:500})).ok,true);
   assert.match(seen.at(-1).range,/^bytes=0-511$/);const c=new AbortController();c.abort();assert.equal((await probeAudioUrl(root+'/slow',{platform:'qq',classify,signal:c.signal})).ok,false);
+ });
+ await test('完整短 Range 探测连接可复用，避免每首重新握手',async()=>{
+  const before=connections;for(const part of ['one','two','three'])assert.equal((await probeAudioUrl(root+'/'+part,{platform:'qq',classify,timeoutMs:500})).ok,true);
+  assert.ok(connections-before<=1,`新增连接数 ${connections-before}`);
  });
 } finally {proxy.dispose();upstream.closeAllConnections();await new Promise(r=>upstream.close(r))}
 console.log(`路由与代理回归 ${passed}/${passed}`);

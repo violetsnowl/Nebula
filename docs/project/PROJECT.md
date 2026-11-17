@@ -105,6 +105,13 @@ pnpm qa:playback-live # 100 首公开样本联网统计（先运行下述 prepar
 
 ### 4.4 测试约定
 
+- 后端整修回归：`pnpm qa:backend` 包括播放代次、路由/代理、录音匹配、QQ 契约、歌词、封面隐私、五平台导入。
+- 联网统计：`pnpm qa:playback-live --samples=scripts/fixtures/public-playlists.json`（100 首公开榜单）；`public-benchmark.json` 为 108 首跨平台挑战集。输出默认在仓库外；切勿提交私人账号的歌曲列表或原始凭据。
+- 原生媒体：先 build，再 `pnpm qa:media`；可传 `--baseline=../baseline-ui` 比较归档源码。固定本地 WAV 与延时，输出媒体事件间隔和舞台帧时间，不宣称声卡实际延迟。
+- 原生桌面：`pnpm qa:electron` 使用仓库外隔离 userData、隐藏窗口与合成 WAV，不碰原账号文件。
+- 长暂停：先 build，再 `pnpm qa:long-pause`；真实等待 31 分钟，验证过期地址重取与拖动。
+- 封面统计：`node scripts/playback-benchmark.mjs --covers-only`；加 `--baseline-cover` 测原 URL。仅输出实测像素，不输出下载图片。
+
 - 任何后端改动：`pnpm qa:backend` 必须通过；加密类改动需同步在 `backend-smoke.mjs` 补充断言。
 - 任何前端交互改动：`pnpm qa` 必须通过（有严格阈值断言）。
 - 每次改动后同步更新 `docs/project/CHANGE_LOG.md`（见第 5 节）。

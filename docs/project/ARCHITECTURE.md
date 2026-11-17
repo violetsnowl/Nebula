@@ -122,7 +122,7 @@ view blocks（同层互不依赖，组合只由 App 完成）
 ## 后端整修 #B3：请求与媒体生命周期
 
 - `src/main/requestScope.ts`：AsyncLocalStorage 传播父截止时间/取消，阶段结束回收子请求；调用者取消经 preload → IPC → resolver → HTTP/Axios/probe。
-- `SongResolver`：总时限 6000ms、主源 2300ms、单次取链 2000ms、搜索 1600ms、探测 1000ms，全部受父预算约束；最多两个其他平台并发，每个平台最多两个安全候选。
+- `SongResolver`：总时限 6000ms、主源 3500ms、单次取链 2300ms、搜索 1600ms、探测 1600ms，全部受父预算约束；最多两个其他平台并发，每个平台最多两个安全候选。阶段值经 #B7 实测调整；主源慢响应仍受总预算约束。
 - URL 缓存 256 项/120 秒，匹配缓存 512 项/24 小时；强制刷新绕过 URL/探测缓存；Cookie 更新和退出登录清空账号相关结果。
 - `createFallbackPriorityProvider` 返回可 `invalidate()` 的函数；5 分钟后台权益刷新，单平台 2 秒，点播直接读快照。
 - `AudioProxy.start()` 为 Promise，Electron 必须等监听成功；只回传当前实例代理地址。每实例 16 个活动请求、每协议代理最多 16 个 socket/每域 8 个。
@@ -133,6 +133,8 @@ view blocks（同层互不依赖，组合只由 App 完成）
 ## 后端整修 #B5：歌词路由
 
 实际供流 Track → 同身份主歌词（3200ms）→ QQ/酷狗/网易云其他来源并行搜索（1800ms）与取词（3200ms），全过程受 8500ms 截止时间约束。复用 recordingMatch；跨源以唯一正文锚点确认偏移（至少 3 个、覆盖半段以上、95% 残差≤180ms、最大≤500ms、偏移≤8s）。未通过则保留主源。
+
+网易云内部 lyric_new/lyric 并发、每个 2800ms，早于服务阶段退出；一个接口挂起时保留另一个的合法结果。
 
 `fetchLyric(track,{requestId})` 与播放共用所有者隔离的 `cancelResolve` 通道。Lyrics hook 的身份键包含实际供流平台/ID，来源变化立即清空旧歌词。`lyricAlignment.ts` 负责覆盖统计和合并，`timedLyrics.ts` 负责真实 QRC/KRC 转换；`LyricCache.flush()` 可用于测试/退出前持久化。
 

@@ -13,11 +13,11 @@ fs.mkdirSync(dataDir, { recursive: true });
 b.setCookieDataDir(dataDir);
 const cookies = new b.CookieStore();
 const adapters = b.createAdapters(new b.HttpClient(cookies), cookies);
-const dataset = path.resolve(root, String(args.samples || '../benchmark-samples.json'));
+const dataset = path.resolve(root, String(args.samples || (args.prepare?'../benchmark-samples.json':'scripts/fixtures/public-benchmark.json')));
 const out = path.resolve(root, String(args.out || '../benchmark-result.json'));
 const print = console.log.bind(console);
 // 适配器旧日志可能包含带签名的地址：本工具只保留结构化统计。
-console.log = console.warn = console.error = () => {};
+console.log = console.warn = console.error = console.info = console.debug = () => {};
 const bounded = async (p, ms) => {
   let timer;
   try { return await Promise.race([p, new Promise((_, reject) => { timer = setTimeout(() => reject(new Error('watchdog')), ms); })]); }
@@ -58,7 +58,20 @@ if (args.prepare) {
   print(`公开候选数据集 ${rows.length} 首；语种按搜索种子分组，需人工核对。`);
   process.exit(rows.length >= 100 ? 0 : 2);
 }
-const samples = JSON.parse(fs.readFileSync(dataset, 'utf8')).slice(0, Number(args.limit || 100));
+const samples = JSON.parse(fs.readFileSync(dataset, 'utf8')).slice(0, Number(args.limit || 10000));
+// 老版后端不含像素探测器，独立使用同一测量器比较旧 URL 与新原图候选。
+const measuring=require(path.resolve(root,'dist-main/index.cjs'));
+if(args['covers-only']){
+  const inspector=new measuring.CoverService(),results=[];let next=0;
+  await Promise.all(Array.from({length:3},async()=>{
+    while(next<samples.length){const i=next++,t=samples[i];const info=await inspector.inspect(t,!!args['baseline-cover']);
+      results.push({index:i,id:t.id,platform:t.platform,verified:!!info?.verified,width:info?.width || null,height:info?.height || null});
+    }
+  }));
+  fs.writeFileSync(out,JSON.stringify({rows:results.sort((a,b)=>a.index-b.index)},null,2));print(`封面实际像素 ${results.filter(r=>r.verified).length}/${samples.length}`);process.exit(0);
+}
+const searched=new Map();
+for(const [platform,adapter] of Object.entries(adapters))if(adapter.searchSongs){const search=adapter.searchSongs.bind(adapter);adapter.searchSongs=async(...args)=>{const tracks=await search(...args);for(const t of tracks)searched.set(platform+':'+t.sourceId,t);return tracks;};}
 const resolver = new b.SongResolver(adapters, () => {}, (url, platform, signal) => b.canPlayAudio(url, { platform, cookie: cookies.getHeader(platform), signal }));
 const lyricService = new b.LyricService(adapters); // 每轮不使用磁盘歌词缓存，便于前后公平比较。
 const watchdog = Number(args.watchdog || 25000);
@@ -67,8 +80,9 @@ let cursor = 0;
 const startedAt = new Date().toISOString();
 async function run() {
   while (cursor < samples.length) {
-    const i = cursor++, t = samples[i], row = { index: i, platform: t.platform, language: t.language || 'unknown', id: t.id };
+    const i = cursor++, t = samples[i], row = { index: i, platform: t.platform, language: t.actualLanguage || t.language || 'unknown', seedLanguage:t.language, id: t.id };
     const start = performance.now();
+    let lyricTrack=t;
     try {
       const r = await bounded(resolver.resolve({ ...t, originalUrl: '', fallbackUrl: '' }), watchdog);
       row.resolveMs = Math.round(performance.now() - start);
@@ -78,11 +92,19 @@ async function run() {
       row.servedBy = r?.url ? r.platform : null;
       row.servedId = r?.url ? r.sourceId : null;
       row.errorCode = r?.code || (row.playable ? null : 'NO_SOURCE');
+      row.timings=r?.timings || [];
+      const matched=r?.fallback && r.url?searched.get(r.platform+':'+r.sourceId):null;
+      if(matched){const guard=measuring.recordingMatch(matched,t);row.matchGuard=guard.ok;row.matchReason=guard.note;row.matchEvidence={title:matched.title,artist:matched.artist,artists:matched.artists,album:matched.album,duration:matched.duration};}
+      if(b.recordingMatch && row.playable && r.fallback)lyricTrack=matched || {...t,platform:r.platform,sourceId:r.sourceId};
     } catch { row.resolveMs = Math.round(performance.now() - start); row.playable = false; row.errorCode = 'WATCHDOG'; }
     try {
-      const l = await bounded(lyricService.fetchLyric(t), watchdog);
+      const l = await bounded(lyricService.fetchLyric(lyricTrack), watchdog);
       row.lyricLines = l?.lines?.length || 0;
-      row.word = !!(l?.yrc || l?.qrc);
+      row.wordRaw = !!(l?.yrc || l?.qrc);
+      row.usableWordLines=l?measuring.lyricCoverage(l).wordLines:0;
+      row.word = row.usableWordLines>0;
+      row.lyricPlatform=l?.source || null;
+      row.provenance=l?.provenance || [];
       row.translatedLines = l?.lines?.filter(x => x.translation?.trim()).length || 0;
       row.translation = row.lyricLines > 0 && row.translatedLines / row.lyricLines >= 0.5;
     } catch { row.lyricLines = 0; row.word = false; row.translatedLines = 0; row.translation = false; row.lyricTimeout = true; }
@@ -94,7 +116,7 @@ async function run() {
 await Promise.all(Array.from({ length: Number(args.concurrency || 3) }, run));
 const percentile = (values, q) => values.length ? [...values].sort((a,b) => a-b)[Math.ceil(values.length * q) - 1] : null;
 const metrics = list => {
-  const ok = list.filter(x => x.playable), direct = ok.filter(x => !x.fallback), fallback = ok.filter(x => x.fallback), foreign = list.filter(x => x.language !== 'zh');
+  const ok = list.filter(x => x.playable), direct = ok.filter(x => !x.fallback), fallback = ok.filter(x => x.fallback), foreign = list.filter(x => ['ja','en','ko'].includes(x.language));
   return { n: list.length, direct: direct.length, fallback: fallback.length, playable: ok.length, full: list.filter(x => x.full).length, watchdog: list.filter(x => x.errorCode === 'WATCHDOG').length,
     directP50: percentile(direct.map(x => x.resolveMs), .5), directP95: percentile(direct.map(x => x.resolveMs), .95), fallbackP95: percentile(fallback.map(x => x.resolveMs), .95), word: list.filter(x => x.word).length, foreignN: foreign.length, translation: foreign.filter(x => x.translation).length };
 };

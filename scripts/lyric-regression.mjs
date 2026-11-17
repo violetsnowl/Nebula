@@ -54,5 +54,9 @@ await test('切歌取消歌词底层请求，迟到数据不入缓存',async()=>
  const service=new b.LyricService(a),c=new AbortController(),p=service.fetchLyric({platform:'qq',sourceId:'x'},c.signal);
  await new Promise(r=>setTimeout(r,2));c.abort();assert.equal(await p,null);assert.equal(signal.aborted,true);
 });
+await test('网易云一条歌词接口挂起不丢另一条已取得的正文和翻译',async()=>{
+ const a=new b.NeteaseAdapter({}, {getHeader:()=>''},async name=>name==='lyric_new'?new Promise(()=>{}):{status:200,body:{lrc:{lyric:'[00:01.000]正文一\n[00:02.000]正文二'},tlyric:{lyric:'[00:01.000]译文一\n[00:02.000]译文二'}}});
+ const l=await b.withRequestScope(3200,()=>a.fetchLyric('synthetic'));assert.equal(l.lines.length,2);assert.equal(l.lines[1].translation,'译文二');
+});
 console.log(`歌词回归 ${count}/${count}`);
 }finally{fs.rmSync(temp,{recursive:true,force:true})}

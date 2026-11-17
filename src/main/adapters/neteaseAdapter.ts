@@ -18,6 +18,7 @@ import { mergeLyric, normalizeJsonLrc } from '../parsers/lyricParser';
 import { mapNeteaseTrack } from './mappers';
 import { callNcmSafe } from '../ncm/ncmApi';
 import { EFFECT_LEVELS, mapQualityTo } from '../quality';
+import { withRequestScope } from '../requestScope';
 
 interface NeteasePlaylistResp {
   playlist?: {
@@ -60,6 +61,7 @@ export class NeteaseAdapter implements PlatformAdapter {
   constructor(
     private http: HttpClient,
     private cookies: CookieStore,
+    private lyricCall: typeof callNcmSafe = callNcmSafe,
   ) { cookies.onChange?.(() => { this.rightsCache = null; }); }
 
   async fetchPlaylist(playlistId: string): Promise<Playlist> {
@@ -213,9 +215,10 @@ export class NeteaseAdapter implements PlatformAdapter {
     let romalrc = '';
     let yrc = '';
     let ytlrc = '';
+    // 两个同源接口并发，每个截止早于歌词路由阶段；一方超时不丢掉另一方已取得的正文。
+    const [nr,r]=await Promise.all(['lyric_new','lyric'].map(name=>withRequestScope(2800,()=>this.lyricCall(name,{id:songId,cookie})).catch(()=>null)));
     try {
       // 1) lyric_new：逐字歌词（yrc/ytlrc），lrc 可能是新版 JSON-Lines
-      const nr = await callNcmSafe('lyric_new', { id: songId, cookie });
       const nb = nr?.body as Record<string, any> | undefined;
       if (nb) {
         yrc = nb.yrc?.lyric ?? '';
@@ -229,7 +232,6 @@ export class NeteaseAdapter implements PlatformAdapter {
     }
     try {
       // 2) lyric：普通 LRC 补充（lyric_new 缺失时兜底）
-      const r = await callNcmSafe('lyric', { id: songId, cookie });
       const rb = r?.body as Record<string, any> | undefined;
       if (rb) {
         if (!lrc) lrc = rb.lrc?.lyric ?? '';

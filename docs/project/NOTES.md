@@ -110,6 +110,13 @@
 
 ## 后端整修 #B6：线上复测和封面
 
+### #B7 补充
+
+- 完整 512 字节 Range 也调用 destroy 会破坏 keep-alive；现在有明确完整长度时等 end，超量或未知长度才截断。真实 3 次探测的新增连接数≤1。
+- 初始短预算能误杀已取到 URL 但尚在探测的歌曲；阶段预算按实测修订，总预算仍 6 秒。失败耗时与成功耗时必须分别报告，不能靠减少成功样本美化分位数。
+- 网易云 lyric_new/lyric 原先串行，后一个慢请求可使整阶段丢弃前一个成功结果；改为并发独立限时，并添加一方永久挂起的回归。
+- Spotify 官方现行字段是 `items.items[].item`，旧 `tracks.items[].track` 已弃用；兼容两者和 next 分页。官方 [Get Playlist](https://developer.spotify.com/documentation/web-api/reference/get-playlist) 与 [Get Playlist Items](https://developer.spotify.com/documentation/web-api/reference/get-playlists-items) 说明条目访问受拥有/协作权限限制。无条目权限不返回假空歌单；100 页/5000 首、60 秒上限，超限明确报错。本机没有 OAuth 授权，线上行为待复测。
+
 - 取链阶段超时不能作为整个平台失效的证据；主源点播总要获得恢复机会。只有非取消/非超时异常计入兜底平台 30 秒熔断。
 - 网易云库 generateConfig 串行注册匿名身份和更新公钥，首次请求原先会等待它；复用 24 小时内的匿名文件，桌面启动预热。不存在/过期时仍有 5 秒初始化上限与播放总预算，不能硬编码匿名令牌。
 - coverInfo 字段 `{url,width?,height?,verified}`；像素通过受限 GET 读取 PNG/JPEG/WebP/GIF 头确认，最大 64 KiB、总预算 5 秒、4 个并发、500 项/24 小时缓存。URL 中的 800/1000 不算实际尺寸；失败只返回 unverified，前端不能展示虚构像素。

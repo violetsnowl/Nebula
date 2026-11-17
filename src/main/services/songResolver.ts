@@ -13,13 +13,13 @@ const LEVELS: Record<string, string[]> = {
 export type UrlProbe = (url: string, platform: Platform, signal?: AbortSignal) => Promise<boolean>;
 export interface ResolveOptions { signal?: AbortSignal; forceRefresh?: boolean }
 export interface ResolverPolicy { totalMs: number; primaryMs: number; searchMs: number; candidateMs: number; probeMs: number; cacheMs: number }
-const POLICY: ResolverPolicy = { totalMs: 6000, primaryMs: 2300, searchMs: 1600, candidateMs: 2000, probeMs: 1000, cacheMs: 120000 };
+const POLICY: ResolverPolicy = { totalMs: 6000, primaryMs: 3500, searchMs: 1600, candidateMs: 2300, probeMs: 1600, cacheMs: 120000 };
 type Job = { control: AbortController; users: number; done: boolean; promise: Promise<ResolveResult> };
 type Timings = NonNullable<ResolveResult['timings']>;
 let sequence = 0;
 const failure = (t: Track, code: ResolveResult['code'] = 'NO_SOURCE'): ResolveResult => ({
   url: '', platform: t.platform, sourceId: t.sourceId, fallback: false, playable: false, code,
-  error: code === 'CANCELLED' ? '播放请求已取消' : code === 'TIMEOUT' ? '音源解析超时' : '主平台与兜底平台均未获取到可播音源（含音源探测过滤）',
+    error: code === 'CANCELLED' ? '播放请求已取消' : code === 'TIMEOUT' ? '音源解析超时' : '主平台与兜底平台均未获取到可播音源（含音源探测过滤）',
 });
 const codeOf = (e: unknown): 'TIMEOUT' | 'CANCELLED' | 'NO_SOURCE' => e instanceof RequestCancelled ? e.code : 'NO_SOURCE';
 const remember = <T>(map: Map<string, T>, key: string, value: T, max = 256): void => {
@@ -52,7 +52,8 @@ export class SongResolver {
     if (options.signal?.aborted) return Promise.resolve(failure(track, 'CANCELLED'));
     const key = this.key(track,quality), hit = this.cache.get(key);
     if (!options.forceRefresh && hit?.expiresAt && hit.expiresAt > Date.now() + 5000) {
-      return Promise.resolve({ ...hit, traceId: `play-${++sequence}`, timings: [{stage:'cache',platform:hit.platform,ms:0,outcome:'hit'}] });
+      const result:ResolveResult={ ...hit, traceId: `play-${++sequence}`, timings: [{stage:'cache',platform:hit.platform,ms:0,outcome:'hit'}] };
+      this.report(result,Date.now());return Promise.resolve(result);
     }
     this.cache.delete(key);
     const jobKey = key + (options.forceRefresh ? ':fresh' : ':normal');
@@ -60,10 +61,12 @@ export class SongResolver {
     if (!job || job.control.signal.aborted) {
       if (options.forceRefresh) this.epoch++;
       const epoch = this.epoch;
+      const traceId=`play-${++sequence}`,timings:Timings=[],start=Date.now();
       const created: Job = { control: new AbortController(), users: 0, done: false, promise: Promise.resolve(failure(track)) };
-      created.promise = withRequestScope(this.policy.totalMs, () => this.run(track, quality), {
+      created.promise = withRequestScope(this.policy.totalMs, () => this.run(track, quality,false,traceId,timings), {
         signal: created.control.signal, forceRefresh: options.forceRefresh, detached: true,
-      }).catch(e => failure(track,codeOf(e))).then(result => {
+      }).catch(e => ({...failure(track,codeOf(e)),traceId,timings:[...timings,{stage:'budget',platform:track.platform,ms:Date.now()-start,outcome:codeOf(e)}]})).then(result => {
+        this.report(result,start);
         if (result.url && result.playable && epoch === this.epoch && !created.control.signal.aborted) remember(this.cache,key,result);
         return result;
       }).finally(() => { created.done = true; if (this.jobs.get(jobKey) === created) this.jobs.delete(jobKey); });
@@ -84,6 +87,9 @@ export class SongResolver {
       if (options.signal?.aborted) cancel();
       void shared.promise.then(finish);
     });
+  }
+  private report(result:ResolveResult,start:number):void {
+    this.log(JSON.stringify({traceId:result.traceId,ms:Date.now()-start,result:result.url?(result.trial?'TRIAL_ONLY':'OK'):result.code,platform:result.platform,fallback:result.fallback,timings:result.timings}));
   }
   private async stage<T>(timings: Timings, stage: string, platform: string, ms: number, fn: () => Promise<T>): Promise<T> {
     const at = Date.now(); let outcome = 'ok';
@@ -116,8 +122,7 @@ export class SongResolver {
       return null;
     }
   }
-  private async run(track: Track, quality?: string, fallbackOnly = false): Promise<ResolveResult> {
-    const traceId = `play-${++sequence}`, timings: Timings = [], start=Date.now();
+  private async run(track: Track, quality?: string, fallbackOnly = false,traceId=`play-${++sequence}`,timings:Timings=[]): Promise<ResolveResult> {
     let direct: ResolveResult | null = null, result: ResolveResult;
     try {
       if (!fallbackOnly && PLAYABLE.includes(track.platform)) {
@@ -125,8 +130,13 @@ export class SongResolver {
       }
       result = direct?.url && !direct.trial ? direct : await this.fallback(track,quality,timings) || direct || failure(track);
     } catch(e) { result=direct?.url ? direct : failure(track,codeOf(e)); }
+    if(!result.url && result.code==='NO_SOURCE'){
+      const cause=timings.find(t=>t.stage==='availability'&&t.platform===track.platform)?.outcome;
+      if(cause==='LOGIN_REQUIRED')result.error='当前平台需要登录，其他平台也未找到可用音源';
+      if(cause==='RIGHTS_OR_UNAVAILABLE')result.error='当前账号没有可用音源，可能受权限或版权限制；其他平台也不可用';
+      if(cause==='NETWORK')result.error='平台连接失败，其他平台也暂时不可用';
+    }
     const complete={...result,traceId,timings:[...timings]};
-    this.log(JSON.stringify({ traceId, ms:Date.now()-start, result:result.url?(result.trial?'TRIAL_ONLY':'OK'):result.code, platform:result.platform, fallback:result.fallback, timings }));
     return complete;
   }
   private async fallback(track: Track, quality: string | undefined, timings: Timings): Promise<ResolveResult | null> {
@@ -169,7 +179,9 @@ export class SongResolver {
     } finally { cancel.abort(new RequestCancelled('CANCELLED')); }
   }
   async resolveFallback(track: Track, quality?: string): Promise<ResolveResult | null> {
-    return withRequestScope(this.policy.totalMs,()=>this.run(track,quality,true)).catch(e=>failure(track,codeOf(e)));
+    const start=Date.now(),traceId=`play-${++sequence}`,timings:Timings=[];
+    const result=await withRequestScope(this.policy.totalMs,()=>this.run(track,quality,true,traceId,timings)).catch(e=>({...failure(track,codeOf(e)),traceId,timings:[...timings]}));
+    this.report(result,start);return result;
   }
   async enrichFallback(track: Track): Promise<Track> {
     const result=await this.resolveFallback(track);

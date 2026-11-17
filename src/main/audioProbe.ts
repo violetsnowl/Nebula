@@ -40,7 +40,8 @@ async function sample(url:URL,opts:ProbeOptions,limit:number,hop=0):Promise<{sta
       const finish=() => { if (finished) return; finished=true; resolve({status,type:String(res.headers['content-type'] || ''),bytes:Buffer.concat(chunks)}); };
       res.on('data',(chunk:Buffer)=> {
         const part=chunk.subarray(0,Math.max(0,limit-size));chunks.push(part);size+=part.length;
-        if (size>=limit) { finish();res.destroy(); }
+        // 正常 512 字节 Range 等待 end，让 Agent 回收完整连接；仅截断超量/无长度响应。
+        if (size>=limit && Number(res.headers['content-length'])!==size) { finish();res.destroy(); }
       });
       res.once('end',finish);
       res.once('aborted',()=>{ if (!finished) reject(new Error('probe interrupted')); });
@@ -55,7 +56,7 @@ export async function probeAudioUrl(raw:string,opts:ProbeOptions):Promise<ProbeR
   const hit=cache.get(key);
   if (!opts.signal?.aborted && !requestScope()?.forceRefresh && hit && Date.now()-hit.at<120000) return hit.result;
   try {
-    const result=await withRequestScope(opts.timeoutMs ?? 1000,async()=> {
+    const result=await withRequestScope(opts.timeoutMs ?? 1600,async()=> {
       const res=await sample(new URL(raw),opts,Math.max(32,Math.min(4096,opts.bytes || 512)));
       const ok=[200,206].includes(res.status) && looksLikeAudio(res.bytes,res.type);
       return {ok,status:res.status,contentType:res.type,...(!ok?{reason:'HTTP 状态或音频签名未通过'}:{})};
