@@ -545,14 +545,24 @@ export function useStage({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [handleFrame, songs.length, applySearch, world]);
 
-  // 播放器失败事件 → 卡片置灰
+  // 播放器失败事件 → 卡片置灰；之后同一首真正播起来（如重新登录后）→ 恢复
   useEffect(
     () =>
       audioPlayer.subscribe(() => {
         const s = audioPlayer.getState();
-        if (s.failed && s.song && lastFailedSongRef.current !== s.song.id) {
-          lastFailedSongRef.current = s.song.id;
-          setFailedIds((prev) => (prev.has(s.song!.id) ? prev : new Set(prev).add(s.song!.id)));
+        if (!s.song) return;
+        const id = s.song.id;
+        if (s.failed && lastFailedSongRef.current !== id) {
+          lastFailedSongRef.current = id;
+          setFailedIds((prev) => (prev.has(id) ? prev : new Set(prev).add(id)));
+        } else if (s.playing && !s.failed) {
+          if (lastFailedSongRef.current === id) lastFailedSongRef.current = null;
+          setFailedIds((prev) => {
+            if (!prev.has(id)) return prev;
+            const next = new Set(prev);
+            next.delete(id);
+            return next;
+          });
         }
       }),
     [],

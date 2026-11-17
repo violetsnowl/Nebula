@@ -952,6 +952,7 @@ async function main() {
   }
 
   // 10f. 坏链接自动跳歌 + 卡片置灰
+  const goodAudio0 = await page.evaluate(() => window.__nebula.songsData()[0].audio);
   await page.evaluate(() => {
     window.__nebula.setSongAudio(0, 'https://127.0.0.1:1/broken.mp3');
   });
@@ -985,6 +986,38 @@ async function main() {
   const failedCount = await page.evaluate(() => document.querySelectorAll('.music-card.is-failed').length);
   log('坏链接自动跳到下一首(期望1)', skippedTo);
   log('置灰卡片数(应≥1)', failedCount);
+
+  // 10f+. 同一首之后真正播起来（如重新登录后再点）→ 置灰恢复
+  await page.evaluate((url) => {
+    const n = window.__nebula;
+    n.setSongAudio(0, url);
+  }, goodAudio0);
+  await page.waitForTimeout(300);
+  await page.evaluate(() => {
+    const n = window.__nebula;
+    n.player.playSong(n.songsData()[0], n.songsData());
+  });
+  const failedRecovered = await page
+    .waitForFunction(
+      () => {
+        const s = window.__nebula.player.getState();
+        return s.song?.id === 0 && s.playing && !document.querySelector('.music-card.is-failed[data-song-id="0"]');
+      },
+      null,
+      { timeout: 15000 },
+    )
+    .then(() => true)
+    .catch(() => false);
+  log('重新播放成功后置灰恢复', failedRecovered);
+  if (!failedRecovered) {
+    log('置灰恢复诊断', JSON.stringify(await page.evaluate(() => {
+      const s = window.__nebula.player.getState();
+      const el = document.querySelector('.music-card[data-song-id="0"]');
+      return { id: s.song?.id, playing: s.playing, loading: s.loading, failed: s.failed, error: s.error, t: s.currentTime,
+        audio0: String(window.__nebula.songsData()[0].audio).slice(0, 60), card: el ? el.className : null,
+        failedCards: [...document.querySelectorAll('.music-card.is-failed')].map((e) => e.getAttribute('data-song-id')) };
+    })));
+  }
 
   // 10g. 音质选择（注入桌面 API stub，验证列表拉取 + 菜单交互 + 切源）
   await page.evaluate(() => {
@@ -1238,6 +1271,7 @@ async function main() {
     idAfterNext === idBefore ||
     skippedTo !== 1 ||
     failedCount < 1 ||
+    !failedRecovered ||
     qualityItems < 3 ||
     !qualityState.quality ||
     !qualityState.switched ||
@@ -1290,6 +1324,7 @@ async function main() {
     nav: idAfterNext === idBefore,
     skip: skippedTo !== 1,
     failedCard: failedCount < 1,
+    failedRecover: !failedRecovered,
     qualityMenu: qualityItems < 3 || !qualityState.quality || !qualityState.switched,
     firstRunEmpty: !emptyOk,
     edgeHide: !edgeHideOk,
