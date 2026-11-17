@@ -260,6 +260,12 @@ function CommentRow({ c }: { c: CommentItem }) {
   );
 }
 
+/** 内容取自别的平台时的来源小字：「来自网易云」「来自 QQ 音乐」（只写字，跟元信息同级的弱文字）。 */
+function sourceLabel(platform: string): string {
+  const name = platform === 'netease' ? '网易云' : platformMeta(platform).name;
+  return /^[A-Za-z]/.test(name) ? `来自 ${name}` : `来自${name}`;
+}
+
 function CommentsPanel({ track, onClose }: { track: Track; onClose: () => void }) {
   const [hot, setHot] = useState<CommentItem[]>([]);
   const [latest, setLatest] = useState<CommentItem[]>([]);
@@ -301,7 +307,7 @@ function CommentsPanel({ track, onClose }: { track: Track; onClose: () => void }
         setLatest(d?.latest ?? []);
         setLatestTotal(d.latestTotal);
         setHasMore(!!d.hasMoreLatest);
-        setBorrowedFrom(d.source?.fallback ? platformMeta(d.source.platform).name : '');
+        setBorrowedFrom(d.source?.fallback ? sourceLabel(d.source.platform) : '');
       })
       .catch(() => !cancelled && setError('评论加载失败'))
       .finally(() => !cancelled && setLoading(false));
@@ -337,7 +343,7 @@ function CommentsPanel({ track, onClose }: { track: Track; onClose: () => void }
         评论
         {(!!latestTotal || !!borrowedFrom) && (
           <small>
-            {[latestTotal ? `共 ${latestTotal.toLocaleString()} 条` : '', borrowedFrom ? `来自${borrowedFrom}` : '']
+            {[latestTotal ? `共 ${latestTotal.toLocaleString()} 条` : '', borrowedFrom]
               .filter(Boolean)
               .join(' · ')}
           </small>
@@ -475,7 +481,7 @@ function SongDetailPanel({
     detail?.album.publishDate,
     fmtDuration(detail?.duration ?? track.duration),
     platformMeta(track.source).name,
-    detail?.source?.fallback ? `信息来自${platformMeta(detail.source.platform).name}` : '',
+    detail?.source?.fallback ? sourceLabel(detail.source.platform) : '',
   ]
     .filter(Boolean)
     .join(' · ');
@@ -491,7 +497,7 @@ function SongDetailPanel({
         <>
           <div className="mdl-gtitle">
             <span>制作团队</span>
-            {detail.creditsFrom && <span>来自{platformMeta(detail.creditsFrom).name}</span>}
+            {detail.creditsFrom && <span>{sourceLabel(detail.creditsFrom)}</span>}
           </div>
           <div className="mdl-group">
             {detail.credits.map((c, i) => (
