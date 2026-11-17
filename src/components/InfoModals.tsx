@@ -270,6 +270,8 @@ function CommentsPanel({ track, onClose }: { track: Track; onClose: () => void }
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState('');
   const [unavailable, setUnavailable] = useState(false);
+  /** 本平台没有评论时取的是同一录音在别的平台的评论：标出来源 */
+  const [borrowedFrom, setBorrowedFrom] = useState('');
   // 纯网页模式没有桌面接口：不进入加载态，直接给说明，避免永远「加载中…」
   const noDesktop = !hasDesktopAPI();
   useEffect(() => {
@@ -281,6 +283,7 @@ function CommentsPanel({ track, onClose }: { track: Track; onClose: () => void }
     setLoading(true);
     setError('');
     setUnavailable(false);
+    setBorrowedFrom('');
     window.nebulaAPI!
       .fetchComments(toBackendTrack(track), 0)
       .then((res) => {
@@ -298,6 +301,7 @@ function CommentsPanel({ track, onClose }: { track: Track; onClose: () => void }
         setLatest(d?.latest ?? []);
         setLatestTotal(d.latestTotal);
         setHasMore(!!d.hasMoreLatest);
+        setBorrowedFrom(d.source?.fallback ? platformMeta(d.source.platform).name : '');
       })
       .catch(() => !cancelled && setError('评论加载失败'))
       .finally(() => !cancelled && setLoading(false));
@@ -331,7 +335,13 @@ function CommentsPanel({ track, onClose }: { track: Track; onClose: () => void }
     <div className="mdl-chead">
       <h3>
         评论
-        {!!latestTotal && <small>共 {latestTotal.toLocaleString()} 条</small>}
+        {(!!latestTotal || !!borrowedFrom) && (
+          <small>
+            {[latestTotal ? `共 ${latestTotal.toLocaleString()} 条` : '', borrowedFrom ? `来自${borrowedFrom}` : '']
+              .filter(Boolean)
+              .join(' · ')}
+          </small>
+        )}
       </h3>
       <div className="mdl-csong">
         {track.cover ? <img src={track.cover} alt="" draggable={false} /> : <span className="is-ph" />}
@@ -417,7 +427,7 @@ function SongDetailPanel({
     if (!hasDesktopAPI()) return;
     let cancelled = false;
     window.nebulaAPI!
-      .songDetail(toBackendTrack(track))
+      .songDetail(toBackendTrack(track), { withCredits: true })
       .then((res) => {
         if (cancelled) return;
         if (res.ok && res.data) setDetail(res.data);
@@ -460,7 +470,13 @@ function SongDetailPanel({
       )}
     </div>
   );
-  const meta = [detail?.album.publishDate, fmtDuration(detail?.duration ?? track.duration), platformMeta(platform).name]
+  // 详情取自别的平台时，平台名仍写歌曲本来的平台，另注明信息来源
+  const meta = [
+    detail?.album.publishDate,
+    fmtDuration(detail?.duration ?? track.duration),
+    platformMeta(track.source).name,
+    detail?.source?.fallback ? `信息来自${platformMeta(detail.source.platform).name}` : '',
+  ]
     .filter(Boolean)
     .join(' · ');
 
@@ -473,7 +489,10 @@ function SongDetailPanel({
       {!noDesktop && !error && !ready && <Loading />}
       {!!detail?.credits?.length && (
         <>
-          <div className="mdl-gtitle">制作团队</div>
+          <div className="mdl-gtitle">
+            <span>制作团队</span>
+            {detail.creditsFrom && <span>来自{platformMeta(detail.creditsFrom).name}</span>}
+          </div>
           <div className="mdl-group">
             {detail.credits.map((c, i) => (
               <div key={i} className="mdl-row">

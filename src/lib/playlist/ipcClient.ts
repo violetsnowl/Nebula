@@ -113,6 +113,16 @@ export interface DesktopSongDetail {
   album: { id: string; name: string; cover: string; publishDate?: string };
   duration?: number;
   credits?: Array<{ role: string; name: string }>;
+  /** 详情实际来源；fallback=true 表示本平台取不到，用的是同一录音在该平台的详情。 */
+  source?: DesktopContentSource;
+  /** 制作团队单独从其他平台补来时的平台。 */
+  creditsFrom?: string;
+}
+
+export interface DesktopContentSource {
+  platform: string;
+  sourceId: string;
+  fallback: boolean;
 }
 
 export interface DesktopArtistInfo {
@@ -164,6 +174,8 @@ export interface DesktopCommentResult {
   latest: DesktopCommentItem[];
   latestTotal?: number;
   hasMoreLatest?: boolean;
+  /** 评论实际来源；fallback=true 表示本平台没有，取的是同一录音在该平台的评论。 */
+  source?: DesktopContentSource;
 }
 
 type IpcResult<T> = Promise<{ ok: true; data: T } | { ok: false; error: string }>;
@@ -177,7 +189,7 @@ export interface DesktopApi {
   fetchLyric: (track: DesktopTrack, options?: {requestId:string}) => IpcResult<unknown>;
   coverInfo?: (track:DesktopTrack) => IpcResult<DesktopCoverInfo|null>;
   fetchComments: (track: DesktopTrack, page?: number) => IpcResult<DesktopCommentResult | null>;
-  songDetail: (track: DesktopTrack) => IpcResult<DesktopSongDetail | null>;
+  songDetail: (track: DesktopTrack, opts?: { withCredits?: boolean }) => IpcResult<DesktopSongDetail | null>;
   artistInfo: (platform: string, artistId: string) => IpcResult<DesktopArtistInfo | null>;
   artistSongs: (platform: string, artistId: string) => IpcResult<DesktopTrack[]>;
   artistSongsAll: (platform: string, artistId: string) => IpcResult<DesktopTrack[]>;

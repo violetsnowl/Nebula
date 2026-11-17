@@ -123,7 +123,9 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
   safe('nebula:comments', async ({ track, page }: { track: Track; page?: number }) =>
     deps.lyricService.fetchComments(track, Number(page) || 0),
   );
-  safe('nebula:song-detail', async ({ track }: { track: Track }) => deps.lyricService.fetchSongDetail(track));
+  safe('nebula:song-detail', async ({ track, withCredits }: { track: Track; withCredits?: boolean }) =>
+    deps.lyricService.fetchSongDetail(track, { withCredits: !!withCredits }),
+  );
   safe('nebula:artist-info', async ({ platform, artistId }: { platform: Platform; artistId: string }) =>
     deps.lyricService.fetchArtistInfo(platform, String(artistId)),
   );

@@ -47,6 +47,8 @@ export interface Lyric {
   lrc?: string;
   tlyric?: string;
   romalrc?: string;
+  /** 本地转写补上的罗马音行数（韩语，平台没给的行）。 */
+  romanGenerated?: number;
   /** Raw word-level lyric (netease YRC). */
   yrc?: string;
   /** Netease word-level translation (ytlrc). */
@@ -76,6 +78,15 @@ export interface CommentResult {
   latestTotal?: number;
   /** 是否还有更多最新评论可分页加载。 */
   hasMoreLatest?: boolean;
+  /** 评论实际来自哪个平台；fallback=true 表示本平台没有，取的是同一录音在该平台的评论。 */
+  source?: ContentSource;
+}
+
+/** 内容页（评论、详情）的实际来源。 */
+export interface ContentSource {
+  platform: Platform;
+  sourceId: string;
+  fallback: boolean;
 }
 
 export interface Playlist {
@@ -197,6 +208,10 @@ export interface SongDetail {
   duration?: number;
   /** 制作团队（作词/作曲/编曲/制作人等，取自 LRC 元数据）。 */
   credits?: Array<{ role: string; name: string }>;
+  /** 详情实际来自哪个平台（本平台取不到时为同一录音在其他平台的详情）。 */
+  source?: ContentSource;
+  /** 制作团队单独从其他平台补来时的来源平台。 */
+  creditsFrom?: Platform;
 }
 
 export interface ArtistInfo {

@@ -34,3 +34,5 @@ export * from './parsers/timedLyrics';
 export * from './services/lyricAlignment';
 
 export * from './services/coverService';
+
+export { romanizeKorean, hasHangul } from './parsers/romanizeKorean';

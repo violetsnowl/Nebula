@@ -36,6 +36,21 @@ await test('时间漂移或正文不同拒绝跨源补全',()=>{
  assert.equal(b.alignTimelines(base,{...other,lines:other.lines.map((l,i)=>({...l,timeMs:l.timeMs+i*1000}))}),null);
  assert.equal(b.enrichAligned(base,{...other,lines:other.lines.map(l=>({...l,text:'不同歌词'}))}),base);
 });
+await test('两平台行时间各差几百毫秒且不固定：按正文逐行对齐，采用对方逐字时间轴',()=>{
+ const jitter=[300,-250,420,-380];
+ const sup={raw:'',lines:base.lines.map((l,i)=>({...l,timeMs:l.timeMs+jitter[i]})),yrc:base.lines.map((l,i)=>`[${l.timeMs+jitter[i]},1000](${l.timeMs+jitter[i]},1000,0)${l.text}`).join('\n'),identity:{platform:'qq',sourceId:'y'}};
+ assert.equal(b.alignTimelines(base,sup),null);
+ const r=b.enrichAligned(base,sup);
+ assert.equal(b.lyricCoverage(r).wordLines,4);
+ assert.deepEqual(r.lines.map(l=>l.timeMs),sup.lines.map(l=>l.timeMs));
+ assert.equal(r.provenance.at(-1).platform,'qq');
+});
+await test('逐行对齐不放过系统性漂移和不同正文',()=>{
+ const drift={...other,lines:other.lines.map((l,i)=>({...l,timeMs:l.timeMs+i*1000})),yrc:other.lines.map((l,i)=>`[${l.timeMs+i*1000},1000](${l.timeMs+i*1000},1000,0)${l.text}`).join('\n')};
+ assert.equal(b.enrichAligned(base,drift),base);
+ const wrong={...other,lines:other.lines.map((l,i)=>({...l,timeMs:l.timeMs+(i%2?300:-300),text:'不同歌词'+i}))};
+ assert.equal(b.enrichAligned(base,wrong),base);
+});
 await test('普通整句与无词时间的 JSON 不伪造逐字',()=>{assert.equal(ui.parseYrcText('[00:10.00]普通歌词').length,0);assert.equal(ui.parseYrcText('{"t":10,"c":[{"tx":"正文"}]}').length,0)});
 await test('英文空格补齐保持原始长音时长',()=>{
  const lines=[{timeMs:1000,text:'Hello world',words:[{text:'Hello',startMs:1000,duration:100},{text:'world',startMs:1100,duration:1900}]}];

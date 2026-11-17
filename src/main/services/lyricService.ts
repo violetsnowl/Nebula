@@ -10,8 +10,11 @@ import type {
   SongDetail,
   Track,
 } from '../types';
-import { creditsFromLrc } from '../parsers/lyricParser';
+import { creditsFromLrc, parseLrc } from '../parsers/lyricParser';
+import { lrcAt } from '../parsers/timedLyrics';
+import { hasHangul, romanizeKorean } from '../parsers/romanizeKorean';
 import { matchScore } from './songResolver';
+import { recordingMatch, searchKeyword } from './recordingMatch';
 import { normalizeQuery, titleSimilarity } from '../adapters/mappers';
 import { LyricCache } from './lyricCache';
 import { withRequestScope, throwIfCancelled } from '../requestScope';
@@ -32,6 +35,24 @@ function stripMarkup<T extends string | undefined>(v: T): T {
     .replace(/&amp;/g, '&') as T;
 }
 
+/**
+ * 韩语歌缺罗马音的行用本地转写补上（平台常只给部分行；实测 QQ 韩语歌只有约两成完整）。
+ * 平台给了的行保留原样；至少两行含韩文才算韩语歌。补了多少行记在 romanGenerated。
+ */
+export function withKoreanRoman(l: Lyric): Lyric {
+  // 「曲：안지영」这类署名行不转写
+  const rows = l.lines.filter((x) => x.text.trim() && hasHangul(x.text) && !/^[^:：]{1,24}[:：]/.test(x.text.trim()));
+  if (rows.length < 2) return l;
+  const existing = parseLrc(l.romalrc || l.romanRaw || '').filter((r) => r.text.trim());
+  const missing = rows.filter((r) => !existing.some((e) => Math.abs(e.timeMs - r.timeMs) <= 250));
+  if (!missing.length) return l;
+  const merged = [...existing, ...missing.map((r) => ({ timeMs: r.timeMs, text: romanizeKorean(r.text) }))].sort(
+    (a, b) => a.timeMs - b.timeMs,
+  );
+  const romalrc = merged.map((r) => lrcAt(r.timeMs, r.text)).join('\n');
+  return { ...l, romalrc, romanRaw: romalrc, romanGenerated: missing.length };
+}
+
 export class LyricService {
   constructor(
     private adapters: AdapterMap,
@@ -41,7 +62,7 @@ export class LyricService {
   private lyricJobs=new Map<string,{control:AbortController;users:number;done:boolean;promise:Promise<Lyric|null>}>();
   async fetchLyric(track: Track, signal?:AbortSignal): Promise<Lyric | null> {
     if(signal?.aborted)return null;
-    const cached=this.cache?.get(track.platform,track.sourceId);if(cached)return cached;
+    const cached=this.cache?.get(track.platform,track.sourceId);if(cached)return withKoreanRoman(cached);
     const key=track.platform+':'+track.sourceId;
     const pending=this.lyricJobs.get(key);if(pending && !pending.control.signal.aborted)return this.consumeLyric(pending,signal);
     const job={control:new AbortController(),users:0,done:false,promise:Promise.resolve(null) as Promise<Lyric|null>};
@@ -58,18 +79,22 @@ export class LyricService {
       const sources=(['netease','qq','kugou'] as Platform[]).filter(p=>p!==track.platform && this.adapters[p]?.searchSongs);
       const candidates=await Promise.all(sources.map(async platform=>{
         try{
-          const rows=await withRequestScope(1800,()=>this.adapters[platform].searchSongs!(`${track.title} ${track.artist}`.trim(),10));
+          const rows=await withRequestScope(1800,()=>this.adapters[platform].searchSongs!(searchKeyword(track),10));
           const match=rows.map(t=>({t,score:matchScore(t,track)})).filter(x=>x.score>=.9).sort((a,b)=>b.score-a.score)[0];
-          return match?await fetch(match.t,'fallback'):null;
+          const lyric=match?await fetch(match.t,'fallback'):null;
+          return lyric?{lyric,from:match!.t}:null;
         }catch{return null;}
       }));
       throwIfCancelled();
       // 固定平台顺序合并，网络完成顺序不改变结果。
-      for(const lyric of candidates){
-        if(!lyric)continue;
+      for(const hit of candidates){
+        if(!hit)continue;
+        const {lyric,from}=hit;
         if(!best){
-          // 无主源正文就无法验证跨源时间轴，只提供整句，保持未完成标志。
-          best={...lyric,yrc:undefined,qrc:undefined,krc:undefined,incomplete:true};
+          // 无主源正文时无法用正文锚点核对跨源时间轴：同一录音且时长差 ≤2 秒才保留逐字，否则只给整句。
+          const diff=Math.abs(Number(from.duration)-Number(track.duration));
+          const sameTimeline=Number(from.duration)>0 && Number(track.duration)>0 && diff<=2;
+          best=sameTimeline?{...lyric,incomplete:true}:{...lyric,yrc:undefined,qrc:undefined,krc:undefined,incomplete:true};
         }else best=enrichAligned(best,lyric);
       }
       return best;
@@ -77,7 +102,7 @@ export class LyricService {
       if(!lyric || job.control.signal.aborted)return null;
       const coverage=lyricCoverage(lyric);
       const incomplete=lyric.incomplete || !coverage.textLines || coverage.wordLines/coverage.textLines<.8 || coverage.translatedLines/coverage.textLines<.8;
-      const result={...lyric,coverage,incomplete};this.cache?.set(track.platform,track.sourceId,result);return result;
+      const result=withKoreanRoman({...lyric,coverage,incomplete});this.cache?.set(track.platform,track.sourceId,result);return result;
     }).finally(()=>{job.done=true;if(this.lyricJobs.get(key)===job)this.lyricJobs.delete(key);});
     job.promise=task;this.lyricJobs.set(key,job);return this.consumeLyric(job,signal);
   }
@@ -92,15 +117,70 @@ export class LyricService {
     });
   }
 
-  async fetchComments(track: Track, page = 0): Promise<CommentResult | null> {
-      try {
-        const fn = this.adapters[track.platform].fetchComments;
-        return fn ? await fn.call(this.adapters[track.platform], track.sourceId, page) : null;
-      } catch (err) {
-        console.warn("[LyricService] 评论获取失败:");
-        return null;
-      }
+  /** 同一录音在其他平台的对应曲目（评论、详情兜底用），按 order 优先；结果缓存 6 小时。 */
+  private counterparts = new Map<string, { at: number; track: Track | null }>();
+  private async counterpart(track: Track, order: Platform[] = ['netease', 'qq']): Promise<Track | null> {
+    const key = `${track.platform}:${track.sourceId}`;
+    const hit = this.counterparts.get(key);
+    if (hit && Date.now() - hit.at < 6 * 3600_000) return hit.track;
+    const platforms = order.filter((p) => p !== track.platform && this.adapters[p]?.searchSongs);
+    const found = await Promise.all(
+      platforms.map(async (p) => {
+        try {
+          const rows = await withRequestScope(2500, () => this.adapters[p].searchSongs!(searchKeyword(track), 10));
+          const best = rows
+            .map((c) => ({ c, m: recordingMatch(c, track) }))
+            .filter((x) => x.m.ok)
+            .sort((a, b) => a.m.rank - b.m.rank || b.m.score - a.m.score)[0];
+          return best?.c ?? null;
+        } catch {
+          return null;
+        }
+      }),
+    );
+    const result = found.find(Boolean) ?? null;
+    this.counterparts.set(key, { at: Date.now(), track: result });
+    if (this.counterparts.size > 256) this.counterparts.delete(this.counterparts.keys().next().value!);
+    return result;
+  }
+
+  private async ownComments(t: Track, page: number): Promise<CommentResult | null> {
+    const adapter = this.adapters[t.platform];
+    if (!adapter?.fetchComments) return null;
+    try {
+      return await adapter.fetchComments.call(adapter, t.sourceId, page);
+    } catch {
+      console.warn('[LyricService] 评论获取失败');
+      return null;
     }
+  }
+
+  /** 第 0 页决定评论来源，翻页沿用同一来源，避免一页本平台一页别的平台。 */
+  private commentSources = new Map<string, Track | null>();
+  async fetchComments(track: Track, page = 0): Promise<CommentResult | null> {
+    const key = `${track.platform}:${track.sourceId}`;
+    const filled = (r: CommentResult | null) => !!r && (r.hot.length > 0 || r.latest.length > 0);
+    if (page > 0) {
+      const alt = this.commentSources.get(key);
+      const from = alt ?? track;
+      const res = await this.ownComments(from, page);
+      return res ? { ...res, source: { platform: from.platform, sourceId: from.sourceId, fallback: !!alt } } : null;
+    }
+    const own = await this.ownComments(track, 0);
+    if (filled(own)) {
+      this.commentSources.set(key, null);
+      return { ...own!, source: { platform: track.platform, sourceId: track.sourceId, fallback: false } };
+    }
+    // 本平台没有评论接口、取失败或为空：按同一录音去网易云 → QQ 取。
+    const alt = await this.counterpart(track);
+    const res = alt ? await this.ownComments(alt, 0) : null;
+    if (alt && filled(res)) {
+      this.commentSources.set(key, alt);
+      if (this.commentSources.size > 256) this.commentSources.delete(this.commentSources.keys().next().value!);
+      return { ...res!, source: { platform: alt.platform, sourceId: alt.sourceId, fallback: true } };
+    }
+    return own ? { ...own, source: { platform: track.platform, sourceId: track.sourceId, fallback: false } } : null;
+  }
 
   /** 歌手全部歌曲（netease/qq 分页拉全；未实现平台返回空数组）。 */
   async fetchArtistAllSongs(platform: Platform, artistId: string): Promise<Track[]> {
@@ -157,19 +237,52 @@ export class LyricService {
     return scored[0]?.a ?? null;
   }
 
-  async fetchSongDetail(track: Track): Promise<SongDetail | null> {
+  private async ownDetail(t: Track): Promise<SongDetail | null> {
+    const adapter = this.adapters[t.platform];
+    if (!adapter?.fetchSongDetail) return null;
     try {
-      const adapter = this.adapters[track.platform];
-      let detail = adapter.fetchSongDetail ? await adapter.fetchSongDetail(track.sourceId) : null;
-      if (detail && !detail.credits?.length) {
-        const lyric = await this.fetchLyric(track);
-        if (lyric?.lrc) detail = { ...detail, credits: creditsFromLrc(lyric.lrc) };
-      }
-      return detail;
-    } catch (err) {
-      console.warn("[LyricService] 歌曲详情失败:");
+      return await adapter.fetchSongDetail(t.sourceId);
+    } catch {
+      console.warn('[LyricService] 歌曲详情失败');
       return null;
     }
+  }
+
+  /** 制作团队：先看详情，再看本曲歌词头部署名。 */
+  private async creditsOf(t: Track, detail: SongDetail | null): Promise<SongDetail['credits']> {
+    if (detail?.credits?.length) return detail.credits;
+    const lyric = await this.fetchLyric(t).catch(() => null);
+    const credits = lyric?.lrc ? creditsFromLrc(lyric.lrc) : [];
+    return credits.length ? credits : undefined;
+  }
+
+  /**
+   * 歌曲详情：本平台优先；本平台没有详情接口或取不到时，取同一录音在网易云 → QQ 的详情（歌手、专辑链接随之指向该平台）。
+   * withCredits：详情页要显示制作团队时传 true，本平台缺制作团队再去别的平台补（有 3 秒上限）；只为找歌手 id 的调用不付这笔延迟。
+   */
+  async fetchSongDetail(track: Track, options: { withCredits?: boolean } = {}): Promise<SongDetail | null> {
+    const own = await this.ownDetail(track);
+    if (own) {
+      let detail: SongDetail = { ...own, source: { platform: track.platform, sourceId: track.sourceId, fallback: false } };
+      if (!options.withCredits) return detail;
+      const credits = await this.creditsOf(track, own);
+      if (credits?.length) return { ...detail, credits };
+      const borrowed = await withRequestScope(3000, async () => {
+        const alt = await this.counterpart(track);
+        if (!alt) return null;
+        const c = await this.creditsOf(alt, await this.ownDetail(alt));
+        return c?.length ? { credits: c, from: alt.platform } : null;
+      }).catch(() => null);
+      if (borrowed) detail = { ...detail, credits: borrowed.credits, creditsFrom: borrowed.from };
+      return detail;
+    }
+    const alt = await this.counterpart(track);
+    const altDetail = alt ? await this.ownDetail(alt) : null;
+    if (!alt || !altDetail) return null;
+    const detail: SongDetail = { ...altDetail, source: { platform: alt.platform, sourceId: alt.sourceId, fallback: true } };
+    if (!options.withCredits) return detail;
+    const credits = await this.creditsOf(alt, altDetail);
+    return credits?.length ? { ...detail, credits } : detail;
   }
 
   async fetchArtistInfo(platform: Platform, artistId: string): Promise<ArtistInfo | null> {
