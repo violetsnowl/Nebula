@@ -71,6 +71,8 @@ pnpm qa:qq-live       # QQ 实账号链路验证（需 --cookie=... 或 scripts/
 pnpm qa:desktop-play  # 桌面播放链路冒烟
 ```
 
+换机器运行浏览器 QA 时，可设置 `NEBULA_QA_MODULES` 为包含 `playwright-core` 与 `pngjs` 的依赖目录，`NEBULA_CHROME` 为 Chromium/Chrome 可执行文件；不设置时保留原机器路径。也可在项目本地安装这两个测试依赖。原有 QA 使用 SoundHelix 公开演示音频，需要联网。
+
 > Node 运行时：`C:\Users\LIU\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe`
 >
 > 产物路径易踩：`pnpm build` 输出到仓库外的同级目录 `../nebula-outputs/`（本机 `E:\CUFE\vibecoding\nebula-outputs`），桌面版则用 `pnpm build:desktop`（输出到 `dist/` + `dist-main/`）。`pnpm qa` 读取的是 outputs 里那份产物，**先 build 再 qa**。
