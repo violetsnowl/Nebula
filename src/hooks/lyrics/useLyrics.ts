@@ -34,7 +34,7 @@ function normalizeLyricLines(data: unknown, title?: string, artist?: string): Ly
   const src = data as { yrc?: unknown; qrc?: unknown; romalrc?: unknown; romanRaw?: unknown };
   const yrc = typeof src.yrc === 'string' ? src.yrc : '';
   const qrc = typeof src.qrc === 'string' ? src.qrc : '';
-  // 罗马音（#159）：逐字合并之后再按时间挂，行时间已经定下来
+  // 罗马音（#161）：逐字合并之后再按时间挂，行时间已经定下来
   const roman = typeof src.romalrc === 'string' && src.romalrc ? src.romalrc : typeof src.romanRaw === 'string' ? src.romanRaw : '';
   return filterCreditLines(attachRoman(alignWordsToText(mergeWordLyrics(out, yrc || qrc)), roman), title, artist);
 }

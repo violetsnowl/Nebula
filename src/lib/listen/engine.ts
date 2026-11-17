@@ -310,7 +310,7 @@ export class LyricEngine {
       row.whole = new Vars(main);
     }
     el.appendChild(main);
-    // 罗马音读的是原文，紧贴在原文下面；翻译排在它后面（#159）
+    // 罗马音读的是原文，紧贴在原文下面；翻译排在它后面（#161）
     if (e.ro) {
       const ro = document.createElement('div');
       ro.className = 'ly-ro';

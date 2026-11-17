@@ -355,7 +355,7 @@
   border-radius: 50%;
   background: currentColor;
 }
-/* 罗马音开关（#159）：在翻译按钮左边；没有翻译时自己占右下角 */
+/* 罗马音开关（#161）：在翻译按钮左边；没有翻译时自己占右下角 */
 .ls-rob {
   right: 40px;
 }

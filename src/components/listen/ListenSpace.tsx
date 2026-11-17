@@ -302,7 +302,7 @@ export const ListenSpace = memo(function ListenSpace({
         <div className="ls-col">
           <LyricColumn className="ls-lyrics" lines={lines} settings={settings} />
           {hasRoman && (
-            // 罗马音开关（#159）：在翻译按钮左边，规格与翻译按钮相同；图标是带长音符号的 ā
+            // 罗马音开关（#161）：在翻译按钮左边，规格与翻译按钮相同；图标是带长音符号的 ā
             <button
               type="button"
               className={`ls-trb ls-rob${hasTranslation ? '' : ' is-solo'}`}

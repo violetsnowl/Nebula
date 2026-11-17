@@ -30,7 +30,7 @@ export interface EngineLine {
   units: EngineUnit[] | null;
   /** 翻译（没有则为 undefined）。 */
   tr?: string;
-  /** 罗马音（#159，没有则为 undefined）；只有听音空间的歌词栏显示。 */
+  /** 罗马音（#161，没有则为 undefined）；只有听音空间的歌词栏显示。 */
   ro?: string;
   /** 快歌密度 0–1：演唱时长 3.6s 以上 = 0，1.8s 以内 = 1。 */
   dens: number;

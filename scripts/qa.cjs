@@ -1185,7 +1185,7 @@ async function main() {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(1000);
 
-  // 10g+++. 罗马音（#159）：有罗马音的歌，听音空间默认不显示、翻译按钮左边多一个罗马音按钮；
+  // 10g+++. 罗马音（#161）：有罗马音的歌，听音空间默认不显示、翻译按钮左边多一个罗马音按钮；
   // 点开后罗马音在原文正下方、翻译之前；和原文一样的（英文行）不挂
   const roman = await page.evaluate(async (audio) => {
     const api = window.nebulaAPI;

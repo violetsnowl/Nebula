@@ -16,7 +16,7 @@ export interface LyricLineUI {
   timeMs: number;
   text: string;
   translation?: string;
-  /** 罗马音（#159，网易云 romalrc / QQ roma）；与原文相同（如英文歌）时不挂。 */
+  /** 罗马音（#161，网易云 romalrc / QQ roma）；与原文相同（如英文歌）时不挂。 */
   roman?: string;
   /** Line duration ms (from YRC/QRC or inferred from the next line). */
   duration?: number;
@@ -175,7 +175,7 @@ export function tidyRoman(s: string, joinSyllables: boolean): string {
 }
 
 /**
- * 罗马音（#159）：后端的 romalrc 是普通 LRC（网易云 romalrc、QQ roma 都归一成它），
+ * 罗马音（#161）：后端的 romalrc 是普通 LRC（网易云 romalrc、QQ roma 都归一成它），
  * 按时间挂到最近的原文行上（相差 300ms 以内；相邻两句通常隔好几秒）。
  * 和原文去掉空格标点后一样的（英文歌）不挂；原文是空行的不挂。
  */
@@ -240,7 +240,7 @@ const CREDIT_CN =
 const CREDIT_EN =
   /^(lyrics?|composed|composer|produced|producer|written|writer|mixed|mastered|recorded|arranged|engineered|programmed|published|performed|vocals?|backing vocals?|executive producer|additional|guitar|bass|drums?|keyboards?|strings?|piano|chorus|background vocals?)\b(\s*by|\s*[:：])/i;
 const CREDIT_OP_SP = /^(op|sp)\s*[:：]/i;
-/** QQ 给带音译的歌加的说明行（「以下音译标注由AI工具生产」等，#159）。 */
+/** QQ 给带音译的歌加的说明行（「以下音译标注由AI工具生产」等，#161）。 */
 const ROMAN_NOTE = /^以下.{0,6}(音译|罗马音|注音|翻译).{0,8}(生产|生成|提供|制作)/;
 /**
  * 通用的英文制作人员行：「标签：名字」，且标签里有制作类关键词（2026-11-16，真实数据里漏掉了
@@ -278,7 +278,7 @@ export function filterCreditLines(lines: LyricLineUI[], title?: string, artist?:
     if (CREDIT_CN.test(text) || CREDIT_EN.test(text) || CREDIT_OP_SP.test(text) || isEnglishCreditLabel(text)) continue;
     if (!sawText && ROMAN_NOTE.test(text)) continue;
     // 开头“歌名 - 歌手”标题行：仅清正文开始前的最多 2 行。
-    // QQ 也有去掉空格和括号挤在一起的写法（「SeattleAlone-脸红的思春期볼빨간사춘기」，#159）
+    // QQ 也有去掉空格和括号挤在一起的写法（「SeattleAlone-脸红的思春期볼빨간사춘기」，#161）
     if (
       droppedHeader < 2 &&
       ((/ - /.test(text) && ((title && text.includes(title)) || (artist && text.includes(artist)))) ||

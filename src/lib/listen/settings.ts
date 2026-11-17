@@ -11,7 +11,7 @@ export interface ListenSettings {
   font: 'serif' | 'sans';
   /** 外文歌词下方显示翻译（默认开）。 */
   translation: boolean;
-  /** 原文下方显示罗马音（#159，默认关；只在有罗马音的歌出现开关）。 */
+  /** 原文下方显示罗马音（#161，默认关；只在有罗马音的歌出现开关）。 */
   roman: boolean;
 }
 
