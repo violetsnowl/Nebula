@@ -226,15 +226,13 @@ export function queryRect(w: SpaceWorld, cx: number, cy: number, hx: number, hy:
   const x1 = Math.floor((cx + hx) / cell);
   const y0 = Math.floor((cy - hy) / cell);
   const y1 = Math.floor((cy + hy) / cell);
-  const seen = cols * cols < (x1 - x0 + 1) * (y1 - y0 + 1) ? new Set<number>() : null;
-  for (let gy = y0; gy <= y1; gy++) {
-    const ry = mod(gy, cols) * cols;
-    for (let gx = x0; gx <= x1; gx++) {
-      const key = ry + mod(gx, cols);
-      if (seen) {
-        if (seen.has(key)) continue;
-        seen.add(key);
-      }
+  // 范围跨过的格子超过一圈时只走一圈（画布首尾相接，多出来的格子就是同一批格子），每首歌最多返回一次
+  const nx = Math.min(cols, x1 - x0 + 1);
+  const ny = Math.min(cols, y1 - y0 + 1);
+  for (let j = 0; j < ny; j++) {
+    const ry = mod(y0 + j, cols) * cols;
+    for (let i = 0; i < nx; i++) {
+      const key = ry + mod(x0 + i, cols);
       for (const id of cells[key]!) {
         if (Math.abs(wrapDelta(w.px[id]! - cx, T)) <= hx && Math.abs(wrapDelta(w.py[id]! - cy, T)) <= hy) out.push(id);
       }
@@ -273,6 +271,7 @@ function colorOrder(songs: Track[], ids: number[]): { order: number[]; hueAng: M
  */
 function assignBands(pts: Pt[], order: number[], hueAng: Map<number, number>, T: number, s: number, px: Float64Array, py: Float64Array): void {
   const n = order.length;
+  if (n === 0) return; // 空歌单（首次启动）
   const depth = (p: Pt) => 1 - Math.abs((2 * p.y) / T - 1);
   const idx = pts.map((_, k) => k).sort((a, b) => depth(pts[a]!) - depth(pts[b]!));
   const bandD = Math.max(1e-6, (2.6 * s) / T);

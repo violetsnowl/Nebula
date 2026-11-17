@@ -872,10 +872,10 @@ function LyricPreview({
 
 type BgChoice = 'env' | 'fog' | 'custom' | 'wallpaper';
 
-/** 星云怎么排（#134）：三种排法同一套视觉，只是聚类方式不同。 */
+/** 星云怎么排（#134）：三种排法同一套视觉，只是聚类方式不同。默认按颜色（#137）。 */
 const LAYOUT_HINT: Record<StageLayout, string> = {
-  cluster: '同一位歌手的歌聚成一团，歌越多越靠中心；只有一首歌的歌手按封面颜色排在空隙里。',
-  chroma: '按封面颜色排成一片：同色系挨在一起，中间深、外圈艳。新歌单第一次要给封面取色，取完会重排一次。',
+  chroma: '按封面颜色铺开：往左右拖，颜色沿彩虹走；往上下拖，由暗到鲜艳。新歌单第一次要给封面取色，取完会重排一次。',
+  cluster: '同一位歌手的歌聚成一团，星团散在各处，旁边淡淡写着歌手名；只有一首歌的歌手按封面颜色排在空隙里。',
   random: '不按歌手也不按颜色。每次打开都重新撒一遍，这次用完之前位置不变。',
 };
 
@@ -1694,8 +1694,8 @@ export const AccountDock = memo(function AccountDock({
             label="星云怎么排"
             value={stageLab.layout}
             options={[
-              { value: 'cluster', label: '按歌手' },
               { value: 'chroma', label: '按颜色' },
+              { value: 'cluster', label: '按歌手' },
               { value: 'random', label: '随机' },
             ]}
             onChange={(v) => setSpaceLab({ mode: v })}

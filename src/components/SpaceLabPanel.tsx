@@ -9,8 +9,8 @@ import './space-lab.css';
  */
 const MODES: { v: StageMode; label: string; hint: string }[] = [
   { v: 'classic', label: '旧墙', hint: '旧的随机卡片墙（周期回绕 + 鱼眼），验收新星云期间的退路' },
-  { v: 'cluster', label: '按歌手', hint: '同一位歌手的歌聚成一团，歌越多越大、越靠中心；单曲歌手按颜色排在空隙里' },
-  { v: 'chroma', label: '按颜色', hint: '按封面颜色排成一片：同色系挨在一起，中间深、外圈艳' },
+  { v: 'chroma', label: '按颜色', hint: '横向沿彩虹走，纵向由暗到鲜艳（默认）' },
+  { v: 'cluster', label: '按歌手', hint: '同一位歌手的歌聚成一团，星团均匀散开；单曲歌手按颜色排在空隙里' },
   { v: 'random', label: '随机', hint: '不按歌手也不按颜色，每次打开重新撒一遍' },
 ];
 

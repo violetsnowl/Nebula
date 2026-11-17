@@ -31,7 +31,7 @@ import { getSpaceLab, registerSpaceCommand, setSpaceLab, useSpaceLab, type Stage
 import { buildChroma, buildCluster, buildRandom, queryRect, zoomFloor, type SpaceWorld } from '../../lib/space/world';
 import { camCenter, lensDelta, project, worldPerPixel, type Proj } from '../../lib/space/lens';
 import { ensureTones, oklabToRgb, toneOf, useToneProgress } from '../../lib/space/tone';
-import { setActiveWorld } from '../../lib/space/active';
+import { airAlpha, domShare, frameAlphaBuffer, MIN_CARD_PX, setActiveWorld } from '../../lib/space/active';
 import { StarField, type StarFrame } from '../../lib/space/stars';
 import { onThumbsReady } from '../../lib/space/thumbs';
 
@@ -40,9 +40,11 @@ import { onThumbsReady } from '../../lib/space/thumbs';
  * 0.3 倍缩放下 190 张时拖动每帧 40–50ms），所以小卡片交给星层画布画缩略图。
  */
 const MAX_MOUNT = 140;
-/** 屏幕上小于这个尺寸（px）的卡片不挂 DOM，由画布画缩略图；56–72px 之间两种画法交叉淡化。 */
-const MIN_CARD_PX = 56;
-const FULL_CARD_PX = 72;
+/**
+ * 查候选卡片的范围比屏幕大的那一圈（世界坐标）。#137：卡片要在离屏幕边缘还有一段距离时就挂好 DOM，
+ * 拖进来时它已经在那里；最大缩放下边缘卡片约 370px，挂载范围（1.5 张卡 + 60px）过透镜外圈压缩后约 680 世界单位。
+ */
+const QUERY_PAD = 660;
 
 function smoothstep(a: number, b: number, x: number): number {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -281,16 +283,19 @@ export function useStage({
       const cand = candRef.current;
       cand.length = 0;
       // 画布首尾相接（#136）：查镜头周围一个屏幕大小（加一圈余量）的矩形，取每首歌离镜头最近的那一份
-      queryRect(world, cx, cy, vw / (2 * z) + 220 / z, vh / (2 * z) + 260 / z, cand);
+      queryRect(world, cx, cy, vw / (2 * z) + QUERY_PAD + 120 / z, vh / (2 * z) + QUERY_PAD * 1.2 + 120 / z, cand);
       for (const id of cand) {
         if (id >= revealedRef.current) continue;
         project(world.px[id]!, world.py[id]!, frame, delta, p, world.period);
         const size = CARD_WIDTH * p.s;
         // 小于 56px 的交给画布（这时 DOM 卡片本来就淡到 0 了，挂着只是白白重算样式）
         if (size < MIN_CARD_PX) continue;
-        // 已挂着的卡片出了屏幕边缘再多留一段才卸（滞回），免得在边界上反复挂 / 卸，触发整批渲染
-        const m = was.has(id) ? 1.6 : 1;
-        if (p.sx < -size * m || p.sx > vw + size * m || p.sy < -size * 1.4 * m || p.sy > vh + size * 1.4 * m) continue;
+        // 挂 DOM 的范围比屏幕大一圈（#137：1.5 张卡 + 60px）：拖进来时卡片早已挂好、就在那里，不会到了边上才闪现。
+        // 已挂着的出了这个范围再多留一段才卸（滞回），免得在边界上反复挂 / 卸，触发整批渲染
+        const keep = was.has(id);
+        const padX = size * (keep ? 2.3 : 1.5) + 60;
+        const padY = size * (keep ? 2.7 : 1.9) + 60;
+        if (p.sx < -padX || p.sx > vw + padX || p.sy < -padY || p.sy > vh + padY) continue;
         const slot = (pool[np] ??= { id: 0, sx: 0, sy: 0, s: 0, u: 0 });
         slot.id = id;
         slot.sx = p.sx;
@@ -301,8 +306,17 @@ export function useStage({
       }
     }
     const live = pool.slice(0, np).sort((a, b) => a.u - b.u);
-    if (live.length > MAX_MOUNT) live.length = MAX_MOUNT;
-    const ids = live.map((q) => q.id);
+    // 超过上限时（2K 屏幕缩到中等远近），离中心最远的那些交给画布画。交界处按离中心的远近交叉淡化一小段（#137）：
+    // 卡片往里走时是慢慢从画布缩略图换成 DOM 卡片，而不是走到某一圈突然一换
+    let uCut = Infinity;
+    if (live.length > MAX_MOUNT) {
+      live.length = MAX_MOUNT;
+      uCut = live[MAX_MOUNT - 1]!.u;
+    }
+    // 交给 React 的列表按 id 排，不按离镜头远近排（#137）：远近顺序每帧都在变，按它排的话每次有卡片进出，
+    // React 都要在 DOM 里挪动一大批卡片节点，挪动会让卡片的动画从头再放一遍——拖动时满屏闪烁。
+    // 按 id 排，已挂着的卡片相对顺序不变，进出只插入 / 删除；层叠靠 z-index，不靠 DOM 顺序。
+    const ids = live.map((q) => q.id).sort((a, b) => a - b);
 
     const cur = visibleRef.current;
     let changed = ids.length !== cur.size;
@@ -325,10 +339,14 @@ export function useStage({
     partActiveRef.current = partK > 0 || ebbK > 0;
     const metaPool = metaPoolRef.current;
     let metaN = 0;
+    const liveA = frameAlphaBuffer(n);
     for (const q of live) {
       // 56–72px 之间 DOM 卡片和画布缩略图交叉淡化
-      const domA = smoothstep(MIN_CARD_PX, FULL_CARD_PX, CARD_WIDTH * q.s);
+      const domA = domShare(CARD_WIDTH * q.s) * (uCut < Infinity ? smoothstep(uCut, uCut - 0.12, q.u) : 1);
+      // 透明度只看大小（和画布交叉淡化）和透镜外圈；屏幕边缘不淡出（#137，边缘像一扇窗）
+      const airA = airAlpha(q.u);
       mountedA[q.id] = domA;
+      liveA[q.id] = domA * airA; // 还没挂上的卡片第一次渲染时用这个值，挂上的第一帧就对
       const el = cardEls.current.get(q.id);
       if (!el) {
         mountedA[q.id] = 0; // 还没挂上（下一次渲染才有）：先由画布画
@@ -357,17 +375,13 @@ export function useStage({
         sx += (sx - vw / 2) * 0.18 * ebbK;
         sy += (sy - vh * 0.45) * 0.14 * ebbK + vh * 0.05 * ebbK;
       }
-      const size = CARD_WIDTH * q.s;
-      const edge = Math.min(sx, vw - sx, sy, vh - sy);
-      const edgeA = smoothstep(-0.3 * size, 0.42 * size, edge);
-      const airA = 1 - 0.4 * smoothstep(0.38, 1.05, q.u);
       const scale = Math.min(3.4, q.s);
       const x = sx - CARD_WIDTH / 2;
       const y = sy - CARD_HEIGHT / 2;
       el.style.setProperty('--x', `${x}px`);
       el.style.setProperty('--y', `${y}px`);
       el.style.setProperty('--scale', String(scale));
-      el.style.setProperty('--card-a', (domA * edgeA * airA).toFixed(3));
+      el.style.setProperty('--card-a', (domA * airA).toFixed(3));
       el.style.setProperty('--card-filter', pushDim > 0.01 ? `brightness(${(1 - 0.42 * pushDim).toFixed(3)})` : 'none');
       const zi = Math.round((1 - Math.min(1, q.u)) * 5000) + 1;
       el.style.zIndex = String(zi);
@@ -578,6 +592,19 @@ export function useStage({
   // 星层画布：有边界星云时才挂（StageCanvas 渲染），换模式时重建
   useEffect(() => {
     starsRef.current = world && starCanvasRef.current ? new StarField(starCanvasRef.current) : null;
+  }, [world]);
+
+  // 打开 / 换排法时整片淡入（#137）：只在这之后约 0.9s 内新挂上的卡片淡入，拖动时进来的卡片不淡入。
+  // 用 data 属性而不是 class：className 归 React 管，重渲染会冲掉手动加的 class
+  useEffect(() => {
+    const stage = stageRef.current;
+    if (!stage || !world) return;
+    stage.dataset.arriving = '';
+    const t = window.setTimeout(() => delete stage.dataset.arriving, 900);
+    return () => {
+      window.clearTimeout(t);
+      delete stage.dataset.arriving;
+    };
   }, [world]);
 
   // 小封面缩略图陆续到了：补画一帧

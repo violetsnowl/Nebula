@@ -4,6 +4,7 @@ import { project, type CamLike, type Proj } from './lens';
 import { thumbOf } from './thumbs';
 import { oklabToRgb, toneOf } from './tone';
 import { placeholderFill } from '../coverPlaceholder';
+import { airAlpha } from './active';
 import type { SpaceWorld } from './world';
 
 /**
@@ -12,7 +13,8 @@ import type { SpaceWorld } from './world';
  * #133 缩到全貌时把每首歌画成一样的发光点，加上向日葵点阵的螺旋，看起来像万花筒、LED 点阵，
  * 和这个软件没有关系（用户反馈）。现在：
  *   - 一直画真封面：屏幕上 72px 以下到最远的 6px 左右，都是圆角小封面（远处用 18px 的小图）；
- *     和 DOM 卡片同位置、同圆角、同样的边缘 / 外圈淡出，56–72px 之间和 DOM 卡片交叉淡化；
+ *     和 DOM 卡片同位置、同圆角、同样的外圈略暗，56–72px 之间和 DOM 卡片交叉淡化；
+ *     #137：屏幕边缘不再淡出（边缘像一扇窗，拖过去自然看见）；
  *     缩略图还没到时先画一块封面代表色的小方块，到了自然换成封面；
  *   - #135：不再允许缩到看见整片星云（最远约 0.28 倍，封面约 48px），看全貌用的色雾去掉；
  *   - 按歌手时标出较大星团（6 首以上）的歌手名：正常缩放下很淡，拉远时清楚一些；大星团先占位，重叠的不写。
@@ -130,10 +132,7 @@ export class StarField {
       const size = Math.max(3, CARD_WIDTH * p.s);
       const half = size * 0.6 + 4;
       if (p.sx < -half || p.sy < -half || p.sx > cam.vw + half || p.sy > cam.vh + half) continue;
-      const edge = Math.min(p.sx, cam.vw - p.sx, p.sy, cam.vh - p.sy);
-      const edgeA = smoothstep(-0.3 * size, 0.42 * size, edge);
-      const airA = 1 - 0.4 * smoothstep(0.38, 1.05, p.u);
-      let a = left * edgeA * airA;
+      let a = left * airAlpha(p.u);
       if (match) a *= match.has(i) ? 1 : 0.16;
       if (a <= 0.02) continue;
       const track = world.cards[i]!.track;

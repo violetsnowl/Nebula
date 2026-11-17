@@ -2,8 +2,8 @@ import { useSyncExternalStore } from 'react';
 
 /**
  * 主舞台星云的排法（#134，用户确认：三种排法同源，做成设置项）。
- *   - cluster：按歌手——同一位歌手的歌聚成一团，歌越多越靠中心（默认）
- *   - chroma：按封面颜色——同色系挨在一起，中间深、外圈艳
+ *   - chroma：按封面颜色——横向沿彩虹走，纵向由暗到鲜艳（默认，#137 用户确认：第一眼最好看）
+ *   - cluster：按歌手——同一位歌手的歌聚成一团，星团均匀散在画布上
  *   - random：随机——每次打开重新撒一遍，同一次使用里位置不变
  * 设置在「设置 › 外观 › 星云怎么排」。
  *
@@ -30,10 +30,11 @@ export interface SpaceLab {
   open: boolean;
 }
 
-// 换了新键：原型阶段（#133）在旧键里存过「现有 / A / B」，不带过来，新星云从默认的「按歌手」开始
-const KEY = 'music-nebula.stage-space.v2';
+// 换了新键：原型阶段（#133）在 v1 存过「现有 / A / B」；#134–#136 比较三种排法时在 v2 里存过各自的选择。
+// 都不带过来，新星云从默认的「按颜色」开始（#137）
+const KEY = 'music-nebula.stage-space.v3';
 const LAYOUTS: StageLayout[] = ['cluster', 'chroma', 'random'];
-const DEFAULTS: SpaceLab = { layout: 'cluster', classic: false, mode: 'cluster', lens: 0.8, tilt: 0, tint: true, open: false };
+const DEFAULTS: SpaceLab = { layout: 'chroma', classic: false, mode: 'chroma', lens: 0.8, tilt: 0, tint: true, open: false };
 
 function withMode(s: Omit<SpaceLab, 'mode'> & { mode?: StageMode }): SpaceLab {
   return { ...s, mode: s.classic ? 'classic' : s.layout };

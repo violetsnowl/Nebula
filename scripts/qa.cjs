@@ -70,7 +70,7 @@ async function main() {
   // 这里先固定旧卡片墙跑主套件；新星云由「主舞台方向原型」一节单独检查。旧卡片墙删除时这一套改写。
   await page.addInitScript(() => {
     try {
-      localStorage.setItem('music-nebula.stage-space.v2', JSON.stringify({ classic: true }));
+      localStorage.setItem('music-nebula.stage-space.v3', JSON.stringify({ classic: true }));
     } catch {
       /* ignore */
     }
