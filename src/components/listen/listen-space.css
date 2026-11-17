@@ -355,6 +355,13 @@
   border-radius: 50%;
   background: currentColor;
 }
+/* 罗马音开关（#159）：在翻译按钮左边；没有翻译时自己占右下角 */
+.ls-rob {
+  right: 40px;
+}
+.ls-rob.is-solo {
+  right: 2px;
+}
 .ls-trb:focus-visible {
   outline: 2px solid rgba(255, 255, 255, 0.55);
   outline-offset: 2px;

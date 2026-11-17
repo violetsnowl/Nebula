@@ -30,6 +30,8 @@ export interface EngineLine {
   units: EngineUnit[] | null;
   /** 翻译（没有则为 undefined）。 */
   tr?: string;
+  /** 罗马音（#159，没有则为 undefined）；只有听音空间的歌词栏显示。 */
+  ro?: string;
   /** 快歌密度 0–1：演唱时长 3.6s 以上 = 0，1.8s 以内 = 1。 */
   dens: number;
 }
@@ -141,6 +143,7 @@ function buildUnits(line: LyricLineUI): EngineUnit[] {
  */
 export function toEngineLine(l: LyricLineUI, nextStart?: number): EngineLine {
   const tr = l.translation?.trim() || undefined;
+  const ro = l.roman?.trim() || undefined;
   // parseYrcText 对没有逐字数据的行会把整行塞成「一个词」：这不是真的逐字，按整句处理
   const ws = l.words ?? [];
   const fake = ws.length === 0 || (ws.length === 1 && [...ws[0]!.text.trim()].length > 1);
@@ -148,14 +151,14 @@ export function toEngineLine(l: LyricLineUI, nextStart?: number): EngineLine {
   if (units.length) {
     const s = units[0]!.s;
     const e = units.reduce((m, u) => Math.max(m, u.e), s);
-    return { kind: 'line', s, e, text: units.map((u) => u.t).join(''), units, tr, dens: clamp((3.6 - (e - s)) / 1.8, 0, 1) };
+    return { kind: 'line', s, e, text: units.map((u) => u.t).join(''), units, tr, ro, dens: clamp((3.6 - (e - s)) / 1.8, 0, 1) };
   }
   // 没有逐字时间：整句条目，不伪造逐字
   const s = l.timeMs / 1000;
   const rawDur = l.duration && l.duration > 0 ? l.duration : ws[0]?.duration;
   const dur = rawDur && rawDur > 0 ? rawDur / 1000 : undefined;
   const e = dur != null ? s + dur : nextStart != null && nextStart > s ? nextStart : s + 4;
-  return { kind: 'line', s, e, text: (l.text ?? '').trim(), units: null, tr, dens: clamp((3.6 - (e - s)) / 1.8, 0, 1) };
+  return { kind: 'line', s, e, text: (l.text ?? '').trim(), units: null, tr, ro, dens: clamp((3.6 - (e - s)) / 1.8, 0, 1) };
 }
 
 /** 把歌词转成引擎条目；中间加入间奏 / 前奏（空档 > 4s）。 */

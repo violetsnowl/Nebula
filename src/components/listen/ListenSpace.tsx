@@ -152,6 +152,7 @@ export const ListenSpace = memo(function ListenSpace({
       : { key: `ph-${song?.hue1 ?? ''}-${song?.hue2 ?? ''}`, url: '', style: { background: placeholderBg(song?.hue1, song?.hue2) } },
   );
   const hasTranslation = lines.some((l) => !!l.translation);
+  const hasRoman = lines.some((l) => !!l.roman);
 
   // 大封面逐帧插值：只改 transform / 圆角 / 阴影（都按真实尺寸换算），封面本身不做任何模糊或变暗
   const paint = useCallback((r: Rect, slot: Rect) => {
@@ -300,6 +301,22 @@ export const ListenSpace = memo(function ListenSpace({
         </div>
         <div className="ls-col">
           <LyricColumn className="ls-lyrics" lines={lines} settings={settings} />
+          {hasRoman && (
+            // 罗马音开关（#159）：在翻译按钮左边，规格与翻译按钮相同；图标是带长音符号的 ā
+            <button
+              type="button"
+              className={`ls-trb ls-rob${hasTranslation ? '' : ' is-solo'}`}
+              aria-pressed={settings.roman}
+              aria-label="罗马音"
+              data-tip={settings.roman ? '罗马音：开' : '罗马音：关'}
+              onClick={() => setListenSettings({ roman: !settings.roman })}
+            >
+              <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                <path d="M8.2 5.5h7.6" />
+                <path d="M15.6 14.6a3.6 3.6 0 1 1-7.2 0a3.6 3.6 0 1 1 7.2 0M15.6 10.6v7.9" />
+              </svg>
+            </button>
+          )}
           {hasTranslation && (
             <button
               type="button"

@@ -1527,6 +1527,12 @@ export const AccountDock = memo(function AccountDock({
           </span>
           <Tg checked={lsSettings.translation} onChange={(b) => setListenSpaceSettings({ translation: b })} label="听音空间显示翻译" />
         </div>
+        <div className="row">
+          <span className="lbl">
+            罗马音<small>日语、韩语等歌词的原文下面显示读音；在听音空间里也能随时开关</small>
+          </span>
+          <Tg checked={lsSettings.roman} onChange={(b) => setListenSpaceSettings({ roman: b })} label="听音空间显示罗马音" />
+        </div>
       </div>
     </>
   );

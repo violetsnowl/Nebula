@@ -96,6 +96,24 @@
   display: none;
 }
 
+/* 罗马音（#159）：原文正下方，比翻译小一号的拉丁无衬线；跟着整句亮暗，不扫色。翻译排在它下面 */
+.lc-root .ly-ro {
+  display: block;
+  margin-top: 0.3em;
+  font-family: var(--lc-ui);
+  font-weight: 500;
+  font-size: calc(15px * var(--lc-k, 1));
+  line-height: 1.45;
+  letter-spacing: 0.02em;
+  color: var(--lc-ro, rgba(255, 255, 255, 0.56));
+}
+.lc-root[data-ro='off'] .ly-ro {
+  display: none;
+}
+.lc-root[data-ro='on'] .ly-ro + .ly-tr {
+  margin-top: 0.22em;
+}
+
 /* 视觉模式 · 封面色：唱过的（含已退到上面的句子）带封面色，没唱的是白 */
 .lc-root[data-scheme='accent'] .ly-line.is-past:not(.is-grad) .u,
 .lc-root[data-scheme='accent'] .ly-line.is-past .ly-whole {
@@ -108,6 +126,7 @@
 .lc-root[data-scheme='mono'] {
   --lc-rest: color-mix(in srgb, var(--lc-a) 58%, #fff);
   --lc-tr: color-mix(in srgb, var(--lc-a) 50%, rgba(255, 255, 255, 0.62));
+  --lc-ro: color-mix(in srgb, var(--lc-a) 46%, rgba(255, 255, 255, 0.56));
 }
 .lc-root[data-scheme='mono'] .ly-line.is-past:not(.is-grad) .u,
 .lc-root[data-scheme='mono'] .ly-line.is-past .ly-whole {
@@ -118,6 +137,9 @@
 }
 .lc-root[data-scheme='mono'] .ly-line.is-past .ly-tr {
   color: rgba(255, 255, 255, 0.62);
+}
+.lc-root[data-scheme='mono'] .ly-line.is-past .ly-ro {
+  color: rgba(255, 255, 255, 0.56);
 }
 
 /* 间奏 / 前奏的三个点 */

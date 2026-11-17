@@ -92,7 +92,7 @@ export class LyricEngine {
   private rows: Row[] = [];
   private tails = new Set<Row>();
   private script: LyricScript = 'zh';
-  private settings: ListenSettings = { scheme: 'accent', font: 'serif', translation: true };
+  private settings: ListenSettings = { scheme: 'accent', font: 'serif', translation: true, roman: false };
   // 尺寸
   private H = REF_H;
   private W = 800;
@@ -123,6 +123,7 @@ export class LyricEngine {
     if (this.compact) host.dataset.compact = '1';
     host.dataset.scheme = this.settings.scheme;
     host.dataset.tr = this.settings.translation ? 'on' : 'off';
+    host.dataset.ro = this.settings.roman ? 'on' : 'off';
 
     this.box = document.createElement('div');
     this.box.className = 'lc-lines';
@@ -167,10 +168,11 @@ export class LyricEngine {
   setSettings(s: ListenSettings): void {
     if (this.destroyed) return;
     const fontChanged = s.font !== this.settings.font;
-    const trChanged = s.translation !== this.settings.translation;
+    const trChanged = s.translation !== this.settings.translation || s.roman !== this.settings.roman;
     this.settings = { ...s };
     this.host.dataset.scheme = s.scheme;
     this.host.dataset.tr = s.translation ? 'on' : 'off';
+    this.host.dataset.ro = s.roman ? 'on' : 'off';
     if (!this.rows.length) {
       this.applyTypography();
       return;
@@ -181,7 +183,7 @@ export class LyricEngine {
       this.setTargets(false);
       this.snap();
     } else if (trChanged) {
-      // 翻译行显示 / 隐藏会改变每句的高度
+      // 翻译 / 罗马音行显示、隐藏会改变每句的高度
       this.measure();
       this.setTargets(false);
     }
@@ -257,6 +259,7 @@ export class LyricEngine {
     delete this.host.dataset.compact;
     delete this.host.dataset.scheme;
     delete this.host.dataset.tr;
+    delete this.host.dataset.ro;
     delete this.host.dataset.browsing;
     delete this.host.dataset.playing;
   }
@@ -307,6 +310,13 @@ export class LyricEngine {
       row.whole = new Vars(main);
     }
     el.appendChild(main);
+    // 罗马音读的是原文，紧贴在原文下面；翻译排在它后面（#159）
+    if (e.ro) {
+      const ro = document.createElement('div');
+      ro.className = 'ly-ro';
+      ro.textContent = e.ro;
+      el.appendChild(ro);
+    }
     if (e.tr) {
       const tr = document.createElement('div');
       tr.className = 'ly-tr';

@@ -42,7 +42,12 @@ export function LyricColumn({ lines, settings, compact, demo, className }: Lyric
     if (!eng) return;
     const cur = latest.current;
     const a = applied.current;
-    if (a.settings?.scheme !== cur.settings.scheme || a.settings.font !== cur.settings.font || a.settings.translation !== cur.settings.translation) {
+    if (
+      a.settings?.scheme !== cur.settings.scheme ||
+      a.settings.font !== cur.settings.font ||
+      a.settings.translation !== cur.settings.translation ||
+      a.settings.roman !== cur.settings.roman
+    ) {
       eng.setSettings(cur.settings);
       a.settings = cur.settings;
     }
@@ -128,7 +133,7 @@ export function LyricColumn({ lines, settings, compact, demo, className }: Lyric
   // 歌词 / 设置变化
   useEffect(() => {
     sync();
-  }, [lines, settings.scheme, settings.font, settings.translation]);
+  }, [lines, settings.scheme, settings.font, settings.translation, settings.roman]);
 
   return <div ref={hostRef} className={className ? `lc-root ${className}` : 'lc-root'} />;
 }

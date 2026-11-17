@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { audioPlayer } from '../../lib/audio/AudioPlayer';
 import { hasDesktopAPI, streamTrack } from '../../lib/playlist/ipcClient';
-import { alignWordsToText, filterCreditLines, mergeWordLyrics, type LyricLineUI } from '../../lib/lyrics';
+import { alignWordsToText, attachRoman, filterCreditLines, mergeWordLyrics, type LyricLineUI } from '../../lib/lyrics';
 import type { ListenSettingsPatch, LyricVisualSettings } from '../../lib/lyricSettings';
 import type { Track } from '../../lib/catalog';
 
@@ -31,10 +31,12 @@ function normalizeLyricLines(data: unknown, title?: string, artist?: string): Ly
     });
   }
   // 逐字歌词：yrc 优先，QQ 的 qrc 直接映射进 yrc 统一解析
-  const src = data as { yrc?: unknown; qrc?: unknown };
+  const src = data as { yrc?: unknown; qrc?: unknown; romalrc?: unknown; romanRaw?: unknown };
   const yrc = typeof src.yrc === 'string' ? src.yrc : '';
   const qrc = typeof src.qrc === 'string' ? src.qrc : '';
-  return filterCreditLines(alignWordsToText(mergeWordLyrics(out, yrc || qrc)), title, artist);
+  // 罗马音（#159）：逐字合并之后再按时间挂，行时间已经定下来
+  const roman = typeof src.romalrc === 'string' && src.romalrc ? src.romalrc : typeof src.romanRaw === 'string' ? src.romanRaw : '';
+  return filterCreditLines(attachRoman(alignWordsToText(mergeWordLyrics(out, yrc || qrc)), roman), title, artist);
 }
 
 const DEFAULT_LYRIC_FONT_SIZE = 44;

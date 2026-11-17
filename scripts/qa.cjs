@@ -1185,6 +1185,68 @@ async function main() {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(1000);
 
+  // 10g+++. 罗马音（#159）：有罗马音的歌，听音空间默认不显示、翻译按钮左边多一个罗马音按钮；
+  // 点开后罗马音在原文正下方、翻译之前；和原文一样的（英文行）不挂
+  const roman = await page.evaluate(async (audio) => {
+    const api = window.nebulaAPI;
+    const keep = api.fetchLyric;
+    const jp = ['君の名前を呼んでいる', '星の海を渡って', 'Hello world'];
+    const ro = ['kimi no namae wo yonde iru', 'hoshi no umi wo watatte', 'Hello world'];
+    const fmt = (t) => `[${String(Math.floor(t / 60000)).padStart(2, '0')}:${String(Math.floor((t % 60000) / 1000)).padStart(2, '0')}.${String(Math.floor((t % 1000) / 10)).padStart(2, '0')}]`;
+    api.fetchLyric = async () => {
+      const lines = [];
+      let romalrc = '';
+      for (let i = 0; i < 40; i++) {
+        const t = 500 + i * 3000;
+        lines.push({ timeMs: t, text: jp[i % 3], translation: i % 3 === 2 ? undefined : '叫着你的名字' });
+        romalrc += `${fmt(t)}${ro[i % 3]}\n`;
+      }
+      return { ok: true, data: { source: 'netease', lines, romalrc } };
+    };
+    const n = window.__nebula;
+    const s = { ...n.songsData()[0], source: 'netease', sourceId: 'qa-roman', cover: '', audio };
+    n.player.playSong(s, [s]);
+    await new Promise((r) => setTimeout(r, 600));
+    document.querySelector('.bp-cover[data-np-cover]').click();
+    const until = async (f, ms) => {
+      const t0 = performance.now();
+      while (!f() && performance.now() - t0 < ms) await new Promise((r) => setTimeout(r, 80));
+      return f();
+    };
+    await until(() => !!document.querySelector('.ls-lyrics .ly-ro'), 5000);
+    const root = document.querySelector('.ls-lyrics');
+    const btn = document.querySelector('.ls-rob');
+    const roEl = root?.querySelector('.ly-ro');
+    const before = {
+      btn: !!btn,
+      pressed: btn?.getAttribute('aria-pressed'),
+      hidden: !!roEl && getComputedStyle(roEl).display === 'none',
+    };
+    btn?.click();
+    await new Promise((r) => setTimeout(r, 400));
+    const line = roEl?.closest('.ly-line');
+    const kids = line ? [...line.children].map((c) => c.className.split(' ')[0]) : [];
+    const after = {
+      pressed: btn?.getAttribute('aria-pressed'),
+      shown: !!roEl && getComputedStyle(roEl).display !== 'none',
+      text: roEl?.textContent || '',
+      order: kids.join(','),
+      // 英文行（Hello world）的罗马音和原文一样：不挂
+      latinDup: [...(root?.querySelectorAll('.ly-ro') || [])].some((e) => e.textContent === 'Hello world'),
+    };
+    btn?.click();
+    await new Promise((r) => setTimeout(r, 200));
+    api.fetchLyric = keep;
+    return { before, after };
+  }, lyricAudio);
+  const romanOk =
+    roman.before.btn && roman.before.pressed === 'false' && roman.before.hidden &&
+    roman.after.pressed === 'true' && roman.after.shown && /kimi|hoshi/.test(roman.after.text) &&
+    /^ly-main,ly-ro,ly-tr/.test(roman.after.order) && !roman.after.latinDup;
+  log('听音空间罗马音', JSON.stringify(roman));
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(1000);
+
   // 10h. 本地音乐导入：顶部边缘感应 → 圆形按钮 → 星云卡片生成
   await page.mouse.move(800, 4);
   await page.waitForTimeout(600);
@@ -1310,6 +1372,7 @@ async function main() {
   await browser.close();
 
   const failed =
+    !romanOk ||
     !lapseOk ||
     !bigCoverOk ||
     !listenOk ||
@@ -1404,6 +1467,7 @@ async function main() {
     qualityMenu: qualityItems < 3 || !qualityState.quality || !qualityState.switched,
     authLapse: !lapseOk,
     bigCover: !bigCoverOk,
+    roman: !romanOk,
     firstRunEmpty: !emptyOk,
     edgeHide: !edgeHideOk,
     panelStays: !panelStays,

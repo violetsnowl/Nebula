@@ -16,6 +16,8 @@ export interface LyricLineUI {
   timeMs: number;
   text: string;
   translation?: string;
+  /** 罗马音（#159，网易云 romalrc / QQ roma）；与原文相同（如英文歌）时不挂。 */
+  roman?: string;
   /** Line duration ms (from YRC/QRC or inferred from the next line). */
   duration?: number;
   /** Word-level timings; absent → whole-line highlight fallback. */
@@ -163,6 +165,55 @@ export function mergeWordLyrics(lines: LyricLineUI[], rawYrc: string): LyricLine
 }
 
 /**
+ * QQ 的韩语罗马音按音节空一格、按词空两格（`neol  du go  ddeo na on`）：`joinSyllables` 时拼回成词（`neol dugo ddeonaon`）。
+ * 其他（QQ 日语按音节、网易云按词）没有这种词界，只把多余空白收成一个。
+ */
+export function tidyRoman(s: string, joinSyllables: boolean): string {
+  const t = s.trim();
+  if (joinSyllables && /\S {2,}\S/.test(t)) return t.split(/\s{2,}/).map((w) => w.replace(/\s+/g, '')).join(' ');
+  return t.replace(/\s+/g, ' ');
+}
+
+/**
+ * 罗马音（#159）：后端的 romalrc 是普通 LRC（网易云 romalrc、QQ roma 都归一成它），
+ * 按时间挂到最近的原文行上（相差 300ms 以内；相邻两句通常隔好几秒）。
+ * 和原文去掉空格标点后一样的（英文歌）不挂；原文是空行的不挂。
+ */
+export function attachRoman(lines: LyricLineUI[], raw: string): LyricLineUI[] {
+  if (!raw || !lines.length) return lines;
+  const rows: { t: number; text: string }[] = [];
+  const all = raw.split(/\r?\n/);
+  // 整首三成以上的行都有双空格，才算「音节一格、词两格」的写法（偶尔多一个空格的不算）
+  const body = all.map((l) => l.replace(/\[[^\]]*\]/g, '').trim()).filter(Boolean);
+  const joinSyllables = body.filter((l) => /\S {2,}\S/.test(l)).length >= body.length * 0.3;
+  for (const line of all) {
+    LRC_TAG.lastIndex = 0;
+    const times: number[] = [];
+    let m: RegExpExecArray | null;
+    while ((m = LRC_TAG.exec(line)) !== null) times.push(lrcTagToMs(m[1]!, m[2]!, m[3]));
+    const text = tidyRoman(line.replace(/\[[^\]]*\]/g, ''), joinSyllables);
+    if (!times.length || !text) continue;
+    for (const t of times) rows.push({ t, text });
+  }
+  if (!rows.length) return lines;
+  const norm = (s: string) => s.toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '');
+  return lines.map((l) => {
+    if (!l.text.trim()) return l;
+    let best: { t: number; text: string } | undefined;
+    let bestD = 301;
+    for (const r of rows) {
+      const d = Math.abs(r.t - l.timeMs);
+      if (d < bestD) {
+        bestD = d;
+        best = r;
+      }
+    }
+    if (!best || norm(best.text) === norm(l.text)) return l;
+    return { ...l, roman: best.text };
+  });
+}
+
+/**
  * 将逐字歌词的 word text 与 LRC 行文本对齐，确保英文空格不丢失。
  * 当 YRC/QRC 的 word text 被拼接为连续字符串时，
  * 只补原文空格，不拆分供应方词块，也不改变任何时间戳。
@@ -189,6 +240,8 @@ const CREDIT_CN =
 const CREDIT_EN =
   /^(lyrics?|composed|composer|produced|producer|written|writer|mixed|mastered|recorded|arranged|engineered|programmed|published|performed|vocals?|backing vocals?|executive producer|additional|guitar|bass|drums?|keyboards?|strings?|piano|chorus|background vocals?)\b(\s*by|\s*[:：])/i;
 const CREDIT_OP_SP = /^(op|sp)\s*[:：]/i;
+/** QQ 给带音译的歌加的说明行（「以下音译标注由AI工具生产」等，#159）。 */
+const ROMAN_NOTE = /^以下.{0,6}(音译|罗马音|注音|翻译).{0,8}(生产|生成|提供|制作)/;
 /**
  * 通用的英文制作人员行：「标签：名字」，且标签里有制作类关键词（2026-11-16，真实数据里漏掉了
  * 「Programming：Cirkut」「Recording Engineers：…」这类写法）。标签限 40 个字符内、只含字母 / 空格 / & / -，
@@ -200,6 +253,8 @@ function isEnglishCreditLabel(text: string): boolean {
   const m = text.match(CREDIT_LABEL);
   return !!m && CREDIT_WORDS.test(m[1]!);
 }
+/** 标题行比较用：去掉空白和各种括号，小写。 */
+const compactHead = (s: string): string => s.replace(/[\s()（）[\]【】]/g, '').toLowerCase();
 /** 纯音乐符号行（♪♫…）。 */
 const NOTE_ONLY = /^[♪♫♬♩𝄞𝄢♭♮\s]+$/;
 const NOTE_CHARS = /[♪♫♬♩𝄞𝄢♭♮]/g;
@@ -221,11 +276,13 @@ export function filterCreditLines(lines: LyricLineUI[], title?: string, artist?:
     }
     if (NOTE_ONLY.test(text)) continue;
     if (CREDIT_CN.test(text) || CREDIT_EN.test(text) || CREDIT_OP_SP.test(text) || isEnglishCreditLabel(text)) continue;
-    // 开头“歌名 - 歌手”标题行：仅清正文开始前的最多 2 行
+    if (!sawText && ROMAN_NOTE.test(text)) continue;
+    // 开头“歌名 - 歌手”标题行：仅清正文开始前的最多 2 行。
+    // QQ 也有去掉空格和括号挤在一起的写法（「SeattleAlone-脸红的思春期볼빨간사춘기」，#159）
     if (
       droppedHeader < 2 &&
-      / - /.test(text) &&
-      ((title && text.includes(title)) || (artist && text.includes(artist)))
+      ((/ - /.test(text) && ((title && text.includes(title)) || (artist && text.includes(artist)))) ||
+        (!sawText && !!title && compactHead(text).startsWith(`${compactHead(title)}-`)))
     ) {
       droppedHeader++;
       continue;

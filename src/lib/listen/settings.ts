@@ -11,11 +11,13 @@ export interface ListenSettings {
   font: 'serif' | 'sans';
   /** 外文歌词下方显示翻译（默认开）。 */
   translation: boolean;
+  /** 原文下方显示罗马音（#159，默认关；只在有罗马音的歌出现开关）。 */
+  roman: boolean;
 }
 
 const KEY = 'music-nebula.listen-lyrics';
 
-const DEFAULTS: ListenSettings = { scheme: 'accent', font: 'serif', translation: true };
+const DEFAULTS: ListenSettings = { scheme: 'accent', font: 'serif', translation: true, roman: false };
 
 function load(): ListenSettings {
   try {
@@ -26,6 +28,7 @@ function load(): ListenSettings {
       scheme: o?.scheme === 'mono' ? 'mono' : 'accent',
       font: o?.font === 'sans' ? 'sans' : 'serif',
       translation: typeof o?.translation === 'boolean' ? o.translation : DEFAULTS.translation,
+      roman: typeof o?.roman === 'boolean' ? o.roman : DEFAULTS.roman,
     };
   } catch {
     return { ...DEFAULTS };
@@ -42,7 +45,13 @@ export function getListenSettings(): ListenSettings {
 /** 合并修改并持久化；值没变化时不通知（保持快照引用稳定，useSyncExternalStore 不会多渲染）。 */
 export function setListenSettings(patch: Partial<ListenSettings>): void {
   const next: ListenSettings = { ...current, ...patch };
-  if (next.scheme === current.scheme && next.font === current.font && next.translation === current.translation) return;
+  if (
+    next.scheme === current.scheme &&
+    next.font === current.font &&
+    next.translation === current.translation &&
+    next.roman === current.roman
+  )
+    return;
   current = next;
   try {
     localStorage.setItem(KEY, JSON.stringify(current));
