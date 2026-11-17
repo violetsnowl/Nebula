@@ -1,0 +1,25 @@
+2026-11-17 第二轮最终验证
+分支 backend/playback-overhaul；未合并 origin/main；第一轮基线 41c1404
+每步记录：B9 build/qa:backend/qa 通过；B10通过；B11最终通过；B12通过；B13最终通过。
+B11先发现截止时间竞态并修复；B13先发现并发测试20ms/30ms定时竞态并改为显式Promise释放。原断言均保留。
+最终构建 pnpm build PASS；pnpm qa:backend PASS（275项）；pnpm qa PASS。
+后端冒烟测试全部通过 ✔
+播放回归 25/25
+路由与代理回归 20/20
+严格录音匹配 143/143
+QQ 批量文件、登录 comm、实际档位、向下降级、匿名错误 5/5
+搜索适配器清理与真实路由门禁 2/2
+地址寿命回归 7/7
+QQ 会话与权益回归 21/21
+歌词回归 13/13
+封面与隐私回归 5/5
+五平台导入契约 8/8
+界面播放回归：歌词换数组2项、按钮3项、过期提示及停止跳歌1项，6/6 通过
+[QA] 控制台错误数: 0
+[QA] 全部通过 ✔
+pnpm qa:electron PASS；隐藏隔离profile，Electron43.3.0，真实本地音频/seek/IPC取消。
+真实连续播放125秒对照 PASS，见valid-source.json；基线冻结为第一轮后端和第一轮AudioPlayer。
+QQ真实账号诊断 NOT RUN：本机没有新凭据副本；无真实会员成功率，见qq-session.json。
+qa.cjs、CSS、舞台/搜索/听音空间、设计/meta文档和AGENTS.md均无第二轮改动。
+没有复制或提交凭据、私人样本、签名音频URL或原始上游错误。
+完整报告追加第二轮章节，第一轮正文保留。

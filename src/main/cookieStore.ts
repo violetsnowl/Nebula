@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { Platform } from './types';
+import { qqCredential } from './services/qqSession';
 
 interface CookieRecord {
   /** 原始 Cookie 头字符串，例如 `MUSIC_U=xxx; __csrf=yyy`。 */
@@ -68,18 +69,12 @@ export function validatePlatformCookie(platform: Platform, normalized: string): 
     return { ok: true };
   }
   if (platform === 'qq') {
-    const hasUin = !!pairs.get('uin');
-    const hasTicket =
-      !!pairs.get('music_key') ||
-      !!pairs.get('qm_keyst') ||
-      !!pairs.get('qqmusic_key') ||
-      !!pairs.get('p_skey') ||
-      !!pairs.get('skey');
-    if (!hasUin) return { ok: false, error: 'INVALID_QQ_COOKIE: cookie 缺少 uin' };
-    if (!hasTicket) {
+    const credential=qqCredential(normalized);
+    if (credential.uin==='0') return { ok: false, error: 'INVALID_QQ_COOKIE: cookie 缺少有效音乐账号（uin / wxuin / musicid）' };
+    if (!credential.key) {
       return {
         ok: false,
-        error: 'INVALID_QQ_COOKIE: 缺少播放票据（music_key / qm_keyst / p_skey / skey 至少其一）',
+        error: 'INVALID_QQ_COOKIE: 缺少音乐播放票据（qm_keyst / qqmusic_key / music_key / musickey / wxskey），网页或OAuth票据不能替代',
       };
     }
     return { ok: true };
@@ -103,6 +98,8 @@ export function setCookieDataDir(dir: string): void {
 export class CookieStore {
   private file: string;
   private data: Partial<Record<Platform, CookieRecord>> = {};
+  private listeners = new Set<(platform: Platform) => void>();
+  onChange(fn: (platform: Platform) => void): () => void { this.listeners.add(fn); return () => this.listeners.delete(fn); }
 
   constructor(filePath?: string) {
     this.file = filePath || path.join(dataDir, 'cookies.json');
@@ -118,6 +115,7 @@ export class CookieStore {
       updatedAt: Date.now(),
     };
     this.save();
+    this.listeners.forEach(fn => fn(platform));
   }
 
   get(platform: Platform): CookieRecord | undefined {
@@ -142,6 +140,7 @@ export class CookieStore {
   clear(platform: Platform): void {
     delete this.data[platform];
     this.save();
+    this.listeners.forEach(fn => fn(platform));
   }
 
   get filePath(): string {
@@ -164,7 +163,7 @@ export class CookieStore {
       fs.writeFileSync(tmp, JSON.stringify(this.data, null, 2), 'utf-8');
       fs.renameSync(tmp, this.file);
     } catch (err) {
-      console.warn('[CookieStore] 保存失败:', err instanceof Error ? err.message : err);
+      console.warn("[CookieStore] 保存失败:");
     }
   }
 }

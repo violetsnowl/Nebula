@@ -11,9 +11,10 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const require = createRequire(import.meta.url);
 const { CookieStore, HttpClient, createAdapters, SongResolver } = require('../dist-main/index.cjs');
-const { chromium } = require('C:/Users/LIU/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core');
+const { qaRequire, chrome } = require('./qa-env.cjs');
+const { chromium } = qaRequire('playwright-core');
 
-const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
+const CHROME = chrome;
 const HTML = pathToFileURL(path.join(__dirname, '..', '..', 'nebula-outputs', 'index.html')).href;
 
 async function main() {

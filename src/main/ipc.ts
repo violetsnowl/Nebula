@@ -7,6 +7,7 @@ import type { LyricService } from './services/lyricService';
 import type { Platform, Track } from './types';
 import type { LoginAdapter } from './login/index';
 import type { AudioProxy } from './audioProxy';
+import { CoverService,coverCandidates } from './services/coverService';
 import type { WallpaperLibrary } from './services/wallpaperLibrary';
 import { normalizeCookieHeader, validatePlatformCookie } from './cookieStore';
 
@@ -33,26 +34,41 @@ export interface IpcDeps {
 }
 
 export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
-  const safe = (channel: string, fn: (payload: any) => Promise<unknown>) => {
+  const covers=new CoverService();
+  const owners = new WeakMap<object, Map<string, AbortController>>();
+  const testingOwner = {};
+  const requestsFor = (event: unknown) => {
+    const sender = (event as { sender?: object } | null)?.sender ?? testingOwner;
+    let requests = owners.get(sender);
+    if (!requests) {
+      requests = new Map(); owners.set(sender,requests);
+      const owned = requests;
+      (sender as { once?: (name: string, fn: () => void) => void }).once?.('destroyed',()=> { owned.forEach(c=>c.abort()); owned.clear(); });
+    }
+    return requests;
+  };
+  const safe = (channel: string, fn: (payload: any, event?: unknown) => Promise<unknown>) => {
     ipcMain.handle(channel, async (_event, payload) => {
       try {
-        return { ok: true, data: await fn(payload) };
+        return { ok: true, data: await fn(payload, _event) };
       } catch (err) {
         return { ok: false, error: err instanceof Error ? err.message : String(err) };
       }
     });
   };
 
+  safe('nebula:cover-info',async({track}:{track:Track})=>covers.inspect(track));
+
   safe('nebula:import-playlist', async ({ url }: { url?: string }) => {
     if (!url) throw new Error('缺少歌单链接');
     const target: UrlTarget | null = resolveAdapterByUrl(url);
-    if (!target) throw new Error('无法识别的歌单链接（支持网易云 / QQ音乐 / 酷狗）');
+    if (!target) throw new Error('无法识别的歌单链接（支持网易云 / QQ音乐 / 酷狗 / Spotify / 汽水）');
     const playlist = await deps.adapters[target.platform].fetchPlaylist(target.id);
     return {
       platformName: target.platform,
       name: playlist.name,
       cover: playlist.cover,
-      tracks: playlist.tracks,
+      tracks: playlist.tracks.map(t=>({...t,coverInfo:t.coverInfo || (t.cover?{url:coverCandidates(t)[0] || t.cover,verified:false}:undefined)})),
     };
   });
 
@@ -62,14 +78,26 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
       platformName: platform,
       name: playlist.name,
       cover: playlist.cover,
-      tracks: playlist.tracks,
+      tracks: playlist.tracks.map(t=>({...t,coverInfo:t.coverInfo || (t.cover?{url:coverCandidates(t)[0] || t.cover,verified:false}:undefined)})),
     };
   });
 
-  safe('nebula:resolve-song', async ({ track, quality }: { track: Track; quality?: string }) => {
-    const result = await deps.resolver.resolve(track, quality);
-    if (!result) return null;
-    return { ...result, url: deps.audioProxy.urlFor(result.url) };
+  safe('nebula:resolve-song', async ({ track, quality, requestId, forceRefresh }: { track: Track; quality?: string; requestId?: string; forceRefresh?: boolean }, event) => {
+    const requests = requestsFor(event), control = new AbortController();
+    const key = typeof requestId === 'string' ? requestId.slice(0,96) : '';
+    if (key) {
+      requests.get(key)?.abort();
+      if (requests.size >= 16) { const first=requests.keys().next().value!; requests.get(first)?.abort(); requests.delete(first); }
+      requests.set(key,control);
+    }
+    try {
+      const result = await deps.resolver.resolve(track, quality, {signal:control.signal,forceRefresh:!!forceRefresh});
+      if (!result) return null;
+      return { ...result, url: deps.audioProxy.urlFor(result.url) };
+    } finally { if (key && requests.get(key) === control) requests.delete(key); }
+  });
+  safe('nebula:cancel-resolve', async ({requestId}: {requestId: string},event) => {
+    const requests=requestsFor(event); requests.get(requestId)?.abort(); requests.delete(requestId); return true;
   });
   safe('nebula:song-qualities', async ({ track }: { track: Track }) => {
     // 必须带着适配器调用：网易云的 listQualities 要读 this 上的账号权益（拆下来调用时 this 丢失，菜单一直是空的）
@@ -85,7 +113,13 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
       fallbackUrl: deps.audioProxy.urlFor(result.fallbackUrl),
     };
   });
-  safe('nebula:lyric', async ({ track }: { track: Track }) => deps.lyricService.fetchLyric(track));
+  safe('nebula:lyric', async ({track,requestId}:{track:Track;requestId?:string},event)=>{
+    const requests=requestsFor(event),control=new AbortController();
+    const key=typeof requestId==='string'?requestId.slice(0,96):'';
+    if(key){requests.get(key)?.abort();if(requests.size>=16){const first=requests.keys().next().value!;requests.get(first)?.abort();requests.delete(first);}requests.set(key,control);}
+    try{return await deps.lyricService.fetchLyric(track,control.signal);}
+    finally{if(key && requests.get(key)===control)requests.delete(key);}
+  });
   safe('nebula:comments', async ({ track, page }: { track: Track; page?: number }) =>
     deps.lyricService.fetchComments(track, Number(page) || 0),
   );
@@ -139,16 +173,16 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
   });
 
   safe('nebula:cookie:set', async ({ platform, cookie, token, nickname }: { platform: Platform; cookie: string; token?: string; nickname?: string }) => {
-    console.log('[IPC] cookie:set platform=' + platform + ' rawLength=' + (cookie?.length ?? 0) + ' first100=' + (cookie?.substring(0, 100) ?? ''));
+    console.log("[ipc.ts] 接口状态变化");
     const normalized = normalizeCookieHeader(cookie);
-    console.log('[IPC] cookie:set normalizedLength=' + normalized.length + ' first100=' + normalized.substring(0, 100));
+    console.log("[ipc.ts] 接口状态变化");
     const validation = validatePlatformCookie(platform, normalized);
     if (!validation.ok) {
-      console.log('[IPC] cookie:set VALIDATION FAILED:', validation.error);
+      console.log("[IPC] cookie:set VALIDATION FAILED:");
       throw new Error(validation.error);
     }
     deps.cookies.set(platform, normalized, token, nickname);
-    console.log('[IPC] cookie:set SUCCESS for', platform);
+    console.log("[IPC] cookie:set SUCCESS for");
     return true;
   });
   safe('nebula:cookie:get', async ({ platform }: { platform: Platform }) => deps.cookies.get(platform) ?? null);

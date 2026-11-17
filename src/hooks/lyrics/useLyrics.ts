@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { audioPlayer } from '../../lib/audio/AudioPlayer';
-import { hasDesktopAPI, toBackendTrack } from '../../lib/playlist/ipcClient';
+import { hasDesktopAPI, streamTrack } from '../../lib/playlist/ipcClient';
 import { alignWordsToText, filterCreditLines, mergeWordLyrics, type LyricLineUI } from '../../lib/lyrics';
 import type { ListenSettingsPatch, LyricVisualSettings } from '../../lib/lyricSettings';
 import type { Track } from '../../lib/catalog';
@@ -30,7 +30,6 @@ function normalizeLyricLines(data: unknown, title?: string, artist?: string): Ly
       translation: typeof r.translation === 'string' && r.translation ? r.translation : undefined,
     });
   }
-  if (!out.length) return out;
   // 逐字歌词：yrc 优先，QQ 的 qrc 直接映射进 yrc 统一解析
   const src = data as { yrc?: unknown; qrc?: unknown };
   const yrc = typeof src.yrc === 'string' ? src.yrc : '';
@@ -109,12 +108,16 @@ export function useLyrics() {
   const [lyricDebugInfo, setLyricDebugInfo] = useState<LyricDebugInfo | null>(null);
 
   // 随切歌拉取歌词：低频订阅（仅歌曲身份变化时触发）
-  const songRef = useRef<Track | null>(null);
+  const songRef = useRef<string>('');
   // 请求序号：快速切歌时，上一首慢返回的歌词不能覆盖当前歌，只接受最新一次请求的结果
   const loadSeqRef = useRef(0);
   useEffect(() => {
+    let requestId='';
+    const cancel=()=>{if(requestId)void window.nebulaAPI?.cancelResolve?.(requestId).catch(()=>{});requestId='';};
     const load = async (song: Track | null) => {
+      cancel();
       const seq = ++loadSeqRef.current;
+      setLyricLines([]);setLyricDebugInfo(null);
       if (!song) {
         setLyricLines([]);
         setLyricDebugInfo(null);
@@ -126,7 +129,8 @@ export function useLyrics() {
         return;
       }
       try {
-        const res = await window.nebulaAPI!.fetchLyric(toBackendTrack(song));
+        requestId=`lyric-${seq}-${Date.now()}`;
+        const res = await window.nebulaAPI!.fetchLyric(streamTrack(song),{requestId});
         if (seq !== loadSeqRef.current) return;
         const data = res.ok ? res.data : null;
         const lines = normalizeLyricLines(data, song.title, song.artist);
@@ -151,13 +155,15 @@ export function useLyrics() {
     };
     const check = () => {
       const s = audioPlayer.getState().song;
-      if (s !== songRef.current) {
-        songRef.current = s;
+      const key=s?`${s.source}:${s.sourceId}:${s.via?.platform || ''}:${s.via?.sourceId || ''}`:'';
+      if (key !== songRef.current) {
+        songRef.current = key;
         void load(s);
       }
     };
     check();
-    return audioPlayer.subscribe(check);
+    const unsubscribe=audioPlayer.subscribe(check);
+    return ()=>{loadSeqRef.current++;songRef.current='';cancel();unsubscribe();};
   }, []);
 
   const persistLyricSettings = useCallback((next: LyricVisualSettings) => {

@@ -16,8 +16,10 @@ import type {
 import type { CookieStore } from '../cookieStore';
 import { mergeLyric, normalizeJsonLrc } from '../parsers/lyricParser';
 import { mapNeteaseTrack } from './mappers';
+import { expiresAfterSeconds, sourceTiming } from '../../lib/audio/sourceLifetime';
 import { callNcmSafe } from '../ncm/ncmApi';
 import { EFFECT_LEVELS, mapQualityTo } from '../quality';
+import { withRequestScope } from '../requestScope';
 
 interface NeteasePlaylistResp {
   playlist?: {
@@ -60,7 +62,8 @@ export class NeteaseAdapter implements PlatformAdapter {
   constructor(
     private http: HttpClient,
     private cookies: CookieStore,
-  ) {}
+    private apiCall: typeof callNcmSafe = callNcmSafe,
+  ) { cookies.onChange?.(() => { this.rightsCache = null; }); }
 
   async fetchPlaylist(playlistId: string): Promise<Playlist> {
     const data = await this.http.requestJson<NeteasePlaylistResp>(
@@ -109,9 +112,10 @@ export class NeteaseAdapter implements PlatformAdapter {
     const levels = this.orderByPreference(allowed, quality);
 
     for (const level of levels) {
-      const res = await callNcmSafe('song_url_v1', { id: songId, level, cookie });
+      const requestedAt=Date.now();
+      const res = await this.apiCall('song_url_v1', { id: songId, level, cookie });
       const item = res?.body?.data?.[0] as
-        | { url?: string; level?: string; freeTrialInfo?: { startTime?: number; endTime?: number } }
+        | { url?: string; level?: string; expi?: number; freeTrialInfo?: { startTime?: number; endTime?: number } }
         | undefined;
       const url = item?.url;
       // 请求的档位这首歌没有时，网易云会就近给一档；落到环绕声效果版（jyeffect 高清环绕声等）不算数，
@@ -125,14 +129,16 @@ export class NeteaseAdapter implements PlatformAdapter {
           playable: true,
           trial: !!item.freeTrialInfo,
           trialEndTime: item.freeTrialInfo?.endTime,
+          ...sourceTiming('netease',requestedAt,expiresAfterSeconds(item.expi,requestedAt)),
         };
       }
     }
 
     for (const br of ['320000', '192000', '128000']) {
-      const res = await callNcmSafe('song_url', { id: songId, br, cookie });
+      const requestedAt=Date.now();
+      const res = await this.apiCall('song_url', { id: songId, br, cookie });
       const item = res?.body?.data?.[0] as
-        | { url?: string; freeTrialInfo?: { startTime?: number; endTime?: number }; br?: number }
+        | { url?: string; freeTrialInfo?: { startTime?: number; endTime?: number }; br?: number; expi?: number }
         | undefined;
       const url = item?.url;
       if (url && !PLACEHOLDER_URL.test(url)) {
@@ -142,6 +148,7 @@ export class NeteaseAdapter implements PlatformAdapter {
           playable: true,
           trial: !!item.freeTrialInfo,
           trialEndTime: item.freeTrialInfo?.endTime,
+          ...sourceTiming('netease',requestedAt,expiresAfterSeconds(item.expi,requestedAt)),
         };
       }
     }
@@ -163,13 +170,14 @@ export class NeteaseAdapter implements PlatformAdapter {
 
   /** Current account rights (not logged in = normal user). */
   private async getRights(): Promise<{ isVip: boolean; isSvip: boolean }> {
+    if (!this.cookies.getHeader('netease')) return { isVip:false, isSvip:false };
     const now = Date.now();
     if (this.rightsCache && now - this.rightsCache.at < 5 * 60 * 1000) {
       return { isVip: this.rightsCache.isVip, isSvip: this.rightsCache.isSvip };
     }
     let rights = { isVip: false, isSvip: false };
     try {
-      const res = await callNcmSafe('user_account', { cookie: this.cookies.getHeader('netease') ?? '' });
+      const res = await this.apiCall('user_account', { cookie: this.cookies.getHeader('netease') ?? '' });
       const vipType = (res?.body?.profile as { vipType?: number } | undefined)?.vipType ?? 0;
       rights = { isVip: vipType > 0, isSvip: vipType >= 11 };
     } catch {
@@ -212,9 +220,10 @@ export class NeteaseAdapter implements PlatformAdapter {
     let romalrc = '';
     let yrc = '';
     let ytlrc = '';
+    // 两个同源接口并发，每个截止早于歌词路由阶段；一方超时不丢掉另一方已取得的正文。
+    const [nr,r]=await Promise.all(['lyric_new','lyric'].map(name=>withRequestScope(2800,()=>this.apiCall(name,{id:songId,cookie})).catch(()=>null)));
     try {
       // 1) lyric_new：逐字歌词（yrc/ytlrc），lrc 可能是新版 JSON-Lines
-      const nr = await callNcmSafe('lyric_new', { id: songId, cookie });
       const nb = nr?.body as Record<string, any> | undefined;
       if (nb) {
         yrc = nb.yrc?.lyric ?? '';
@@ -224,11 +233,10 @@ export class NeteaseAdapter implements PlatformAdapter {
         romalrc = normalizeJsonLrc(nb.romalrc?.lyric ?? '');
       }
     } catch (err) {
-      console.warn('[NeteaseAdapter] lyric_new failed:', err instanceof Error ? err.message : err);
+      console.warn("[NeteaseAdapter] lyric_new failed:");
     }
     try {
       // 2) lyric：普通 LRC 补充（lyric_new 缺失时兜底）
-      const r = await callNcmSafe('lyric', { id: songId, cookie });
       const rb = r?.body as Record<string, any> | undefined;
       if (rb) {
         if (!lrc) lrc = rb.lrc?.lyric ?? '';
@@ -236,7 +244,7 @@ export class NeteaseAdapter implements PlatformAdapter {
         if (!romalrc) romalrc = rb.romalrc?.lyric ?? '';
       }
     } catch (err) {
-      console.warn('[NeteaseAdapter] lyric failed:', err instanceof Error ? err.message : err);
+      console.warn("[NeteaseAdapter] lyric failed:");
     }
     if (!lrc && !yrc && !tlyric) return null;
     return {
@@ -255,18 +263,8 @@ export class NeteaseAdapter implements PlatformAdapter {
 
   /** Keyword search (for cross-platform fallback). */
   async searchSongs(keyword: string, pageSize = 10): Promise<Track[]> {
-    try {
-      const data = await this.http.requestJson<{
-        result?: { songs?: Array<Record<string, any>> };
-      }>(
-        `https://music.163.com/api/search/get/web?s=${encodeURIComponent(keyword)}&type=1&offset=0&limit=${pageSize}`,
-        { platform: 'netease' },
-      );
-      return (data?.result?.songs ?? []).map(mapNeteaseTrack).filter((t): t is Track => !!t);
-    } catch (err) {
-      console.warn('[NeteaseAdapter] search failed:', err instanceof Error ? err.message : err);
-      return [];
-    }
+    const res=await callNcmSafe('cloudsearch',{keywords:keyword,type:1,limit:Math.min(100,pageSize),offset:0,cookie:this.cookies.getHeader('netease') || ''});
+    return ((res?.body?.result as {songs?:Array<Record<string,any>>})?.songs || []).map(mapNeteaseTrack).filter((t):t is Track=>!!t);
   }
 
   async searchArtists(keyword: string, pageSize = 5): Promise<ArtistSearchHit[]> {
@@ -286,7 +284,7 @@ export class NeteaseAdapter implements PlatformAdapter {
         }))
         .filter((a) => a.id && a.name);
     } catch (err) {
-      console.warn('[NeteaseAdapter] searchArtists failed:', err instanceof Error ? err.message : err);
+      console.warn("[NeteaseAdapter] searchArtists failed:");
       return [];
     }
   }
@@ -312,7 +310,7 @@ export class NeteaseAdapter implements PlatformAdapter {
         }))
         .filter((a) => a.id && a.name);
     } catch (err) {
-      console.warn('[NeteaseAdapter] searchAlbums failed:', err instanceof Error ? err.message : err);
+      console.warn("[NeteaseAdapter] searchAlbums failed:");
       return [];
     }
   }
@@ -343,7 +341,7 @@ export class NeteaseAdapter implements PlatformAdapter {
         hasMoreLatest: data?.more ?? false,
       };
     } catch (err) {
-      console.warn('[NeteaseAdapter] comments failed:', err instanceof Error ? err.message : err);
+      console.warn("[NeteaseAdapter] comments failed:");
       return null;
     }
   }
@@ -452,7 +450,7 @@ export class NeteaseAdapter implements PlatformAdapter {
         tracks,
       };
     } catch (err) {
-      console.warn('[NeteaseAdapter] 专辑详情失败:', err instanceof Error ? err.message : err);
+      console.warn("[NeteaseAdapter] 专辑详情失败:");
       return null;
     }
   }
@@ -478,7 +476,7 @@ export class NeteaseAdapter implements PlatformAdapter {
         if (songs.length < 50 || added === 0) break;
       }
     } catch (err) {
-      console.warn('[NeteaseAdapter] 歌手全部歌曲失败:', err instanceof Error ? err.message : err);
+      console.warn("[NeteaseAdapter] 歌手全部歌曲失败:");
     }
     return out;
   }

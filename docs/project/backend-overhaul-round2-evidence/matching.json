@@ -1,0 +1,14 @@
+{
+  "round1Commit": "41c1404173af7c9f691d812bd3af88c895f0c561",
+  "round2Cases": {
+    "round2Cases": 27,
+    "round1Correct": 17,
+    "round2Correct": 27
+  },
+  "allCases": {
+    "correct": 143,
+    "positive": 30,
+    "negative": 113
+  },
+  "scope": "public metadata and controlled adapters; not private 80-track playback"
+}

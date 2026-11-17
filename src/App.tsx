@@ -24,8 +24,8 @@ import { generateTracks, isDemoNebulaEnabled } from './lib/catalog';
 import type { Track } from './lib/catalog';
 import { EmptyNebula, useEmptyPhase } from './components/EmptyNebula';
 import { mulberry32 } from './lib/rng';
-import { hasDesktopAPI, streamTrack, toBackendTrack, toFrontendTrack, viaOf, type DesktopTrack } from './lib/playlist/ipcClient';
-import { qualityName } from './lib/quality';
+import { hasDesktopAPI, streamTrack, toBackendTrack, type DesktopTrack } from './lib/playlist/ipcClient';
+import { resolveTrackForPlay, selectQuality } from './lib/audio/desktopPlayback';
 import type { DesktopWallpaperItem, DesktopWallpaperSetResult } from './lib/playlist/ipcClient';
 import { preferredQuality } from './lib/preferences';
 import { useAccounts } from './hooks/accounts/useAccounts';
@@ -363,69 +363,12 @@ export default function App() {
     beginImport(c.adapterName, c.tracks, c.simulated, c.note);
   };
 
-  /** 统一快速解析：主平台取链（内部含兜底）优先；同一 URL 不重试。 */
-  const resolveTrackForPlay = useCallback(
-    async (track: Track, _reason: 'empty' | 'error'): Promise<Track | null> => {
-      if (!hasDesktopAPI()) return null;
-      try {
-        const res = await window.nebulaAPI!.resolveSong(toBackendTrack(track), preferredQuality() || undefined);
-        if (res.ok && res.data?.url && res.data.url !== track.audio) {
-          return toFrontendTrack(
-            { ...toBackendTrack(track), originalUrl: res.data.url },
-            track.id,
-            { trial: res.data.trial, trialEndTime: res.data.trialEndTime, quality: res.data.quality, via: viaOf(res.data) },
-          );
-        }
-        const fb = await window.nebulaAPI!.fallbackSong(toBackendTrack(track));
-        if (fb.ok && fb.data) return toFrontendTrack(fb.data, track.id);
-      } catch {
-        /* 忽略，走跳歌 */
-      }
-      return null;
-    },
-    [],
-  );
-
   useEffect(() => {
     audioPlayer.retryResolver = resolveTrackForPlay;
     audioPlayer.emptyResolver = resolveTrackForPlay;
-  }, [resolveTrackForPlay]);
-
-  const handleQualitySelect = useCallback((level: string) => {
-    try {
-      localStorage.setItem('music-nebula.quality', level);
-    } catch {
-      /* ignore */
-    }
-    const song = audioPlayer.getState().song;
-    if (!song || !hasDesktopAPI() || !song.sourceId || song.quality === level) return;
-    // 按实际供流的平台重新取链，且不带当前地址（带着地址后端会原样返回，等于只改了标签没换音源）
-    window.nebulaAPI!
-      .resolveSong(streamTrack(song), level)
-      .then((res) => {
-        if (res.ok && res.data?.url) {
-          // 标签按平台实际给的档位写：这首歌没有所选档位时平台会就近给一档
-          const got = res.data.quality || level;
-          audioPlayer.switchSource(res.data.url, {
-            quality: got,
-            keepTime: true,
-            via: res.data.fallback ? viaOf(res.data) : song.via,
-          });
-          if (got !== level && qualityName(got) && qualityName(level)) {
-            // 临时占用歌手行，3 秒后还给歌手名
-            const msg = `这首歌没有「${qualityName(level)}」，已切到「${qualityName(got)}」`;
-            audioPlayer.setError(msg);
-            window.setTimeout(() => {
-              if (audioPlayer.getState().error === msg) audioPlayer.setError(null);
-            }, 3200);
-          }
-        } else {
-          audioPlayer.setError(res.ok ? '该音质暂不可用，已保持当前音质' : res.error);
-        }
-      })
-      .catch(() => audioPlayer.setError('音质切换失败'));
   }, []);
 
+  const handleQualitySelect = selectQuality;
   /** 歌单列表：双击播放某首 → 回到该歌曲卡片中心。 */
   const playSongFromList = useCallback(
     (index: number) => {

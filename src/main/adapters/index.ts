@@ -38,7 +38,7 @@ export function resolveAdapterByUrl(input: string): UrlTarget | null {
     if (id) return { platform: 'qq', id };
   }
   if (/kugou\.com/.test(url)) {
-    const id = url.match(/playlist\/(\d+)/i)?.[1] ?? url.match(/[?&]id=(\d+)/i)?.[1];
+    const id = url.match(/playlist\/(\d+)/i)?.[1] ?? url.match(/special\/single\/(\d+)/i)?.[1] ?? url.match(/[?&](?:specialid|id)=(\d+)/i)?.[1];
     if (id) return { platform: 'kugou', id };
   }
   if (/open\.spotify\.com/.test(url)) {

@@ -1,20 +1,24 @@
 import type { CookieStore } from '../cookieStore';
 import type { HttpClient } from '../http';
 import type { AlbumDetail, Lyric, Playlist, PlatformAdapter, SongUrl, Track } from '../types';
+import { requestScope, withRequestScope } from '../requestScope';
 
 const API = 'https://api.spotify.com/v1';
+type PlaylistPage={items?:Array<{track?:Record<string,any>;item?:Record<string,any>}>;next?:string|null;total?:number};
 
 function mapSpotifyTrack(raw: Record<string, any> | undefined | null): Track | null {
   try {
-    if (!raw || !raw.id || !raw.name) return null;
+    if (!raw || !raw.id || !raw.name || (raw.type && raw.type!=='track')) return null;
     const artists: Array<{ name?: string }> = raw.artists ?? [];
+    const image=[...(raw.album?.images || [])].sort((a,b)=>(b.width || 0)*(b.height || 0)-(a.width || 0)*(a.height || 0))[0];
     return {
       id: `spotify:${raw.id}`,
       title: raw.name,
       artist: artists[0]?.name ?? '未知歌手',
       artists: artists.map((a) => a.name ?? '').filter(Boolean),
       album: raw.album?.name ?? '',
-      cover: raw.album?.images?.[0]?.url ?? '',
+      cover: image?.url ?? '',
+      coverInfo:image?.url?{url:image.url,width:image.width,height:image.height,verified:false}:undefined,
       duration: Math.round((raw.duration_ms ?? 0) / 1000),
       platform: 'spotify',
       sourceId: String(raw.id),
@@ -40,17 +44,31 @@ export class SpotifyAdapter implements PlatformAdapter {
   ) {}
 
   async fetchPlaylist(playlistId: string): Promise<Playlist> {
+    return withRequestScope(60000,()=>this.fetchPlaylistPages(playlistId));
+  }
+  private async fetchPlaylistPages(playlistId:string):Promise<Playlist> {
     const data = await this.authedRequest<{
       id?: string;
       name?: string;
       images?: Array<{ url?: string }>;
       description?: string;
-      tracks?: { items?: Array<{ track?: Record<string, any> }>; total?: number };
+      tracks?: PlaylistPage;
+      items?: PlaylistPage;
     }>(`${API}/playlists/${encodeURIComponent(playlistId)}`);
     if (!data?.id) throw new Error('Spotify 歌单不存在或需要授权');
-    const items = data.tracks?.items ?? [];
+    // 兼容新 items/item 与旧 tracks/track；无条目字段意味着未获歌单权限，不能冒充空歌单。
+    let page=data.items || data.tracks;
+    if(!page)throw new Error('Spotify 未授予歌单条目访问权限，请使用本人拥有或可协作的歌单');
+    const items=[...(page.items || [])],seen=new Set<string>();
+    while(page.next){
+      const url:URL=new URL(page.next);
+      const prefix=`/v1/playlists/${encodeURIComponent(playlistId)}/`;
+      if(url.origin!=='https://api.spotify.com' || ![prefix+'items',prefix+'tracks'].includes(url.pathname) || seen.has(url.href))throw new Error('Spotify 歌单分页响应异常');
+      if(seen.size>=100 || items.length>=5000)throw new Error('Spotify 歌单超过本次导入上限（5000 首），请拆分歌单');
+      seen.add(url.href);page=await this.authedRequest<PlaylistPage>(url.href);items.push(...(page.items || []));
+    }
     const tracks = items
-      .map((it) => mapSpotifyTrack(it.track))
+      .map((it) => mapSpotifyTrack(it.item ?? it.track))
       .filter((t): t is Track => !!t);
     return {
       id: String(data.id),
@@ -128,7 +146,7 @@ export class SpotifyAdapter implements PlatformAdapter {
         tracks,
       };
     } catch (err) {
-      console.warn('[SpotifyAdapter] 专辑详情失败:', err instanceof Error ? err.message : err);
+      console.warn("[SpotifyAdapter] 专辑详情失败:");
       return null;
     }
   }
@@ -152,6 +170,7 @@ export class SpotifyAdapter implements PlatformAdapter {
     try {
       const res = await fetch('https://accounts.spotify.com/api/token', {
         method: 'POST',
+        signal: requestScope()?.signal || AbortSignal.timeout(10000),
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
           grant_type: 'refresh_token',

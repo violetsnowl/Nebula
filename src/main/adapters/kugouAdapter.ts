@@ -1,9 +1,12 @@
-﻿import crypto from 'node:crypto';
+import crypto from 'node:crypto';
 import type { HttpClient } from '../http';
+import { requestScope, throwIfCancelled, withRequestScope } from '../requestScope';
 import type { CookieStore } from '../cookieStore';
 import type { Lyric, Playlist, PlaylistSummary, PlatformAdapter, QualityOption, SongUrl, Track } from '../types';
 import { parseLrc } from '../parsers/lyricParser';
+import { decodeKrc, fromTimed } from '../parsers/timedLyrics';
 import { mapKugouMobileTrack, mapKugouTrack } from './mappers';
+import { sourceTiming } from '../../lib/audio/sourceLifetime';
 
 // --- 文本处理（对齐 Mineradio） ---
 function stripKugouHtml(text: string): string {
@@ -85,11 +88,12 @@ interface VipStatus {
 interface UrlCacheEntry {
   url: string;
   quality: string;
-  expireAt: number;
+  cachedUntil: number;
+  expiresAt: number;
 }
 
 const VIP_TTL_MS = 5 * 60 * 1000;
-const URL_CACHE_TTL_MS = 10 * 60 * 1000;
+
 
 /** H5 网关歌单歌曲映射（对齐 Mineradio mapKugouPlaylistTrack） */
 function mapKugouPlaylistTrack(item: Record<string, any>): Track | null {
@@ -126,7 +130,7 @@ function mapKugouPlaylistTrack(item: Record<string, any>): Track | null {
 }
 
 /** 酷狗封面 URL：替换 {size} 占位符 + 确保 HTTPS */
-function kugouCoverUrl(raw: string, size = 240): string {
+function kugouCoverUrl(raw: string, size = 0): string {
   const url = String(raw || '').trim();
   if (!url) return '';
   return url.replace(/\{size\}/g, String(size)).replace(/^http:\/\//, 'https://');
@@ -141,7 +145,7 @@ export class KugouAdapter implements PlatformAdapter {
   constructor(
     private http: HttpClient,
     private cookies: CookieStore,
-  ) {}
+  ) { cookies.onChange?.(() => { this.vipCache = null; this.urlCache.clear(); }); }
 
   async fetchPlaylist(playlistId: string): Promise<Playlist> {
     const cookie = this.cookies.getHeader('kugou') ?? '';
@@ -153,7 +157,7 @@ export class KugouAdapter implements PlatformAdapter {
       try {
         return await this.fetchPlaylistViaH5(playlistId, cookie, userid, token);
       } catch (err) {
-        console.warn('[KugouAdapter] H5 歌单失败，回退 mobile API:', err instanceof Error ? err.message : err);
+        console.warn("[KugouAdapter] H5 歌单失败，回退 mobile API:");
       }
     }
 
@@ -241,7 +245,7 @@ export class KugouAdapter implements PlatformAdapter {
       );
       return (data?.data?.lists ?? []).map(mapKugouTrack).filter((t): t is Track => !!t);
     } catch (err) {
-      console.warn('[KugouAdapter] 搜索失败:', err instanceof Error ? err.message : err);
+      console.warn("[KugouAdapter] 搜索失败:");
       return [];
     }
   }
@@ -281,7 +285,7 @@ export class KugouAdapter implements PlatformAdapter {
       this.vipCache = result;
       return result;
     } catch (err) {
-      console.warn('[KugouAdapter] VIP 探测失败:', err instanceof Error ? err.message : err);
+      console.warn("[KugouAdapter] VIP 探测失败:");
       const fallback: VipStatus = { isVip: false, isSvip: false, expireTime: 0, probedAt: Date.now() };
       this.vipCache = fallback;
       return fallback;
@@ -339,12 +343,10 @@ export class KugouAdapter implements PlatformAdapter {
    * H5 为主路径，音质受限时逐路降级补偿。
    */
   async fetchSongUrl(hash: string, albumId?: string, quality?: string, extra?: Record<string, unknown>): Promise<SongUrl | null> {
-    // 构建 hash 候选链（质量从高到低）
-    const candidates: string[] = [];
-    if (extra?.resHash && extra.resHash !== hash) candidates.push(extra.resHash as string);
-    if (extra?.sqHash && extra.sqHash !== hash) candidates.push(extra.sqHash as string);
-    if (extra?.hqHash && extra.hqHash !== hash) candidates.push(extra.hqHash as string);
-    candidates.push(hash);
+    // 指定档位向下尝试；不同音质的 hash 不能总从最高档开始。
+    const all=[{level:'hires',hash:extra?.resHash},{level:'flac',hash:extra?.sqHash},{level:'320',hash:extra?.hqHash},{level:'128',hash}];
+    const at=all.findIndex(x=>x.level===quality);
+    const candidates=[...new Set(all.slice(at<0?0:at).map(x=>String(x.hash || '')).filter(Boolean))];
 
     const cookie = this.cookies.getHeader('kugou') || '';
     const rec = this.cookies.get('kugou');
@@ -357,28 +359,33 @@ export class KugouAdapter implements PlatformAdapter {
       // 检查缓存
       const ck = this.getCacheKey(h);
       const cached = this.urlCache.get(ck);
-      if (cached && cached.expireAt > Date.now()) {
-        return { url: cached.url, quality: cached.quality };
+      if (!requestScope()?.forceRefresh && cached && cached.cachedUntil > Date.now() && cached.expiresAt > Date.now()+5000) {
+        return { url: cached.url, quality: cached.quality, expiresAt:cached.expiresAt };
       }
 
-      // 四路依次尝试
+      // 不让失效的旧 mobile 路由挡住 web/H5；每路都继承父预算。
       const routes: Array<() => Promise<SongUrl | null>> = [
         () => this.fetchH5(h, albumId, quality, userid, token, mid, dfid, cookie),
         () => this.fetchMobile(h, albumId, userid, token),
         () => this.fetchWeb(h, albumId, mid, dfid, userid, token),
         () => this.fetchGateway(h, albumId, quality, userid, token, mid, dfid),
       ];
-
-      for (const route of routes) {
-        try {
-          const result = await route();
-          if (result?.url) {
-            // 缓存结果
-            this.urlCache.set(ck, { url: result.url, quality: result.quality || '', expireAt: Date.now() + URL_CACHE_TTL_MS });
-            return result;
-          }
-        } catch { /* 继续下一路 */ }
-      }
+      const control=new AbortController();
+      try {
+        const result=await new Promise<SongUrl>((resolve,reject)=> {
+          let remaining=routes.length;
+          routes.forEach(route=> {
+            void withRequestScope(1500,route,{signal:control.signal}).then(r=> {
+              if(r?.url)resolve(r);else if(--remaining===0)reject(new Error('NO_SOURCE'));
+            }).catch(()=>{if(--remaining===0)reject(new Error('NO_SOURCE'))});
+          });
+        });
+        const timing=sourceTiming('kugou',Date.now(),result.expiresAt);
+        this.urlCache.set(ck,{url:result.url,quality:result.quality || '',cachedUntil:Date.now()+120000,expiresAt:timing.expiresAt});
+        if(this.urlCache.size>256)this.urlCache.delete(this.urlCache.keys().next().value!);
+        return {...result,...timing};
+      } catch { throwIfCancelled(); }
+      finally { control.abort(); }
     }
 
     return { url: '', playable: false, trial: false, error: '酷狗四路取链均失败' };
@@ -419,7 +426,9 @@ export class KugouAdapter implements PlatformAdapter {
       },
     );
     if (data?.status === 1 && data.url) {
-      const q = data.bitRate ? (data.bitRate >= 900 ? 'lossless' : data.bitRate >= 320 ? 'hq' : 'sq') : '';
+      const bitrate=Number(data.bitRate || 0);
+      const kbps=bitrate>10000?bitrate/1000:bitrate;
+      const q=kbps>=900?'flac':kbps>=256?'320':kbps>0?'128':'';
       return { url: data.url.replace(/^http:/, 'https:'), quality: q };
     }
     return null;
@@ -443,7 +452,9 @@ export class KugouAdapter implements PlatformAdapter {
     // vip=65530 表示 VIP 限制
     if (data?.vip === 65530) return null;
     if (data?.url) {
-      const q = data.bitRate ? (data.bitRate >= 900 ? 'lossless' : data.bitRate >= 320 ? 'hq' : 'sq') : '';
+      const bitrate=Number(data.bitRate || 0);
+      const kbps=bitrate>10000?bitrate/1000:bitrate;
+      const q=kbps>=900?'flac':kbps>=256?'320':kbps>0?'128':'';
       return { url: data.url.replace(/^http:/, 'https:'), quality: q };
     }
     return null;
@@ -512,7 +523,9 @@ export class KugouAdapter implements PlatformAdapter {
       },
     );
     if (data?.status === 1 && data.url) {
-      const q = data.bitRate ? (data.bitRate >= 900 ? 'lossless' : data.bitRate >= 320 ? 'hq' : 'sq') : '';
+      const bitrate=Number(data.bitRate || 0);
+      const kbps=bitrate>10000?bitrate/1000:bitrate;
+      const q=kbps>=900?'flac':kbps>=256?'320':kbps>0?'128':'';
       return { url: data.url.replace(/^http:/, 'https:'), quality: q };
     }
     return null;
@@ -552,17 +565,17 @@ export class KugouAdapter implements PlatformAdapter {
       params.signature = h5Sign(params, bodyObj);
       const qs = Object.entries(params).map(([k,v]) => k+'='+encodeURIComponent(v)).join('&');
       const url = 'https://gateway.kugou.com/v7/get_all_list?' + qs;
-      console.log('[KugouAdapter] fetchMyPlaylists url:', url.substring(0,180));
+      console.log("[KugouAdapter] fetchMyPlaylists url:");
       const data = await this.http.requestJson<{
         status?: number; error?: string;
         data?: { info?: Array<{ listid: string; specialname: string; imgurl: string; songcount: number }> };
       }>(url, { platform: 'kugou', method: 'POST', body: bodyObj, headers: { 'x-router': 'cloudlist.service.kugou.com' } });
-      if (data.status === 0) { console.warn('[KugouAdapter] API error:', data.error); return []; }
+      if (data.status === 0) { console.warn("[KugouAdapter] API error:"); return []; }
       // 响应结构可能为 data.info / data.list / data.data.info
       const raw = data?.data;
       const items: Array<Record<string, unknown>> = (raw?.info as any[]) ?? (raw as any)?.list ?? (data as any)?.info ?? [];
-      console.log('[KugouAdapter] fetchMyPlaylists:', items.length, 'items');
-      if (!items.length) console.log('[KugouAdapter] raw:', JSON.stringify(data).substring(0,500));
+      console.log("[KugouAdapter] fetchMyPlaylists:");
+      if (!items.length) console.log("[KugouAdapter] raw:");
       return items.map(item => ({
         id: String(item.global_collection_id || item.specialid || item.listid || item.list_id || item.id || ''),
         name: stripKugouHtml(String(item.name || item.listname || item.specialname || item.title || '酷狗歌单')),
@@ -570,7 +583,7 @@ export class KugouAdapter implements PlatformAdapter {
         trackCount: Number(item.count || item.m_count || item.song_count || item.total || item.list_count || item.songcount || 0) || 0,
       }));
     } catch (err) {
-      console.warn('[KugouAdapter] 歌单获取失败:', err instanceof Error ? err.message : err);
+      console.warn("[KugouAdapter] 歌单获取失败:");
       return [];
     }
   }
@@ -599,13 +612,13 @@ export class KugouAdapter implements PlatformAdapter {
       const data = await this.http.requestJson<{ data?: { info?: Array<Record<string, any>> } }>(url, { platform: 'kugou', method: 'POST', body: bodyObj, headers: { 'x-router': 'cloudlist.service.kugou.com' } });
       return (data?.data?.info ?? []).map(mapKugouTrack).filter((t): t is Track => !!t);
     } catch (err) {
-      console.warn('[KugouAdapter] 歌单歌曲获取失败:', err instanceof Error ? err.message : err);
+      console.warn("[KugouAdapter] 歌单歌曲获取失败:");
       return [];
     }
   }
 
     /**
-   * 歌词获取：krcs 双接口为主（search -> download，支持逐字 LRC），
+   * 歌词获取：krcs 双接口为主（search -> download，下载 KRC 逐字），
    * m.kugou.com krc.php 为兜底（纯行级 LRC）。
    */
   async fetchLyric(hash: string, timeMs?: number): Promise<Lyric | null> {
@@ -616,18 +629,13 @@ export class KugouAdapter implements PlatformAdapter {
       const searchData = await this.http.requestJson<{ candidates?: Array<{ id: string; accesskey: string }> }>(searchUrl, { platform: 'kugou' });
       const candidate = searchData?.candidates?.[0];
       if (candidate?.id && candidate?.accesskey) {
-        const dlUrl = `https://krcs.kugou.com/download?ver=1&client=pc&id=${encodeURIComponent(candidate.id)}&accesskey=${encodeURIComponent(candidate.accesskey)}&fmt=lrc&charset=utf8`;
+        const dlUrl = `https://krcs.kugou.com/download?ver=1&client=pc&id=${encodeURIComponent(candidate.id)}&accesskey=${encodeURIComponent(candidate.accesskey)}&fmt=krc&charset=utf8`;
         const dlData = await this.http.requestJson<{ content?: string }>(dlUrl, { platform: 'kugou' });
-        let raw = dlData?.content ?? '';
-        if (raw && !raw.includes('[offset=') && !raw.includes('[00:')) {
-          try { raw = Buffer.from(raw, 'base64').toString('utf-8'); } catch { /* 非 base64 */ }
-        }
-        if (raw && (raw.includes('[offset=') || raw.includes('[00:'))) {
-          return { lines: parseLrc(raw), raw, source: 'kugou' };
-        }
+        const lyric=fromTimed(decodeKrc(dlData?.content || ''),'krc');
+        if(lyric)return lyric;
       }
     } catch (err) {
-      console.warn('[KugouAdapter] krcs 歌词搜索失败:', err instanceof Error ? err.message : err);
+      console.warn("[KugouAdapter] krcs 歌词搜索失败:");
     }
     // 2) m.kugou.com krc.php（兜底）
     try {
@@ -638,7 +646,7 @@ export class KugouAdapter implements PlatformAdapter {
       if (!raw || raw.includes('<')) return null;
       return { lines: parseLrc(raw), raw, source: 'kugou' };
     } catch (err) {
-      console.warn('[KugouAdapter] krc.php 歌词兜底失败:', err instanceof Error ? err.message : err);
+      console.warn("[KugouAdapter] krc.php 歌词兜底失败:");
       return null;
     }
   }

@@ -300,7 +300,7 @@ check('looksLikeAudio magic bytes', () => {
 // ---------- 9) QQ rights parsing ----------
 check('parseQqRights strict keys (vip, no svip)', () => {
   const r = parseQqRights({
-    user: { vip: { isVip: true, viptype: 8, svip: false, sviptype: 0, vipExpireTime: '1750000000000' } },
+    user: { vip: { isVip: true, viptype: 8, svip: false, sviptype: 0, vipExpireTime: String(Date.now()+3600_000) } },
   });
   assert.strictEqual(r.isVip, true);
   assert.strictEqual(r.isSvip, false);

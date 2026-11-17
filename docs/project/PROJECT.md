@@ -67,9 +67,14 @@ pnpm qa:backend       # 后端冒烟测试（自动先 build:main）
 pnpm qa               # 前端自动化 QA（无头 Chrome，需本机 Chrome）
 pnpm check:arch       # 架构依赖守卫（pnpm qa 已包含）
 pnpm qa:live-new      # 在线链路验证（跨平台转译 / 歌手全曲 / 评论分页 / 头像）
-pnpm qa:qq-live       # QQ 实账号链路验证（需 --cookie=... 或 scripts/qq-cookie.txt）
+pnpm qa:qq-session    # QQ 脱敏诊断（必须传 --profile=仓库外凭据副本目录）
 pnpm qa:desktop-play  # 桌面播放链路冒烟
+pnpm qa:playback-live # 默认 108 条公开跨平台挑战样本联网统计
 ```
+
+播放回归：`node scripts/player-regression.mjs`（已纳入 `qa:backend`）。联网统计：`pnpm qa:playback-live` 默认读取已提交的 108 条公开挑战样本，统计写到仓库同级 `benchmark-result.json`。需要重新采集搜索样本时，先 `pnpm build:main`，再 `node scripts/playback-benchmark.mjs --prepare`，然后用 `--samples=../benchmark-samples.json` 显式选择新数据集。也可用 `--samples=... --out=... --backend=... --profile=...` 指定同一测试集、冻结后端或只含测试凭据副本的目录；脚本不打印直链或歌词原文。
+
+换机器运行浏览器 QA 时，可设置 `NEBULA_QA_MODULES` 为包含 `playwright-core` 与 `pngjs` 的依赖目录，`NEBULA_CHROME` 为 Chromium/Chrome 可执行文件；不设置时保留原机器路径。也可在项目本地安装这两个测试依赖。原有 QA 使用 SoundHelix 公开演示音频，需要联网。
 
 > Node 运行时：`C:\Users\LIU\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe`
 >
@@ -99,6 +104,17 @@ pnpm qa:desktop-play  # 桌面播放链路冒烟
 - 音源失败链路：主平台取 URL → 失败则 SongResolver 用歌名+歌手跨平台搜索兜底 → 前端 `<audio>` onerror 触发 skipNext + 卡片置灰。
 
 ### 4.4 测试约定
+
+- 后端整修回归：`pnpm qa:backend` 包括播放代次、路由/代理、录音匹配、QQ 契约、歌词、封面隐私、五平台导入。
+- 联网统计：`pnpm qa:playback-live --samples=scripts/fixtures/public-playlists.json`（100 首公开榜单）；`public-benchmark.json` 为 108 首跨平台挑战集。输出默认在仓库外；切勿提交私人账号的歌曲列表或原始凭据。
+- 原生媒体：先 build，再 `pnpm qa:media`；可传 `--baseline=../baseline-ui` 比较归档源码。固定本地 WAV 与延时，输出媒体事件间隔和舞台帧时间，不宣称声卡实际延迟。
+- 原生桌面：`pnpm qa:electron` 使用仓库外隔离 userData、隐藏窗口与合成 WAV，不碰原账号文件。
+- 界面播放回归：`pnpm qa:ui-playback`（已纳入 qa）以真实 React/Chrome 运行生产组件，覆盖歌词中段切歌的旧下标竞态、加载/缓冲按钮意图和QQ过期提示，不依赖在线演示音频。
+- 有效期真实对照：`pnpm qa:valid-source --baseline=dist-main/round1.cjs`，真实等待125秒后暂停续播和拖动；冻结后端必须由41c1404构建，未传baseline时只测当前版。
+- QQ会话诊断：`pnpm qa:qq-session --profile=../qq-copy --samples=../qq-samples.json --out=../qq-session.json`。只读取仓库外凭据副本；样本可选，默认最多10首QQ曲目、各三档。仅输出字段存在性、接口码、会员/登录状态、可播统计；缺凭据明确未运行，不当通过。自动续期评估见整修报告§13.5。
+- 长暂停：先 build，再 `pnpm qa:long-pause`；真实等待 31 分钟，验证过期地址重取与拖动。
+- 封面统计：`node scripts/playback-benchmark.mjs --covers-only`；加 `--baseline-cover` 测原 URL。仅输出实测像素，不输出下载图片。
+- 交付报告与证据：`docs/project/BACKEND_OVERHAUL.md`；`node scripts/summarize-overhaul.cjs` 可从随报告提交的脱敏 JSON 重算对照指标。`unavailable-public.json` 是另列的公开不可用案例，不混入原来的两组样本分母。
 
 - 任何后端改动：`pnpm qa:backend` 必须通过；加密类改动需同步在 `backend-smoke.mjs` 补充断言。
 - 任何前端交互改动：`pnpm qa` 必须通过（有严格阈值断言）。

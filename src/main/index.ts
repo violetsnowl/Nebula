@@ -3,6 +3,7 @@
 export * from './types';
 export * from './cookieStore';
 export * from './http';
+export * from './requestScope';
 export * from './audioProxy';
 export * from './audioProbe';
 export * from './ncm/ncmApi';
@@ -20,7 +21,16 @@ export * from './services/lyricService';
 export * from './services/lyricCache';
 export * from './services/wallpaperLibrary';
 export * from './services/qqRights';
+export * from './services/qqSession';
 export * from './services/platformRouter';
 export * from './login/index';
 export { registerIpcHandlers } from './ipc';
 export type { IpcLike, IpcDeps } from './ipc';
+
+export { recordingMatch, identityText } from './services/recordingMatch';
+
+export * from './parsers/timedLyrics';
+
+export * from './services/lyricAlignment';
+
+export * from './services/coverService';

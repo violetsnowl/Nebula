@@ -1,0 +1,28 @@
+[
+  {
+    "platform": "qq",
+    "ms": 1969,
+    "coverage": {
+      "textLines": 29,
+      "translatedLines": 29,
+      "wordLines": 29
+    },
+    "yrc": true,
+    "qrc": true,
+    "krc": false,
+    "roman": true
+  },
+  {
+    "platform": "kugou",
+    "ms": 1368,
+    "coverage": {
+      "textLines": 29,
+      "translatedLines": 28,
+      "wordLines": 29
+    },
+    "yrc": true,
+    "qrc": false,
+    "krc": true,
+    "roman": false
+  }
+]

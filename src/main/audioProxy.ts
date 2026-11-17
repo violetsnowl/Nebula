@@ -4,202 +4,123 @@ import type { CookieStore } from './cookieStore';
 import { PLATFORM_HEADERS } from './http';
 import type { Platform } from './types';
 
-/**
- * 本地音频代理（主进程）。
- *
- * 渲染进程 <audio> 不直连平台原始 URL，统一走 `http://127.0.0.1:PORT/api/audio?url=...`：
- * - 按域名注入 Referer/Origin/UA + 平台 Cookie；
- * - 透传 Range，回写 Content-Type/Content-Length/Content-Range/Accept-Ranges；
- * - 上游 keep-alive 连接复用（降低 seek/切歌时的首字节延迟）；
- * - 仅当客户端中途断开且响应未结束时才中止上游，避免误 abort。
- */
-
-const ALLOWED_HOSTS: Array<{ host: string; platform: Platform }> = [
-  { host: 'music.163.com', platform: 'netease' },
-  { host: '.music.163.com', platform: 'netease' },
-  { host: '.music.126.net', platform: 'netease' },
-  { host: '.qq.com', platform: 'qq' },
-  { host: '.gtimg.cn', platform: 'qq' },
-  { host: '.gtimg.com', platform: 'qq' },
-  { host: '.qpic.cn', platform: 'qq' },
-  { host: '.kugou.com', platform: 'kugou' },
-  { host: '.kugou.com.cn', platform: 'kugou' },
-  { host: '.kugou.net', platform: 'kugou' },
+const HOSTS: Array<[string, Platform]> = [
+  ['music.163.com','netease'], ['music.126.net','netease'],
+  ['qq.com','qq'], ['gtimg.cn','qq'], ['gtimg.com','qq'], ['qpic.cn','qq'],
+  ['kugou.com','kugou'], ['kugou.com.cn','kugou'], ['kugou.net','kugou'],
 ];
-
-const MAX_REDIRECTS = 3;
-const UPSTREAM_TIMEOUT_MS = 30000;
-
-const httpAgent = new http.Agent({ keepAlive: true, maxSockets: 16 });
-const httpsAgent = new https.Agent({ keepAlive: true, maxSockets: 16, timeout: UPSTREAM_TIMEOUT_MS });
-
-function matchPlatform(hostname: string): Platform | null {
-  const h = hostname.toLowerCase();
-  for (const rule of ALLOWED_HOSTS) {
-    if (rule.host.startsWith('.')) {
-      if (h === rule.host.slice(1) || h.endsWith(rule.host)) return rule.platform;
-    } else if (h === rule.host) {
-      return rule.platform;
-    }
-  }
-  return null;
+export function audioPlatform(url: URL): Platform | null {
+  if (!['https:','http:'].includes(url.protocol) || url.username || url.password) return null;
+  const h = url.hostname.toLowerCase();
+  return HOSTS.find(([domain]) => h === domain || h.endsWith('.'+domain))?.[1] ?? null;
 }
 
+/** 仅代理受信音频域名；每一跳重新校验并生成对应平台的凭证头。 */
 export class AudioProxy {
   private server: http.Server | null = null;
+  private starting: Promise<void> | null = null;
   private port = 0;
-
-  constructor(private cookies: CookieStore) {}
-
-  start(): void {
-    if (this.server) return;
-    this.server = http.createServer((req, res) => {
-      void this.handle(req, res);
+  private active = 0;
+  private httpAgent = new http.Agent({keepAlive:true,maxSockets:8,maxTotalSockets:16,maxFreeSockets:4});
+  private httpsAgent = new https.Agent({keepAlive:true,maxSockets:8,maxTotalSockets:16,maxFreeSockets:4});
+  // 注入点只供 Node 离线测试使用；IPC 不能传入。
+  constructor(private cookies: CookieStore, private classify: (url: URL) => Platform | null = audioPlatform) {}
+  start(): Promise<void> {
+    if (this.starting) return this.starting;
+    this.server = http.createServer((req,res) => { void this.handle(req,res); });
+    this.server.headersTimeout = 10000;
+    this.server.requestTimeout = 10000;
+    this.starting = new Promise((resolve,reject) => {
+      this.server!.once('error',reject);
+      this.server!.listen(0,'127.0.0.1',() => {
+        const addr = this.server!.address();
+        if (addr && typeof addr === 'object') this.port = addr.port;
+        resolve();
+      });
     });
-    this.server.listen(0, '127.0.0.1', () => {
-      const addr = this.server?.address();
-      if (addr && typeof addr === 'object') this.port = addr.port;
-    });
+    return this.starting;
   }
-
-  /** 平台原始 URL → 代理地址（已是代理地址则原样返回）。 */
-  urlFor(rawUrl: string): string {
-    if (!rawUrl) return rawUrl;
-    if (/^http:\/\/127\.0\.0\.1:\d+\/api\/audio/.test(rawUrl)) return rawUrl;
-    if (!this.port) return rawUrl;
-    return `http://127.0.0.1:${this.port}/api/audio?url=${encodeURIComponent(rawUrl)}`;
-  }
-
-  dispose(): void {
-    this.server?.close();
-    this.server = null;
-    this.port = 0;
-  }
-
-  private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
-    res.setHeader('Access-Control-Allow-Origin', '*');
-    res.setHeader('Access-Control-Allow-Headers', 'Range, Content-Type');
-    if (req.method === 'OPTIONS') {
-      res.statusCode = 204;
-      res.end();
-      return;
-    }
-
-    const url = new URL(req.url ?? '/', `http://127.0.0.1:${this.port}`);
-    if (url.pathname !== '/api/audio') {
-      res.statusCode = 404;
-      res.end('not found');
-      return;
-    }
-    const target = url.searchParams.get('url');
-    if (!target) {
-      res.statusCode = 400;
-      res.end('missing url');
-      return;
-    }
-
-    let upstream: URL;
+  urlFor(raw: string): string {
+    if (!raw || !this.port) return '';
     try {
-      upstream = new URL(target);
-    } catch {
-      res.statusCode = 400;
-      res.end('bad url');
-      return;
-    }
-    if (upstream.protocol !== 'https:' && upstream.protocol !== 'http:') {
-      res.statusCode = 400;
-      res.end('protocol not allowed');
-      return;
-    }
-    const platform = matchPlatform(upstream.hostname);
-    if (!platform) {
-      res.statusCode = 403;
-      res.end('host not allowed');
-      return;
-    }
-
-    const headers: Record<string, string> = {
-      ...PLATFORM_HEADERS[platform],
-      Accept: '*/*',
+      let url = new URL(raw);
+      if (url.hostname === '127.0.0.1' && url.pathname === '/api/audio') url = new URL(url.searchParams.get('url') || '');
+      if (!this.classify(url)) return '';
+      return `http://127.0.0.1:${this.port}/api/audio?url=${encodeURIComponent(url.href)}`;
+    } catch { return ''; }
+  }
+  dispose(): void {
+    this.server?.closeAllConnections(); this.server?.close();
+    this.httpAgent.destroy(); this.httpsAgent.destroy();
+    this.server=null; this.starting=null; this.port=0;
+  }
+  private async handle(req: http.IncomingMessage, res: http.ServerResponse): Promise<void> {
+    res.setHeader('Access-Control-Allow-Origin','*');
+    res.setHeader('Access-Control-Allow-Headers','Range, Content-Type');
+    const fail = (status: number, message: string) => {
+      if (res.destroyed || res.writableEnded) return;
+      if (res.headersSent) res.destroy();
+      else { res.statusCode=status; res.end(message); }
     };
-    const cookie = this.cookies.getHeader(platform);
-    if (cookie) headers.Cookie = cookie;
+    if (req.method==='OPTIONS') { res.writeHead(204); res.end(); return; }
+    if (!['GET','HEAD'].includes(req.method || '')) { fail(405,'method not allowed'); return; }
+    let current: URL;
+    try {
+      const local = new URL(req.url || '/', 'http://127.0.0.1');
+      if (local.pathname !== '/api/audio') { fail(404,'not found'); return; }
+      current = new URL(local.searchParams.get('url') || '');
+    } catch { fail(400,'invalid url'); return; }
     const range = req.headers.range;
-    if (range) headers.Range = range;
-
-    // 客户端中途断开且响应未结束时才中止上游
-    const onClientClose = () => {
-      if (!res.writableEnded) upstreamReq?.destroy();
-    };
-    res.on('close', onClientClose);
-
-    let upstreamReq: http.ClientRequest | null = null;
-    let current = upstream;
-    for (let redirects = 0; ; redirects++) {
-      const isHttps = current.protocol === 'https:';
-      const transport = isHttps ? https : http;
-      try {
-        const done = await new Promise<boolean>((resolve) => {
-          const r = transport.request(
-            current,
-            {
-              method: req.method === 'HEAD' ? 'HEAD' : 'GET',
-              headers,
-              agent: isHttps ? httpsAgent : httpAgent,
-              timeout: UPSTREAM_TIMEOUT_MS,
-            },
-            (upRes) => {
-              const status = upRes.statusCode ?? 502;
-              if (status >= 300 && status < 400 && upRes.headers.location && redirects < MAX_REDIRECTS) {
-                upRes.resume();
-                try {
-                  current = new URL(upRes.headers.location, current);
-                } catch {
-                  current = new URL(upRes.headers.location, current.origin);
-                }
-                resolve(false);
-                return;
-              }
-              res.statusCode = status;
-              const copy = ['content-type', 'content-length', 'content-range', 'accept-ranges', 'etag', 'cache-control'];
-              for (const name of copy) {
-                const v = upRes.headers[name];
-                if (v !== undefined) res.setHeader(name, Array.isArray(v) ? v.join(', ') : v);
-              }
-              if (req.method === 'HEAD') {
-                res.end();
-                resolve(true);
-                return;
-              }
-              upRes.pipe(res);
-              upRes.on('end', () => resolve(true));
-              upRes.on('error', () => resolve(true));
-            },
-          );
-          r.on('timeout', () => r.destroy(new Error('upstream timeout')));
-          r.on('error', (err) => {
-            if (!res.writableEnded) {
-              res.statusCode = 502;
-              res.end(`proxy error: ${err.message}`);
+    if (range && !/^bytes=(?:\d+-\d*|-\d+)$/.test(range)) { fail(416,'unsupported range'); return; }
+    if (this.active>=16) { fail(503,'audio connections busy'); return; }
+    this.active++;
+    let upstreamReq: http.ClientRequest | undefined;
+    const abort = () => { if (!res.writableEnded) upstreamReq?.destroy(); };
+    res.once('close',abort);
+    try {
+      for (let hop=0; hop<=3; hop++) {
+        if (res.destroyed) return;
+        const platform=this.classify(current);
+        if (!platform || !['http:','https:'].includes(current.protocol) || current.username || current.password) { fail(403,'host not allowed'); return; }
+        const headers: Record<string,string> = {...PLATFORM_HEADERS[platform],Accept:'*/*'};
+        // 跨域跳转不转发上一跳 Cookie；只按新域名读取对应平台。
+        const cookie=this.cookies.getHeader(platform);
+        if (cookie) headers.Cookie=cookie;
+        if (range) headers.Range=range;
+        const next = await new Promise<URL | null>(resolve => {
+          let settled=false;
+          const finish=(value: URL | null) => { if (!settled) { settled=true; resolve(value); } };
+          const secure=current.protocol==='https:';
+          upstreamReq=(secure?https:http).request(current,{
+            method:req.method,headers,agent:secure?this.httpsAgent:this.httpAgent,timeout:30000,
+          }, upstream => {
+            const status=upstream.statusCode || 502;
+            if (status>=300 && status<400) {
+              let target: URL | null=null;
+              try { if (hop<3 && upstream.headers.location) target=new URL(upstream.headers.location,current); } catch { /* 非法跳转 */ }
+              upstream.destroy();
+              if (!target) fail(502,'invalid redirect');
+              finish(target); return;
             }
-            resolve(true);
+            res.statusCode=status;
+            for (const key of ['content-type','content-length','content-range','accept-ranges','etag','cache-control']) {
+              const value=upstream.headers[key]; if (value!==undefined) res.setHeader(key,value);
+            }
+            upstream.once('aborted',()=>{ fail(502,'upstream interrupted'); finish(null); });
+            upstream.once('error',()=>{ fail(502,'upstream interrupted'); finish(null); });
+            upstream.once('end',()=>finish(null));
+            upstream.once('close',()=>{ if (!upstream.complete) fail(502,'upstream interrupted'); finish(null); });
+            if (req.method==='HEAD') { upstream.resume(); res.end(); }
+            else upstream.pipe(res);
           });
-          r.end();
-          upstreamReq = r;
+          upstreamReq.once('timeout',()=>upstreamReq?.destroy(new Error('upstream timeout')));
+          upstreamReq.once('error',()=>{ fail(502,'audio upstream unavailable'); finish(null); });
+          upstreamReq.once('close',()=>{ if (res.destroyed) finish(null); });
+          upstreamReq.end();
         });
-        if (done) return;
-        if (redirects >= MAX_REDIRECTS) {
-          res.statusCode = 502;
-          res.end('too many redirects');
-          return;
-        }
-      } catch (err) {
-        if (!res.writableEnded) {
-          res.statusCode = 502;
-          res.end(`proxy error: ${err instanceof Error ? err.message : String(err)}`);
-        }
-        return;
+        if (!next) return;
+        current=next;
       }
-    }
+    } finally { this.active--; res.removeListener('close',abort); }
   }
 }

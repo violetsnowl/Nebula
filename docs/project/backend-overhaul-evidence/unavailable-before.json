@@ -1,0 +1,85 @@
+{
+  "startedAt": "2026-11-17T07:21:28.123Z",
+  "finishedAt": "2026-11-17T07:21:44.401Z",
+  "backend": "baseline.cjs",
+  "conditions": {
+    "concurrency": 3,
+    "watchdogMs": 25000,
+    "authenticated": [],
+    "measurement": "到通过音频探测的可播地址；不是实际出声",
+    "censored": "WATCHDOG 为测试工具截断，不计入成功耗时分位数"
+  },
+  "summary": {
+    "total": {
+      "n": 1,
+      "direct": 0,
+      "fallback": 0,
+      "playable": 0,
+      "full": 0,
+      "watchdog": 0,
+      "directP50": null,
+      "directP95": null,
+      "fallbackP95": null,
+      "word": 0,
+      "foreignN": 0,
+      "translation": 0
+    },
+    "byPlatform": {
+      "netease": {
+        "n": 1,
+        "direct": 0,
+        "fallback": 0,
+        "playable": 0,
+        "full": 0,
+        "watchdog": 0,
+        "directP50": null,
+        "directP95": null,
+        "fallbackP95": null,
+        "word": 0,
+        "foreignN": 0,
+        "translation": 0
+      }
+    },
+    "byLanguage": {
+      "zh": {
+        "n": 1,
+        "direct": 0,
+        "fallback": 0,
+        "playable": 0,
+        "full": 0,
+        "watchdog": 0,
+        "directP50": null,
+        "directP95": null,
+        "fallbackP95": null,
+        "word": 0,
+        "foreignN": 0,
+        "translation": 0
+      }
+    }
+  },
+  "rows": [
+    {
+      "index": 0,
+      "platform": "netease",
+      "language": "zh",
+      "seedLanguage": "zh",
+      "id": "netease:186016",
+      "resolveMs": 13506,
+      "playable": false,
+      "full": false,
+      "fallback": true,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [],
+      "lyricLines": 71,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [],
+      "translatedLines": 0,
+      "translation": false
+    }
+  ]
+}

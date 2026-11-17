@@ -2,6 +2,9 @@
 
 ## 已知坑（遇事优先查这里）
 
+- **URL缓存期限不等于音频失效期限（#B11）**：解析缓存两分钟仅决定是否重用解析结果，不得用 min(cacheTTL, upstreamExpiry) 给播放器写 expiresAt。播放器按每首每个URL记取源时间，不能沿用上一首的全局 loadedAt。无上游期限时的平台默认值只是客户端保守策略，不是实测CDN承诺；真实125秒对照可用 `qa:valid-source` 复测。
+- **QQ网页授权、音乐登录、会员和单曲授权是不同证据（#B13）**：有uin或公开昵称不能证明音乐票据有效；p_skey/skey及OAuth token不能替代authst。统一使用qqCredential取身份/播放票据，会员查询只解析当前账号块；空purl本身不能证明过期或无会员。明确AUTH_EXPIRED停止兜底/自动跳歌；未知保持unknown。诊断用 `qa:qq-session --profile=仓库外副本 --out=仓库外结果`，不要在命令行粘贴真实Cookie。
+
 ### 网易云接口（重要）
 
 - **明文扫码接口已废弃**：`music.163.com/api/login/qrcode/unikey|client/login` 扫码确认后会报「请切换其他登录方式或升级新版本再试」。必须使用 eapi（`interface.music.163.com/eapi/...`，`type=3`）或 weapi 加密接口。
@@ -12,7 +15,7 @@
 - 无版权/VIP 时 `/api/song/enhance/player/url` 返回占位地址（`music.163.com/song/media/outer/url...`），需判定为失败并触发兜底。
 - 取链音质：`song_url_v1` 的 level 体系（jymaster/sky 需 SVIP，hires/lossless 需 VIP），匿名仅 standard/exhigh；`freeTrialInfo` 存在即试听片段。
 - 音频播放必须走主进程 `AudioProxy`（`http://127.0.0.1:port/api/audio?url=...`），禁止把平台原始 URL 直接喂给 `<audio>`；代理白名单外域名返回 403。
-- Cookie 校验：netease 必须含 `MUSIC_U`；qq 必须含 `uin` + 播放票据（music_key/qm_keyst/p_skey/skey 至少其一），否则 `setCookie` IPC 拒绝写入。
+- Cookie 校验：netease 必须含 `MUSIC_U`；qq 必须含有效音乐账号（uin/wxuin或成对musicid）与音乐播放票据（qm_keyst/qqmusic_key/music_key/musickey/wxskey），否则 `setCookie` IPC 拒绝写入。p_skey/skey不再算音乐登录成功。
 
 ### 构建 / 运行
 
@@ -106,3 +109,48 @@
 - [ ] `README.md` 目前是开发期版本；正式定稿与 CI/CD 流程留到收工阶段。
 
 > 已废弃（不再排期）：Z1 大字号左→右长句「提前检测 + 提前入场」方案（旧第 9/10 点，2026-08-19 用户确认不需要，详见 `docs/design/LYRICS_SYSTEM.md` §8）。
+
+
+## 后端整修 #B6：线上复测和封面
+
+### 第二轮 #B10：显示归一化必须早于身份拆分
+
+- `<em>`/`</em>` 必须先去掉再按 `/` 拆艺术家，否则闭合标签会造出假歌手。适配器映射与录音门禁两层都清理，不能依赖UI的stripMarkup。
+- 标题译名/Explicit和艺术家读音括注不是录音版本。只用明确版本词建立版本约束，合作歌手仍全部比较；不得为单首歌曲再加专用匹配分支。
+
+### #B8 交付复测口径
+
+- 安全的后端失败文案不能在渲染端转换为无原因的 null；现有错误位置应保留登录/权限/连接原因，同时保持有限失败出口。
+- 音源耗时是取得通过签名探测的地址，Chrome ended→playing 是媒体事件；两者都不能写成声卡出声/静音时间。成功和失败分开统计，并同时报告成功样本数。
+- 逐字必须区分原始字段存在和正文时间对齐后可用。对原版用当前测量器重算时应明确口径，不能冒充原版 UI 观测。
+- 公开曲单权限字段 fee、st、pl、dl 是当次接口返回，不自动等于法律版权结论。无账号结果不代替会员验收。完整步骤与脱敏原始统计见 `BACKEND_OVERHAUL.md`。
+
+### #B7 补充
+
+- 完整 512 字节 Range 也调用 destroy 会破坏 keep-alive；现在有明确完整长度时等 end，超量或未知长度才截断。真实 3 次探测的新增连接数≤1。
+- 初始短预算能误杀已取到 URL 但尚在探测的歌曲；阶段预算按实测修订，总预算仍 6 秒。失败耗时与成功耗时必须分别报告，不能靠减少成功样本美化分位数。
+- 网易云 lyric_new/lyric 原先串行，后一个慢请求可使整阶段丢弃前一个成功结果；改为并发独立限时，并添加一方永久挂起的回归。
+- Spotify 官方现行字段是 `items.items[].item`，旧 `tracks.items[].track` 已弃用；兼容两者和 next 分页。官方 [Get Playlist](https://developer.spotify.com/documentation/web-api/reference/get-playlist) 与 [Get Playlist Items](https://developer.spotify.com/documentation/web-api/reference/get-playlists-items) 说明条目访问受拥有/协作权限限制。无条目权限不返回假空歌单；100 页/5000 首、60 秒上限，超限明确报错。本机没有 OAuth 授权，线上行为待复测。
+
+- 取链阶段超时不能作为整个平台失效的证据；主源点播总要获得恢复机会。只有非取消/非超时异常计入兜底平台 30 秒熔断。
+- 网易云库 generateConfig 串行注册匿名身份和更新公钥，首次请求原先会等待它；复用 24 小时内的匿名文件，桌面启动预热。不存在/过期时仍有 5 秒初始化上限与播放总预算，不能硬编码匿名令牌。
+- coverInfo 字段 `{url,width?,height?,verified}`；像素通过受限 GET 读取 PNG/JPEG/WebP/GIF 头确认，最大 64 KiB、总预算 5 秒、4 个并发、500 项/24 小时缓存。URL 中的 800/1000 不算实际尺寸；失败只返回 unverified，前端不能展示虚构像素。
+- 登录日志只保留事件类型；不输出原始错误对象、Cookie 前缀、响应体、签名直链或页面调试内容。QQ 评论未知 `[em]...[/em]` 显示「［表情］」，真实 emoji 保留。
+
+## 后端整修 #B4：平台接口与匹配
+
+- QQ 旧 express_mobile3 不再调用；musicu 的取链参数必须有 filename，文件 ID 优先 file.media_mid，不能把所有 songmid 当 media_mid。登录播放票据放 comm.authst，与 uin/Cookie 配套。只借鉴 Mineradio 的协议参数，无复制实现。
+- QQ 无 purl 时区分 LOGIN_REQUIRED / RIGHTS_OR_UNAVAILABLE / NETWORK；不能将没有 purl 一律视为版权缺失，也不能用匿名结果确认会员能力。
+- 网易云旧 search/get/web 在本机返回空结果，成熟库 cloudsearch 返回候选；取流与查询都继承 RequestScope。
+- 酷狗不同档位对应不同 hash，不能无视 quality 总选最高 hash；bitRate 同时兼容 bit/s 与 kbit/s。
+- 兜底采用“宁缺毋滥”：recordingMatch 拒绝歌手集合不一致、版本不一致、时长差超过 max(2s,min(6s,2%)) 的结果；无时长还需同专辑。歌词补全必须复用该门禁。
+
+
+## 后端整修 #B5：歌词格式与来源
+
+- 网易云 `lyric_new` 常把 JSON 制作信息与普通 LRC 混在一起。检测到任何 JSON 后只解析 JSON 会丢掉正文，连带导致翻译无法附着。现在逐行分别解析。
+- QQ `qrc` 返回值可能是数字标志，真正加密文本位于 `lyric`。需要 songID、qrc=1、trans=1、roma=1；QQ 使用非标准 DES，Node 标准 3DES 无法解开。使用独立 MIT 依赖 `qrc-decoder@1.0.2`，上游 https://github.com/apoint123/qrc-decoder ，其来源 https://github.com/SuJiKiNen/LyricDecoder 亦为 MIT；传递依赖 pako@2.2.0（MIT/Zlib）。许可证已逐一读取，没有复制 Mineradio/Folia 的 GPL/AGPL 实现。
+- QQ QRC 毫秒与翻译 LRC 十毫秒截断的差异实测为 0–9ms；同源允许 80ms 最近邻，不能据此放松跨源版本与正文锚点验证。
+- 酷狗原路径下载 fmt=lrc，任务书“已有 KRC”线索被实际代码推翻；现用 fmt=krc，经 krc1/XOR/zlib 解码，并提取 language 标签的翻译/罗马音。KRC 相对时间与 QRC 绝对时间分别转换，禁止启发式混用。
+- 新增字段 `Lyric.identity/provenance/coverage/incomplete/krc`；统一 yrc 为绝对毫秒，前端只补空格，不改变逐字节奏。无真实时间的行没有 words。
+- 新歌词缓存 schema=2；旧缓存只失效，不修改用户原文件的历史副本。开发/评估应使用独立 profile。

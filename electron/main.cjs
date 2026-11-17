@@ -1,4 +1,4 @@
-﻿const { app, BrowserWindow, session, ipcMain, shell, dialog, protocol } = require('electron');
+const { app, BrowserWindow, session, ipcMain, shell, dialog, protocol } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -19,6 +19,7 @@ const {
   KugouLogin,
   QishuiLogin,
   QqRightsService,
+  qqSession,
   createKugouLoginAdapter,
   createQishuiLoginAdapter,
   AudioProxy,
@@ -26,6 +27,8 @@ const {
   WallpaperLibrary,
   createFallbackPriorityProvider,
   probeAudioUrl,
+  clearProbeCache,
+  primeNcmApi,
   normalizeCookieHeader,
   validatePlatformCookie,
 } = require('../dist-main/index.cjs');
@@ -60,7 +63,7 @@ function createSpotifyOAuth(cookies) {
       new Promise((resolve) => {
         if (busy) return resolve(false);
         if (!SPOTIFY_CLIENT_ID) {
-          console.error('[Spotify] 请设置环境变量 SPOTIFY_CLIENT_ID（免费在 developer.spotify.com 注册）');
+          console.error("[Spotify] 请设置环境变量 SPOTIFY_CLIENT_ID（免费在 developer.spotify.com 注册）");
           resolve(false);
           return;
         }
@@ -138,7 +141,7 @@ function createQqLoginWindow(cookies) {
     try {
       await ses.clearStorageData({ storages: ['cookies', 'localstorage'] });
     } catch (err) {
-      console.warn('[QQ登录] 清理旧登录态失败:', err instanceof Error ? err.message : err);
+      console.warn("[QQ登录] 清理旧登录态失败:");
     }
     const win = new BrowserWindow({
       width: 1000,
@@ -170,8 +173,8 @@ function createQqLoginWindow(cookies) {
         const v = validatePlatformCookie('qq', normalized);
         if (v.ok) {
           cookies.set('qq', normalized, undefined, 'QQ 音乐');
-          if (!win.isDestroyed()) win.close();
           finish({ ok: true, message: 'QQ 音乐登录成功' });
+          if (!win.isDestroyed()) win.close();
         }
       } catch {
         /* keep polling */
@@ -189,7 +192,7 @@ function createKugouLoginWindow(cookies, kugouLogin) {
     try {
       await ses.clearStorageData({ storages: ['cookies', 'localstorage'] });
     } catch (err) {
-      console.warn('[酷狗登录] 清理旧登录态失败:', err instanceof Error ? err.message : err);
+      console.warn("[酷狗登录] 清理旧登录态失败:");
     }
     const win = new BrowserWindow({
       width: 1000,
@@ -229,10 +232,10 @@ function createKugouLoginWindow(cookies, kugouLogin) {
         const hasKugooID = capturedCookies.has('KugooID');
         const hasT = capturedCookies.has('t');
         const hasKuGoo = capturedCookies.has('KuGoo');
-        console.log('[酷狗登录] Set-Cookie 捕获:', Array.from(capturedCookies.keys()).join(', '));
+        console.log("[酷狗登录] Set-Cookie 捕获:");
 
         if (hasKuGoo || (hasKugooID && hasT)) {
-          console.log('[酷狗登录] 通过 Set-Cookie 检测到登录态!');
+          console.log("[酷狗登录] 通过 Set-Cookie 检测到登录态!");
           doLoginSuccess();
         }
       }
@@ -246,18 +249,18 @@ function createKugouLoginWindow(cookies, kugouLogin) {
         pollCount++;
         const list = await ses.cookies.get({});
         if (pollCount % 5 === 0) {
-          console.log('[酷狗登录] 轮询 #' + pollCount + ' cookie 数量:', list.length, '字段:', list.map(c => c.name).join(', '));
+          console.log("[main.cjs] 接口状态变化");
         }
 
         // 合并两种来源的 cookie
         const allNames = new Set([...list.map(c => c.name), ...capturedCookies.keys()]);
 
         if (allNames.has('KuGoo') || (allNames.has('KugooID') && allNames.has('t'))) {
-          console.log('[酷狗登录] 通过轮询检测到登录态!');
+          console.log("[酷狗登录] 通过轮询检测到登录态!");
           doLoginSuccess();
         }
       } catch (err) {
-        console.warn('[酷狗登录] 轮询异常:', err instanceof Error ? err.message : err);
+        console.warn("[酷狗登录] 轮询异常:");
       }
     }, 1500);
 
@@ -278,9 +281,9 @@ function createKugouLoginWindow(cookies, kugouLogin) {
 
 
 
-      console.log('[酷狗登录] 保存 cookie 字段:', [...new Set([...list.map(c => c.name), ...capturedCookies.keys()])].join(', '));
-      console.log('[酷狗登录] finalRaw 长度:', finalRaw.length, '前100字符:', finalRaw.substring(0, 100));
-      console.log('[酷狗登录] 包含 KugooID:', finalRaw.includes('KugooID'));
+      console.log("[酷狗登录] 保存 cookie 字段:");
+      console.log("[酷狗登录] finalRaw 长度:");
+      console.log("[酷狗登录] 包含 KugooID:");
       cookies.set('kugou', finalRaw, undefined, '酷狗音乐');
       if (!win.isDestroyed()) win.close();
       finish({ ok: true, message: '酷狗音乐登录成功' });
@@ -343,7 +346,7 @@ function createQishuiLoginWindow(cookies, qishuiLogin) {
           });
           win.webContents.executeJavaScript(`document.getElementById('qr').src = '${qrDataUrl}'`);
         } catch (err) {
-          console.warn('[汽水登录] 二维码生成失败:', err);
+          console.warn("[汽水登录] 二维码生成失败:");
         }
       });
 
@@ -362,12 +365,7 @@ function createQishuiLoginWindow(cookies, qishuiLogin) {
       pollTimer = setInterval(async () => {
         try {
           const data = await qishuiLogin.checkQrConnect(token);
-          console.log('[汽水登录] 轮询返回:', JSON.stringify({
-            status: data.status,
-            error_code: data.error_code,
-            hasSessionCookie: !!data.session_cookie,
-            loginOk: data._loginOk === true,
-          }));
+          console.log("[汽水登录] 轮询返回:");
           // 成功判定以 qishuiLogin 内部单一真源为准（含凭证校验 + cookie 持久化）
           if (data._loginOk === true) {
             finish({ ok: true, message: '汽水音乐登录成功' });
@@ -376,7 +374,7 @@ function createQishuiLoginWindow(cookies, qishuiLogin) {
           }
         } catch (err) {
           pollErrors += 1;
-          console.warn('[汽水登录] 轮询失败:', err);
+          console.warn("[汽水登录] 轮询失败:");
           win.webContents.executeJavaScript(
             `document.getElementById("status").textContent = "验证异常：${String(err.message || err).replace(/[\\'"]/g, '')}（持续重试中…）"`,
           ).catch(() => {});
@@ -555,20 +553,22 @@ async function handleOpenLocalDirectory() {
   return { ok: true, data: { tracks, canceled: false } };
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Cookie/Token 安全落在应用用户数据目录，按平台隔离持久化
   setCookieDataDir(app.getPath('userData'));
+  primeNcmApi();
 
   const cookies = new CookieStore();
   const http = new HttpClient(cookies);
   const audioProxy = new AudioProxy(cookies);
-  audioProxy.start();
+  await audioProxy.start();
+  app.once('before-quit', () => audioProxy.dispose());
   const adapters = createAdapters(http, cookies);
   const resolver = new SongResolver(
     adapters,
-    (m) => console.warn('[SongResolver]', m),
-    (url, platform) =>
-      probeAudioUrl(url, { platform, cookie: cookies.getHeader(platform) }).then((r) => r.ok),
+    (m) => console.warn("[SongResolver]"),
+    (url, platform, signal) =>
+      probeAudioUrl(url, { platform, cookie: cookies.getHeader(platform), signal }).then((r) => r.ok),
   );
   // 歌词磁盘缓存 + 自定义覆盖（存 userData，跨重启保留）
   const lyricCache = new LyricCache(app.getPath('userData'));
@@ -576,7 +576,8 @@ app.whenReady().then(() => {
   const wallpaperLibrary = new WallpaperLibrary();
   protocol.handle('wallpaper', (request) => wallpaperLibrary.handle(request));
   const login = new NeteaseLogin(http, cookies);
-  const qqLogin = new QqLogin(http, cookies, new QqRightsService(http));
+  const qqRights = new QqRightsService(http);
+  const qqLogin = new QqLogin(http, cookies, qqRights);
   const kugouLogin = new KugouLogin(cookies);
   const qishuiLogin = new QishuiLogin(cookies, { BrowserWindow, session });
 
@@ -615,7 +616,9 @@ app.whenReady().then(() => {
     },
   };
   // 多平台 VIP 路由：按已登录账号的 SVIP/VIP 状态决定音源兜底顺序（汽水仅作歌单来源）
-  resolver.setFallbackTargets(createFallbackPriorityProvider(loginAdapters));
+  const fallbackPriority = createFallbackPriorityProvider(loginAdapters);
+  resolver.setFallbackTargets(fallbackPriority);
+  cookies.onChange(() => { resolver.invalidate(); fallbackPriority.invalidate(); clearProbeCache(); qqSession(http).clear(); qqRights.clear(); });
 
   registerIpcHandlers(ipcMain, {
     adapters,
@@ -639,7 +642,7 @@ app.whenReady().then(() => {
           storages: ['cookies', 'localstorage'],
         });
       } catch (err) {
-        console.warn('[QQ登录] 退出时清理分区 Cookie 失败:', err instanceof Error ? err.message : err);
+        console.warn("[QQ登录] 退出时清理分区 Cookie 失败:");
       }
     },
   });

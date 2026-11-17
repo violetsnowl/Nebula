@@ -1,0 +1,13 @@
+失败 切歌取链立即停止旧音频并清空旧进度: Expected values to be strictly equal:
+失败 一秒内五次点歌只接纳最后一次返回: Expected values to be strictly equal:
+失败 取链途中暂停不会在迟到响应后自动出声: Expected values to be strictly equal:
+失败 stop 取消正在解析的歌曲及其回写: Expected values to be strictly equal:
+失败 取链失败有出口且旧音频停止: Expected values to be strictly equal:
+通过 失败跳歌计时器不能覆盖后续手动选歌
+通过 单曲取链失败停止，不无限重试
+失败 浏览器拒绝 play 时进入明确暂停状态: Expected values to be strictly equal:
+失败 断流重取保留进度且强制刷新: Expected values to be strictly equal:
+失败 重复插播后仍接回最初队列: Expected values to be strictly equal:
+通过 顺序、随机、单曲循环及队列末尾
+失败 31 分钟暂停后继续与拖动刷新过期地址: Expected values to be strictly equal:
+播放回归 3/12

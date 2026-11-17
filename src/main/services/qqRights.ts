@@ -1,242 +1,87 @@
 import type { HttpClient } from '../http';
-
-/**
- * QQ 会员权益解析（借鉴 Mineradio 的严格字段白名单思路，独立实现）：
- * - 从任意 QQ 返回载荷中按字段名白名单识别 VIP/SVIP 标记、等级、有效期；
- * - 带短 TTL 缓存 + “已知有效保底”（stale-positive grace），接口抖动时不误判降权。
- */
+import { qqComm, qqCredential, qqSession, qqSessionKey } from './qqSession';
+import { throwIfCancelled } from '../requestScope';
 
 export interface QqRights {
-  isVip: boolean;
-  isSvip: boolean;
-  vipType: number;
-  expiresAt: number | null;
+  isVip:boolean; isSvip:boolean; vipType:number; expiresAt:number|null;
+  /** false表示缺少可解释字段，不是已确认普通账号。 */
+  known:boolean;
 }
-
-const VIP_FLAG_KEYS = new Set([
-  'isvip',
-  'vip',
-  'vipflag',
-  'ivipflag',
-  'inewvip',
-  'isgreenvip',
-  'greenvip',
-  'ismember',
-  'member',
-  'isassociator',
-  'associator',
-]);
-
-const SVIP_FLAG_KEYS = new Set([
-  'issvip',
-  'svip',
-  'svipflag',
-  'isupervip',
-  'inewsupervip',
-  'issupervip',
-  'supervip',
-  'isluxuryvip',
-  'luxuryvip',
-  'greensvip',
-  'hugevip',
-  'lmflag',
-]);
-
-const VIP_TYPE_KEYS = new Set([
-  'viptype',
-  'viplevel',
-  'musicviptype',
-  'musicviplevel',
-  'greenviptype',
-  'greenviplevel',
-  'associatortype',
-  'associatorlevel',
-]);
-
-const SVIP_TYPE_KEYS = new Set([
-  'sviptype',
-  'sviplevel',
-  'superviptype',
-  'superviplevel',
-  'luxuryviptype',
-  'luxuryviplevel',
-  'greensviplevel',
-]);
-
-const EXPIRY_KEYS = new Set([
-  'expire',
-  'expires',
-  'expireat',
-  'expiretime',
-  'vipexpireat',
-  'vipexpiretime',
-  'vipendtime',
-  'svipexpiretime',
-  'greenvipendtime',
-  'associatorexpiretime',
-  'deadline',
-  'validuntil',
-  'endtime',
-  'overdate',
-]);
-
-function normalizeKey(key: string): string {
-  return String(key ?? '').replace(/[^a-z0-9]/gi, '').toLowerCase();
+const key=(s:string)=>s.replace(/[^a-z0-9]/gi,'').toLowerCase();
+const VIP=['isvip','vip','vipflag','ivipflag','inewvip','isgreenvip','greenvip','ismember','isassociator','associator','hugevip'];
+const SVIP=['issvip','svip','svipflag','isupervip','inewsupervip','issupervip','supervip','greensvip'];
+const VIP_TYPE=['viptype','viplevel','musicviptype','greenviptype','associatortype'];
+const SVIP_TYPE=['sviptype','sviplevel','superviptype','superviplevel'];
+const genericExpiry=['expiretime','expiresat','expireat','endtime','overdate'];
+const vipExpiry=['vipexpiretime','vipexpireat','vipendtime','greenvipendtime','hugevipend',...genericExpiry];
+const svipExpiry=['svipexpiretime','svipendtime','superendtime',...genericExpiry];
+const wrappers=new Set(['data','user','vip','vipinfo','svipinfo','identity','userinfo']);
+const flag=(v:unknown):boolean|undefined=>{
+  if(v===true || v===1 || v==='1')return true;
+  if(v===false || v===0 || v==='0')return false;
+  return undefined;
+};
+function timestamp(v:unknown):number|null {
+  if(v==null || v==='')return null;
+  const n=Number(v),t=Number.isFinite(n)?(n<1e10?n*1000:n):Date.parse(String(v));
+  return Number.isFinite(t) && t>=946684800000?t:null;
 }
-
-function parseFlag(v: unknown): boolean | null {
-  if (typeof v === 'boolean') return v;
-  if (typeof v === 'number') return Number.isFinite(v) ? v > 0 : null;
-  if (typeof v !== 'string') return null;
-  const s = v.trim().toLowerCase();
-  if (!s) return null;
-  if (/^[1-9]\d*$/.test(s)) return true;
-  if (/^(true|yes|active|valid|opened|open|vip|svip|premium|member)$/.test(s)) return true;
-  if (/^(0|false|no|none|normal|ordinary|expired|inactive|closed|invalid)$/.test(s)) return false;
-  if (/^(已开通|开通|有效|会员|绿钻|豪华绿钻)$/.test(s)) return true;
-  if (/^(未开通|已过期|过期|普通用户|普通账号|非会员)$/.test(s)) return false;
-  return null;
-}
-
-function parseExpiry(v: unknown): number | null {
-  if (typeof v === 'number' && Number.isFinite(v) && v > 0) {
-    const ms = v < 1e10 ? v * 1000 : v;
-    return ms >= 946684800000 ? ms : null;
-  }
-  if (typeof v === 'string') {
-    const n = Number(v);
-    if (Number.isFinite(n) && n > 0) {
-      const ms = n < 1e10 ? n * 1000 : n;
-      return ms >= 946684800000 ? ms : null;
+/** 只解释会员字段和固定包装层；未知文本、积分、OAuth有效期不能升级会员。 */
+export function parseQqRights(payload:unknown):QqRights {
+  const vip:Array<{active:boolean;type:number;end:number|null}>=[],svip:typeof vip=[];
+  const walk=(obj:unknown,depth=0)=>{
+    if(depth>5 || !obj || typeof obj!=='object' || Array.isArray(obj))return;
+    const fields=Object.fromEntries(Object.entries(obj).map(([k,v])=>[key(k),v]));
+    for(const [flags,types,ends,output] of [[VIP,VIP_TYPE,vipExpiry,vip],[SVIP,SVIP_TYPE,svipExpiry,svip]] as const){
+      const values=flags.map(k=>flag(fields[k])).filter((v):v is boolean=>v!==undefined);
+      const levels=types.map(k=>fields[k]).filter(v=>v!=null && v!=='' && Number.isFinite(Number(v)) && Number(v)>=0).map(Number);
+      if(!values.length && !levels.length)continue;
+      const end=ends.map(k=>timestamp(fields[k])).find(t=>t!==null) ?? null;
+      const type=Math.max(0,...levels),positive=values.length?values.includes(true):type>0;
+      output.push({active:positive && (end===null || end>Date.now()),type,end});
     }
-    const t = Date.parse(v);
-    return Number.isFinite(t) && t >= 946684800000 ? t : null;
-  }
-  return null;
-}
-
-const MAX_DEPTH = 6;
-
-/** 从任意 JSON 载荷中提取 QQ 会员字段（白名单 + 宽匹配）。 */
-export function parseQqRights(payload: unknown): QqRights {
-  let isVip = false;
-  let isSvip = false;
-  let vipType = 0;
-  let expiresAt: number | null = null;
-
-  const walk = (obj: unknown, depth: number): void => {
-    if (depth > MAX_DEPTH || !obj || typeof obj !== 'object') return;
-    if (Array.isArray(obj)) {
-      for (const item of obj.slice(0, 30)) walk(item, depth + 1);
-      return;
-    }
-    for (const [key, value] of Object.entries(obj)) {
-      if (value === null || value === undefined) continue;
-      if (typeof value === 'object') {
-        walk(value, depth + 1);
-        continue;
-      }
-      const k = normalizeKey(key);
-      if (VIP_FLAG_KEYS.has(k) || /(^|[^a-z])(vip|member|green|associat)/.test(k)) {
-        if (parseFlag(value) === true) isVip = true;
-      }
-      if (SVIP_FLAG_KEYS.has(k) || /(^|[^a-z])(svip|supervip|luxury)/.test(k)) {
-        if (parseFlag(value) === true) isSvip = true;
-      }
-      if (VIP_TYPE_KEYS.has(k) && typeof value === 'number' && value > 0) {
-        vipType = Math.max(vipType, Math.floor(value));
-      }
-      if (SVIP_TYPE_KEYS.has(k) && typeof value === 'number' && value > 0) {
-        isSvip = true;
-        vipType = Math.max(vipType, Math.floor(value));
-      }
-      if (EXPIRY_KEYS.has(k)) {
-        const t = parseExpiry(value);
-        if (t !== null && (expiresAt === null || t > expiresAt)) expiresAt = t;
-      }
-    }
+    for(const [k,v] of Object.entries(fields))if(wrappers.has(k))walk(v,depth+1);
   };
-
-  walk(payload, 0);
-  return { isVip, isSvip, vipType, expiresAt };
+  walk(payload);
+  const isSvip=svip.some(v=>v.active),isVip=isSvip || vip.some(v=>v.active);
+  const active=[...vip,...svip].filter(v=>v.active),expiries=active.map(v=>v.end).filter((v):v is number=>v!==null);
+  return {isVip,isSvip,vipType:Math.max(0,...active.map(v=>v.type)),expiresAt:expiries.length?Math.min(...expiries):null,
+    known:vip.length>0 || isSvip};
 }
 
-const CACHE_TTL_MS = 10 * 60 * 1000;
-const STALE_POSITIVE_GRACE_MS = 20 * 60 * 1000;
-
-/** QQ 权益服务：接口失败时保留最近一次“有效”结果，避免瞬时抖动误判降权。 */
+/** 会员查询使用当前账号和音乐票据；正、负、未知按凭据隔离，失败不变成普通账号。 */
 export class QqRightsService {
-  private cache: { at: number; rights: QqRights } | null = null;
-
-  constructor(private http: HttpClient) {}
-
-  async getRights(cookie: string): Promise<QqRights | null> {
-    const now = Date.now();
-    if (this.cache && now - this.cache.at < CACHE_TTL_MS) return this.cache.rights;
-    try {
-      const rights = await this.fetchRights(cookie);
-      if (rights) {
-        this.cache = { at: now, rights };
-        return rights;
-      }
-    } catch {
-      /* fall through to stale-positive grace */
-    }
-    if (this.cache && this.cache.rights.isVip && now - this.cache.at < STALE_POSITIVE_GRACE_MS) {
-      return this.cache.rights;
-    }
-    return null;
-  }
-
-  clear(): void {
-    this.cache = null;
-  }
-
-  private async fetchRights(cookie: string): Promise<QqRights | null> {
-    const uin = cookie.match(/(?:^|;\s*)uin=o?(\d+)/)?.[1];
-    if (!uin) return null;
-    const attempts: Array<() => Promise<unknown>> = [
-      () =>
-        this.http.requestJson(
-          `https://u.y.qq.com/cgi-bin/musicu.fcg?format=json&data=${encodeURIComponent(
-            JSON.stringify({
-              req_0: {
-                module: 'VipLogin.VipLoginInter',
-                method: 'vip_login_base',
-                param: {},
-              },
-            }),
-          )}`,
-          { platform: 'qq', cookie, timeoutMs: 8000 },
-        ),
-      () =>
-        this.http.requestJson(
-          `https://u.y.qq.com/cgi-bin/musicu.fcg?format=json&data=${encodeURIComponent(
-            JSON.stringify({
-              req_0: {
-                module: 'QQMusic.MusichallPlatform.PfUserInfoServer',
-                method: 'GetUserBaseInfo',
-                param: {},
-              },
-            }),
-          )}`,
-          { platform: 'qq', cookie, timeoutMs: 8000 },
-        ),
-      () =>
-        this.http.requestJson(`https://c.y.qq.com/rsc/fcgi-bin/fcg_get_profile_homepage.fcg?uin=${uin}&format=json`, {
-          platform: 'qq',
-          cookie,
-          timeoutMs: 8000,
-        }),
+  private cache=new Map<string,{until:number;rights:QqRights|null}>();
+  constructor(private http:HttpClient) {}
+  clear():void {this.cache.clear();}
+  async getRights(cookie:string):Promise<QqRights|null> {
+    const credential=qqCredential(cookie),session=qqSession(this.http),id=qqSessionKey(cookie);
+    if(credential.uin==='0' || !credential.key || session.peek(cookie)==='expired'){this.cache.delete(id);return null;}
+    const hit=this.cache.get(id);if(hit && hit.until>Date.now())return hit.rights;
+    let rights:QqRights|null=null;
+    const probes=[
+      {module:'userInfo.VipQueryServer',method:'SRFVipQuery_V2',param:{uin_list:[credential.uin]}},
+      {module:'userInfo.VipQueryServer',method:'SRFVipQuery',param:{uin_list:[credential.uin]}},
+      {module:'VipLogin.VipLoginInter',method:'vip_login_base',param:{}},
     ];
-    for (const attempt of attempts) {
+    for(const probe of probes){
       try {
-        const rights = parseQqRights(await attempt());
-        if (rights.isVip || rights.isSvip || rights.vipType > 0) return rights;
-      } catch {
-        /* try next endpoint */
-      }
+        const data=await this.http.requestJson<any>('https://u.y.qq.com/cgi-bin/musicu.fcg',{
+          platform:'qq',cookie,method:'POST',timeoutMs:800,body:{comm:qqComm(credential),req_0:probe},
+        });
+        const part=data?.req_0;
+        // VipLogin 是当前登录账号接口；按号查询VIP不能反证票据有效。
+        if(probe.module==='VipLogin.VipLoginInter' && [1000,104401].includes(Number(part?.code))){session.remember(cookie,'expired');break;}
+        if((data?.code!=null && data.code!==0) || part?.code!==0)continue;
+        const body=part.data;
+        const scoped=probe.module==='VipLogin.VipLoginInter'?body:(body?.infoMap?.[credential.uin] ?? body?.uin_map?.[credential.uin]);
+        const parsed=parseQqRights(scoped);
+        if(parsed.known){rights=parsed;break;}
+      } catch {throwIfCancelled();}
     }
-    return null;
+    const ttl=rights?(rights.isVip?300_000:30_000):15_000;
+    this.cache.delete(id);this.cache.set(id,{rights,until:Math.min(Date.now()+ttl,rights?.expiresAt ?? Infinity)});
+    if(this.cache.size>16)this.cache.delete(this.cache.keys().next().value!);
+    return rights;
   }
 }

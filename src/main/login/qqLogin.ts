@@ -2,6 +2,8 @@ import type { CookieStore } from '../cookieStore';
 import type { HttpClient } from '../http';
 import type { AccountInfo, PlaylistSummary } from '../types';
 import type { QqRightsService } from '../services/qqRights';
+import { QQ_AUTH_EXPIRED, qqCredential, qqSession } from '../services/qqSession';
+import { validatePlatformCookie } from '../cookieStore';
 
 /** QQ 统一 hash33（ptqrtoken / g_tk）。 */
 export function hash33(s: string, seed = 0): number {
@@ -69,6 +71,8 @@ export class QqLogin {
           .filter((c) => c.includes('='))
           .join('; ');
         this.cookies.set('qq', extra ? `${qrsig}; ${extra}` : qrsig, qrsigValue, nick);
+        if(!validatePlatformCookie('qq',this.cookies.getHeader('qq') || '').ok)
+          return {ok:false,message:'QQ 网页授权已完成，但音乐播放票据尚未生成，请使用 QQ 官方登录窗口'};
         return { ok: true, message: `登录成功：${nick}` };
       }
       const msgMap: Record<string, string> = {
@@ -85,13 +89,16 @@ export class QqLogin {
 
   async getAccount(): Promise<AccountInfo | null> {
     const cookie = this.cookies.getHeader('qq') ?? '';
-    const uin = cookie.match(/(?:^|;\s*)uin=o?(\d+)/)?.[1] ?? cookie.match(/(?:^|;\s*)uin=(\d+)/)?.[1];
-    if (!uin) return null;
+    if(!cookie)return null;
+    const {uin}=qqCredential(cookie),session=qqSession(this.http);
+    const authStatus=await session.check(cookie);
+    if(authStatus!=='valid')return {loggedIn:false,authStatus,error:authStatus==='expired'?QQ_AUTH_EXPIRED:
+      authStatus==='missing'?'QQ 音乐播放票据不完整，请重新登录':'QQ 登录状态暂时无法确认'};
     let nickname = `QQ ${uin}`;
     try {
       const data = await this.http.requestJson<{ data?: { nick?: string } }>(
         `https://c.y.qq.com/rsc/fcgi-bin/fcg_music_profile.fcg?uin=${uin}&format=json&inCharset=utf-8&outCharset=utf-8`,
-        { platform: 'qq', cookie, timeoutMs: 8000 },
+        { platform: 'qq', cookie, timeoutMs: 1800 },
       );
       if (data?.data?.nick) nickname = data.data.nick;
     } catch {
@@ -101,7 +108,7 @@ export class QqLogin {
       try {
         const data = await this.http.requestJson<{ data?: { hostname?: string } }>(
           `https://c.y.qq.com/rsc/fcgi-bin/fcg_user_created_diss?uin=${uin}&loginUin=${uin}&hostuin=${uin}&format=json&inCharset=utf-8&outCharset=utf-8&needNewCode=0&platform=yqq.json&g_tk=5381`,
-          { platform: 'qq', cookie, timeoutMs: 8000 },
+          { platform: 'qq', cookie, timeoutMs: 1800 },
         );
         if (data?.data?.hostname) nickname = data.data.hostname;
       } catch {
@@ -121,7 +128,8 @@ export class QqLogin {
     }
     // QQ 头像走 qlogo 官方头像地址（无需额外接口，uin 即 key）。
     const avatarUrl = `https://q1.qlogo.cn/g?b=qq&nk=${uin}&s=640`;
-    return { loggedIn: true, userId: uin, nickname, avatarUrl, ...vip };
+    if(session.peek(cookie)==='expired')return {loggedIn:false,authStatus:'expired',error:QQ_AUTH_EXPIRED};
+    return { loggedIn: true, authStatus:'valid',userId: uin, nickname, avatarUrl, ...vip };
   }
 
   async getMyPlaylists(): Promise<PlaylistSummary[]> {
@@ -129,9 +137,8 @@ export class QqLogin {
     if (!account?.loggedIn) return [];
     const cookie = this.cookies.getHeader('qq') ?? '';
     const uin = String(account.userId ?? '');
-    // g_tk 由播放票据（p_skey/skey/music_key/qm_keyst）以 5381 为种子生成，
-    // 与 QQ 音乐官方 web 端一致；无票据时回退 5381。
-    const ticket = cookie.match(/(?:^|;\s*)(?:p_skey|skey|music_key|qm_keyst)=([^;]+)/)?.[1] ?? '';
+    // 与取链、会员查询统一身份和音乐票据；p_skey不能替代音乐登录态。
+    const credential=qqCredential(cookie),ticket=credential.key;
     const gtk = ticket ? hash33(ticket, 5381) : 5381;
     const comm = {
       ct: 24,
@@ -139,6 +146,8 @@ export class QqLogin {
       platform: 'yqq.json',
       chid: '0',
       uin,
+      authst:ticket,
+      tmeLoginType:credential.loginType,
       g_tk: gtk,
       g_tk_new_20200303: gtk,
       format: 'json',

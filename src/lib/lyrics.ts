@@ -72,7 +72,8 @@ export function parseYrcText(raw: string): Array<{ timeMs: number; duration: num
           const raw = (c.tx ?? '').replace(/[♪♫♬♩𝄞𝄢♭♮]/g, '');
           const text = raw.trim();
           if (!text) continue;
-          if (typeof c.t === 'number') offset = c.t;
+          if (typeof c.t !== 'number' || typeof c.d !== 'number' || c.d <= 0) continue;
+          offset = c.t;
           words.push({ text, startMs: obj.t + offset, duration: c.d ?? 0, space: /\s$/.test(raw) });
           if (typeof c.d === 'number') offset += c.d;
         }
@@ -102,20 +103,12 @@ export function parseYrcText(raw: string): Array<{ timeMs: number; duration: num
       if (!text) continue;
       const ws = Number(m[1]);
       const wd = Number(m[2]);
-      // YRC 字时间戳是绝对毫秒；QRC 是相对行首偏移 → 启发式归一
-      const start = lineStart != null && ws < lineStart ? lineStart + ws : ws;
+      // 后端已把 QRC/KRC 规范化成绝对毫秒，不做猜测式偏移
+      const start = ws;
+      if (!(wd > 0) || (lineStart != null && start < lineStart - 100)) continue;
       words.push({ text, startMs: start, duration: wd, space: /\s$/.test(raw) });
     }
-    if (!words.length) {
-      if (lineStart == null) continue;
-      // 无逐字数据：整行当单个词
-      const text = t
-        .replace(/\[\d{1,2}:\d{1,2}(?:[.:]\d{1,3})?\]/g, '')
-        .replace(/[♪♫♬♩𝄞𝄢♭♮]/g, '')
-        .trim();
-      if (!text) continue;
-      words.push({ text, startMs: lineStart, duration: lineDur || 4000 });
-    }
+    if (!words.length) continue;
     if (lineStart == null) lineStart = words[0]!.startMs;
     out.push({ timeMs: lineStart, duration: lineDur, words });
   }
@@ -136,7 +129,7 @@ export function parseYrcText(raw: string): Array<{ timeMs: number; duration: num
  * LRC 负责补充文本/翻译，未被 yrc 覆盖的行原样保留。
  */
 export function mergeWordLyrics(lines: LyricLineUI[], rawYrc: string): LyricLineUI[] {
-  if (!rawYrc || !lines.length) return lines;
+  if (!rawYrc) return lines;
   const wordLines = parseYrcText(rawYrc);
   if (!wordLines.length) return lines;
   const norm = (s: string): string =>
@@ -151,26 +144,10 @@ export function mergeWordLyrics(lines: LyricLineUI[], rawYrc: string): LyricLine
   };
   const out: LyricLineUI[] = [];
   for (const wl of wordLines) {
-    // 只挂到有正文的行，翻译独行（text 为空）不接收逐字，避免翻译被放大显示
-    let match = lines.find((l) => l.text && Math.abs(l.timeMs - wl.timeMs) <= 80);
-    if (!match) {
-      // 跨源补的 yrc 时间轴可能与 lrc 有偏差：放宽窗口并按正文比对，避免“粘连词一闪而过”
-      const wtext = norm(joinWords(wl.words));
-      if (wtext) {
-        match = lines.find(
-          (l) => Math.abs(l.timeMs - wl.timeMs) <= 1800 && norm(l.text) === wtext,
-        );
-      }
-    }
-    if (!match) {
-      // 文本/时间都配不上（如 QQ/网易云不同歌词版本）：
-      // 就近挂到最近正文行用其文本显示；无正文行则丢弃该逐字行
-      const near = lines
-        .filter((l) => l.text && Math.abs(l.timeMs - wl.timeMs) <= 2500)
-        .sort((a, b) => Math.abs(a.timeMs - wl.timeMs) - Math.abs(b.timeMs - wl.timeMs))[0];
-      if (!near) continue;
-      match = near;
-    }
+    const wtext=norm(joinWords(wl.words));
+    const match=lines.find(l=>l.text && Math.abs(l.timeMs-wl.timeMs)<=250 && norm(l.text)===wtext);
+    // 已有正文时不接纳文本不符或时间偏离的逐字；无正文才直接使用供应方的逐字正文。
+    if(lines.some(l=>l.text.trim()) && !match)continue;
     out.push({
       timeMs: match?.timeMs ?? wl.timeMs,
       text: match?.text ?? joinWords(wl.words),
@@ -188,36 +165,20 @@ export function mergeWordLyrics(lines: LyricLineUI[], rawYrc: string): LyricLine
 /**
  * 将逐字歌词的 word text 与 LRC 行文本对齐，确保英文空格不丢失。
  * 当 YRC/QRC 的 word text 被拼接为连续字符串时，
- * 按 LRC 文本的空格位置拆分/重组 words，并按字符比例分配 YRC 时间戳。
+ * 只补原文空格，不拆分供应方词块，也不改变任何时间戳。
  * 仅在 word 拼接与 LRC text（去空格）一致但空格位置不同时生效。
  */
 export function alignWordsToText(lines: LyricLineUI[]): LyricLineUI[] {
-  return lines.map((line) => {
-    if (!line.words?.length || !line.text) return line;
-
-    const wordsConcat = line.words.map((w) => w.text).join("");
-    const lrcNoSpace = line.text.replace(/\s/g, "");
-
-    if (wordsConcat !== lrcNoSpace) return line;
-    if (wordsConcat === line.text) return line;
-
-    const lrcWords = line.text.split(/\s+/);
-    const totalWordDur = line.words.reduce((s, w) => s + w.duration, 0);
-    const dur = line.duration || totalWordDur || 4000;
-
-    const newWords: LyricWordUI[] = [];
-    let charOffset = 0;
-
-    const kept = lrcWords.filter(Boolean);
-    kept.forEach((lrcWord, i) => {
-      const wordLen = lrcWord.length;
-      const startMs = line.timeMs + dur * (charOffset / wordsConcat.length);
-      const duration = dur * (wordLen / wordsConcat.length);
-      newWords.push({ text: lrcWord, startMs, duration, space: i < kept.length - 1 });
-      charOffset += wordLen;
+  return lines.map(line=>{
+    if(!line.words?.length || line.words.map(w=>w.text.replace(/\s/g,'')).join('')!==line.text.replace(/\s/g,''))return line;
+    let cursor=0;
+    const words=line.words.map(word=>{
+      let text='',count=0;const length=word.text.replace(/\s/g,'').length;
+      while(cursor<line.text.length && count<length){const c=line.text[cursor++]!;text+=c;if(!/\s/.test(c))count++;}
+      let space=false;while(cursor<line.text.length && /\s/.test(line.text[cursor]!)){cursor++;space=true;}
+      return {...word,text:text.trim(),space};
     });
-
-    return { ...line, words: newWords };
+    return {...line,words};
   });
 }
 

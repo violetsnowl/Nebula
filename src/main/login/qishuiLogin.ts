@@ -194,7 +194,7 @@ export class QishuiLogin {
           const value = sc.slice(eq + 1).split(';')[0]!.trim();
           if (name && value) {
             this.capturedCookies[name] = value;
-            console.log('[QishuiLogin] 捕获 Set-Cookie:', name, '=', value.substring(0, 20) + '...');
+            console.log("[QishuiLogin] 捕获 Set-Cookie:");
           }
         }
         callback({ responseHeaders: headers });
@@ -205,7 +205,7 @@ export class QishuiLogin {
     ses.webRequest.onErrorOccurred({ urls: ['<all_urls>'] }, (details: any) => {
       const err = String(details.error || '');
       if (/ssl|err_|failed/i.test(err)) {
-        console.log('[QishuiLogin] 请求错误:', details.method, details.url, '->', err);
+        console.log("[QishuiLogin] 请求错误:");
       }
     });
 
@@ -331,12 +331,12 @@ export class QishuiLogin {
     const signedMsToken = signedQuery.get('msToken') || '';
     if (signedMsToken && signedMsToken !== this.msToken) {
       // SDK 篡改/替换了 msToken 时尽早暴露（与 Mineradio 行为一致）
-      console.warn('[QishuiLogin] 签名后 msToken 与本地不一致（SDK 替换），使用签名 URL 的 msToken');
+      console.warn("[QishuiLogin] 签名后 msToken 与本地不一致（SDK 替换），使用签名 URL 的 msToken");
     }
     // 补充捕获：XHR 响应头的 Set-Cookie 直接并入（onHeadersReceived 可能因 URL 模式漏匹配）
     const setCookies = this.parseSetCookieHeader(String(response.headers || ''));
     if (setCookies.length) {
-      console.log('[QishuiLogin] request 响应头 Set-Cookie:', setCookies.map((c) => c.name).join(', '));
+      console.log("[QishuiLogin] request 响应头 Set-Cookie:");
       for (const c of setCookies) {
         if (c.name && c.value) this.capturedCookies[c.name] = c.value;
       }
@@ -403,8 +403,8 @@ export class QishuiLogin {
 
     // 二次验证处理
     if (Number(data.error_code) === 2046) {
-      console.log('[QishuiLogin] 2046 二次验证触发，envelope keys:', Object.keys(envelope).join(', '), 'data keys:', Object.keys(data).join(', '));
-      console.log('[QishuiLogin] 2046 envelope(截断):', JSON.stringify(envelope).slice(0, 2500));
+      console.log("[QishuiLogin] 2046 二次验证触发，envelope keys:");
+      console.log("[QishuiLogin] 2046 envelope(截断):");
       const decision = { ...envelope, ...data };
       // 关键：服务端 flow 已绑定固定 verify_portrait_id（std_verify_flow_id），
       // 必须沿用同一个 portrait_id 继续流程，否则组件报 mulit_verify_exist（已存在验证）
@@ -425,17 +425,7 @@ export class QishuiLogin {
       } else {
         decision.verify_portrait_id = identity.verifyPortraitId;
       }
-      console.log('[QishuiLogin] 2046 decision 关键字段:', JSON.stringify({
-        verify_from: decision.verify_from,
-        verify_way: decision.verify_way,
-        hasUrl: !!decision.url,
-        url: String(decision.url || '').slice(0, 180),
-        verify_portrait_id: decision.verify_portrait_id,
-        server_flow_id: serverFlowId,
-        biz_params_type: typeof decision.biz_params,
-        description: decision.description || '',
-        error_code: decision.error_code,
-      }));
+      console.log("[QishuiLogin] 2046 decision 关键字段:");
       
       // 显示二次验证窗口
       this.window?.setTitle('汽水音乐安全验证');
@@ -456,16 +446,13 @@ export class QishuiLogin {
           } })})`,
           true,
         );
-        console.log('[QishuiLogin] 二次验证结果:', JSON.stringify(verified).slice(0, 800));
+        console.log("[QishuiLogin] 二次验证结果:");
         if (!verified || verified.status !== true) {
           throw new Error(verified?.message || '二次验证未完成');
         }
       } catch (err) {
-        const trace = await this.window
-          ?.webContents.executeJavaScript('window.__qishuiSecurityTrace || []', true)
-          .catch(() => []);
-        console.log('[QishuiLogin] 二次验证异常:', String(err));
-        console.log('[QishuiLogin] security trace(截断):', JSON.stringify(trace).slice(0, 2500));
+        console.log("[QishuiLogin] 二次验证异常:");
+        console.log("[QishuiLogin] security trace(截断):");
         throw err;
       } finally {
         this.window?.hide();
@@ -490,27 +477,16 @@ export class QishuiLogin {
     const isSuccess =
       (Number(data.error_code) === 0 && (String(data.status) === '3' || String(data.status) === 'confirmed')) ||
       (Number(data.error_code) === 2156 && hasCredential);
-    console.log('[QishuiLogin] checkQrConnect 判断:', JSON.stringify({
-      error_code: data.error_code,
-      status: data.status,
-      hasSessionCookie: !!data.session_cookie,
-      sessionCookieLength: (data.session_cookie || '').length,
-      capturedFields: Object.keys(this.capturedCookies).join(', '),
-      hasCredential,
-      isSuccess,
-    }));
+    console.log("[QishuiLogin] checkQrConnect 判断:");
     if (isSuccess) {
-      console.log('[QishuiLogin] 登录成功，收集 cookie');
+      console.log("[QishuiLogin] 登录成功，收集 cookie");
       // 直接从 session 收集 cookie（不导航，避免 session 重置）
       await this.persistSessionCookies(data.session_cookie || '', envelope);
       data._loginOk = true;
     } else {
-      console.log(
-        '[QishuiLogin] checkQrConnect 未判定成功，完整 envelope:',
-        JSON.stringify(envelope).slice(0, 1500),
-      );
+      console.log("[QishuiLogin] checkQrConnect 未判定成功，完整 envelope:");
     }
-    console.log('[QishuiLogin] checkQrConnect 返回:', JSON.stringify({ error_code: data.error_code, status: data.status, hasSessionCookie: !!data.session_cookie, isSuccess }));
+    console.log("[QishuiLogin] checkQrConnect 返回:");
     return data;
   }
 
@@ -524,11 +500,11 @@ export class QishuiLogin {
 
   /** 持久化会话 cookie */
   private async persistSessionCookies(sessionCookie: string, extra?: any): Promise<void> {
-    console.log('[QishuiLogin] persistSessionCookies 收到 session_cookie 长度:', sessionCookie.length);
+    console.log("[QishuiLogin] persistSessionCookies 收到 session_cookie 长度:");
     const current = parseCookieString(this.cookies.get('qishui')?.cookies || '');
     // 合并 API 返回的 session_cookie
     const newCookies = parseCookieString(sessionCookie);
-    console.log('[QishuiLogin] session_cookie 包含字段:', Object.keys(newCookies).join(', '));
+    console.log("[QishuiLogin] session_cookie 包含字段:");
     Object.assign(current, newCookies);
 
     // 兜底：扫描 envelope 深层字段中的 "name=value; ..." 形状字符串（凭证可能在 data 的其它字段）
@@ -553,7 +529,7 @@ export class QishuiLogin {
       };
       walk(extra);
       if (scan.size) {
-        console.log('[QishuiLogin] envelope 深层扫描到凭证字段:', Array.from(scan).map((s) => s.split('=')[0]).join(', '));
+        console.log("[QishuiLogin] envelope 深层扫描到凭证字段:");
         for (const kv of scan) {
           const eq = kv.indexOf('=');
           current[kv.slice(0, eq)] = kv.slice(eq + 1);
@@ -564,37 +540,33 @@ export class QishuiLogin {
     // 方案A核心：合并通过 onHeadersReceived 手动拦截到的 Set-Cookie 凭证（最关键）
     const capturedEntries = Object.entries(this.capturedCookies);
     if (capturedEntries.length) {
-      console.log('[QishuiLogin] 合并 capturedCookies:', capturedEntries.length, '个字段:', capturedEntries.map(([k]) => k).join(', '));
+      console.log("[QishuiLogin] 合并 capturedCookies:");
       for (const [k, v] of capturedEntries) {
         if (v) current[k] = v;
       }
     } else {
-      console.log('[QishuiLogin] capturedCookies 为空，未拦截到 Set-Cookie');
+      console.log("[QishuiLogin] capturedCookies 为空，未拦截到 Set-Cookie");
     }
 
     // 从 authSession 补充收集（capturedCookies 优先，session 起补充作用）
     if (this.authSession) {
       const sessionCookies = await this.authSession.cookies.get({});
-      console.log('[QishuiLogin] authSession cookies 总数:', sessionCookies.length);
-      console.log(
-        '[QishuiLogin] authSession cookie 字段:',
-        sessionCookies.map((c: { name: string; value: string; domain?: string }) => `${c.name}@${c.domain}`).join(', '),
-      );
+      console.log("[QishuiLogin] authSession cookies 总数:");
+      console.log("[QishuiLogin] authSession cookie 字段:");
       for (const cookie of sessionCookies) {
-        const domain = String(cookie.domain || '').replace(/^\./, '').toLowerCase();
         if (this.isSessionCookieName(cookie.name)) {
           if (!current[cookie.name]) {
             current[cookie.name] = cookie.value;
-            console.log('[QishuiLogin] 收集 authSession cookie:', cookie.name, '@', domain);
+            console.log("[QishuiLogin] 收集 authSession cookie:");
           }
         } else {
-          console.log('[QishuiLogin] 跳过非凭证 cookie:', cookie.name);
+          console.log("[QishuiLogin] 跳过非凭证 cookie:");
         }
       }
     }
 
     const cookieStr = buildCookieString(current);
-    console.log('[QishuiLogin] 最终 cookie 长度:', cookieStr.length, '字段:', Object.keys(current).join(', '));
+    console.log("[QishuiLogin] 最终 cookie 长度:");
     this.cookies.set('qishui', cookieStr, this.msToken, '汽水音乐');
     // 清空拦截缓存，避免下次登录混入旧凭证
     this.capturedCookies = {};
@@ -604,11 +576,11 @@ export class QishuiLogin {
   async getAccount(): Promise<AccountInfo | null> {
     const rec = this.cookies.get('qishui');
     if (!rec?.cookies) {
-      console.log('[QishuiLogin] getAccount: 无 cookie 记录');
+      console.log("[QishuiLogin] getAccount: 无 cookie 记录");
       return null;
     }
     const cookie = rec.cookies;
-    console.log('[QishuiLogin] getAccount: cookie 长度:', cookie.length, '前200字符:', cookie.substring(0, 200));
+    console.log("[QishuiLogin] getAccount: cookie 长度:");
 
     // 提取用户信息（汽水/抖音系凭证常见 uid_v2 / sessionid / sid_guard / uid_tt）
     const sidGuard = this.extractCookieValue(cookie, 'sid_guard');
@@ -619,9 +591,9 @@ export class QishuiLogin {
       (sidGuard.split('|')[0] || '') ||
       this.extractCookieValue(cookie, 'uid_tt') ||
       '';
-    console.log('[QishuiLogin] getAccount: uid_v2=', this.extractCookieValue(cookie, 'uid_v2'), 'uid=', this.extractCookieValue(cookie, 'uid'));
+    console.log("[QishuiLogin] getAccount: uid_v2=");
     if (!userId) {
-      console.log('[QishuiLogin] getAccount: 未找到登录态字段（uid_v2/sessionid/uid/sid_guard/uid_tt），返回 null');
+      console.log("[QishuiLogin] getAccount: 未找到登录态字段（uid_v2/sessionid/uid/sid_guard/uid_tt），返回 null");
       return null;
     }
 
@@ -631,14 +603,14 @@ export class QishuiLogin {
     let apiUserId = '';
     try {
       const me = await this.fetchMeInfo(cookie);
-      console.log('[QishuiLogin] getAccount: fetchMeInfo 返回:', JSON.stringify(me));
+      console.log("[QishuiLogin] getAccount: fetchMeInfo 返回:");
       if (me) {
         nickname = me.nickname || '';
         avatar = me.avatar || '';
         apiUserId = me.id || '';
       }
     } catch (err) {
-      console.log('[QishuiLogin] getAccount: fetchMeInfo 异常:', err);
+      console.log("[QishuiLogin] getAccount: fetchMeInfo 异常:");
     }
 
     return {

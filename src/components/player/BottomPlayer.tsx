@@ -113,11 +113,11 @@ export const BottomPlayer = memo(function BottomPlayer({
           </button>
           <button
             className="bp-play"
-            aria-label={state.playing ? '暂停' : '播放'}
+            aria-label={state.playIntent ? '暂停' : '播放'}
             disabled={!hasSong}
             onClick={() => audioPlayer.toggle()}
           >
-            {state.playing ? <IconPause /> : <IconPlay />}
+            {state.playIntent ? <IconPause /> : <IconPlay />}
           </button>
           <button className="bp-ctrl" aria-label="下一首" disabled={!hasSong} onClick={() => audioPlayer.next()}>
             <IconNext />

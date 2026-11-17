@@ -46,7 +46,9 @@ export function mergeLyric(lrc: string, tlyric: string): LyricLine[] {
   const map = new Map<number, LyricLine>();
   for (const line of primary) map.set(line.timeMs, { ...line });
   for (const line of secondary) {
-    const existing = map.get(line.timeMs);
+    // 同一平台 LRC 常截断到 10ms，QRC/YRC 保留毫秒，不能要求完全相等。
+    const existing = map.get(line.timeMs) ?? primary.filter(l=>l.text && Math.abs(l.timeMs-line.timeMs)<=80)
+      .sort((a,b)=>Math.abs(a.timeMs-line.timeMs)-Math.abs(b.timeMs-line.timeMs)).map(l=>map.get(l.timeMs))[0];
     if (existing) {
       existing.translation = line.text;
     } else {
@@ -69,7 +71,7 @@ export function normalizeJsonLrc(raw: string): string {
   const out: string[] = [];
   for (const line of lines) {
     const t = line.trim();
-    if (!t.startsWith('{')) continue;
+    if (!t.startsWith('{')) { out.push(line); continue; }
     try {
       const obj = JSON.parse(t) as { t?: number; c?: Array<{ tx?: string }> };
       if (typeof obj.t !== 'number') continue;

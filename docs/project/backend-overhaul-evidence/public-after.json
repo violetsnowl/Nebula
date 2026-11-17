@@ -1,0 +1,5895 @@
+{
+  "startedAt": "2026-11-17T07:01:29.444Z",
+  "finishedAt": "2026-11-17T07:05:32.910Z",
+  "backend": "index.cjs",
+  "conditions": {
+    "concurrency": 3,
+    "watchdogMs": 25000,
+    "authenticated": [],
+    "measurement": "到通过音频探测的可播地址；不是实际出声",
+    "censored": "WATCHDOG 为测试工具截断，不计入成功耗时分位数"
+  },
+  "summary": {
+    "total": {
+      "n": 100,
+      "direct": 5,
+      "fallback": 1,
+      "playable": 6,
+      "full": 6,
+      "watchdog": 0,
+      "directP50": 1743,
+      "directP95": 2153,
+      "fallbackP95": 5001,
+      "word": 19,
+      "foreignN": 75,
+      "translation": 72
+    },
+    "byPlatform": {
+      "netease": {
+        "n": 100,
+        "direct": 5,
+        "fallback": 1,
+        "playable": 6,
+        "full": 6,
+        "watchdog": 0,
+        "directP50": 1743,
+        "directP95": 2153,
+        "fallbackP95": 5001,
+        "word": 19,
+        "foreignN": 75,
+        "translation": 72
+      }
+    },
+    "byLanguage": {
+      "zh": {
+        "n": 25,
+        "direct": 5,
+        "fallback": 1,
+        "playable": 6,
+        "full": 6,
+        "watchdog": 0,
+        "directP50": 1743,
+        "directP95": 2153,
+        "fallbackP95": 5001,
+        "word": 5,
+        "foreignN": 0,
+        "translation": 0
+      },
+      "ja": {
+        "n": 25,
+        "direct": 0,
+        "fallback": 0,
+        "playable": 0,
+        "full": 0,
+        "watchdog": 0,
+        "directP50": null,
+        "directP95": null,
+        "fallbackP95": null,
+        "word": 2,
+        "foreignN": 25,
+        "translation": 23
+      },
+      "en": {
+        "n": 25,
+        "direct": 0,
+        "fallback": 0,
+        "playable": 0,
+        "full": 0,
+        "watchdog": 0,
+        "directP50": null,
+        "directP95": null,
+        "fallbackP95": null,
+        "word": 12,
+        "foreignN": 25,
+        "translation": 24
+      },
+      "ko": {
+        "n": 25,
+        "direct": 0,
+        "fallback": 0,
+        "playable": 0,
+        "full": 0,
+        "watchdog": 0,
+        "directP50": null,
+        "directP95": null,
+        "fallbackP95": null,
+        "word": 0,
+        "foreignN": 25,
+        "translation": 25
+      }
+    }
+  },
+  "rows": [
+    {
+      "index": 0,
+      "platform": "netease",
+      "language": "zh",
+      "seedLanguage": "zh",
+      "id": "netease:3460493895",
+      "resolveMs": 3933,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2315,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2315,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 910,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1616,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 38,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3460493895",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 0,
+      "translation": false
+    },
+    {
+      "index": 1,
+      "platform": "netease",
+      "language": "zh",
+      "seedLanguage": "zh",
+      "id": "netease:1973665667",
+      "resolveMs": 3941,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2321,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2321,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 743,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1620,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 80,
+      "wordRaw": true,
+      "usableWordLines": 65,
+      "word": true,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "1973665667",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 0,
+      "translation": false
+    },
+    {
+      "index": 2,
+      "platform": "netease",
+      "language": "zh",
+      "seedLanguage": "zh",
+      "id": "netease:1881426227",
+      "resolveMs": 3944,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2323,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2323,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 740,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1621,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 61,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "1881426227",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 0,
+      "translation": false
+    },
+    {
+      "index": 3,
+      "platform": "netease",
+      "language": "zh",
+      "seedLanguage": "zh",
+      "id": "netease:287398",
+      "resolveMs": 5099,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2302,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2302,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 607,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 918,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 1419,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 459,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 102,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "287398",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 0,
+      "translation": false
+    },
+    {
+      "index": 4,
+      "platform": "netease",
+      "language": "zh",
+      "seedLanguage": "zh",
+      "id": "netease:3456047164",
+      "resolveMs": 4432,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2313,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2313,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 437,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 703,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 1415,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 34,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3456047164",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 20,
+      "translation": true
+    },
+    {
+      "index": 5,
+      "platform": "netease",
+      "language": "zh",
+      "seedLanguage": "zh",
+      "id": "netease:1918576268",
+      "resolveMs": 3230,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2307,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2307,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 481,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 923,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 34,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "1918576268",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 0,
+      "translation": false
+    },
+    {
+      "index": 6,
+      "platform": "netease",
+      "language": "zh",
+      "seedLanguage": "zh",
+      "id": "netease:2741144144",
+      "resolveMs": 3988,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2305,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2305,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 592,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1205,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 477,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 68,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "2741144144",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 0,
+      "translation": false
+    },
+    {
+      "index": 7,
+      "platform": "netease",
+      "language": "zh",
+      "seedLanguage": "zh",
+      "id": "netease:167691",
+      "resolveMs": 3908,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2313,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2313,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 1013,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1114,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 481,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 55,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "167691",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 0,
+      "translation": false
+    },
+    {
+      "index": 8,
+      "platform": "netease",
+      "language": "zh",
+      "seedLanguage": "zh",
+      "id": "netease:3448039922",
+      "resolveMs": 3909,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2306,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2306,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 784,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1603,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 64,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3448039922",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 0,
+      "translation": false
+    },
+    {
+      "index": 9,
+      "platform": "netease",
+      "language": "zh",
+      "seedLanguage": "zh",
+      "id": "netease:3342319503",
+      "resolveMs": 2153,
+      "playable": true,
+      "full": true,
+      "fallback": false,
+      "servedBy": "netease",
+      "servedId": "3342319503",
+      "errorCode": null,
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 1183,
+          "outcome": "ok"
+        },
+        {
+          "stage": "probe",
+          "platform": "netease",
+          "ms": 970,
+          "outcome": "ok"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2153,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 58,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3342319503",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 0,
+      "translation": false
+    },
+    {
+      "index": 10,
+      "platform": "netease",
+      "language": "zh",
+      "seedLanguage": "zh",
+      "id": "netease:2600493765",
+      "resolveMs": 4094,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2303,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2303,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 602,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1333,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 457,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 52,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "2600493765",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 0,
+      "translation": false
+    },
+    {
+      "index": 11,
+      "platform": "netease",
+      "language": "zh",
+      "seedLanguage": "zh",
+      "id": "netease:3382908505",
+      "resolveMs": 3955,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2302,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2302,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 444,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1193,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 460,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 90,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3382908505",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 0,
+      "translation": false
+    },
+    {
+      "index": 12,
+      "platform": "netease",
+      "language": "zh",
+      "seedLanguage": "zh",
+      "id": "netease:3399839173",
+      "resolveMs": 4216,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2309,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2309,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 876,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1456,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 451,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 70,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3399839173",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 0,
+      "translation": false
+    },
+    {
+      "index": 13,
+      "platform": "netease",
+      "language": "zh",
+      "seedLanguage": "zh",
+      "id": "netease:1456890009",
+      "resolveMs": 1538,
+      "playable": true,
+      "full": true,
+      "fallback": false,
+      "servedBy": "netease",
+      "servedId": "1456890009",
+      "errorCode": null,
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 1177,
+          "outcome": "ok"
+        },
+        {
+          "stage": "probe",
+          "platform": "netease",
+          "ms": 361,
+          "outcome": "ok"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 1538,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 99,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "1456890009",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 0,
+      "translation": false
+    },
+    {
+      "index": 14,
+      "platform": "netease",
+      "language": "zh",
+      "seedLanguage": "zh",
+      "id": "netease:1851652156",
+      "resolveMs": 2023,
+      "playable": true,
+      "full": true,
+      "fallback": false,
+      "servedBy": "netease",
+      "servedId": "1851652156",
+      "errorCode": null,
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 1183,
+          "outcome": "ok"
+        },
+        {
+          "stage": "probe",
+          "platform": "netease",
+          "ms": 840,
+          "outcome": "ok"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2023,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 85,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "1851652156",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 0,
+      "translation": false
+    },
+    {
+      "index": 15,
+      "platform": "netease",
+      "language": "zh",
+      "seedLanguage": "zh",
+      "id": "netease:1842728629",
+      "resolveMs": 1564,
+      "playable": true,
+      "full": true,
+      "fallback": false,
+      "servedBy": "netease",
+      "servedId": "1842728629",
+      "errorCode": null,
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 1193,
+          "outcome": "ok"
+        },
+        {
+          "stage": "probe",
+          "platform": "netease",
+          "ms": 371,
+          "outcome": "ok"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 1564,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 91,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "1842728629",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 0,
+      "translation": false
+    },
+    {
+      "index": 16,
+      "platform": "netease",
+      "language": "zh",
+      "seedLanguage": "zh",
+      "id": "netease:3333988321",
+      "resolveMs": 3920,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2310,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2311,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 461,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1609,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 98,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3333988321",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 0,
+      "translation": false
+    },
+    {
+      "index": 17,
+      "platform": "netease",
+      "language": "zh",
+      "seedLanguage": "zh",
+      "id": "netease:287063",
+      "resolveMs": 5276,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2306,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2306,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 1097,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1565,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 1405,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 107,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "287063",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 0,
+      "translation": false
+    },
+    {
+      "index": 18,
+      "platform": "netease",
+      "language": "zh",
+      "seedLanguage": "zh",
+      "id": "netease:1303464858",
+      "resolveMs": 1743,
+      "playable": true,
+      "full": true,
+      "fallback": false,
+      "servedBy": "netease",
+      "servedId": "1303464858",
+      "errorCode": null,
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 1361,
+          "outcome": "ok"
+        },
+        {
+          "stage": "probe",
+          "platform": "netease",
+          "ms": 382,
+          "outcome": "ok"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 1743,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 43,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "1303464858",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 0,
+      "translation": false
+    },
+    {
+      "index": 19,
+      "platform": "netease",
+      "language": "zh",
+      "seedLanguage": "zh",
+      "id": "netease:215382",
+      "resolveMs": 3886,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2312,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2312,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 820,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 922,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 754,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 43,
+      "wordRaw": true,
+      "usableWordLines": 11,
+      "word": true,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "215382",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 0,
+      "translation": false
+    },
+    {
+      "index": 20,
+      "platform": "netease",
+      "language": "zh",
+      "seedLanguage": "zh",
+      "id": "netease:3451961424",
+      "resolveMs": 5001,
+      "playable": true,
+      "full": true,
+      "fallback": true,
+      "servedBy": "qq",
+      "servedId": "001NEi021azm4G",
+      "errorCode": null,
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2313,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2313,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 446,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1149,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 452,
+          "outcome": "ok"
+        },
+        {
+          "stage": "probe",
+          "platform": "qq",
+          "ms": 1086,
+          "outcome": "ok"
+        }
+      ],
+      "matchGuard": true,
+      "matchReason": "recording-album",
+      "matchEvidence": {
+        "title": "慌啥子嘛",
+        "artist": "村口吴老二",
+        "artists": [
+          "村口吴老二"
+        ],
+        "album": "慌啥子嘛",
+        "duration": 186
+      },
+      "lyricLines": 47,
+      "wordRaw": true,
+      "usableWordLines": 44,
+      "word": true,
+      "lyricPlatform": "qq",
+      "provenance": [
+        {
+          "platform": "qq",
+          "sourceId": "001NEi021azm4G",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 0,
+      "translation": false
+    },
+    {
+      "index": 21,
+      "platform": "netease",
+      "language": "zh",
+      "seedLanguage": "zh",
+      "id": "netease:27562048",
+      "resolveMs": 4922,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2306,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2306,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 835,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1577,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 1038,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 86,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "27562048",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 77,
+      "translation": true
+    },
+    {
+      "index": 22,
+      "platform": "netease",
+      "language": "zh",
+      "seedLanguage": "zh",
+      "id": "netease:1381723556",
+      "resolveMs": 3542,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2308,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2308,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 558,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1233,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 39,
+      "wordRaw": true,
+      "usableWordLines": 15,
+      "word": true,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "1381723556",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 35,
+      "translation": true
+    },
+    {
+      "index": 23,
+      "platform": "netease",
+      "language": "zh",
+      "seedLanguage": "zh",
+      "id": "netease:2041026502",
+      "resolveMs": 3671,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2311,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2311,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 441,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 906,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 452,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 58,
+      "wordRaw": true,
+      "usableWordLines": 10,
+      "word": true,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "2041026502",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 0,
+      "translation": false
+    },
+    {
+      "index": 24,
+      "platform": "netease",
+      "language": "zh",
+      "seedLanguage": "zh",
+      "id": "netease:2755710644",
+      "resolveMs": 4323,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2306,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2306,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 460,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1126,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 442,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 448,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 63,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "2755710644",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 0,
+      "translation": false
+    },
+    {
+      "index": 25,
+      "platform": "netease",
+      "language": "ja",
+      "seedLanguage": "ja",
+      "id": "netease:3456384881",
+      "resolveMs": 2858,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2307,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2307,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 447,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 554,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 81,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3456384881",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 64,
+      "translation": true
+    },
+    {
+      "index": 26,
+      "platform": "netease",
+      "language": "ja",
+      "seedLanguage": "ja",
+      "id": "netease:3443222100",
+      "resolveMs": 3917,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2312,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2312,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 526,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1605,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 94,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3443222100",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 81,
+      "translation": true
+    },
+    {
+      "index": 27,
+      "platform": "netease",
+      "language": "ja",
+      "seedLanguage": "ja",
+      "id": "netease:3458256007",
+      "resolveMs": 3849,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2304,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2304,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 442,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1545,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 98,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3458256007",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 96,
+      "translation": true
+    },
+    {
+      "index": 28,
+      "platform": "netease",
+      "language": "ja",
+      "seedLanguage": "ja",
+      "id": "netease:3442131349",
+      "resolveMs": 4596,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2305,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2305,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 445,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 900,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 1390,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 56,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3442131349",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 47,
+      "translation": true
+    },
+    {
+      "index": 29,
+      "platform": "netease",
+      "language": "ja",
+      "seedLanguage": "ja",
+      "id": "netease:3446954477",
+      "resolveMs": 4141,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2308,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2308,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 567,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1349,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 483,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 54,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3446954477",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 43,
+      "translation": true
+    },
+    {
+      "index": 30,
+      "platform": "netease",
+      "language": "ja",
+      "seedLanguage": "ja",
+      "id": "netease:3455549801",
+      "resolveMs": 3081,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2300,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2300,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 748,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 780,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 21,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3455549801",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 18,
+      "translation": true
+    },
+    {
+      "index": 31,
+      "platform": "netease",
+      "language": "ja",
+      "seedLanguage": "ja",
+      "id": "netease:3446656952",
+      "resolveMs": 3409,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2301,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2301,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 663,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 723,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 446,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 61,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3446656952",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 59,
+      "translation": true
+    },
+    {
+      "index": 32,
+      "platform": "netease",
+      "language": "ja",
+      "seedLanguage": "ja",
+      "id": "netease:3399377441",
+      "resolveMs": 4099,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2314,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2314,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 464,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1330,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 454,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 60,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3399377441",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 59,
+      "translation": true
+    },
+    {
+      "index": 33,
+      "platform": "netease",
+      "language": "ja",
+      "seedLanguage": "ja",
+      "id": "netease:3439792989",
+      "resolveMs": 3915,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2313,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2313,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 894,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1602,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 173,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3439792989",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 141,
+      "translation": true
+    },
+    {
+      "index": 34,
+      "platform": "netease",
+      "language": "ja",
+      "seedLanguage": "ja",
+      "id": "netease:3440615972",
+      "resolveMs": 3587,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2312,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2312,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 433,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1275,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 75,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3440615972",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 61,
+      "translation": true
+    },
+    {
+      "index": 35,
+      "platform": "netease",
+      "language": "ja",
+      "seedLanguage": "ja",
+      "id": "netease:3437601567",
+      "resolveMs": 3733,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2314,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2314,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 474,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1419,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 57,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3437601567",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 56,
+      "translation": true
+    },
+    {
+      "index": 36,
+      "platform": "netease",
+      "language": "ja",
+      "seedLanguage": "ja",
+      "id": "netease:3415867798",
+      "resolveMs": 3573,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2305,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2305,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 814,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 871,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 453,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 57,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3415867798",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 46,
+      "translation": true
+    },
+    {
+      "index": 37,
+      "platform": "netease",
+      "language": "ja",
+      "seedLanguage": "ja",
+      "id": "netease:3455088181",
+      "resolveMs": 5020,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2301,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2301,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 433,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1307,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 1412,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 44,
+      "wordRaw": true,
+      "usableWordLines": 30,
+      "word": true,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3455088181",
+          "kind": "primary"
+        },
+        {
+          "platform": "qq",
+          "sourceId": "0044eMTZ2lOUzl",
+          "kind": "enrichment",
+          "offsetMs": -219,
+          "anchors": 14
+        }
+      ],
+      "translatedLines": 35,
+      "translation": true
+    },
+    {
+      "index": 38,
+      "platform": "netease",
+      "language": "ja",
+      "seedLanguage": "ja",
+      "id": "netease:3447749509",
+      "resolveMs": 3293,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2313,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2314,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 429,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 979,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 61,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3447749509",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 45,
+      "translation": true
+    },
+    {
+      "index": 39,
+      "platform": "netease",
+      "language": "ja",
+      "seedLanguage": "ja",
+      "id": "netease:3382709068",
+      "resolveMs": 3526,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2308,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2308,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 703,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1217,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 156,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3382709068",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 118,
+      "translation": true
+    },
+    {
+      "index": 40,
+      "platform": "netease",
+      "language": "ja",
+      "seedLanguage": "ja",
+      "id": "netease:3442644155",
+      "resolveMs": 3677,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2306,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2306,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 469,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1370,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 99,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3442644155",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 88,
+      "translation": true
+    },
+    {
+      "index": 41,
+      "platform": "netease",
+      "language": "ja",
+      "seedLanguage": "ja",
+      "id": "netease:3434620791",
+      "resolveMs": 3872,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2314,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2314,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 729,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1105,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 453,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 51,
+      "wordRaw": true,
+      "usableWordLines": 21,
+      "word": true,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3434620791",
+          "kind": "primary"
+        },
+        {
+          "platform": "qq",
+          "sourceId": "001lyBWb36ynBl",
+          "kind": "enrichment",
+          "offsetMs": -315,
+          "anchors": 17
+        }
+      ],
+      "translatedLines": 41,
+      "translation": true
+    },
+    {
+      "index": 42,
+      "platform": "netease",
+      "language": "ja",
+      "seedLanguage": "ja",
+      "id": "netease:3427387737",
+      "resolveMs": 3908,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2305,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2305,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 449,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 851,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 753,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 1,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "qq",
+      "provenance": [
+        {
+          "platform": "qq",
+          "sourceId": "000JVXJZ1iFcYw",
+          "kind": "fallback"
+        }
+      ],
+      "translatedLines": 0,
+      "translation": false
+    },
+    {
+      "index": 43,
+      "platform": "netease",
+      "language": "ja",
+      "seedLanguage": "ja",
+      "id": "netease:3414309357",
+      "resolveMs": 2921,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2301,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2301,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 461,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 620,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 48,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3414309357",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 37,
+      "translation": true
+    },
+    {
+      "index": 44,
+      "platform": "netease",
+      "language": "ja",
+      "seedLanguage": "ja",
+      "id": "netease:3438048323",
+      "resolveMs": 3753,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2311,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2311,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 786,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 454,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 1442,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 38,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3438048323",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 32,
+      "translation": true
+    },
+    {
+      "index": 45,
+      "platform": "netease",
+      "language": "ja",
+      "seedLanguage": "ja",
+      "id": "netease:3386967464",
+      "resolveMs": 3462,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2310,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2310,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 434,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1152,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 0,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": null,
+      "provenance": [],
+      "translatedLines": 0,
+      "translation": false
+    },
+    {
+      "index": 46,
+      "platform": "netease",
+      "language": "ja",
+      "seedLanguage": "ja",
+      "id": "netease:3404897305",
+      "resolveMs": 4028,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2313,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2313,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 722,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 868,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 993,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 55,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3404897305",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 44,
+      "translation": true
+    },
+    {
+      "index": 47,
+      "platform": "netease",
+      "language": "ja",
+      "seedLanguage": "ja",
+      "id": "netease:3439736331",
+      "resolveMs": 3182,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2312,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2312,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 486,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 869,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 59,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3439736331",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 57,
+      "translation": true
+    },
+    {
+      "index": 48,
+      "platform": "netease",
+      "language": "ja",
+      "seedLanguage": "ja",
+      "id": "netease:3401056578",
+      "resolveMs": 3871,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2306,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2306,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 445,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1111,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 454,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 50,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3401056578",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 48,
+      "translation": true
+    },
+    {
+      "index": 49,
+      "platform": "netease",
+      "language": "ja",
+      "seedLanguage": "ja",
+      "id": "netease:3394877950",
+      "resolveMs": 3854,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2303,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2303,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 448,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1551,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 66,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3394877950",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 51,
+      "translation": true
+    },
+    {
+      "index": 50,
+      "platform": "netease",
+      "language": "en",
+      "seedLanguage": "en",
+      "id": "netease:3456047164",
+      "resolveMs": 3552,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2303,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2303,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 448,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 1250,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 34,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3456047164",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 20,
+      "translation": true
+    },
+    {
+      "index": 51,
+      "platform": "netease",
+      "language": "en",
+      "seedLanguage": "en",
+      "id": "netease:3448738711",
+      "resolveMs": 3653,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2310,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2310,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 440,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 896,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 446,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 73,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3448738711",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 24,
+      "translation": false
+    },
+    {
+      "index": 52,
+      "platform": "netease",
+      "language": "en",
+      "seedLanguage": "en",
+      "id": "netease:3455518907",
+      "resolveMs": 3846,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2304,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2304,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 507,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1099,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 442,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 79,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3455518907",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 62,
+      "translation": true
+    },
+    {
+      "index": 53,
+      "platform": "netease",
+      "language": "en",
+      "seedLanguage": "en",
+      "id": "netease:21178386",
+      "resolveMs": 4253,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2302,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2302,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 448,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1493,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 458,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 35,
+      "wordRaw": true,
+      "usableWordLines": 20,
+      "word": true,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "21178386",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 32,
+      "translation": true
+    },
+    {
+      "index": 54,
+      "platform": "netease",
+      "language": "en",
+      "seedLanguage": "en",
+      "id": "netease:1379918404",
+      "resolveMs": 3915,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2313,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2313,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 772,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1602,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 32,
+      "wordRaw": true,
+      "usableWordLines": 22,
+      "word": true,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "1379918404",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 30,
+      "translation": true
+    },
+    {
+      "index": 55,
+      "platform": "netease",
+      "language": "en",
+      "seedLanguage": "en",
+      "id": "netease:28718313",
+      "resolveMs": 3901,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2302,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2303,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 461,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1598,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 58,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "28718313",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 56,
+      "translation": true
+    },
+    {
+      "index": 56,
+      "platform": "netease",
+      "language": "en",
+      "seedLanguage": "en",
+      "id": "netease:3332771263",
+      "resolveMs": 3916,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2303,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2303,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 752,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1612,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 26,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3332771263",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 22,
+      "translation": true
+    },
+    {
+      "index": 57,
+      "platform": "netease",
+      "language": "en",
+      "seedLanguage": "en",
+      "id": "netease:442867526",
+      "resolveMs": 3916,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2307,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2307,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 449,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1609,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 81,
+      "wordRaw": true,
+      "usableWordLines": 30,
+      "word": true,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "442867526",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 71,
+      "translation": true
+    },
+    {
+      "index": 58,
+      "platform": "netease",
+      "language": "en",
+      "seedLanguage": "en",
+      "id": "netease:19827042",
+      "resolveMs": 4701,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2315,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2315,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 437,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 979,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 1407,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 60,
+      "wordRaw": true,
+      "usableWordLines": 9,
+      "word": true,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "19827042",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 45,
+      "translation": true
+    },
+    {
+      "index": 59,
+      "platform": "netease",
+      "language": "en",
+      "seedLanguage": "en",
+      "id": "netease:3444557415",
+      "resolveMs": 3289,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2316,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2316,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 717,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 972,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 6,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3444557415",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 5,
+      "translation": true
+    },
+    {
+      "index": 60,
+      "platform": "netease",
+      "language": "en",
+      "seedLanguage": "en",
+      "id": "netease:2058139099",
+      "resolveMs": 3910,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2309,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2309,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 1246,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1600,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 69,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "2058139099",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 52,
+      "translation": true
+    },
+    {
+      "index": 61,
+      "platform": "netease",
+      "language": "en",
+      "seedLanguage": "en",
+      "id": "netease:21274655",
+      "resolveMs": 3916,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2301,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2301,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 845,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1615,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 97,
+      "wordRaw": true,
+      "usableWordLines": 45,
+      "word": true,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "21274655",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 95,
+      "translation": true
+    },
+    {
+      "index": 62,
+      "platform": "netease",
+      "language": "en",
+      "seedLanguage": "en",
+      "id": "netease:2080324987",
+      "resolveMs": 5326,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2314,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2314,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 448,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1553,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 1459,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 56,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "2080324987",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 51,
+      "translation": true
+    },
+    {
+      "index": 63,
+      "platform": "netease",
+      "language": "en",
+      "seedLanguage": "en",
+      "id": "netease:18637990",
+      "resolveMs": 3908,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2304,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2304,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 1040,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1604,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 69,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "18637990",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 57,
+      "translation": true
+    },
+    {
+      "index": 64,
+      "platform": "netease",
+      "language": "en",
+      "seedLanguage": "en",
+      "id": "netease:3400883425",
+      "resolveMs": 3906,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2300,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2300,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 462,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1606,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 83,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3400883425",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 75,
+      "translation": true
+    },
+    {
+      "index": 65,
+      "platform": "netease",
+      "language": "en",
+      "seedLanguage": "en",
+      "id": "netease:1424460203",
+      "resolveMs": 3925,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2313,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2313,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 638,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1612,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 62,
+      "wordRaw": true,
+      "usableWordLines": 11,
+      "word": true,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "1424460203",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 60,
+      "translation": true
+    },
+    {
+      "index": 66,
+      "platform": "netease",
+      "language": "en",
+      "seedLanguage": "en",
+      "id": "netease:2082156813",
+      "resolveMs": 3919,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2305,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2305,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 444,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1614,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 27,
+      "wordRaw": true,
+      "usableWordLines": 17,
+      "word": true,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "2082156813",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 22,
+      "translation": true
+    },
+    {
+      "index": 67,
+      "platform": "netease",
+      "language": "en",
+      "seedLanguage": "en",
+      "id": "netease:2071452224",
+      "resolveMs": 3913,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2308,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2308,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 468,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1604,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 65,
+      "wordRaw": true,
+      "usableWordLines": 30,
+      "word": true,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "2071452224",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 62,
+      "translation": true
+    },
+    {
+      "index": 68,
+      "platform": "netease",
+      "language": "en",
+      "seedLanguage": "en",
+      "id": "netease:420478436",
+      "resolveMs": 3911,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2308,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2308,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 607,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1602,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 83,
+      "wordRaw": true,
+      "usableWordLines": 43,
+      "word": true,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "420478436",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 79,
+      "translation": true
+    },
+    {
+      "index": 69,
+      "platform": "netease",
+      "language": "en",
+      "seedLanguage": "en",
+      "id": "netease:22494904",
+      "resolveMs": 3910,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2307,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2307,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 452,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1602,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 78,
+      "wordRaw": true,
+      "usableWordLines": 31,
+      "word": true,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "22494904",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 56,
+      "translation": true
+    },
+    {
+      "index": 70,
+      "platform": "netease",
+      "language": "en",
+      "seedLanguage": "en",
+      "id": "netease:3450569159",
+      "resolveMs": 3917,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2312,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2313,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 615,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1604,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 98,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3450569159",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 96,
+      "translation": true
+    },
+    {
+      "index": 71,
+      "platform": "netease",
+      "language": "en",
+      "seedLanguage": "en",
+      "id": "netease:2603500959",
+      "resolveMs": 3925,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2312,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2312,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 471,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1612,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 19,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "2603500959",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 18,
+      "translation": true
+    },
+    {
+      "index": 72,
+      "platform": "netease",
+      "language": "en",
+      "seedLanguage": "en",
+      "id": "netease:431610014",
+      "resolveMs": 3923,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2309,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2309,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 1379,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1614,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 92,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "431610014",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 80,
+      "translation": true
+    },
+    {
+      "index": 73,
+      "platform": "netease",
+      "language": "en",
+      "seedLanguage": "en",
+      "id": "netease:405599119",
+      "resolveMs": 3914,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2303,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2303,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 490,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1610,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 63,
+      "wordRaw": true,
+      "usableWordLines": 44,
+      "word": true,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "405599119",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 50,
+      "translation": true
+    },
+    {
+      "index": 74,
+      "platform": "netease",
+      "language": "en",
+      "seedLanguage": "en",
+      "id": "netease:17282443",
+      "resolveMs": 3917,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2316,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2316,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 578,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1602,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 67,
+      "wordRaw": true,
+      "usableWordLines": 28,
+      "word": true,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "17282443",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 64,
+      "translation": true
+    },
+    {
+      "index": 75,
+      "platform": "netease",
+      "language": "ko",
+      "seedLanguage": "ko",
+      "id": "netease:27867073",
+      "resolveMs": 3910,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2307,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2307,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 436,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1604,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 60,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "27867073",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 58,
+      "translation": true
+    },
+    {
+      "index": 76,
+      "platform": "netease",
+      "language": "ko",
+      "seedLanguage": "ko",
+      "id": "netease:2678642318",
+      "resolveMs": 3902,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2301,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2301,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 433,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1600,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 58,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "2678642318",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 50,
+      "translation": true
+    },
+    {
+      "index": 77,
+      "platform": "netease",
+      "language": "ko",
+      "seedLanguage": "ko",
+      "id": "netease:2685583481",
+      "resolveMs": 3905,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2302,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2302,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 1286,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1602,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 58,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "2685583481",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 55,
+      "translation": true
+    },
+    {
+      "index": 78,
+      "platform": "netease",
+      "language": "ko",
+      "seedLanguage": "ko",
+      "id": "netease:3457446860",
+      "resolveMs": 3925,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2314,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2314,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 732,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1611,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 74,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3457446860",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 72,
+      "translation": true
+    },
+    {
+      "index": 79,
+      "platform": "netease",
+      "language": "ko",
+      "seedLanguage": "ko",
+      "id": "netease:3338859069",
+      "resolveMs": 3906,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2303,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2303,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 905,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1603,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 45,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3338859069",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 42,
+      "translation": true
+    },
+    {
+      "index": 80,
+      "platform": "netease",
+      "language": "ko",
+      "seedLanguage": "ko",
+      "id": "netease:3457446861",
+      "resolveMs": 3926,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2312,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2312,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 447,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1613,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 100,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3457446861",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 98,
+      "translation": true
+    },
+    {
+      "index": 81,
+      "platform": "netease",
+      "language": "ko",
+      "seedLanguage": "ko",
+      "id": "netease:3457447827",
+      "resolveMs": 3913,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2303,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2303,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 901,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1610,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 94,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3457447827",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 81,
+      "translation": true
+    },
+    {
+      "index": 82,
+      "platform": "netease",
+      "language": "ko",
+      "seedLanguage": "ko",
+      "id": "netease:3449273923",
+      "resolveMs": 3914,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2307,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2307,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 453,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1607,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 71,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3449273923",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 69,
+      "translation": true
+    },
+    {
+      "index": 83,
+      "platform": "netease",
+      "language": "ko",
+      "seedLanguage": "ko",
+      "id": "netease:3457446862",
+      "resolveMs": 3905,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2301,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2301,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 596,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1603,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 89,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3457446862",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 87,
+      "translation": true
+    },
+    {
+      "index": 84,
+      "platform": "netease",
+      "language": "ko",
+      "seedLanguage": "ko",
+      "id": "netease:3452841383",
+      "resolveMs": 3915,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2307,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2307,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 401,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1607,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 62,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3452841383",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 48,
+      "translation": true
+    },
+    {
+      "index": 85,
+      "platform": "netease",
+      "language": "ko",
+      "seedLanguage": "ko",
+      "id": "netease:3457446859",
+      "resolveMs": 3918,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2310,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2310,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 394,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1608,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 71,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3457446859",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 69,
+      "translation": true
+    },
+    {
+      "index": 86,
+      "platform": "netease",
+      "language": "ko",
+      "seedLanguage": "ko",
+      "id": "netease:3452823047",
+      "resolveMs": 4865,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2305,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2305,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 504,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1260,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 1300,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 65,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3452823047",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 54,
+      "translation": true
+    },
+    {
+      "index": 87,
+      "platform": "netease",
+      "language": "ko",
+      "seedLanguage": "ko",
+      "id": "netease:28850832",
+      "resolveMs": 3741,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2306,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2307,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 444,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1434,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 49,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "28850832",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 47,
+      "translation": true
+    },
+    {
+      "index": 88,
+      "platform": "netease",
+      "language": "ko",
+      "seedLanguage": "ko",
+      "id": "netease:2718589640",
+      "resolveMs": 3006,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2307,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2307,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 485,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 698,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 77,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "2718589640",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 57,
+      "translation": true
+    },
+    {
+      "index": 89,
+      "platform": "netease",
+      "language": "ko",
+      "seedLanguage": "ko",
+      "id": "netease:3358077471",
+      "resolveMs": 3915,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2308,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2308,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 421,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1607,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 82,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3358077471",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 54,
+      "translation": true
+    },
+    {
+      "index": 90,
+      "platform": "netease",
+      "language": "ko",
+      "seedLanguage": "ko",
+      "id": "netease:2678642316",
+      "resolveMs": 3913,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2306,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2307,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 513,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1606,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 85,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "2678642316",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 81,
+      "translation": true
+    },
+    {
+      "index": 91,
+      "platform": "netease",
+      "language": "ko",
+      "seedLanguage": "ko",
+      "id": "netease:3431697108",
+      "resolveMs": 3789,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2307,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2307,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 413,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1482,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 42,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3431697108",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 40,
+      "translation": true
+    },
+    {
+      "index": 92,
+      "platform": "netease",
+      "language": "ko",
+      "seedLanguage": "ko",
+      "id": "netease:2681425876",
+      "resolveMs": 2996,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2303,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2303,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 620,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 693,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 67,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "2681425876",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 67,
+      "translation": true
+    },
+    {
+      "index": 93,
+      "platform": "netease",
+      "language": "ko",
+      "seedLanguage": "ko",
+      "id": "netease:2148791540",
+      "resolveMs": 2958,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2315,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2315,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 414,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 642,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 53,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "2148791540",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 28,
+      "translation": true
+    },
+    {
+      "index": 94,
+      "platform": "netease",
+      "language": "ko",
+      "seedLanguage": "ko",
+      "id": "netease:3452393473",
+      "resolveMs": 3916,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2312,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2312,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 440,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1603,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 90,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3452393473",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 75,
+      "translation": true
+    },
+    {
+      "index": 95,
+      "platform": "netease",
+      "language": "ko",
+      "seedLanguage": "ko",
+      "id": "netease:3457627067",
+      "resolveMs": 3915,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2306,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2306,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 399,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1609,
+          "outcome": "TIMEOUT"
+        }
+      ],
+      "lyricLines": 78,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3457627067",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 67,
+      "translation": true
+    },
+    {
+      "index": 96,
+      "platform": "netease",
+      "language": "ko",
+      "seedLanguage": "ko",
+      "id": "netease:3444736220",
+      "resolveMs": 3340,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2312,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2312,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 400,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1028,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 38,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3444736220",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 36,
+      "translation": true
+    },
+    {
+      "index": 97,
+      "platform": "netease",
+      "language": "ko",
+      "seedLanguage": "ko",
+      "id": "netease:3336111049",
+      "resolveMs": 3423,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2302,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2302,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 403,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1120,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 38,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "3336111049",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 36,
+      "translation": true
+    },
+    {
+      "index": 98,
+      "platform": "netease",
+      "language": "ko",
+      "seedLanguage": "ko",
+      "id": "netease:2631840130",
+      "resolveMs": 3737,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2306,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2306,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 1061,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1431,
+          "outcome": "ok"
+        }
+      ],
+      "lyricLines": 75,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "2631840130",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 65,
+      "translation": true
+    },
+    {
+      "index": 99,
+      "platform": "netease",
+      "language": "ko",
+      "seedLanguage": "ko",
+      "id": "netease:26145318",
+      "resolveMs": 5093,
+      "playable": false,
+      "full": false,
+      "fallback": false,
+      "servedBy": null,
+      "servedId": null,
+      "errorCode": "NO_SOURCE",
+      "timings": [
+        {
+          "stage": "fetch",
+          "platform": "netease",
+          "ms": 2310,
+          "outcome": "TIMEOUT"
+        },
+        {
+          "stage": "primary",
+          "platform": "netease",
+          "ms": 2310,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "kugou",
+          "ms": 411,
+          "outcome": "ok"
+        },
+        {
+          "stage": "search",
+          "platform": "qq",
+          "ms": 1452,
+          "outcome": "ok"
+        },
+        {
+          "stage": "fetch",
+          "platform": "qq",
+          "ms": 1330,
+          "outcome": "ok"
+        },
+        {
+          "stage": "availability",
+          "platform": "qq",
+          "ms": 0,
+          "outcome": "LOGIN_REQUIRED"
+        }
+      ],
+      "lyricLines": 45,
+      "wordRaw": false,
+      "usableWordLines": 0,
+      "word": false,
+      "lyricPlatform": "netease",
+      "provenance": [
+        {
+          "platform": "netease",
+          "sourceId": "26145318",
+          "kind": "primary"
+        }
+      ],
+      "translatedLines": 33,
+      "translation": true
+    }
+  ]
+}

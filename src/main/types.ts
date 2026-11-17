@@ -2,6 +2,8 @@
 
 export type Platform = 'netease' | 'qq' | 'kugou' | 'spotify' | 'qishui';
 
+export interface CoverInfo { url:string; width?:number; height?:number; verified:boolean }
+
 export interface Track {
   /** Unified id (`${platform}:${sourceId}`, stable across platforms). */
   id: string;
@@ -11,6 +13,7 @@ export interface Track {
   album: string;
   /** https cover URL (empty when none). */
   cover: string;
+  coverInfo?: CoverInfo;
   /** Duration in seconds. */
   duration: number;
   platform: Platform;
@@ -50,6 +53,12 @@ export interface Lyric {
   ytlrc?: string;
   /** QQ raw QRC (word-level); frontend maps it into `yrc` when yrc is absent. */
   qrc?: string;
+  krc?: string;
+  /** 实际取歌词的身份及跨源增强证据；UI 可用于来源探针。 */
+  identity?: { platform: string; sourceId: string };
+  provenance?: Array<{ platform:string; sourceId:string; kind:'primary'|'fallback'|'enrichment'; offsetMs?:number; anchors?:number }>;
+  coverage?: { wordLines:number; textLines:number; translatedLines:number };
+  incomplete?: boolean;
 }
 
 export interface CommentItem {
@@ -89,6 +98,8 @@ export interface SongUrl {
   playable?: boolean;
   /** Explicit fetch failure reason (never a silent empty url). */
   error?: string;
+  code?: string;
+  expiresAt?: number;
 }
 
 export interface ResolveResult {
@@ -102,6 +113,11 @@ export interface ResolveResult {
   quality?: string;
   playable?: boolean;
   error?: string;
+  code?: 'NO_SOURCE' | 'TIMEOUT' | 'CANCELLED' | 'TRIAL_ONLY' | 'AUTH_EXPIRED';
+  resolvedAt?: number;
+  expiresAt?: number;
+  traceId?: string;
+  timings?: Array<{ stage: string; platform: string; ms: number; outcome: string }>;
 }
 
 /** Quality option surfaced to the frontend quality picker. */
@@ -115,6 +131,8 @@ export interface QualityOption {
 /** Unified platform adapter interface. */
 export interface PlatformAdapter {
   platform: Platform;
+  /** 已核验的会话状态；不发网络请求，用于阻止失效账号复用解析缓存。 */
+  getAuthStatus?(): 'missing' | 'valid' | 'expired' | 'unknown';
   fetchPlaylist(playlistId: string): Promise<Playlist>;
   fetchSongUrl(songId: string, albumId?: string, quality?: string, extra?: Record<string, unknown>): Promise<SongUrl | null>;
   fetchLyric(songId: string, timeMs?: number): Promise<Lyric | null>;
@@ -148,6 +166,8 @@ export interface PlaylistSummary {
 export interface AccountInfo {
   /** Login probe result: false means cookie invalid / not logged in. */
   loggedIn: boolean;
+  authStatus?: 'missing' | 'valid' | 'expired' | 'unknown';
+  error?: string;
   userId?: string;
   nickname?: string;
   avatarUrl?: string;

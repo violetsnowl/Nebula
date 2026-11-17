@@ -10,12 +10,13 @@ import type {
   SongDetail,
   Track,
 } from '../types';
-import { creditsFromLrc, mergeLyric } from '../parsers/lyricParser';
+import { creditsFromLrc } from '../parsers/lyricParser';
 import { matchScore } from './songResolver';
 import { normalizeQuery, titleSimilarity } from '../adapters/mappers';
 import { LyricCache } from './lyricCache';
+import { withRequestScope, throwIfCancelled } from '../requestScope';
+import { enrichAligned, lyricCoverage } from './lyricAlignment';
 
-const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /** 歌词/评论统一入口：平台失败返回 null，不向上抛错。 */
 /** 去掉搜索接口返回的高亮标签（<em>…</em> 等），并还原常见 HTML 实体。 */
@@ -37,103 +38,58 @@ export class LyricService {
     private cache?: LyricCache,
   ) {}
 
-  async fetchLyric(track: Track): Promise<Lyric | null> {
-    // 1) 磁盘缓存
-    if (this.cache) {
-      const cached = this.cache.get(track.platform, track.sourceId);
-      if (cached) return cached;
-    }
-    try {
-      let lyric: Lyric | null = null;
-      if (track.platform === 'kugou') {
-        lyric = await this.adapters.kugou.fetchLyric(
-          track.sourceId,
-          track.duration ? track.duration * 1000 : undefined,
-        );
-      } else {
-        lyric = await this.adapters[track.platform].fetchLyric(track.sourceId);
+  private lyricJobs=new Map<string,{control:AbortController;users:number;done:boolean;promise:Promise<Lyric|null>}>();
+  async fetchLyric(track: Track, signal?:AbortSignal): Promise<Lyric | null> {
+    if(signal?.aborted)return null;
+    const cached=this.cache?.get(track.platform,track.sourceId);if(cached)return cached;
+    const key=track.platform+':'+track.sourceId;
+    const pending=this.lyricJobs.get(key);if(pending && !pending.control.signal.aborted)return this.consumeLyric(pending,signal);
+    const job={control:new AbortController(),users:0,done:false,promise:Promise.resolve(null) as Promise<Lyric|null>};
+    let best:Lyric|null=null;
+    const task=withRequestScope(8500,async()=>{
+      const fetch=async(t:Track,kind:'primary'|'fallback'):Promise<Lyric|null>=>{
+        const lyric=await withRequestScope(3200,()=>this.adapters[t.platform].fetchLyric(t.sourceId,t.duration? t.duration*1000:undefined)).catch(()=>null);
+        throwIfCancelled();
+        return lyric?.lines?.length?{...lyric,identity:{platform:t.platform,sourceId:t.sourceId},provenance:[{platform:t.platform,sourceId:t.sourceId,kind}]}:null;
+      };
+      best=await fetch(track,'primary');
+      const good=(l:Lyric|null):boolean=>{if(!l)return false;const c=lyricCoverage(l);return c.textLines>0 && c.wordLines/c.textLines>=.8 && c.translatedLines/c.textLines>=.8};
+      if(good(best))return best;
+      const sources=(['netease','qq','kugou'] as Platform[]).filter(p=>p!==track.platform && this.adapters[p]?.searchSongs);
+      const candidates=await Promise.all(sources.map(async platform=>{
+        try{
+          const rows=await withRequestScope(1800,()=>this.adapters[platform].searchSongs!(`${track.title} ${track.artist}`.trim(),10));
+          const match=rows.map(t=>({t,score:matchScore(t,track)})).filter(x=>x.score>=.9).sort((a,b)=>b.score-a.score)[0];
+          return match?await fetch(match.t,'fallback'):null;
+        }catch{return null;}
+      }));
+      throwIfCancelled();
+      // 固定平台顺序合并，网络完成顺序不改变结果。
+      for(const lyric of candidates){
+        if(!lyric)continue;
+        if(!best){
+          // 无主源正文就无法验证跨源时间轴，只提供整句，保持未完成标志。
+          best={...lyric,yrc:undefined,qrc:undefined,krc:undefined,incomplete:true};
+        }else best=enrichAligned(best,lyric);
       }
-      if (!lyric) lyric = await this.fallbackLyric(track);
-      if (lyric) {
-        lyric = await this.enrichFromNetease(track, lyric);
-        this.cache?.set(track.platform, track.sourceId, lyric);
-      }
-      return lyric;
-    } catch (err) {
-      console.warn('[LyricService] 歌词获取失败:', errMsg(err));
-      return this.fallbackLyric(track);
-    }
+      return best;
+    },{detached:true,signal:job.control.signal}).catch(()=>best).then(lyric=>{
+      if(!lyric || job.control.signal.aborted)return null;
+      const coverage=lyricCoverage(lyric);
+      const incomplete=lyric.incomplete || !coverage.textLines || coverage.wordLines/coverage.textLines<.8 || coverage.translatedLines/coverage.textLines<.8;
+      const result={...lyric,coverage,incomplete};this.cache?.set(track.platform,track.sourceId,result);return result;
+    }).finally(()=>{job.done=true;if(this.lyricJobs.get(key)===job)this.lyricJobs.delete(key);});
+    job.promise=task;this.lyricJobs.set(key,job);return this.consumeLyric(job,signal);
   }
 
-  /**
-   * 非网易源增强：
-   * - 缺翻译 → 网易云搜同名歌补 tlyric/ytlrc（按时间轴合并进 lines）；
-   * - 缺逐字（QQ 无 qrc）→ 从网易云补 yrc，前端统一按字高亮。
-   */
-  private async enrichFromNetease(track: Track, lyric: Lyric): Promise<Lyric> {
-    if (lyric.source === 'netease') return lyric;
-    const hasWord = !!lyric.yrc || !!lyric.qrc;
-    const hasTrans = !!lyric.translationRaw || !!lyric.ytlrc;
-    if (hasWord && hasTrans) return lyric;
-    try {
-      const netease = this.adapters.netease;
-      if (!netease.searchSongs) return lyric;
-      const keyword = `${track.title} ${track.artist}`.trim();
-      const candidates = await netease.searchSongs(keyword, 5);
-      const scored = candidates
-        .map((c) => ({ c, score: matchScore(c, track) }))
-        .filter((x) => x.score >= 0.5)
-        .sort((a, b) => b.score - a.score);
-      for (const { c } of scored.slice(0, 2)) {
-        const nl = await netease.fetchLyric(c.sourceId);
-        if (!nl) continue;
-        const patch: Partial<Lyric> = {};
-        if (!hasTrans && nl.tlyric) {
-          const merged = mergeLyric(lyric.lrc ?? lyric.raw, nl.tlyric);
-          if (merged.some((l) => l.translation)) {
-            patch.lines = merged;
-            patch.tlyric = nl.tlyric;
-            patch.translationRaw = nl.tlyric;
-          }
-        }
-        if (!hasWord && nl.yrc) {
-          patch.yrc = nl.yrc;
-          if (nl.ytlrc) patch.ytlrc = nl.ytlrc;
-        }
-        if (Object.keys(patch).length) {
-          return { ...lyric, ...patch };
-        }
-      }
-    } catch (err) {
-      console.warn('[LyricService] 翻译补全失败:', errMsg(err));
-    }
-    return lyric;
-  }
-
-  /** 主源失败 → 用 title+artist 到 QQ/酷狗搜索匹配并取歌词。 */
-  private async fallbackLyric(track: Track): Promise<Lyric | null> {
-    const keyword = `${track.title} ${track.artist}`.trim();
-    const sources = [this.adapters.qq, this.adapters.kugou, this.adapters.qishui];
-    for (const source of sources) {
-      if (!source.searchSongs) continue;
-      try {
-        const candidates = await source.searchSongs(keyword, 8);
-        const scored = candidates
-          .map((c) => ({ c, score: matchScore(c, track) }))
-          .filter((x) => x.score >= 0.5)
-          .sort((a, b) => b.score - a.score);
-        for (const { c } of scored.slice(0, 2)) {
-          const lyric = await source.fetchLyric(c.sourceId, c.duration ? c.duration * 1000 : undefined);
-          if (lyric?.raw) {
-            console.log(`[LyricService] 兜底命中《${c.title}》@${source.platform}`);
-            return { ...lyric, source: source.platform, lrc: lyric.raw };
-          }
-        }
-      } catch (err) {
-        console.warn(`[LyricService] 兜底歌词失败 @${source.platform}:`, errMsg(err));
-      }
-    }
-    return null;
+  private consumeLyric(job:{control:AbortController;users:number;done:boolean;promise:Promise<Lyric|null>},signal?:AbortSignal):Promise<Lyric|null> {
+    job.users++;
+    return new Promise(resolve=>{
+      let settled=false;
+      const finish=(value:Lyric|null)=>{if(settled)return;settled=true;signal?.removeEventListener('abort',cancel);job.users--;if(!job.users && !job.done)job.control.abort();resolve(value);};
+      const cancel=()=>finish(null);signal?.addEventListener('abort',cancel,{once:true});
+      if(signal?.aborted)cancel();void job.promise.then(finish);
+    });
   }
 
   async fetchComments(track: Track, page = 0): Promise<CommentResult | null> {
@@ -141,7 +97,7 @@ export class LyricService {
         const fn = this.adapters[track.platform].fetchComments;
         return fn ? await fn.call(this.adapters[track.platform], track.sourceId, page) : null;
       } catch (err) {
-        console.warn('[LyricService] 评论获取失败:', errMsg(err));
+        console.warn("[LyricService] 评论获取失败:");
         return null;
       }
     }
@@ -152,7 +108,7 @@ export class LyricService {
       const adapter = this.adapters[platform];
       return adapter.fetchArtistAllSongs ? await adapter.fetchArtistAllSongs(artistId) : [];
     } catch (err) {
-      console.warn('[LyricService] 歌手全部歌曲失败:', errMsg(err));
+      console.warn("[LyricService] 歌手全部歌曲失败:");
       return [];
     }
   }
@@ -211,7 +167,7 @@ export class LyricService {
       }
       return detail;
     } catch (err) {
-      console.warn('[LyricService] 歌曲详情失败:', errMsg(err));
+      console.warn("[LyricService] 歌曲详情失败:");
       return null;
     }
   }
@@ -221,7 +177,7 @@ export class LyricService {
       const adapter = this.adapters[platform];
       return adapter.fetchArtistInfo ? await adapter.fetchArtistInfo(artistId) : null;
     } catch (err) {
-      console.warn('[LyricService] 歌手信息失败:', errMsg(err));
+      console.warn("[LyricService] 歌手信息失败:");
       return null;
     }
   }
@@ -231,7 +187,7 @@ export class LyricService {
       const adapter = this.adapters[platform];
       return adapter.fetchArtistSongs ? await adapter.fetchArtistSongs(artistId) : [];
     } catch (err) {
-      console.warn('[LyricService] 歌手歌曲失败:', errMsg(err));
+      console.warn("[LyricService] 歌手歌曲失败:");
       return [];
     }
   }
@@ -241,7 +197,7 @@ export class LyricService {
       const adapter = this.adapters[platform];
       return adapter.fetchArtistAlbums ? await adapter.fetchArtistAlbums(artistId) : [];
     } catch (err) {
-      console.warn('[LyricService] 歌手专辑失败:', errMsg(err));
+      console.warn("[LyricService] 歌手专辑失败:");
       return [];
     }
   }
@@ -251,7 +207,7 @@ export class LyricService {
       const adapter = this.adapters[platform];
       return adapter.fetchAlbumDetail ? await adapter.fetchAlbumDetail(albumId) : null;
     } catch (err) {
-      console.warn('[LyricService] 专辑详情失败:', errMsg(err));
+      console.warn("[LyricService] 专辑详情失败:");
       return null;
     }
   }
@@ -276,7 +232,7 @@ export class LyricService {
           const list = await adapter.searchSongs(keyword, per);
           list.forEach(push);
         } catch (err) {
-          console.warn('[LyricService] searchSongs', adapter.platform, errMsg(err));
+          console.warn("[LyricService] searchSongs");
         }
       }),
     );
@@ -301,7 +257,7 @@ export class LyricService {
             out.push({ ...hit, name: stripMarkup(hit.name) });
           }
         } catch (err) {
-          console.warn('[LyricService] searchArtists', adapter.platform, errMsg(err));
+          console.warn("[LyricService] searchArtists");
         }
       }),
     );

@@ -5,10 +5,11 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { PNG } = require('C:/Users/LIU/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/pngjs');
-const { chromium } = require('C:/Users/LIU/.cache/codex-runtimes/codex-primary-runtime/dependencies/node/node_modules/playwright-core');
+const { qaRequire, chrome } = require('./qa-env.cjs');
+const { PNG } = qaRequire('pngjs');
+const { chromium } = qaRequire('playwright-core');
 
-const CHROME = 'C:/Program Files/Google/Chrome/Application/chrome.exe';
+const CHROME = chrome;
 const OUT_DIR = path.join(__dirname, '..', '..', 'nebula-outputs');
 const HTML_PATH = path.join(OUT_DIR, 'index.html');
 
@@ -832,6 +833,11 @@ async function main() {
   await page.waitForFunction(() => window.__nebula.player.getState().song !== null, null, {
     timeout: 8000,
   });
+  // playing 事件才表示实际出流；不能在点击后的同一帧把 play 请求当作已播放。
+  await page.waitForFunction(() => {
+    const s = window.__nebula.player.getState();
+    return s.playing && !s.loading;
+  }, null, { timeout: 10000 });
   const playState1 = await page.evaluate(() => {
     const s = window.__nebula.player.getState();
     return { title: s.song?.title, playing: s.playing };

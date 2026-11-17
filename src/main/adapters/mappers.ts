@@ -1,4 +1,6 @@
 import type { Track } from '../types';
+import { coverCandidates } from '../services/coverService';
+import { cleanMetadataText } from '../parsers/metadataText';
 
 /**
  * 纯函数字段映射：把各平台原始 JSON 中的不同字段统一转换为标准 Track。
@@ -24,11 +26,12 @@ export function mapNeteaseTrack(raw: Record<string, any> | undefined | null): Tr
           : 0;
     return {
       id: `netease:${raw.id}`,
-      title: raw.name,
-      artist: ar[0]?.name ?? '未知歌手',
-      artists: ar.map((a) => a.name ?? '').filter(Boolean),
-      album: al.name ?? '',
+      title: cleanMetadataText(raw.name),
+      artist: cleanMetadataText(ar[0]?.name) || '未知歌手',
+      artists: ar.map((a) => cleanMetadataText(a.name)).filter(Boolean),
+      album: cleanMetadataText(al.name),
       cover,
+      coverInfo:cover?{url:coverCandidates({platform:'netease',cover})[0] || cover,verified:false}:undefined,
       duration,
       platform: 'netease',
       sourceId: String(raw.id),
@@ -42,21 +45,25 @@ export function mapNeteaseTrack(raw: Record<string, any> | undefined | null): Tr
 
 export function mapQQTrack(raw: Record<string, any> | undefined | null): Track | null {
   try {
-    if (!raw || raw.songmid == null || !raw.songname) return null;
+    if (!raw) return null;
+    raw = { ...raw, songmid:raw.songmid ?? raw.mid, songname:raw.songname ?? raw.name, albummid:raw.albummid ?? raw.album?.mid, albumname:raw.albumname ?? raw.album?.name };
+    if (raw.songmid == null || !raw.songname) return null;
     const singer: Array<{ name?: string }> = raw.singer ?? [];
     const albummid: string = raw.albummid ?? '';
     return {
       id: `qq:${raw.songmid}`,
-      title: raw.songname,
-      artist: singer[0]?.name ?? '未知歌手',
-      artists: singer.map((s) => s.name ?? '').filter(Boolean),
-      album: raw.albumname ?? '',
+      title: cleanMetadataText(raw.songname),
+      artist: cleanMetadataText(singer[0]?.name) || '未知歌手',
+      artists: singer.map((s) => cleanMetadataText(s.name)).filter(Boolean),
+      album: cleanMetadataText(raw.albumname),
       cover: albummid ? `https://y.gtimg.cn/music/photo_new/T002R500x500M000${albummid}.jpg` : '',
       duration: typeof raw.interval === 'number' ? raw.interval : 0,
       platform: 'qq',
       sourceId: String(raw.songmid),
       originalUrl: '',
       fallbackUrl: '',
+      coverInfo:albummid?{url:`https://y.gtimg.cn/music/photo_new/T002M000${albummid}.jpg`,verified:false}:undefined,
+      extra: { mediaMid:raw.file?.media_mid || raw.strMediaMid || '', songId:raw.songid ?? raw.id, albumId:raw.albumid ?? raw.album?.id, pay:raw.pay },
     };
   } catch {
     return null;
@@ -68,11 +75,11 @@ export function mapKugouTrack(raw: Record<string, any> | undefined | null): Trac
     if (!raw || !raw.FileHash || !raw.SongName) return null;
     return {
       id: `kugou:${raw.FileHash}`,
-      title: raw.SongName,
-      artist: raw.SingerName ?? '未知歌手',
-      artists: (raw.SingerName ?? '').split(',').map((s: string) => s.trim()).filter(Boolean),
-      album: raw.AlbumName ?? '',
-      cover: '',
+      title: cleanMetadataText(raw.SongName),
+      artist: cleanMetadataText(raw.SingerName) || '未知歌手',
+      artists: cleanMetadataText(raw.SingerName).split(',').map(s => s.trim()).filter(Boolean),
+      album: cleanMetadataText(raw.AlbumName),
+      cover: String(raw.Image || raw.AlbumImg || raw.trans_param?.union_cover || '').replace(/\{size\}/g,'0').replace(/^http:/,'https:'),
       duration: typeof raw.Duration === 'number' ? raw.Duration : 0,
       platform: 'kugou',
       sourceId: String(raw.FileHash),
@@ -98,14 +105,14 @@ export function mapKugouMobileTrack(raw: Record<string, any> | undefined | null)
     if (!raw || !raw.hash || !raw.songname) return null;
     return {
       id: `kugou:${raw.hash}`,
-      title: raw.songname,
-      artist: raw.singername ?? '未知歌手',
-      artists: (raw.singername ?? '')
+      title: cleanMetadataText(raw.songname),
+      artist: cleanMetadataText(raw.singername) || '未知歌手',
+      artists: cleanMetadataText(raw.singername)
         .split(',')
         .map((s: string) => s.trim())
         .filter(Boolean),
-      album: raw.album_name ?? '',
-      cover: '',
+      album: cleanMetadataText(raw.album_name),
+      cover: String(raw.imgurl || raw.album_img || '').replace(/\{size\}/g,'0').replace(/^http:/,'https:'),
       duration: Number(raw.duration) || 0,
       platform: 'kugou',
       sourceId: String(raw.hash),

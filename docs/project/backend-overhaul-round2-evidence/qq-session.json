@@ -1,0 +1,19 @@
+{
+  "at": "2026-11-17T09:37:24.090Z",
+  "status": "not-run-missing-credential",
+  "authStatus": "missing",
+  "credentials": {
+    "identityPresent": false,
+    "keyField": null,
+    "loginType": 1
+  },
+  "refreshMetadata": {
+    "refreshTokenPresent": false,
+    "refreshKeyPresent": false,
+    "openidPresent": false,
+    "unionidPresent": false
+  },
+  "rights": null,
+  "calls": [],
+  "rows": []
+}

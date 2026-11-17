@@ -1,4 +1,4 @@
-﻿import type { HttpClient } from '../http';
+import type { HttpClient } from '../http';
 import type { CookieStore } from '../cookieStore';
 import type { Lyric, Playlist, PlaylistSummary, PlatformAdapter, QualityOption, SongUrl, Track } from '../types';
 import { parseLrc } from '../parsers/lyricParser';
@@ -129,7 +129,7 @@ export class QishuiAdapter implements PlatformAdapter {
           return items.slice(0, pageSize).map((item: any) => this.mapTrack(item)).filter(Boolean) as Track[];
         }
       } catch (err) {
-        console.warn('[QishuiAdapter] PC 搜索失败:', err instanceof Error ? err.message : err);
+        console.warn("[QishuiAdapter] PC 搜索失败:");
       }
     }
 
@@ -143,7 +143,7 @@ export class QishuiAdapter implements PlatformAdapter {
       const list = data?.data?.list || [];
       return list.map((item: any) => this.mapPublicTrack(item)).filter(Boolean) as Track[];
     } catch (err) {
-      console.warn('[QishuiAdapter] 公开搜索失败:', err instanceof Error ? err.message : err);
+      console.warn("[QishuiAdapter] 公开搜索失败:");
       return [];
     }
   }
@@ -277,7 +277,7 @@ export class QishuiAdapter implements PlatformAdapter {
           }),
       );
     } catch (err) {
-      console.warn('[QishuiAdapter] 我的歌单获取失败:', err instanceof Error ? err.message : err);
+      console.warn("[QishuiAdapter] 我的歌单获取失败:");
     }
 
     // 2) 收藏歌单
@@ -298,7 +298,7 @@ export class QishuiAdapter implements PlatformAdapter {
         }
       }
     } catch (err) {
-      console.warn('[QishuiAdapter] 收藏歌单获取失败:', err instanceof Error ? err.message : err);
+      console.warn("[QishuiAdapter] 收藏歌单获取失败:");
     }
 
     return playlists;
@@ -334,7 +334,7 @@ export class QishuiAdapter implements PlatformAdapter {
         };
       }
     } catch (err) {
-      console.warn('[QishuiAdapter] SEO 歌词失败:', err instanceof Error ? err.message : err);
+      console.warn("[QishuiAdapter] SEO 歌词失败:");
     }
 
     // 2) /luna/pc/track_v2（登录态）
@@ -360,7 +360,7 @@ export class QishuiAdapter implements PlatformAdapter {
           };
         }
       } catch (err) {
-        console.warn('[QishuiAdapter] track_v2 歌词失败:', err instanceof Error ? err.message : err);
+        console.warn("[QishuiAdapter] track_v2 歌词失败:");
       }
     }
 
@@ -384,7 +384,7 @@ export class QishuiAdapter implements PlatformAdapter {
         };
       }
     } catch (err) {
-      console.warn('[QishuiAdapter] volcengine 歌词失败:', err instanceof Error ? err.message : err);
+      console.warn("[QishuiAdapter] volcengine 歌词失败:");
     }
 
     return null;
@@ -401,7 +401,9 @@ export class QishuiAdapter implements PlatformAdapter {
         .filter(Boolean);
       const artist = artists.join(' / ') || item.artist || '';
       const album = item.album?.name || item.album_name || '';
-      const cover = qishuiCoverUrl(item.album?.url_cover || item.album?.cover || item.cover, '~c5_300x300.jpg');
+      const image=item.album?.url_cover || item.album?.cover || item.cover;
+      const cover = qishuiCoverUrl(image);
+      const coverInfo=cover?{url:cover,verified:false}:undefined;
       const duration = Number(item.duration || item.duration_ms || 0);
       return {
         id: `qishui:${id}`,
@@ -410,6 +412,7 @@ export class QishuiAdapter implements PlatformAdapter {
         artists,
         album,
         cover,
+        coverInfo,
         duration: duration > 1000 ? Math.round(duration / 1000) : duration,
         platform: 'qishui',
         sourceId: id,
