@@ -1191,16 +1191,17 @@ async function main() {
     const api = window.nebulaAPI;
     const keep = api.fetchLyric;
     // 第 4 句是韩语（#166）：QQ 写法一个音节一段、这一句没有双空格，要按原文的词拼回
-    const jp = ['君の名前を呼んでいる', '星の海を渡って', 'Hello world', '그때 꿈만 같았던'];
-    const ro = ['kimi no namae wo yonde iru', 'hoshi no umi wo watatte', 'Hello world', 'geu ddae ggum man ga tat deon'];
+    // 第 5、6 句（#169）：QQ 日语罗马音在英文词前后空两格，这种行占到三成以上时日语音节也不能被拼成一串
+    const jp = ['君の名前を呼んでいる', '星の海を渡って', 'Hello world', '그때 꿈만 같았던', 'Baby 私ちょっと', 'Baby you you yeah'];
+    const ro = ['kimi no namae wo yonde iru', 'hoshi no umi wo watatte', 'Hello world', 'geu ddae ggum man ga tat deon', "Baby  wa ta shi cho 't to", 'Baby  you  you  yeah'];
     const fmt = (t) => `[${String(Math.floor(t / 60000)).padStart(2, '0')}:${String(Math.floor((t % 60000) / 1000)).padStart(2, '0')}.${String(Math.floor((t % 1000) / 10)).padStart(2, '0')}]`;
     api.fetchLyric = async () => {
       const lines = [];
       let romalrc = '';
       for (let i = 0; i < 40; i++) {
         const t = 500 + i * 3000;
-        lines.push({ timeMs: t, text: jp[i % 4], translation: i % 4 === 2 ? undefined : '叫着你的名字' });
-        romalrc += `${fmt(t)}${ro[i % 4]}\n`;
+        lines.push({ timeMs: t, text: jp[i % 6], translation: i % 6 === 2 || i % 6 === 5 ? undefined : '叫着你的名字' });
+        romalrc += `${fmt(t)}${ro[i % 6]}\n`;
       }
       return { ok: true, data: { source: 'netease', lines, romalrc } };
     };
@@ -1235,6 +1236,7 @@ async function main() {
       // 英文行（Hello world）的罗马音和原文一样：不挂
       latinDup: [...(root?.querySelectorAll('.ly-ro') || [])].some((e) => e.textContent === 'Hello world'),
       korean: [...(root?.querySelectorAll('.ly-ro') || [])].some((e) => e.textContent === 'geuddae ggumman gatatdeon'),
+      japaneseKept: [...(root?.querySelectorAll('.ly-ro') || [])].some((e) => e.textContent === "Baby wa ta shi cho 't to"),
     };
     btn?.click();
     await new Promise((r) => setTimeout(r, 200));
@@ -1244,7 +1246,7 @@ async function main() {
   const romanOk =
     roman.before.btn && roman.before.pressed === 'false' && roman.before.hidden &&
     roman.after.pressed === 'true' && roman.after.shown && /kimi|hoshi/.test(roman.after.text) &&
-    /^ly-main,ly-ro,ly-tr/.test(roman.after.order) && !roman.after.latinDup && roman.after.korean;
+    /^ly-main,ly-ro,ly-tr/.test(roman.after.order) && !roman.after.latinDup && roman.after.korean && roman.after.japaneseKept;
   log('听音空间罗马音', JSON.stringify(roman));
   await page.keyboard.press('Escape');
   await page.waitForTimeout(1000);

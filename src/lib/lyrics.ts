@@ -232,7 +232,8 @@ export function attachRoman(lines: LyricLineUI[], raw: string): LyricLineUI[] {
       }
     }
     if (!best) return l;
-    const roman = regroupByHangul(best.text, l.text) ?? tidyRoman(best.text, joinSyllables);
+    // 双空格拼词只认韩语行（#169）：QQ 日语罗马音在英文词前后也空两格（`Baby  wa ta shi`），拼了会把日语音节连成一串
+    const roman = regroupByHangul(best.text, l.text) ?? tidyRoman(best.text, joinSyllables && /[\uac00-\ud7af]/.test(l.text));
     if (!roman || norm(roman) === norm(l.text)) return l;
     return { ...l, roman };
   });
