@@ -168,7 +168,7 @@ export interface DesktopApi {
   cancelResolve?: (requestId: string) => IpcResult<boolean>;
   songQualities: (track: DesktopTrack) => IpcResult<DesktopQualityOption[]>;
   fallbackSong: (track: DesktopTrack) => IpcResult<DesktopTrack | null>;
-  fetchLyric: (track: DesktopTrack) => IpcResult<unknown>;
+  fetchLyric: (track: DesktopTrack, options?: {requestId:string}) => IpcResult<unknown>;
   fetchComments: (track: DesktopTrack, page?: number) => IpcResult<DesktopCommentResult | null>;
   songDetail: (track: DesktopTrack) => IpcResult<DesktopSongDetail | null>;
   artistInfo: (platform: string, artistId: string) => IpcResult<DesktopArtistInfo | null>;

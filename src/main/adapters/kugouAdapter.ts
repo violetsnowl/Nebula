@@ -4,6 +4,7 @@ import { requestScope, throwIfCancelled, withRequestScope } from '../requestScop
 import type { CookieStore } from '../cookieStore';
 import type { Lyric, Playlist, PlaylistSummary, PlatformAdapter, QualityOption, SongUrl, Track } from '../types';
 import { parseLrc } from '../parsers/lyricParser';
+import { decodeKrc, fromTimed } from '../parsers/timedLyrics';
 import { mapKugouMobileTrack, mapKugouTrack } from './mappers';
 
 // --- 文本处理（对齐 Mineradio） ---
@@ -614,7 +615,7 @@ export class KugouAdapter implements PlatformAdapter {
   }
 
     /**
-   * 歌词获取：krcs 双接口为主（search -> download，支持逐字 LRC），
+   * 歌词获取：krcs 双接口为主（search -> download，下载 KRC 逐字），
    * m.kugou.com krc.php 为兜底（纯行级 LRC）。
    */
   async fetchLyric(hash: string, timeMs?: number): Promise<Lyric | null> {
@@ -625,15 +626,10 @@ export class KugouAdapter implements PlatformAdapter {
       const searchData = await this.http.requestJson<{ candidates?: Array<{ id: string; accesskey: string }> }>(searchUrl, { platform: 'kugou' });
       const candidate = searchData?.candidates?.[0];
       if (candidate?.id && candidate?.accesskey) {
-        const dlUrl = `https://krcs.kugou.com/download?ver=1&client=pc&id=${encodeURIComponent(candidate.id)}&accesskey=${encodeURIComponent(candidate.accesskey)}&fmt=lrc&charset=utf8`;
+        const dlUrl = `https://krcs.kugou.com/download?ver=1&client=pc&id=${encodeURIComponent(candidate.id)}&accesskey=${encodeURIComponent(candidate.accesskey)}&fmt=krc&charset=utf8`;
         const dlData = await this.http.requestJson<{ content?: string }>(dlUrl, { platform: 'kugou' });
-        let raw = dlData?.content ?? '';
-        if (raw && !raw.includes('[offset=') && !raw.includes('[00:')) {
-          try { raw = Buffer.from(raw, 'base64').toString('utf-8'); } catch { /* 非 base64 */ }
-        }
-        if (raw && (raw.includes('[offset=') || raw.includes('[00:'))) {
-          return { lines: parseLrc(raw), raw, source: 'kugou' };
-        }
+        const lyric=fromTimed(decodeKrc(dlData?.content || ''),'krc');
+        if(lyric)return lyric;
       }
     } catch (err) {
       console.warn('[KugouAdapter] krcs 歌词搜索失败:', err instanceof Error ? err.message : err);

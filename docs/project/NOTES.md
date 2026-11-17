@@ -115,3 +115,13 @@
 - 网易云旧 search/get/web 在本机返回空结果，成熟库 cloudsearch 返回候选；取流与查询都继承 RequestScope。
 - 酷狗不同档位对应不同 hash，不能无视 quality 总选最高 hash；bitRate 同时兼容 bit/s 与 kbit/s。
 - 兜底采用“宁缺毋滥”：recordingMatch 拒绝歌手集合不一致、版本不一致、时长差超过 max(2s,min(6s,2%)) 的结果；无时长还需同专辑。歌词补全必须复用该门禁。
+
+
+## 后端整修 #B5：歌词格式与来源
+
+- 网易云 `lyric_new` 常把 JSON 制作信息与普通 LRC 混在一起。检测到任何 JSON 后只解析 JSON 会丢掉正文，连带导致翻译无法附着。现在逐行分别解析。
+- QQ `qrc` 返回值可能是数字标志，真正加密文本位于 `lyric`。需要 songID、qrc=1、trans=1、roma=1；QQ 使用非标准 DES，Node 标准 3DES 无法解开。使用独立 MIT 依赖 `qrc-decoder@1.0.2`，上游 https://github.com/apoint123/qrc-decoder ，其来源 https://github.com/SuJiKiNen/LyricDecoder 亦为 MIT；传递依赖 pako@2.2.0（MIT/Zlib）。许可证已逐一读取，没有复制 Mineradio/Folia 的 GPL/AGPL 实现。
+- QQ QRC 毫秒与翻译 LRC 十毫秒截断的差异实测为 0–9ms；同源允许 80ms 最近邻，不能据此放松跨源版本与正文锚点验证。
+- 酷狗原路径下载 fmt=lrc，任务书“已有 KRC”线索被实际代码推翻；现用 fmt=krc，经 krc1/XOR/zlib 解码，并提取 language 标签的翻译/罗马音。KRC 相对时间与 QRC 绝对时间分别转换，禁止启发式混用。
+- 新增字段 `Lyric.identity/provenance/coverage/incomplete/krc`；统一 yrc 为绝对毫秒，前端只补空格，不改变逐字节奏。无真实时间的行没有 words。
+- 新歌词缓存 schema=2；旧缓存只失效，不修改用户原文件的历史副本。开发/评估应使用独立 profile。

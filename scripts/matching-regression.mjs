@@ -18,6 +18,7 @@ cases.push({kind:'全半角',target:{...cases[0].target,title:'ＨＥＬＬＯ'}
 cases.push({kind:'假名',target:{...cases[0].target,title:'サクラ'},candidate:{...cases[0].candidate,title:'さくら'},expected:true});
 cases.push({kind:'繁简',target:{...cases[0].target,title:'愛的夢'},candidate:{...cases[0].candidate,title:'爱的梦'},expected:true});
 cases.push({kind:'合作歌手缺失',target:{...cases[0].target,artists:['甲','乙']},candidate:{...cases[0].candidate,artist:'甲'},expected:false});
+cases.push({kind:'已核对的本曲译名与歌手括注',target:cases[0].target,candidate:{...cases[0].candidate,title:'丸ノ内サディスティック (丸之内虐待狂)',artist:'椎名林檎 (しいな りんご)'},expected:true});
 for(const c of cases)assert.equal(api.recordingMatch(c.candidate,c.target).ok,c.expected,c.kind);
 console.log(`严格录音匹配 ${cases.length}/${cases.length}`);
 if(fs.existsSync('dist-main/baseline.cjs')){

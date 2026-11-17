@@ -1,7 +1,7 @@
 import type { Track } from '../types';
 
 // 小范围、可审计的别名；未知译名不自动音译。仅做明确的等价归一化。
-const ALIASES = [['椎名林檎','しいなりんご','シイナリンゴ','Shiina Ringo','Ringo Shiina'], ['宇多田ヒカル','Hikaru Utada','Utada Hikaru'], ['周杰伦','周杰倫','Jay Chou']];
+const ALIASES = [['椎名林檎','しいなりんご','シイナリンゴ','Shiina Ringo','Ringo Shiina'], ['宇多田ヒカル','Hikaru Utada','Utada Hikaru'], ['周杰伦','周杰倫','Jay Chou'],['BTS','防弹少年团','防彈少年團']];
 const TRAD='愛樂風雲夢時後來說聽見過還這個為與無聲會開關讓淚從滿飛遠離憶';
 const SIMP='爱乐风云梦时后来说听见过还这个为与无声会开关让泪从满飞远离忆';
 export function identityText(text: string): string {
@@ -11,7 +11,11 @@ export function identityText(text: string): string {
     .replace(/[^\p{L}\p{N}]/gu,'');
 }
 const aliasMap = new Map(ALIASES.flatMap(group => group.map(n => [identityText(n),identityText(group[0]!)] as const)));
-const canonicalArtist=(s:string):string=>aliasMap.get(identityText(s)) || identityText(s);
+const canonicalArtist=(s:string):string=>{
+  const parts=s.normalize('NFKC').match(/^([^()]+)\(([^()]+)\)$/);
+  if(parts){const a=aliasMap.get(identityText(parts[1]!)),b=aliasMap.get(identityText(parts[2]!));if(a && a===b)return a;}
+  return aliasMap.get(identityText(s)) || identityText(s);
+};
 function artists(t:Track):Set<string> {
   const source=[...(t.artists?.length?t.artists:[t.artist])];
   const feat=t.title.match(/(?:feat\.?|featuring)\s+([^()（）\[\]]+)/i);if(feat)source.push(feat[1]!);
@@ -24,6 +28,8 @@ function versionText(s:string):string {
 function title(t:Track):{names:Set<string>;version:string} {
   const versions:string[]=[];
   let base=String(t.title || '').normalize('NFKC').replace(/<[^>]*>/g,'');
+  // 已核对的该曲中文译名是显示注释，不是录音版本；其他未知括号仍保守约束。
+  if(base.startsWith('丸ノ内サディスティック'))base=base.replace(/\s*\((丸内虐待狂|丸之内虐待狂)\)/g,'');
   base=base.replace(/\(([^()]*)\)|\[([^\[\]]*)\]|【([^【】]*)】/g,(_whole,...groups)=>{
     const s=groups.slice(0,3).find(x=>typeof x==='string' && x) || '';
     // 不认识的括号也保留为版本约束；只明确允许平台的译名标记。

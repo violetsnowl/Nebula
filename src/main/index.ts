@@ -27,3 +27,7 @@ export { registerIpcHandlers } from './ipc';
 export type { IpcLike, IpcDeps } from './ipc';
 
 export { recordingMatch, identityText } from './services/recordingMatch';
+
+export * from './parsers/timedLyrics';
+
+export * from './services/lyricAlignment';

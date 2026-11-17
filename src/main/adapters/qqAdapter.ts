@@ -17,6 +17,7 @@ import type {
 import { mergeLyric } from '../parsers/lyricParser';
 import { mapQQTrack } from './mappers';
 import { throwIfCancelled } from '../requestScope';
+import { decodeQqLyric, fromTimed } from '../parsers/timedLyrics';
 
 function decodeMaybeBase64(s: string): string {
   if (!s) return '';
@@ -216,8 +217,8 @@ export class QqAdapter implements PlatformAdapter {
    * 前端会把 qrc 映射进 yrc 统一走 parseYrcText。
    */
   async fetchLyric(songmid: string): Promise<Lyric | null> {
-    const decode = (s: unknown): string =>
-      typeof s === 'string' && s ? Buffer.from(s, 'base64').toString('utf-8') : '';
+    const detail=await musicuPost(this.http,'music.pf_song_detail_svr','get_song_detail_yqq',{song_mid:songmid});
+    const songId=detail?.data?.track_info?.id;
     try {
       const data = await this.http.requestJson<{
         req_0?: {
@@ -228,19 +229,22 @@ export class QqAdapter implements PlatformAdapter {
         platform: 'qq',
         method: 'POST',
         body: {
+          comm: {ct:19,cv:2111},
           req_0: {
             module: 'music.musichallSong.PlayLyricInfo',
             method: 'GetPlayLyricInfo',
-            param: { songMID: songmid },
+            param: { songMID:songmid, songID:songId, crypt:0, ct:19, cv:2111, qrc:1, qrc_t:0, lrc_t:0, trans:1, trans_t:0, roma:1, roma_t:0, type:0 },
           },
         },
       });
       const d = data?.req_0?.data;
       if (d) {
-        const lrc = decode(d.lyric);
-        const tlyric = decode(d.trans);
-        const roma = decode(d.roma);
-        const qrc = decode(d.qrc);
+        const lrc = decodeQqLyric(d.lyric);
+        const tlyric = decodeQqLyric(d.trans);
+        const roma = decodeQqLyric(d.roma);
+        const qrc = decodeQqLyric(d.qrc);
+        const timed=fromTimed(qrc || lrc,'qrc',tlyric,roma);
+        if(timed)return timed;
         if (lrc || qrc) {
           return {
             lines: mergeLyric(lrc, tlyric),

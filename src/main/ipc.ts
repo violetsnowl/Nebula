@@ -109,7 +109,13 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
       fallbackUrl: deps.audioProxy.urlFor(result.fallbackUrl),
     };
   });
-  safe('nebula:lyric', async ({ track }: { track: Track }) => deps.lyricService.fetchLyric(track));
+  safe('nebula:lyric', async ({track,requestId}:{track:Track;requestId?:string},event)=>{
+    const requests=requestsFor(event),control=new AbortController();
+    const key=typeof requestId==='string'?requestId.slice(0,96):'';
+    if(key){requests.get(key)?.abort();if(requests.size>=16){const first=requests.keys().next().value!;requests.get(first)?.abort();requests.delete(first);}requests.set(key,control);}
+    try{return await deps.lyricService.fetchLyric(track,control.signal);}
+    finally{if(key && requests.get(key)===control)requests.delete(key);}
+  });
   safe('nebula:comments', async ({ track, page }: { track: Track; page?: number }) =>
     deps.lyricService.fetchComments(track, Number(page) || 0),
   );

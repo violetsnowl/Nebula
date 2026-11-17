@@ -17,6 +17,9 @@ importers:
       music-metadata:
         specifier: ^11.14.0
         version: 11.14.0(supports-color@5.5.0)
+      qrc-decoder:
+        specifier: 1.0.2
+        version: 1.0.2
       qrcode:
         specifier: ^1.5.4
         version: 1.5.4
@@ -1280,6 +1283,9 @@ packages:
     resolution: {integrity: sha512-5NPgf87AT2STgwa2ntRMr45jTKrYBGkVU36yT0ig/n/GMAa3oPqhZfIQ2kMEimReg0+t9kZViDVZ83qfVUlckg==}
     engines: {node: '>= 14'}
 
+  pako@2.2.0:
+    resolution: {integrity: sha512-zJq6RP/5q+TO2OpFV3FHzlPnFjmkb7Nc99a5SNjJE+uu/PkpChs+NIZSSzbBoD+6kjiISXjfYdwj1ZRQ81dz/w==}
+
   parse5@7.3.0:
     resolution: {integrity: sha512-IInvU7fabl34qmi9gY8XOVxhYyMyuH2xUNpb2q8/Y+7552KlejkRvqvD19nMoUW/uQGGbqNpA6Tufu5FL5BZgw==}
 
@@ -1350,6 +1356,9 @@ packages:
   punycode@2.3.1:
     resolution: {integrity: sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg==}
     engines: {node: '>=6'}
+
+  qrc-decoder@1.0.2:
+    resolution: {integrity: sha512-BLU8Mh0dcBq7EtWFEgnYBeUk/8VMpQU0z6KY3v/6Wz+497bc6WdOhQ51T+21DFNmJ0kWLhpmCyAfyVul739RFg==}
 
   qrcode@1.5.4:
     resolution: {integrity: sha512-1ca71Zgiu6ORjHqFBDpnSMTR2ReToX4l1Au1VFLyVeBTFavzQnv5JxMFr3ukHVKpSrSA2MCk0lNJSykjUfz7Zg==}
@@ -3031,6 +3040,8 @@ snapshots:
       degenerator: 5.0.1
       netmask: 2.1.1
 
+  pako@2.2.0: {}
+
   parse5@7.3.0:
     dependencies:
       entities: 6.0.1
@@ -3109,6 +3120,10 @@ snapshots:
       once: 1.4.0
 
   punycode@2.3.1: {}
+
+  qrc-decoder@1.0.2:
+    dependencies:
+      pako: 2.2.0
 
   qrcode@1.5.4:
     dependencies:
