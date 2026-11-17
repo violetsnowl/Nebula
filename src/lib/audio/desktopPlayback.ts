@@ -43,7 +43,7 @@ export function selectQuality(level: string): void {
       audioPlayer.setError('该音质暂不可用，已保持当前音质'); return;
     }
     const got = res.data.quality || '';
-    audioPlayer.switchSource(res.data.url, { quality: got, keepTime: true, via: res.data.fallback ? viaOf(res.data) : song.via, expiresAt:res.data.expiresAt });
+    audioPlayer.switchSource(res.data.url, { quality: got, keepTime: true, via: res.data.fallback ? viaOf(res.data) : song.via, resolvedAt:res.data.resolvedAt, expiresAt:res.data.expiresAt });
     if (got && got !== level && qualityName(got) && qualityName(level)) {
       const msg = `这首歌没有「${qualityName(level)}」，已切到「${qualityName(got)}」`;
       const installed = audioPlayer.getGeneration();

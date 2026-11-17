@@ -6,6 +6,7 @@ import type { Lyric, Playlist, PlaylistSummary, PlatformAdapter, QualityOption, 
 import { parseLrc } from '../parsers/lyricParser';
 import { decodeKrc, fromTimed } from '../parsers/timedLyrics';
 import { mapKugouMobileTrack, mapKugouTrack } from './mappers';
+import { sourceTiming } from '../../lib/audio/sourceLifetime';
 
 // --- 文本处理（对齐 Mineradio） ---
 function stripKugouHtml(text: string): string {
@@ -87,7 +88,8 @@ interface VipStatus {
 interface UrlCacheEntry {
   url: string;
   quality: string;
-  expireAt: number;
+  cachedUntil: number;
+  expiresAt: number;
 }
 
 const VIP_TTL_MS = 5 * 60 * 1000;
@@ -357,8 +359,8 @@ export class KugouAdapter implements PlatformAdapter {
       // 检查缓存
       const ck = this.getCacheKey(h);
       const cached = this.urlCache.get(ck);
-      if (!requestScope()?.forceRefresh && cached && cached.expireAt > Date.now()) {
-        return { url: cached.url, quality: cached.quality };
+      if (!requestScope()?.forceRefresh && cached && cached.cachedUntil > Date.now() && cached.expiresAt > Date.now()+5000) {
+        return { url: cached.url, quality: cached.quality, expiresAt:cached.expiresAt };
       }
 
       // 不让失效的旧 mobile 路由挡住 web/H5；每路都继承父预算。
@@ -378,9 +380,10 @@ export class KugouAdapter implements PlatformAdapter {
             }).catch(()=>{if(--remaining===0)reject(new Error('NO_SOURCE'))});
           });
         });
-        this.urlCache.set(ck,{url:result.url,quality:result.quality || '',expireAt:Date.now()+120000});
+        const timing=sourceTiming('kugou',Date.now(),result.expiresAt);
+        this.urlCache.set(ck,{url:result.url,quality:result.quality || '',cachedUntil:Date.now()+120000,expiresAt:timing.expiresAt});
         if(this.urlCache.size>256)this.urlCache.delete(this.urlCache.keys().next().value!);
-        return {...result,expiresAt:Date.now()+120000};
+        return {...result,...timing};
       } catch { throwIfCancelled(); }
       finally { control.abort(); }
     }

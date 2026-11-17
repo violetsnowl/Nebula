@@ -5,6 +5,7 @@ import { matchScore, recordingMatch as filterCandidate } from './recordingMatch'
 export { matchScore } from './recordingMatch';
 import { mapQualityTo } from '../quality';
 import { requestScope, RequestCancelled, throwIfCancelled, withRequestScope } from '../requestScope';
+import { sourceTiming } from '../../lib/audio/sourceLifetime';
 
 const PLAYABLE: Platform[] = ['netease', 'qq', 'kugou'];
 const LEVELS: Record<string, string[]> = {
@@ -30,7 +31,7 @@ const remember = <T>(map: Map<string, T>, key: string, value: T, max = 256): voi
 /** 唯一解析入口：有界主源 → 并发安全候选 → 探测；缓存只保存已验证地址。 */
 export class SongResolver {
   private fallbackTargets: (() => Promise<FallbackTarget[]>) | null = null;
-  private cache = new Map<string, ResolveResult>();
+  private cache = new Map<string, { result: ResolveResult; cachedUntil: number }>();
   private matches = new Map<string, { at: number; tracks: Track[] }>();
   private jobs = new Map<string, Job>();
   private health = new Map<string, { failures: number; until: number }>();
@@ -51,8 +52,8 @@ export class SongResolver {
   resolve(track: Track, quality?: string, options: ResolveOptions = {}): Promise<ResolveResult> {
     if (options.signal?.aborted) return Promise.resolve(failure(track, 'CANCELLED'));
     const key = this.key(track,quality), hit = this.cache.get(key);
-    if (!options.forceRefresh && hit?.expiresAt && hit.expiresAt > Date.now() + 5000) {
-      const result:ResolveResult={ ...hit, traceId: `play-${++sequence}`, timings: [{stage:'cache',platform:hit.platform,ms:0,outcome:'hit'}] };
+    if (!options.forceRefresh && hit && hit.cachedUntil > Date.now() && (hit.result.expiresAt ?? 0) > Date.now() + 5000) {
+      const result:ResolveResult={ ...hit.result, traceId: `play-${++sequence}`, timings: [{stage:'cache',platform:hit.result.platform,ms:0,outcome:'hit'}] };
       this.report(result,Date.now());return Promise.resolve(result);
     }
     this.cache.delete(key);
@@ -67,7 +68,7 @@ export class SongResolver {
         signal: created.control.signal, forceRefresh: options.forceRefresh, detached: true,
       }).catch(e => ({...failure(track,codeOf(e)),traceId,timings:[...timings,{stage:'budget',platform:track.platform,ms:Date.now()-start,outcome:codeOf(e)}]})).then(result => {
         this.report(result,start);
-        if (result.url && result.playable && epoch === this.epoch && !created.control.signal.aborted) remember(this.cache,key,result);
+        if (result.url && result.playable && epoch === this.epoch && !created.control.signal.aborted) remember(this.cache,key,{result,cachedUntil:Date.now()+this.policy.cacheMs});
         return result;
       }).finally(() => { created.done = true; if (this.jobs.get(jobKey) === created) this.jobs.delete(jobKey); });
       job = created; this.jobs.set(jobKey,created);
@@ -112,7 +113,7 @@ export class SongResolver {
       this.health.delete(platform);
       const now = Date.now();
       return { url:direct.url, fallback, platform, sourceId:track.sourceId, trial:direct.trial, trialEndTime:direct.trialEndTime,
-        quality:direct.quality, playable:true, resolvedAt:now, expiresAt:Math.min(direct.expiresAt || Infinity, now+this.policy.cacheMs), ...(direct.trial ? {code:'TRIAL_ONLY' as const} : {}) };
+        quality:direct.quality, playable:true, ...sourceTiming(platform,now,direct.expiresAt), ...(direct.trial ? {code:'TRIAL_ONLY' as const} : {}) };
     } catch(e) {
       if (codeOf(e) === 'NO_SOURCE') {
         const n=(this.health.get(platform)?.failures || 0)+1;

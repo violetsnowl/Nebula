@@ -18,6 +18,7 @@ import { mergeLyric } from '../parsers/lyricParser';
 import { mapQQTrack } from './mappers';
 import { throwIfCancelled } from '../requestScope';
 import { decodeQqLyric, fromTimed } from '../parsers/timedLyrics';
+import { expiresAfterSeconds, sourceTiming } from '../../lib/audio/sourceLifetime';
 
 export function cleanQqComment(text:string):string {
   return String(text || '').replace(/\[em\]([\s\S]*?)\[\/em\]/gi,(_,code)=>/^[\p{Extended_Pictographic}\uFE0F\u200D]+$/u.test(code)?code:'［表情］').replace(/&nbsp;/g,' ').replace(/&amp;/g,'&');
@@ -149,6 +150,7 @@ export class QqAdapter implements PlatformAdapter {
           guid,uin,loginflag:1,platform:'20',songmid:files.map(()=>songmid),songtype:files.map(()=>0),filename:files.map(f=>f.name),
         },
       }};
+      const requestedAt=Date.now();
       const data=await this.http.requestJson<Record<string,any>>('https://u.y.qq.com/cgi-bin/musicu.fcg',{platform:'qq',method:'POST',cookie,body,timeoutMs:2000});
       const payload=data?.req_0?.data;
       const rows=Array.isArray(payload?.midurlinfo)?payload.midurlinfo:[];
@@ -160,7 +162,7 @@ export class QqAdapter implements PlatformAdapter {
         // 档位按服务端实际文件名识别，拒绝无法识别或不属于本次请求的文件。
         const actual=QQ_QUALITY_TIERS.find(t=>new URL(url).pathname.split('/').pop()?.startsWith(t.prefix));
         if(!actual)continue;
-        return {url,quality:actual.level,playable:true,trial:false,expiresAt:Date.now()+120000};
+        return {url,quality:actual.level,playable:true,trial:false,...sourceTiming('qq',requestedAt,expiresAfterSeconds(payload.expiration,requestedAt))};
       }
       const code=Number(data?.req_0?.code || data?.code || rows[0]?.result || 0);
       const missing=uin==='0' || !key || code===1901;

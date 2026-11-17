@@ -16,6 +16,7 @@ import type {
 import type { CookieStore } from '../cookieStore';
 import { mergeLyric, normalizeJsonLrc } from '../parsers/lyricParser';
 import { mapNeteaseTrack } from './mappers';
+import { expiresAfterSeconds, sourceTiming } from '../../lib/audio/sourceLifetime';
 import { callNcmSafe } from '../ncm/ncmApi';
 import { EFFECT_LEVELS, mapQualityTo } from '../quality';
 import { withRequestScope } from '../requestScope';
@@ -61,7 +62,7 @@ export class NeteaseAdapter implements PlatformAdapter {
   constructor(
     private http: HttpClient,
     private cookies: CookieStore,
-    private lyricCall: typeof callNcmSafe = callNcmSafe,
+    private apiCall: typeof callNcmSafe = callNcmSafe,
   ) { cookies.onChange?.(() => { this.rightsCache = null; }); }
 
   async fetchPlaylist(playlistId: string): Promise<Playlist> {
@@ -111,9 +112,10 @@ export class NeteaseAdapter implements PlatformAdapter {
     const levels = this.orderByPreference(allowed, quality);
 
     for (const level of levels) {
-      const res = await callNcmSafe('song_url_v1', { id: songId, level, cookie });
+      const requestedAt=Date.now();
+      const res = await this.apiCall('song_url_v1', { id: songId, level, cookie });
       const item = res?.body?.data?.[0] as
-        | { url?: string; level?: string; freeTrialInfo?: { startTime?: number; endTime?: number } }
+        | { url?: string; level?: string; expi?: number; freeTrialInfo?: { startTime?: number; endTime?: number } }
         | undefined;
       const url = item?.url;
       // 请求的档位这首歌没有时，网易云会就近给一档；落到环绕声效果版（jyeffect 高清环绕声等）不算数，
@@ -127,14 +129,16 @@ export class NeteaseAdapter implements PlatformAdapter {
           playable: true,
           trial: !!item.freeTrialInfo,
           trialEndTime: item.freeTrialInfo?.endTime,
+          ...sourceTiming('netease',requestedAt,expiresAfterSeconds(item.expi,requestedAt)),
         };
       }
     }
 
     for (const br of ['320000', '192000', '128000']) {
-      const res = await callNcmSafe('song_url', { id: songId, br, cookie });
+      const requestedAt=Date.now();
+      const res = await this.apiCall('song_url', { id: songId, br, cookie });
       const item = res?.body?.data?.[0] as
-        | { url?: string; freeTrialInfo?: { startTime?: number; endTime?: number }; br?: number }
+        | { url?: string; freeTrialInfo?: { startTime?: number; endTime?: number }; br?: number; expi?: number }
         | undefined;
       const url = item?.url;
       if (url && !PLACEHOLDER_URL.test(url)) {
@@ -144,6 +148,7 @@ export class NeteaseAdapter implements PlatformAdapter {
           playable: true,
           trial: !!item.freeTrialInfo,
           trialEndTime: item.freeTrialInfo?.endTime,
+          ...sourceTiming('netease',requestedAt,expiresAfterSeconds(item.expi,requestedAt)),
         };
       }
     }
@@ -172,7 +177,7 @@ export class NeteaseAdapter implements PlatformAdapter {
     }
     let rights = { isVip: false, isSvip: false };
     try {
-      const res = await callNcmSafe('user_account', { cookie: this.cookies.getHeader('netease') ?? '' });
+      const res = await this.apiCall('user_account', { cookie: this.cookies.getHeader('netease') ?? '' });
       const vipType = (res?.body?.profile as { vipType?: number } | undefined)?.vipType ?? 0;
       rights = { isVip: vipType > 0, isSvip: vipType >= 11 };
     } catch {
@@ -216,7 +221,7 @@ export class NeteaseAdapter implements PlatformAdapter {
     let yrc = '';
     let ytlrc = '';
     // 两个同源接口并发，每个截止早于歌词路由阶段；一方超时不丢掉另一方已取得的正文。
-    const [nr,r]=await Promise.all(['lyric_new','lyric'].map(name=>withRequestScope(2800,()=>this.lyricCall(name,{id:songId,cookie})).catch(()=>null)));
+    const [nr,r]=await Promise.all(['lyric_new','lyric'].map(name=>withRequestScope(2800,()=>this.apiCall(name,{id:songId,cookie})).catch(()=>null)));
     try {
       // 1) lyric_new：逐字歌词（yrc/ytlrc），lrc 可能是新版 JSON-Lines
       const nb = nr?.body as Record<string, any> | undefined;

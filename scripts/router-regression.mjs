@@ -10,6 +10,11 @@ const policy={totalMs:150,primaryMs:40,searchMs:30,candidateMs:30,probeMs:20,cac
 const make=a=>new SongResolver(a,()=>{},async()=>true,policy);
 let passed=0;
 async function test(name,fn){await fn();passed++;console.log('通过 '+name)}
+await test('工作回调耗尽总预算时即使计时器尚未执行也必须超时',async()=>{
+ const real=Date.now;let now=real();Date.now=()=>now;
+ try { await assert.rejects(withRequestScope(20,async()=>{now+=21;return 'too late'}),e=>e.code==='TIMEOUT'); }
+ finally {Date.now=real;}
+});
 await test('挂起的适配器与搜索在截止时间内退出',async()=>{
  const a=adapters();a.qq.fetchSongUrl=()=>new Promise(()=>{});a.netease.searchSongs=()=>new Promise(()=>{});
  const at=Date.now(),r=await make(a).resolve(song);assert.equal(r.playable,false);assert.ok(Date.now()-at<300);

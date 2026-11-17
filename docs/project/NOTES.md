@@ -2,6 +2,8 @@
 
 ## 已知坑（遇事优先查这里）
 
+- **URL缓存期限不等于音频失效期限（#B11）**：解析缓存两分钟仅决定是否重用解析结果，不得用 min(cacheTTL, upstreamExpiry) 给播放器写 expiresAt。播放器按每首每个URL记取源时间，不能沿用上一首的全局 loadedAt。无上游期限时的平台默认值只是客户端保守策略，不是实测CDN承诺；真实125秒对照可用 `qa:valid-source` 复测。
+
 ### 网易云接口（重要）
 
 - **明文扫码接口已废弃**：`music.163.com/api/login/qrcode/unikey|client/login` 扫码确认后会报「请切换其他登录方式或升级新版本再试」。必须使用 eapi（`interface.music.163.com/eapi/...`，`type=3`）或 weapi 加密接口。

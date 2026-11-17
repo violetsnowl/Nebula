@@ -427,3 +427,10 @@ git switch review/backend-playback-overhaul
 - **修正**：`parsers/metadataText.ts` 先清理高亮与常见实体；recordingMatch拆歌手前调用，各平台映射同时清理title/artist/artists/album。括注只在含Live、Remix、DJ、改编、伴奏、纯音乐、Ver.、Remaster、THE FIRST TAKE等版本词时形成约束；译名和Explicit忽略。艺术家尾部括注别名去掉，feat/合作仍保留。删除指定椎名林檎曲目的写死分支。
 - **验证**：任务书所列两首高亮歌曲、三首译名、Explicit、四种歌手别名、指定曲目通用规则、合法同Live共12正例；Lemon/LOSER翻唱、Godzilla伴奏、Love The Way You Lie Live、DJ/网友改编/纯音乐/THE FIRST TAKE/Ver./Remaster、Lie/Lies等15反例。新增27例在第一轮17例正确，修后27例正确；总143/143，30正例全部接纳、113反例全部拒绝。额外2项验证酷狗真实搜索适配器映射→SongResolver门禁及QQ字段清理，防止只修纯函数而适配器继续透出标签。
 - **边界**：严格标题主体、全部歌手集合、时长与必要专辑条件未放宽。规则改善不等于已重跑用户80首私人曲库；等待合法提供的凭据副本时继续其他工作。
+
+### 13.3 P1：两分钟后暂停或拖动触发不必要刷新（#B11）
+
+- **根因**：SongResolver把120秒缓存策略写进对外的expiresAt，QQ也直接标两分钟；即使上游期限更长，播放器仍被迫刷新。播放器另有跨曲目全局loadedAt，上一首时间会污染无期限的新曲目。
+- **修正**：缓存持有cachedUntil，命中同时检查缓存与实际期限，但向播放器返回原期限；网易云读取expi、QQ读取expiration秒数。取源起点用发请求时刻，避免慢请求把有效期推后。缺可靠上游期限时显式使用保守策略：网易云/酷狗15分钟、QQ30分钟、其他10分钟，不称平台保证。播放器按曲目/URL保存resolvedAt/expiresAt，预取和切音质都带各自时间；本地文件不受此限制。
+- **验证**：新增7项期限契约和4项播放器回归，另修复截止时间边界竞态并新增确定性回归，全后端251项通过。真实Chrome、真实240秒WAV与真实后端SongResolver同时运行第一轮和本轮代码，实际等待125010ms：原版在暂停续播/拖至170秒后取源2次、URL变化；修后仍取源1次、URL未变化、播放位置正确。证据round2-valid-source.json；复跑 `pnpm qa:valid-source --baseline=dist-main/round1.cjs`（须先冻结41c1404的后端，脚本从Git读取同版播放器，不冒用当前代码）。
+- **限制**：该对照隔离了真实媒体和缓存行为，没有把本地WAV说成平台授权音频。实际CDN仍可能提前撤销地址，此时媒体错误走既有一次强制刷新；上游已过期/即将过期的地址按原值处理，不延长。没有新增每次pause/seek都探测URL的网络开销。

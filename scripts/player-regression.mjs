@@ -138,6 +138,41 @@ test('试听片段结束明确停止且不伪装完整播放',async p=>{
 test('主平台登录原因能到达现有错误栏而不丢失失败出口',async p=>{
  p.emptyResolver=async()=>{throw new Error('当前平台需要登录，其他平台也未找到可用音源')};p.playSong(track(1),[track(1)]);await tick();assert.equal(p.state.failed,true);assert.equal(p.state.loading,false);assert.match(p.state.error,/需要登录/);
 });
+test('有效地址播放超过两分钟后暂停继续和多次seek不重取',async p=>{
+ const now=Date.now;let clock=now(),calls=0;Date.now=()=>clock;
+ try{
+  p.emptyResolver=p.retryResolver=async t=>{calls++;return {...resolved(t),expiresAt:clock+3600000}};
+  p.playSong(track(1));await tick();const original=p.el.src;clock+=180000;
+  p.seek(100);p.seek(150);p.toggle();p.toggle();await tick();
+  assert.equal(calls,1);assert.equal(p.el.src,original);assert.equal(p.state.loading,false);assert.equal(p.state.playing,true);
+ }finally{Date.now=now;}
+});
+test('未知期限按每首的首次持有时间，前一首播放六分钟不使新曲过期',async p=>{
+ const now=Date.now;let clock=now(),calls=0;Date.now=()=>clock;
+ try{
+  p.emptyResolver=p.retryResolver=async t=>{calls++;return resolved(t)};
+  const a=track(1,'https://audio.test/a.mp3'),b=track(2,'https://audio.test/b.mp3');
+  p.playSong(a,[a]);clock+=6*60000;p.seek(80);assert.equal(calls,0);
+  p.playSong(b,[b]);await tick();assert.equal(calls,0);assert.equal(p.state.song.resolvedAt,clock);
+  assert.equal(p.state.song.expiresAt,clock+15*60000);
+ }finally{Date.now=now;}
+});
+test('旧源真的临近上游到期时才重新解析并保留seek位置',async p=>{
+ const now=Date.now;let clock=now(),calls=0;Date.now=()=>clock;
+ try{
+  p.emptyResolver=p.retryResolver=async t=>{calls++;return {...resolved(t),expiresAt:clock+600000}};
+  p.playSong(track(1));await tick();clock+=596000;p.seek(120);await tick();
+  assert.equal(calls,2);assert.equal(p.el.currentTime,120);assert.equal(p.state.playing,true);
+ }finally{Date.now=now;}
+});
+test('音质换源刷新本曲时间而不继承上一地址的取链时间',async p=>{
+ const now=Date.now;let clock=now();Date.now=()=>clock;
+ try{
+  p.playSong({...track(1,'https://audio.test/a.mp3'),resolvedAt:clock,expiresAt:clock+600000});
+  clock+=540000;p.switchSource('https://audio.test/b.mp3',{quality:'flac'});
+  assert.equal(p.state.song.resolvedAt,clock);assert.equal(p.state.song.expiresAt,clock+900000);
+ }finally{Date.now=now;}
+});
 let failed=0;
 for (const c of cases) { const p=make(); try { await c.run(p); console.log(`通过 ${c.name}`); } catch(e) { failed++; console.log(`失败 ${c.name}: ${e.message}`); } finally { p.stop(); } }
 audioPlayer.stop();

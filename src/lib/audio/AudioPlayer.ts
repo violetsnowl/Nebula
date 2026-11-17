@@ -1,4 +1,5 @@
 import type { Track } from '../catalog';
+import { sourceTiming, type SourceTiming } from './sourceLifetime';
 
 export type PlayMode = 'sequential' | 'repeat-one' | 'random';
 
@@ -63,7 +64,7 @@ class AudioPlayer {
   private wantsPlay = false;
   private activeSource = false;
   private pendingSeek = 0;
-  private loadedAt = 0;
+  private sourceTimes = new WeakMap<Track, SourceTiming & { url:string }>();
   private warm: { key:string; control:AbortController; track?:Track; el?:HTMLAudioElement } | null = null;
   /** 临时单曲（网络搜索点播）备份：播放结束后自动接回原队列。 */
   private transientBackup: { queue: Track[]; order: number[]; pos: number } | null = null;
@@ -128,7 +129,7 @@ class AudioPlayer {
     const resolver=this.emptyResolver ?? this.retryResolver;
     void Promise.resolve(next.audio && !this.expired(next) ? next : resolver?.(next,'empty',{signal:warm.control.signal,forceRefresh:false})).then(track=>{
       if (this.warm!==warm || warm.control.signal.aborted || !track?.audio) return;
-      warm.track=track;
+      warm.track={...track,...this.timingFor(track)};
       warm.el=new Audio();warm.el.preload='auto';warm.el.volume=this.el.volume;warm.el.muted=this.el.muted;
       warm.el.src=track.audio;warm.el.load();
     }).catch(()=>{});
@@ -544,7 +545,7 @@ class AudioPlayer {
   }
 
   /** 不中断播放地切换音源（音质切换用），保留当前进度与播放状态。 */
-  switchSource(url: string, opts?: { quality?: string; keepTime?: boolean; via?: Track['via']; expiresAt?: number }): void {
+  switchSource(url: string, opts?: { quality?: string; keepTime?: boolean; via?: Track['via']; resolvedAt?:number; expiresAt?: number }): void {
     if (!this.state.song) return;
     const keep = opts?.keepTime !== false ? this.el.currentTime || 0 : 0;
     const wasPlaying = this.wantsPlay;
@@ -555,6 +556,7 @@ class AudioPlayer {
       via: opts && 'via' in opts ? opts.via : this.state.song.via,
     };
     const track = this.state.song;
+    (track as Track & {resolvedAt?:number}).resolvedAt=opts?.resolvedAt ?? Date.now();
     (track as Track & {expiresAt?:number}).expiresAt=opts?.expiresAt;
     this.cancelLoad();
     this.wantsPlay = wasPlaying;
@@ -613,10 +615,20 @@ class AudioPlayer {
     this.el.load();
   }
 
+  private timingFor(track: Track): SourceTiming {
+    const metadata=track as Track & Partial<SourceTiming>;
+    const known=this.sourceTimes.get(track);
+    const same=known?.url===track.audio ? known : undefined;
+    const resolvedAt=Number.isFinite(metadata.resolvedAt) && metadata.resolvedAt!>0 ? metadata.resolvedAt! : same?.resolvedAt ?? Date.now();
+    const timing=sourceTiming(track.via?.platform || track.source || '',resolvedAt,metadata.expiresAt ?? same?.expiresAt);
+    this.sourceTimes.set(track,{...timing,url:track.audio});
+    return timing;
+  }
+
   private expired(track: Track): boolean {
     if (track.source === 'local' || track.source === 'demo') return false;
-    const expires = (track as Track & { expiresAt?: number }).expiresAt;
-    return expires ? expires <= Date.now() + 5000 : this.loadedAt > 0 && Date.now() - this.loadedAt > 5 * 60_000;
+    if (!track.audio) return false;
+    return this.timingFor(track).expiresAt <= Date.now() + 5000;
   }
 
   private loadTrack(track: Track, at = 0, forceRefresh = false, play = true): void {
@@ -670,14 +682,13 @@ class AudioPlayer {
   private acceptResolved(track: Track, generation: number, at: number): void {
     if (generation !== this.generation) return;
     this.clearStallTimer();
-    this.state.song = track;
+    this.state.song = {...track,...this.timingFor(track)};
     this.state.quality = track.quality ?? '';
     this.state.failed = false;
     this.state.loading = this.wantsPlay;
     this.state.playing = false;
     this.state.error = null;
     this.pendingSeek = at;
-    this.loadedAt = Date.now();
     this.activeSource = true;
     if (this.el.getAttribute('src') !== track.audio) this.el.src = track.audio;
     try { this.el.currentTime = at; } catch { /* 元数据就绪时再定位 */ }
