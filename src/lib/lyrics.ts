@@ -175,6 +175,29 @@ export function tidyRoman(s: string, joinSyllables: boolean): string {
 }
 
 /**
+ * 韩语罗马音按原文的词分组（#166）：QQ 原生罗马音是一个韩文音节一段（`geu ddae ggum man`），
+ * 后端本地补全的是按词写的（`geuttae kkumman`），同一首里会混着来。
+ * 原文每个韩文字对应罗马音的一段、每个拉丁词对应一段：段数正好对上时，按原文的词把段拼起来；
+ * 对不上（日语汉字一个字读好几个音节、按词写的行）返回 null，交给 tidyRoman。
+ */
+export function regroupByHangul(roman: string, original: string): string | null {
+  if (!/[가-힯]/.test(original)) return null;
+  const tokens = roman.trim().split(/\s+/).filter(Boolean);
+  const words = original.trim().split(/\s+/).filter(Boolean);
+  const sizes = words.map((w) => (w.match(/[가-힯]|[A-Za-z0-9'’]+/g) ?? []).length);
+  const total = sizes.reduce((a, b) => a + b, 0);
+  if (!total || total !== tokens.length || total === words.length) return null;
+  const out: string[] = [];
+  let i = 0;
+  for (const n of sizes) {
+    if (!n) continue;
+    out.push(tokens.slice(i, i + n).join(''));
+    i += n;
+  }
+  return out.join(' ');
+}
+
+/**
  * 罗马音（#161）：后端的 romalrc 是普通 LRC（网易云 romalrc、QQ roma 都归一成它），
  * 按时间挂到最近的原文行上（相差 300ms 以内；相邻两句通常隔好几秒）。
  * 和原文去掉空格标点后一样的（英文歌）不挂；原文是空行的不挂。
@@ -191,7 +214,7 @@ export function attachRoman(lines: LyricLineUI[], raw: string): LyricLineUI[] {
     const times: number[] = [];
     let m: RegExpExecArray | null;
     while ((m = LRC_TAG.exec(line)) !== null) times.push(lrcTagToMs(m[1]!, m[2]!, m[3]));
-    const text = tidyRoman(line.replace(/\[[^\]]*\]/g, ''), joinSyllables);
+    const text = line.replace(/\[[^\]]*\]/g, '').trim();
     if (!times.length || !text) continue;
     for (const t of times) rows.push({ t, text });
   }
@@ -208,8 +231,10 @@ export function attachRoman(lines: LyricLineUI[], raw: string): LyricLineUI[] {
         best = r;
       }
     }
-    if (!best || norm(best.text) === norm(l.text)) return l;
-    return { ...l, roman: best.text };
+    if (!best) return l;
+    const roman = regroupByHangul(best.text, l.text) ?? tidyRoman(best.text, joinSyllables);
+    if (!roman || norm(roman) === norm(l.text)) return l;
+    return { ...l, roman };
   });
 }
 
@@ -240,6 +265,11 @@ const CREDIT_CN =
 const CREDIT_EN =
   /^(lyrics?|composed|composer|produced|producer|written|writer|mixed|mastered|recorded|arranged|engineered|programmed|published|performed|vocals?|backing vocals?|executive producer|additional|guitar|bass|drums?|keyboards?|strings?|piano|chorus|background vocals?)\b(\s*by|\s*[:：])/i;
 const CREDIT_OP_SP = /^(op|sp)\s*[:：]/i;
+/**
+ * 正文开始前没有冒号的署名行（QQ 部分韩语 / 日语歌词：「词정준일」「编曲정준일/권영찬」，#166）。
+ * 只认后面紧跟韩文、假名或字母的，免得把「曲终人散」这类正文第一句当成署名。
+ */
+const CREDIT_BARE = /^(作词|作曲|编曲|作詞|編曲|词|曲)[가-힯぀-ヿA-Za-z]/;
 /** QQ 给带音译的歌加的说明行（「以下音译标注由AI工具生产」等，#161）。 */
 const ROMAN_NOTE = /^以下.{0,6}(音译|罗马音|注音|翻译).{0,8}(生产|生成|提供|制作)/;
 /**
@@ -264,6 +294,8 @@ const NOTE_CHARS = /[♪♫♬♩𝄞𝄢♭♮]/g;
  * 与空行、纯音符行，保证 Z1 直接从歌词正文开始。
  */
 export function filterCreditLines(lines: LyricLineUI[], title?: string, artist?: string): LyricLineUI[] {
+  // 歌名后面括号里的译名（「잘 알지도 못하면서 (什么也不懂)」）：标题行里通常只有原名（#166）
+  const titleCore = title?.replace(/\s*[(（][^()（）]*[)）]\s*$/, '').trim();
   const out: LyricLineUI[] = [];
   let droppedHeader = 0;
   let sawText = false;
@@ -276,12 +308,14 @@ export function filterCreditLines(lines: LyricLineUI[], title?: string, artist?:
     }
     if (NOTE_ONLY.test(text)) continue;
     if (CREDIT_CN.test(text) || CREDIT_EN.test(text) || CREDIT_OP_SP.test(text) || isEnglishCreditLabel(text)) continue;
-    if (!sawText && ROMAN_NOTE.test(text)) continue;
+    if (!sawText && (ROMAN_NOTE.test(text) || (CREDIT_BARE.test(text) && text.length <= 40))) continue;
     // 开头“歌名 - 歌手”标题行：仅清正文开始前的最多 2 行。
     // QQ 也有去掉空格和括号挤在一起的写法（「SeattleAlone-脸红的思春期볼빨간사춘기」，#161）
     if (
       droppedHeader < 2 &&
-      ((/ - /.test(text) && ((title && text.includes(title)) || (artist && text.includes(artist)))) ||
+      ((/ - /.test(text) &&
+        ((title && (text.includes(title) || (!sawText && !!titleCore && text.startsWith(`${titleCore} - `)))) ||
+          (artist && text.includes(artist)))) ||
         (!sawText && !!title && compactHead(text).startsWith(`${compactHead(title)}-`)))
     ) {
       droppedHeader++;
