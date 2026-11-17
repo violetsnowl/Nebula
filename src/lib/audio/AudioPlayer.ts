@@ -6,6 +6,8 @@ export type PlayMode = 'sequential' | 'repeat-one' | 'random';
 export interface AudioPlayerState {
   song: Track | null;
   playing: boolean;
+  /** 用户希望播放；取链/缓冲时仍为true，实际出流仍由playing表示。 */
+  playIntent: boolean;
   loading: boolean;
   currentTime: number;
   duration: number;
@@ -77,7 +79,7 @@ class AudioPlayer {
   /** 空音源快速解析器（next/prev/ended 遇未解析歌曲时走主平台取链，避免搜索兜底拖慢切歌）。 */
   emptyResolver?: (track: Track, reason: 'empty' | 'error', context?: ResolveContext) => Promise<Track | null>;
 
-  state: AudioPlayerState = {
+  state: Omit<AudioPlayerState, 'playIntent'> = {
     song: null,
     playing: false,
     loading: false,
@@ -141,7 +143,7 @@ class AudioPlayer {
   }
 
   getState(): AudioPlayerState {
-    return { ...this.state };
+    return { ...this.state, playIntent: this.wantsPlay };
   }
 
   /** 音质等异步操作必须绑定当前播放代次，曲目 id 本身可能被曲库复用。 */
@@ -405,6 +407,7 @@ class AudioPlayer {
       this.clearStallTimer();
       this.el.pause();
     }
+    this.emit();
   }
 
   next(): void {

@@ -20,6 +20,7 @@ import { createRoot } from 'react-dom/client';
 import { flushSync } from 'react-dom';
 import { LyricPreview } from './preview';
 import { audioPlayer } from ${JSON.stringify(path.join(root, 'src/lib/audio/AudioPlayer.ts'))};
+import { BottomPlayer } from ${JSON.stringify(path.join(root, 'src/components/player/BottomPlayer.tsx'))};
 const root = createRoot(document.getElementById('root')!);
 const settings = {fontSize:44,currentScale:1.22,bold:false,lyricColorSource:'cover',customColor:'#ffffff'} as any;
 window.__uiTest = {
@@ -27,6 +28,20 @@ window.__uiTest = {
     audioPlayer.state.currentTime = time;
     flushSync(() => root.render(<LyricPreview settings={settings} maxFont={100} active={true} lines={lines} />));
   },
+  mountPlayer() {
+    const noop=()=>{};
+    flushSync(() => root.render(<BottomPlayer mode="sequential" qualities={[]} quality="" onCycleMode={noop}
+      onSelectQuality={noop} onOpenNowPlaying={noop} onOpenComments={noop} onOpenSongDetail={noop} onOpenArtist={noop} />));
+  },
+  load(kind:string) {
+    audioPlayer.stop();
+    const t={id:1,source:kind==='local'?'local':'qq',sourceId:'test',title:'按钮回归',artist:'测试',
+      audio:kind==='local'?'/audio.wav':'',hue1:0,hue2:0} as any;
+    audioPlayer.emptyResolver=kind==='fail'?async()=>null:()=>new Promise(()=>{});
+    audioPlayer.playSong(t,[t]);
+  },
+  waiting() {audioPlayer.el.dispatchEvent(new Event('waiting'));},
+  state() {const {playIntent,playing,loading,failed}=audioPlayer.getState();return {playIntent,playing,loading,failed};},
   stop() { flushSync(() => root.unmount()); audioPlayer.stop(); }
 };`;
 // buildSync 不支持 plugin：预先将该模块的相对 import 变成绝对路径，只改测试副本。
@@ -37,13 +52,17 @@ buildSync({ stdin: { contents: entry, loader: 'tsx', resolveDir: work }, bundle:
   nodePaths: [path.join(root, 'node_modules')], jsx: 'automatic', define: { 'import.meta.env': '{}' },
   loader: { '.css': 'empty', '.webp': 'dataurl', '.png': 'dataurl', '.svg': 'dataurl', '.jpg': 'dataurl' },
   outfile: path.join(work, 'test.js'), logLevel: 'silent' });
+const wav=Buffer.alloc(44+16000*2*10);wav.write('RIFF',0);wav.writeUInt32LE(wav.length-8,4);wav.write('WAVEfmt ',8);
+wav.writeUInt32LE(16,16);wav.writeUInt16LE(1,20);wav.writeUInt16LE(1,22);wav.writeUInt32LE(16000,24);
+wav.writeUInt32LE(32000,28);wav.writeUInt16LE(2,32);wav.writeUInt16LE(16,34);wav.write('data',36);wav.writeUInt32LE(wav.length-44,40);
 const server = http.createServer((req, res) => {
+  if(req.url==='/audio.wav'){res.setHeader('Content-Type','audio/wav');res.end(wav);return;}
   if (req.url === '/test.js') { res.setHeader('Content-Type', 'application/javascript; charset=utf-8'); res.end(fs.readFileSync(path.join(work, 'test.js'))); }
   else { res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.end('<!doctype html><meta charset="utf-8"><div id="root"></div><script src="/test.js"></script>'); }
 });
 (async () => {
   await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
-  const browser = await chromium.launch({ executablePath: chrome, headless: true });
+  const browser = await chromium.launch({ executablePath: chrome, headless: true, args:['--autoplay-policy=no-user-gesture-required'] });
   try {
     const page = await browser.newPage();
     const errors = [];
@@ -63,8 +82,25 @@ const server = http.createServer((req, res) => {
     await page.evaluate(() => window.__uiTest.render([{ timeMs: 0, text: '更短的新歌词' }], 0));
     await page.waitForFunction(() => document.querySelector('.rp-line')?.textContent.includes('更短的新歌词'));
     assert.deepEqual(errors, [], '切歌与数组缩短不能产生渲染异常');
+    await page.evaluate(() => {window.__uiTest.mountPlayer();window.__uiTest.load('pending');});
+    await page.waitForFunction(() => document.querySelector('.bp-play')?.getAttribute('aria-label')==='暂停');
+    assert.deepEqual(await page.evaluate(()=>window.__uiTest.state()),{playIntent:true,playing:false,loading:true,failed:false});
+    await page.locator('.bp-play').click();
+    await page.waitForFunction(() => document.querySelector('.bp-play')?.getAttribute('aria-label')==='播放');
+    assert.equal(await page.evaluate(()=>window.__uiTest.state().playIntent),false);
+    await page.evaluate(()=>window.__uiTest.load('local'));
+    await page.waitForFunction(()=>window.__uiTest.state().playing);
+    await page.evaluate(()=>window.__uiTest.waiting());
+    await page.waitForFunction(() => document.querySelector('.bp-play')?.getAttribute('aria-label')==='暂停');
+    assert.equal(await page.evaluate(()=>window.__uiTest.state().playing),false);
+    await page.locator('.bp-play').click();
+    await page.waitForFunction(() => document.querySelector('.bp-play')?.getAttribute('aria-label')==='播放');
+    await page.evaluate(()=>window.__uiTest.load('fail'));
+    await page.waitForFunction(()=>window.__uiTest.state().failed);
+    assert.equal(await page.locator('.bp-play').getAttribute('aria-label'),'播放');
+    assert.deepEqual(errors, [], '按钮真实组件运行不得报错');
     await page.evaluate(() => window.__uiTest.stop());
-    console.log('界面播放回归：歌词中段→空数组→新歌、旧下标→短数组，2/2 通过');
+    console.log('界面播放回归：歌词换数组2项、取链按钮/缓冲按钮/失败按钮3项，5/5 通过');
   } finally { await browser.close(); }
 })().catch(error => { console.error(error.message); process.exitCode = 1; })
   .finally(() => { server.closeAllConnections(); server.close(); });

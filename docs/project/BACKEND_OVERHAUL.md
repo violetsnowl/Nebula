@@ -434,3 +434,9 @@ git switch review/backend-playback-overhaul
 - **修正**：缓存持有cachedUntil，命中同时检查缓存与实际期限，但向播放器返回原期限；网易云读取expi、QQ读取expiration秒数。取源起点用发请求时刻，避免慢请求把有效期推后。缺可靠上游期限时显式使用保守策略：网易云/酷狗15分钟、QQ30分钟、其他10分钟，不称平台保证。播放器按曲目/URL保存resolvedAt/expiresAt，预取和切音质都带各自时间；本地文件不受此限制。
 - **验证**：新增7项期限契约和4项播放器回归，另修复截止时间边界竞态并新增确定性回归，全后端251项通过。真实Chrome、真实240秒WAV与真实后端SongResolver同时运行第一轮和本轮代码，实际等待125010ms：原版在暂停续播/拖至170秒后取源2次、URL变化；修后仍取源1次、URL未变化、播放位置正确。证据round2-valid-source.json；复跑 `pnpm qa:valid-source --baseline=dist-main/round1.cjs`（须先冻结41c1404的后端，脚本从Git读取同版播放器，不冒用当前代码）。
 - **限制**：该对照隔离了真实媒体和缓存行为，没有把本地WAV说成平台授权音频。实际CDN仍可能提前撤销地址，此时媒体错误走既有一次强制刷新；上游已过期/即将过期的地址按原值处理，不延长。没有新增每次pause/seek都探测URL的网络开销。
+
+### 13.4 P2：加载/缓冲期间按钮误显示播放（#B12）
+
+- **根因**：图标直接使用playing；第一轮已让playing只在真正媒体playing事件后为true，因此取链或waiting期间虽有播放意图，按钮却回到播放形状。
+- **修正**：公开快照增加playIntent，直接取内部wantsPlay，不另存一份易不同步的状态；BottomPlayer只替换aria-label和图标的两个条件。进度条仍按playing推进，未改样式。toggle主动emit，暂停/恢复不等浏览器事件才更新按钮。
+- **验证**：新增2项状态机检查；真实React/Chrome运行生产BottomPlayer，验证未完成取链显示暂停并可取消、真实WAV已播放后waiting仍显示暂停且可停、失败停止后显示播放，共3项。歌词2项保留，界面5/5、后端253项以及完整build/qa通过。

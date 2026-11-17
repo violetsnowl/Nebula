@@ -38,6 +38,19 @@ const wait = ms => new Promise(r => setTimeout(r, ms));
 const defer = () => { let resolve; const promise = new Promise(r => { resolve = r; }); return { promise, resolve }; };
 const cases = [];
 const test = (name, run) => cases.push({ name, run });
+test('取链和缓冲期间保持播放意图，点击暂停立即清除', async p => {
+ const t=track(1),d=defer();p.emptyResolver=()=>d.promise;p.playSong(t,[t]);
+ assert.equal(p.getState().playIntent,true);assert.equal(p.getState().playing,false);
+ d.resolve(resolved(t));await tick();p.el.dispatchEvent(new Event('waiting'));
+ assert.equal(p.getState().playIntent,true);assert.equal(p.getState().playing,false);
+ p.toggle();assert.equal(p.getState().playIntent,false);assert.equal(p.state.loading,false);
+});
+test('失败停止和浏览器拒绝播放时不再显示暂停意图', async p => {
+ const t=track(1);p.emptyResolver=async()=>null;p.playSong(t,[t]);await tick();
+ assert.equal(p.getState().playIntent,false);assert.equal(p.state.failed,true);
+ p.el.rejectPlay=true;const ready=resolved(t);p.playSong(ready,[ready]);await tick();
+ assert.equal(p.getState().playIntent,false);assert.match(p.state.error,/点播放/);
+});
 test('切歌取链立即停止旧音频并清空旧进度', async p => {
   const a = { ...track(1, 'file:///old.wav'), source: 'local' }, b = track(2), d = defer();
   p.playSong(a, [a, b]); p.el.currentTime = 68; p.emptyResolver = () => d.promise; p.next();
