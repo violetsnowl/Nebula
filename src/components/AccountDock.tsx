@@ -360,7 +360,7 @@ function NeteaseLogin({ onSuccess }: { onSuccess: () => void }) {
 }
 
 /** QQ 音乐：官方登录页 + 粘贴 Cookie（主项目既有实现）。 */
-function QqLogin({ onSuccess }: { onSuccess: () => void }) {
+function QqLogin({ onSuccess, lapsed = false }: { onSuccess: () => void; lapsed?: boolean }) {
   const [cookieMode, setCookieMode] = useState(false);
   const [cookieText, setCookieText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -432,7 +432,7 @@ function QqLogin({ onSuccess }: { onSuccess: () => void }) {
           </button>
         </>
       )}
-      <div className="rp-flow-status">{status || '未登录 QQ 音乐'}</div>
+      {(status || !lapsed) && <div className="rp-flow-status">{status || '未登录 QQ 音乐'}</div>}
     </div>
   );
 }
@@ -584,7 +584,18 @@ function QishuiLogin({ onSuccess }: { onSuccess: () => void }) {
   );
 }
 
-function PlatformLogin({ platform, info, onRefresh }: { platform: string; info: DesktopLoginPlatform; onRefresh: (platform: string) => void }) {
+function PlatformLogin({
+  platform,
+  info,
+  onRefresh,
+  lapsed = false,
+}: {
+  platform: string;
+  info: DesktopLoginPlatform;
+  onRefresh: (platform: string) => void;
+  /** 登录已过期（#157）：上面已有说明，空闲时不再写「未登录」 */
+  lapsed?: boolean;
+}) {
   if (info.kind === 'unavailable') {
     return (
       <div className="rp-flow">
@@ -593,7 +604,7 @@ function PlatformLogin({ platform, info, onRefresh }: { platform: string; info: 
     );
   }
   if (platform === 'netease') return <NeteaseLogin onSuccess={() => onRefresh('netease')} />;
-  if (platform === 'qq') return <QqLogin onSuccess={() => onRefresh('qq')} />;
+  if (platform === 'qq') return <QqLogin lapsed={lapsed} onSuccess={() => onRefresh('qq')} />;
   if (platform === 'kugou') return <KugouLogin onSuccess={() => onRefresh('kugou')} />;
   if (platform === 'qishui') return <QishuiLogin onSuccess={() => onRefresh('qishui')} />;
   if (platform === 'spotify') return <SpotifyLogin onSuccess={() => onRefresh('spotify')} />;
@@ -662,7 +673,7 @@ function AccountDetail({
         </p>
       )}
       <p className="rp-how">{LOGIN_HOW[platform] ?? '登录后可以导入这个平台的歌单'}</p>
-      {info ? <PlatformLogin platform={platform} info={info} onRefresh={onRefresh} /> : null}
+      {info ? <PlatformLogin platform={platform} info={info} onRefresh={onRefresh} lapsed={!!account?.auth} /> : null}
     </div>
   );
 }
