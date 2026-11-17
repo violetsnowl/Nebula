@@ -42,7 +42,7 @@ export function formatTime(sec: number): string {
 export const FOREIGN_SONG_ID = -1;
 
 class AudioPlayer {
-  readonly el: HTMLAudioElement;
+  el: HTMLAudioElement;
   private listeners = new Set<Listener>();
   private queue: Track[] = [];
   /** 当前播放顺序（queue 下标序列）：顺序模式为恒等序，随机模式为 Fisher-Yates 洗牌序。 */
@@ -64,6 +64,7 @@ class AudioPlayer {
   private activeSource = false;
   private pendingSeek = 0;
   private loadedAt = 0;
+  private warm: { key:string; control:AbortController; track?:Track; el?:HTMLAudioElement } | null = null;
   /** 临时单曲（网络搜索点播）备份：播放结束后自动接回原队列。 */
   private transientBackup: { queue: Track[]; order: number[]; pos: number } | null = null;
 
@@ -94,16 +95,43 @@ class AudioPlayer {
     this.el = new Audio();
     this.el.preload = 'auto';
     this.el.volume = 0.9;
-    this.el.addEventListener('timeupdate', this.onTimeUpdate);
-    this.el.addEventListener('loadedmetadata', this.onMeta);
-    this.el.addEventListener('durationchange', this.onMeta);
-    this.el.addEventListener('play', this.onPlay);
-    this.el.addEventListener('playing', this.onPlaying);
-    this.el.addEventListener('pause', this.onPause);
-    this.el.addEventListener('waiting', this.onWaiting);
-    this.el.addEventListener('ended', this.onEnded);
-    this.el.addEventListener('error', this.onError);
-    this.el.addEventListener('volumechange', this.onVolume);
+    this.bindMedia(this.el, true);
+  }
+
+  private bindMedia(el: HTMLAudioElement, add: boolean): void {
+    const events = {timeupdate:this.onTimeUpdate,loadedmetadata:this.onMeta,durationchange:this.onMeta,play:this.onPlay,
+      playing:this.onPlaying,pause:this.onPause,waiting:this.onWaiting,ended:this.onEnded,error:this.onError,volumechange:this.onVolume};
+    for (const [name,handler] of Object.entries(events)) {
+      if (add) el.addEventListener(name,handler); else el.removeEventListener(name,handler);
+    }
+  }
+  private identity(t: Track): string { return `${t.source}:${t.sourceId || t.id}`; }
+  private upcoming(): Track | undefined {
+    if (this.mode === 'repeat-one' && !this.transientBackup) return undefined;
+    const b = this.transientBackup;
+    const queue=b?.queue ?? this.queue, order=b?.order ?? this.order, pos=b?.pos ?? this.pos;
+    if (!order.length || (this.mode==='random' && pos+1>=order.length)) return undefined;
+    return queue[order[(pos+1)%order.length]!];
+  }
+  private discardWarm(): void {
+    const warm=this.warm; this.warm=null;
+    warm?.control.abort();
+    if (warm?.el) { warm.el.pause();warm.el.removeAttribute('src');warm.el.load(); }
+  }
+  /** 只预取下一首，临近结束才缓冲；第二个元素永远不提前播放。 */
+  private prefetch(): void {
+    const next=this.upcoming(), key=next && this.identity(next);
+    if (this.warm && this.warm.key!==key) this.discardWarm();
+    if (!next || this.warm || !this.state.playing || this.state.duration-this.state.currentTime>45) return;
+    const warm={key:key!,control:new AbortController()} as NonNullable<AudioPlayer['warm']>;
+    this.warm=warm;
+    const resolver=this.emptyResolver ?? this.retryResolver;
+    void Promise.resolve(next.audio && !this.expired(next) ? next : resolver?.(next,'empty',{signal:warm.control.signal,forceRefresh:false})).then(track=>{
+      if (this.warm!==warm || warm.control.signal.aborted || !track?.audio) return;
+      warm.track=track;
+      warm.el=new Audio();warm.el.preload='auto';warm.el.volume=this.el.volume;warm.el.muted=this.el.muted;
+      warm.el.src=track.audio;warm.el.load();
+    }).catch(()=>{});
   }
 
   subscribe(fn: Listener): () => void {
@@ -516,7 +544,7 @@ class AudioPlayer {
   }
 
   /** 不中断播放地切换音源（音质切换用），保留当前进度与播放状态。 */
-  switchSource(url: string, opts?: { quality?: string; keepTime?: boolean; via?: Track['via'] }): void {
+  switchSource(url: string, opts?: { quality?: string; keepTime?: boolean; via?: Track['via']; expiresAt?: number }): void {
     if (!this.state.song) return;
     const keep = opts?.keepTime !== false ? this.el.currentTime || 0 : 0;
     const wasPlaying = this.wantsPlay;
@@ -527,6 +555,7 @@ class AudioPlayer {
       via: opts && 'via' in opts ? opts.via : this.state.song.via,
     };
     const track = this.state.song;
+    (track as Track & {expiresAt?:number}).expiresAt=opts?.expiresAt;
     this.cancelLoad();
     this.wantsPlay = wasPlaying;
     this.acceptResolved(track, this.generation, keep);
@@ -570,6 +599,7 @@ class AudioPlayer {
 
   /** 取消这一代的网络、计时器与媒体；先静音，再发布新曲目信息。 */
   private cancelLoad(): void {
+    this.discardWarm();
     this.generation++;
     this.request?.abort();
     this.request = null;
@@ -591,7 +621,15 @@ class AudioPlayer {
 
   private loadTrack(track: Track, at = 0, forceRefresh = false, play = true): void {
     const refresh = forceRefresh || this.expired(track);
+    const warm=!forceRefresh && this.warm?.key===this.identity(track) && this.warm.track && !this.expired(this.warm.track) && !this.warm.el?.error ? this.warm : null;
+    if (warm) this.warm=null;
     this.cancelLoad();
+    if (warm?.el && warm.track) {
+      this.bindMedia(this.el,false);
+      warm.el.volume=this.state.volume;warm.el.muted=this.state.muted;
+      this.el=warm.el;this.bindMedia(this.el,true);
+      track={...warm.track,id:track.id};
+    }
     this.wantsPlay = play;
     this.pendingSeek = at;
     this.retriedSongId = null;
@@ -606,7 +644,7 @@ class AudioPlayer {
     this.state.quality = track.quality ?? '';
     this.state.error = !track.audio || refresh ? '正在获取音源…' : null;
     this.emit();
-    if (!track.audio || refresh) this.resolveTrack(track, refresh ? 'error' : 'empty', refresh);
+    if (!track.audio || (refresh && !warm)) this.resolveTrack(track, refresh ? 'error' : 'empty', refresh);
     else this.acceptResolved(track, this.generation, at);
   }
 
@@ -641,7 +679,7 @@ class AudioPlayer {
     this.pendingSeek = at;
     this.loadedAt = Date.now();
     this.activeSource = true;
-    this.el.src = track.audio;
+    if (this.el.getAttribute('src') !== track.audio) this.el.src = track.audio;
     try { this.el.currentTime = at; } catch { /* 元数据就绪时再定位 */ }
     this.emit();
     if (this.wantsPlay) { this.armStallTimer(); this.playCurrent(generation); }
@@ -663,7 +701,7 @@ class AudioPlayer {
     });
   }
 
-  private emit(): void { for (const fn of this.listeners) fn(); }
+  private emit(): void { this.prefetch(); for (const fn of this.listeners) fn(); }
 
   private onTimeUpdate = (): void => {
     if (!this.activeSource || !this.el.getAttribute('src')) return;
@@ -741,7 +779,8 @@ class AudioPlayer {
     this.state.playing = false;
     this.emit();
     if (this.mode === 'repeat-one' && !this.transientBackup && this.pos >= 0) {
-      if (this.state.song) this.loadTrack(this.state.song);
+      if (this.state.song && !this.expired(this.state.song)) { this.el.currentTime=0;this.playCurrent(this.generation); }
+      else if (this.state.song) this.loadTrack(this.state.song);
       return;
     }
     this.next();

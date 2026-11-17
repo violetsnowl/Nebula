@@ -1,219 +1,67 @@
 import http from 'node:http';
 import https from 'node:https';
+import { createHash } from 'node:crypto';
 import type { Platform } from './types';
 import { PLATFORM_HEADERS } from './http';
+import { audioPlatform } from './audioProxy';
+import { requestScope, withRequestScope } from './requestScope';
 
-/**
- * 音源 URL 真实探测（借鉴 Mineradio 的“多音质探测 + 失败换源”思路）：
- * 拿到的直链不直接交给 <audio>，而是先按平台注入 Referer/UA/Cookie 抓前几十字节，
- * 校验确实是音频（magic bytes / audio content-type），403、死链、返回 HTML 的一律判失败，
- * 由 SongResolver 继续换源，从源头杜绝“假链接 + 前端空转”。
- */
+export interface ProbeOptions { platform:Platform; cookie?:string; timeoutMs?:number; bytes?:number; signal?:AbortSignal; classify?:(url:URL)=>Platform|null }
+export interface ProbeResult { ok:boolean; status?:number; contentType?:string; reason?:string }
+const cache=new Map<string,{at:number; result:ProbeResult}>();
+export const clearProbeCache=():void=>cache.clear();
+const httpAgent=new http.Agent({keepAlive:true,maxSockets:6,maxTotalSockets:12,maxFreeSockets:2});
+const httpsAgent=new https.Agent({keepAlive:true,maxSockets:6,maxTotalSockets:12,maxFreeSockets:2});
 
-export interface ProbeOptions {
-  platform: Platform;
-  cookie?: string;
-  timeoutMs?: number;
-  bytes?: number;
+/** 必须有音频签名；audio/* 的 HTML 错误页也会被拦截。 */
+export function looksLikeAudio(buf:Buffer,_contentType?:string):boolean {
+  if (buf.length<2) return false;
+  const start=buf.toString('latin1',0,12);
+  return start.startsWith('ID3') || start.startsWith('fLaC') || start.slice(4,8)==='ftyp' || start.startsWith('OggS') ||
+    (start.startsWith('RIFF') && start.slice(8,12)==='WAVE') || (buf[0]===0xff && (buf[1]&0xe0)===0xe0);
 }
-
-export interface ProbeResult {
-  ok: boolean;
-  status?: number;
-  contentType?: string;
-  reason?: string;
-}
-
-const DEFAULT_TIMEOUT_MS = 5000;
-const DEFAULT_BYTES = 64;
-
-/** 短 TTL 结果缓存：同一 URL 10 分钟内不重复探测（切歌/重播时避免重复等待）。*/
-const cache = new Map<string, { at: number; result: ProbeResult }>();
-const CACHE_TTL_MS = 10 * 60 * 1000;
-const CACHE_MAX = 500;
-
-function cacheGet(url: string): ProbeResult | undefined {
-  const hit = cache.get(url);
-  if (!hit) return undefined;
-  if (Date.now() - hit.at > CACHE_TTL_MS) {
-    cache.delete(url);
-    return undefined;
-  }
-  return hit.result;
-}
-
-function cacheSet(url: string, result: ProbeResult): void {
-  if (cache.size >= CACHE_MAX) {
-    const oldest = cache.keys().next().value;
-    if (oldest !== undefined) cache.delete(oldest);
-  }
-  cache.set(url, { at: Date.now(), result });
-}
-
-/** 判断前 N 字节是否像真实音频（MP3/FLAC/M4A/OGG/WAV/AAC）。*/
-export function looksLikeAudio(buf: Buffer, contentType?: string): boolean {
-  const ct = (contentType ?? '').toLowerCase();
-  if (ct.startsWith('audio/')) return true;
-  if (ct && (ct.startsWith('text/') || ct.includes('html'))) return false;
-  if (buf.length >= 3 && buf[0] === 0x49 && buf[1] === 0x44 && buf[2] === 0x33) return true; // ID3
-  if (buf.length >= 4 && buf.toString('latin1', 0, 4) === 'fLaC') return true;
-  if (buf.length >= 8 && buf.toString('latin1', 4, 8) === 'ftyp') return true; // mp4/m4a
-  if (buf.length >= 4 && buf.toString('latin1', 0, 4) === 'OggS') return true;
-  if (buf.length >= 12 && buf.toString('latin1', 0, 4) === 'RIFF' && buf.toString('latin1', 8, 12) === 'WAVE')
-    return true;
-  if (buf.length >= 2 && buf[0] === 0xff && (buf[1] & 0xe0) === 0xe0) return true; // MP3 frame sync
-  return false;
-}
-
-interface FetchResult {
-  status: number;
-  contentType: string;
-  bytes: Buffer;
-  truncated: boolean;
-}
-
-function requestBytes(target: URL, opts: ProbeOptions, limit: number): Promise<FetchResult> {
-  return new Promise<FetchResult>((resolve, reject) => {
-    const headers: Record<string, string> = {
-      ...PLATFORM_HEADERS[opts.platform],
-      Accept: '*/*',
-      Range: `bytes=0-${limit - 1}`,
-    };
-    if (opts.cookie) headers.Cookie = opts.cookie;
-
-    const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-    let settled = false;
-    let current = target;
-    let redirects = 0;
-
-    const attempt = (): void => {
-      const isHttps = current.protocol === 'https:';
-      const transport = isHttps ? https : http;
-      const req = transport.request(
-        current,
-        { method: 'GET', headers, timeout: timeoutMs },
-        (res) => {
-          const status = res.statusCode ?? 502;
-          if (status >= 300 && status < 400 && res.headers.location && redirects < 3) {
-            res.resume();
-            try {
-              current = new URL(res.headers.location, current);
-            } catch {
-              current = new URL(res.headers.location, current.origin);
-            }
-            redirects++;
-            attempt();
-            return;
-          }
-          const chunks: Buffer[] = [];
-          let size = 0;
-          let truncated = false;
-          res.on('data', (chunk: Buffer) => {
-            if (size >= limit) return;
-            const need = limit - size;
-            chunks.push(chunk.length > need ? chunk.subarray(0, need) : chunk);
-            size += Math.min(chunk.length, need);
-            if (size >= limit) {
-              truncated = true;
-              res.destroy();
-              if (!settled) {
-                settled = true;
-                resolve({
-                  status,
-                  contentType: String(res.headers['content-type'] ?? ''),
-                  bytes: Buffer.concat(chunks),
-                  truncated,
-                });
-              }
-            }
-          });
-          res.on('end', () => {
-            if (settled) return;
-            settled = true;
-            resolve({
-              status,
-              contentType: String(res.headers['content-type'] ?? ''),
-              bytes: Buffer.concat(chunks),
-              truncated,
-            });
-          });
-          res.on('aborted', () => {
-            if (settled) return;
-            settled = true;
-            resolve({
-              status,
-              contentType: String(res.headers['content-type'] ?? ''),
-              bytes: Buffer.concat(chunks),
-              truncated: true,
-            });
-          });
-          res.on('error', (err) => {
-            if (settled) return;
-            settled = true;
-            reject(err);
-          });
-        },
-      );
-      req.on('timeout', () => req.destroy(new Error('probe timeout')));
-      req.on('error', (err) => {
-        if (settled) return;
-        settled = true;
-        reject(err);
+async function sample(url:URL,opts:ProbeOptions,limit:number,hop=0):Promise<{status:number;type:string;bytes:Buffer}> {
+  const platform=(opts.classify || audioPlatform)(url);
+  if (!platform || !['https:','http:'].includes(url.protocol) || url.username || url.password) throw new Error('invalid audio host');
+  const headers:Record<string,string>={...PLATFORM_HEADERS[platform],Range:`bytes=0-${limit-1}`,Accept:'*/*'};
+  // probe 只拿到了原平台凭证；跨平台跳转不携带它。
+  if (platform===opts.platform && opts.cookie) headers.Cookie=opts.cookie;
+  return new Promise((resolve,reject)=> {
+    const secure=url.protocol==='https:';
+    const req=(secure?https:http).request(url,{headers,signal:requestScope()?.signal,agent:secure?httpsAgent:httpAgent},res=> {
+      const status=res.statusCode || 502;
+      if (status>=300 && status<400) {
+        res.destroy();
+        if (hop>=3 || !res.headers.location) { reject(new Error('invalid redirect')); return; }
+        try { resolve(sample(new URL(res.headers.location,url),opts,limit,hop+1)); } catch(e) { reject(e); }
+        return;
+      }
+      const chunks:Buffer[]=[];let size=0,finished=false;
+      const finish=() => { if (finished) return; finished=true; resolve({status,type:String(res.headers['content-type'] || ''),bytes:Buffer.concat(chunks)}); };
+      res.on('data',(chunk:Buffer)=> {
+        const part=chunk.subarray(0,Math.max(0,limit-size));chunks.push(part);size+=part.length;
+        if (size>=limit) { finish();res.destroy(); }
       });
-      req.end();
-    };
-
-    attempt();
+      res.once('end',finish);
+      res.once('aborted',()=>{ if (!finished) reject(new Error('probe interrupted')); });
+      res.once('error',reject);
+    });
+    req.once('error',reject);req.end();
   });
 }
-
-/**
- * 探测单个音源 URL。
- * - 200/206 + 音频 magic/content-type => ok
- * - 403/4xx/5xx、HTML、非音频 => 失败并附原因
- */
-export async function probeAudioUrl(rawUrl: string, opts: ProbeOptions): Promise<ProbeResult> {
-  if (!rawUrl) return { ok: false, reason: 'empty url' };
-  const cached = cacheGet(rawUrl);
-  if (cached) return cached;
-
-  let target: URL;
+export async function probeAudioUrl(raw:string,opts:ProbeOptions):Promise<ProbeResult> {
+  if (!raw) return {ok:false,reason:'empty url'};
+  const key=createHash('sha256').update(opts.platform+'\0'+(opts.cookie || '')+'\0'+raw).digest('hex');
+  const hit=cache.get(key);
+  if (!opts.signal?.aborted && !requestScope()?.forceRefresh && hit && Date.now()-hit.at<120000) return hit.result;
   try {
-    target = new URL(rawUrl);
-  } catch {
-    return { ok: false, reason: 'invalid url' };
-  }
-  if (target.protocol !== 'https:' && target.protocol !== 'http:') {
-    return { ok: false, reason: 'protocol not allowed' };
-  }
-
-  const limit = Math.max(16, Math.min(4096, opts.bytes ?? DEFAULT_BYTES));
-  try {
-    const res = await requestBytes(target, opts, limit);
-    const looksAudio = looksLikeAudio(res.bytes, res.contentType);
-    const result: ProbeResult = {
-      ok: (res.status === 200 || res.status === 206) && looksAudio,
-      status: res.status,
-      contentType: res.contentType || undefined,
-      reason: !looksAudio
-        ? '响应不是音频内容（可能返回了 HTML 错误页）'
-        : `HTTP ${res.status} 非可播状态`,
-    };
-    if (result.ok) {
-      cacheSet(rawUrl, result);
-    }
+    const result=await withRequestScope(opts.timeoutMs ?? 1000,async()=> {
+      const res=await sample(new URL(raw),opts,Math.max(32,Math.min(4096,opts.bytes || 512)));
+      const ok=[200,206].includes(res.status) && looksLikeAudio(res.bytes,res.type);
+      return {ok,status:res.status,contentType:res.type,...(!ok?{reason:'HTTP 状态或音频签名未通过'}:{})};
+    },{signal:opts.signal});
+    if (result.ok) { cache.delete(key);cache.set(key,{at:Date.now(),result});if(cache.size>500)cache.delete(cache.keys().next().value!); }
     return result;
-  } catch (err) {
-    const result: ProbeResult = {
-      ok: false,
-      reason: err instanceof Error ? err.message : String(err),
-    };
-    return result;
-  }
+  } catch { return {ok:false,reason:opts.signal?.aborted?'probe cancelled':'probe timeout or unavailable'}; }
 }
-
-/** 便捷封装：只关心能否播放。*/
-export async function canPlayAudio(rawUrl: string, opts: ProbeOptions): Promise<boolean> {
-  const r = await probeAudioUrl(rawUrl, opts);
-  return r.ok;
-}
+export async function canPlayAudio(raw:string,opts:ProbeOptions):Promise<boolean> { return (await probeAudioUrl(raw,opts)).ok; }

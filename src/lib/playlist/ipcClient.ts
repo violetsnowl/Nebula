@@ -164,7 +164,8 @@ type IpcResult<T> = Promise<{ ok: true; data: T } | { ok: false; error: string }
 
 export interface DesktopApi {
   importPlaylist: (url: string) => IpcResult<DesktopPlaylistResult>;
-  resolveSong: (track: DesktopTrack, quality?: string) => IpcResult<DesktopResolveResult | null>;
+  resolveSong: (track: DesktopTrack, quality?: string, options?: { requestId?: string; forceRefresh?: boolean }) => IpcResult<DesktopResolveResult | null>;
+  cancelResolve?: (requestId: string) => IpcResult<boolean>;
   songQualities: (track: DesktopTrack) => IpcResult<DesktopQualityOption[]>;
   fallbackSong: (track: DesktopTrack) => IpcResult<DesktopTrack | null>;
   fetchLyric: (track: DesktopTrack) => IpcResult<unknown>;

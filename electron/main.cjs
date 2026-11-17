@@ -555,20 +555,21 @@ async function handleOpenLocalDirectory() {
   return { ok: true, data: { tracks, canceled: false } };
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   // Cookie/Token 安全落在应用用户数据目录，按平台隔离持久化
   setCookieDataDir(app.getPath('userData'));
 
   const cookies = new CookieStore();
   const http = new HttpClient(cookies);
   const audioProxy = new AudioProxy(cookies);
-  audioProxy.start();
+  await audioProxy.start();
+  app.once('before-quit', () => audioProxy.dispose());
   const adapters = createAdapters(http, cookies);
   const resolver = new SongResolver(
     adapters,
     (m) => console.warn('[SongResolver]', m),
-    (url, platform) =>
-      probeAudioUrl(url, { platform, cookie: cookies.getHeader(platform) }).then((r) => r.ok),
+    (url, platform, signal) =>
+      probeAudioUrl(url, { platform, cookie: cookies.getHeader(platform), signal }).then((r) => r.ok),
   );
   // 歌词磁盘缓存 + 自定义覆盖（存 userData，跨重启保留）
   const lyricCache = new LyricCache(app.getPath('userData'));
@@ -615,7 +616,9 @@ app.whenReady().then(() => {
     },
   };
   // 多平台 VIP 路由：按已登录账号的 SVIP/VIP 状态决定音源兜底顺序（汽水仅作歌单来源）
-  resolver.setFallbackTargets(createFallbackPriorityProvider(loginAdapters));
+  const fallbackPriority = createFallbackPriorityProvider(loginAdapters);
+  resolver.setFallbackTargets(fallbackPriority);
+  cookies.onChange(() => { resolver.invalidate(); fallbackPriority.invalidate(); });
 
   registerIpcHandlers(ipcMain, {
     adapters,

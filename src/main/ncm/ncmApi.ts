@@ -2,6 +2,8 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
+import { AsyncLocalStorage } from 'node:async_hooks';
+import { requestScope, throwIfCancelled, withRequestScope } from '../requestScope';
 
 /**
  * 网易云成熟库接入层（@neteasecloudmusicapienhanced/api）。
@@ -23,6 +25,27 @@ interface NcmModuleResult {
 type NcmModule = (query: Record<string, unknown>, request: unknown) => Promise<NcmModuleResult>;
 
 let bootPromise: Promise<void> | null = null;
+const privateLogs = new AsyncLocalStorage<boolean>();
+let installed = false;
+function installTransport(): void {
+  if (installed) return;
+  const libraryRequire = createRequire(require_.resolve(`${PKG}/util/request.js`));
+  const axios = libraryRequire('axios');
+  axios.interceptors.request.use((config: any) => {
+    const scope = requestScope();
+    if (scope) {
+      config.signal = scope.signal;
+      config.timeout = Math.max(1, Math.min(config.timeout || Infinity, scope.deadline - Date.now()));
+    }
+    return config;
+  });
+  // 上游库会输出带 Cookie 的完整错误对象。只抑制库调用上下文，保留本应用脱敏诊断。
+  for (const key of ['log', 'info', 'warn', 'error', 'debug'] as const) {
+    const original = console[key].bind(console);
+    console[key] = (...args: unknown[]) => { if (!privateLogs.getStore()) original(...args); };
+  }
+  installed = true;
+}
 
 async function bootstrap(): Promise<void> {
   const tokenPath = path.join(os.tmpdir(), 'anonymous_token');
@@ -39,9 +62,8 @@ async function bootstrap(): Promise<void> {
 
 function ensureBoot(): Promise<void> {
   if (!bootPromise) {
-    bootPromise = bootstrap().catch((err) => {
+    bootPromise = withRequestScope(5000, bootstrap, { detached: true }).catch(() => {
       bootPromise = null;
-      throw err;
     });
   }
   return bootPromise;
@@ -56,10 +78,14 @@ export async function callNcmModule(
   name: string,
   query: Record<string, unknown>,
 ): Promise<NcmModuleResult> {
-  await ensureBoot();
-  const fn = loadModule(name);
-  const request = require_(`${PKG}/util/request.js`) as unknown;
-  return fn(query, request);
+  installTransport();
+  return privateLogs.run(true, () => withRequestScope(12000, async () => {
+    await ensureBoot();
+    throwIfCancelled();
+    const fn = loadModule(name);
+    const request = require_(`${PKG}/util/request.js`) as unknown;
+    return fn(query, request);
+  }));
 }
 
 /** 便捷：包装成带 [Netease][Action] 日志的调用，抛错统一转为 null 友好信息。 */
@@ -74,8 +100,9 @@ export async function callNcmSafe(
       return null;
     }
     return res;
-  } catch (err) {
-    console.warn(`[Netease][${name}] 调用失败: ${err instanceof Error ? err.message : String(err)}`);
+  } catch {
+    throwIfCancelled();
+    console.warn(`[Netease][${name}] 调用失败`);
     return null;
   }
 }

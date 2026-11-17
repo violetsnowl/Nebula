@@ -106,6 +106,21 @@ test('31 分钟暂停后继续与拖动刷新过期地址', async p => {
   try { p.toggle(); await tick(); assert.equal(n,2); assert.equal(p.el.currentTime,55); p.seek(103); assert.equal(p.el.currentTime,103); }
   finally { Date.now=now; }
 });
+test('预取的媒体只在下一首开始时接管，旧元素事件不回写', async p => {
+  const songs=[track(1),track(2)];let calls=0;
+  p.emptyResolver=async t=>{calls++;return resolved(t)};
+  p.playSong(songs[0],songs);await tick();const old=p.el;
+  old.currentTime=220;old.dispatchEvent(new Event('timeupdate'));await tick();
+  assert.equal(calls,2);assert.equal(p.warm.el.paused,true);const warm=p.warm.el;
+  old.finish();await tick();assert.equal(p.el,warm);assert.equal(p.state.song.id,2);assert.equal(calls,2);
+  old.currentTime=239;old.dispatchEvent(new Event('timeupdate'));assert.equal(p.state.currentTime,0);
+});
+test('插队后废弃旧预取，按 FIFO 播放新下一首', async p => {
+  const songs=[track(1),track(2)];p.emptyResolver=async t=>resolved(t);
+  p.playSong(songs[0],songs);await tick();p.el.currentTime=220;p.el.dispatchEvent(new Event('timeupdate'));await tick();
+  const old=p.warm.el;p.insertNext(track(3));await tick();assert.equal(old.getAttribute('src'),null);
+  p.el.finish();await tick();assert.equal(p.state.song.id,3);
+});
 let failed=0;
 for (const c of cases) { const p=make(); try { await c.run(p); console.log(`通过 ${c.name}`); } catch(e) { failed++; console.log(`失败 ${c.name}: ${e.message}`); } finally { p.stop(); } }
 audioPlayer.stop();

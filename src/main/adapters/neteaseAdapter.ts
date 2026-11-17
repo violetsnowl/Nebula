@@ -60,7 +60,7 @@ export class NeteaseAdapter implements PlatformAdapter {
   constructor(
     private http: HttpClient,
     private cookies: CookieStore,
-  ) {}
+  ) { cookies.onChange?.(() => { this.rightsCache = null; }); }
 
   async fetchPlaylist(playlistId: string): Promise<Playlist> {
     const data = await this.http.requestJson<NeteasePlaylistResp>(
@@ -163,6 +163,7 @@ export class NeteaseAdapter implements PlatformAdapter {
 
   /** Current account rights (not logged in = normal user). */
   private async getRights(): Promise<{ isVip: boolean; isSvip: boolean }> {
+    if (!this.cookies.getHeader('netease')) return { isVip:false, isSvip:false };
     const now = Date.now();
     if (this.rightsCache && now - this.rightsCache.at < 5 * 60 * 1000) {
       return { isVip: this.rightsCache.isVip, isSvip: this.rightsCache.isSvip };

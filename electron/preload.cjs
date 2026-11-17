@@ -3,7 +3,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 /** 渲染进程唯一入口：所有能力经 IPC 走主进程，Node 能力不暴露给页面。 */
 contextBridge.exposeInMainWorld('nebulaAPI', {
   importPlaylist: (url) => ipcRenderer.invoke('nebula:import-playlist', { url }),
-  resolveSong: (track, quality) => ipcRenderer.invoke('nebula:resolve-song', { track, quality }),
+  resolveSong: (track, quality, options) => ipcRenderer.invoke('nebula:resolve-song', { track, quality, ...options }),
+  cancelResolve: (requestId) => ipcRenderer.invoke('nebula:cancel-resolve', { requestId }),
   songQualities: (track) => ipcRenderer.invoke('nebula:song-qualities', { track }),
   fallbackSong: (track) => ipcRenderer.invoke('nebula:fallback-song', { track }),
   fetchLyric: (track) => ipcRenderer.invoke('nebula:lyric', { track }),

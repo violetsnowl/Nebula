@@ -103,6 +103,8 @@ export function setCookieDataDir(dir: string): void {
 export class CookieStore {
   private file: string;
   private data: Partial<Record<Platform, CookieRecord>> = {};
+  private listeners = new Set<(platform: Platform) => void>();
+  onChange(fn: (platform: Platform) => void): () => void { this.listeners.add(fn); return () => this.listeners.delete(fn); }
 
   constructor(filePath?: string) {
     this.file = filePath || path.join(dataDir, 'cookies.json');
@@ -118,6 +120,7 @@ export class CookieStore {
       updatedAt: Date.now(),
     };
     this.save();
+    this.listeners.forEach(fn => fn(platform));
   }
 
   get(platform: Platform): CookieRecord | undefined {
@@ -142,6 +145,7 @@ export class CookieStore {
   clear(platform: Platform): void {
     delete this.data[platform];
     this.save();
+    this.listeners.forEach(fn => fn(platform));
   }
 
   get filePath(): string {

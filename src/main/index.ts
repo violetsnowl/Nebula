@@ -3,6 +3,7 @@
 export * from './types';
 export * from './cookieStore';
 export * from './http';
+export * from './requestScope';
 export * from './audioProxy';
 export * from './audioProbe';
 export * from './ncm/ncmApi';

@@ -1,5 +1,6 @@
 import type { CookieStore } from './cookieStore';
 import type { Platform } from './types';
+import { requestScope, withRequestScope, throwIfCancelled } from './requestScope';
 
 export interface RequestOptions {
   method?: 'GET' | 'POST';
@@ -59,7 +60,7 @@ export class HttpClient {
   async requestText(url: string, opts: RequestOptions): Promise<string> {
     const res = await this.requestRaw(url, opts);
     if (!res.ok) {
-      throw new Error(`HTTP ${res.status} ${res.statusText} — ${url}`);
+      throw new Error(`HTTP ${res.status} ${res.statusText}`);
     }
     return res.text;
   }
@@ -80,9 +81,8 @@ export class HttpClient {
       if (token) headers.Authorization = `Bearer ${token}`;
     }
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), opts.timeoutMs ?? 12000);
-    try {
+    return withRequestScope(opts.timeoutMs ?? 12000, async () => {
+      throwIfCancelled();
       let body: string | undefined;
       let contentType: string | undefined;
       if (opts.form) {
@@ -97,7 +97,7 @@ export class HttpClient {
         method: opts.method ?? 'GET',
         headers,
         body,
-        signal: controller.signal,
+        signal: requestScope()!.signal,
       });
       return {
         ok: res.ok,
@@ -106,8 +106,6 @@ export class HttpClient {
         headers: res.headers,
         text: await res.text(),
       };
-    } finally {
-      clearTimeout(timer);
-    }
+    });
   }
 }

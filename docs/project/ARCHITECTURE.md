@@ -117,3 +117,14 @@ view blocks（同层互不依赖，组合只由 App 完成）
 - [x] 7. `useSearchCluster` + `useEdgePanels`
 - [x] 8. 视图第二阶段（三 Context 落地 + 区块化：Playback / InterfaceSettings / VisualAtmosphere；LyricsLayer / NowPlayingPanel 叶子化；OverlayStack props 收敛；check-arch 修扩展名解析）
 - [x] 9. `useStage`（最后，最高风险：hovered/visible/failed/liked/渐进揭示/PanController/虚拟化数据全部收敛；App 仅剩组合接线）
+
+
+## 后端整修 #B3：请求与媒体生命周期
+
+- `src/main/requestScope.ts`：AsyncLocalStorage 传播父截止时间/取消，阶段结束回收子请求；调用者取消经 preload → IPC → resolver → HTTP/Axios/probe。
+- `SongResolver`：总时限 6000ms、主源 2300ms、单次取链 2000ms、搜索 1600ms、探测 1000ms，全部受父预算约束；最多两个其他平台并发，每个平台最多两个安全候选。
+- URL 缓存 256 项/120 秒，匹配缓存 512 项/24 小时；强制刷新绕过 URL/探测缓存；Cookie 更新和退出登录清空账号相关结果。
+- `createFallbackPriorityProvider` 返回可 `invalidate()` 的函数；5 分钟后台权益刷新，单平台 2 秒，点播直接读快照。
+- `AudioProxy.start()` 为 Promise，Electron 必须等监听成功；只回传当前实例代理地址。每实例 16 个活动请求、每协议代理最多 16 个 socket/每域 8 个。
+- `resolveSong(track,quality,{requestId,forceRefresh})` 与 `cancelResolve(requestId)`：请求标识只在发起它的 webContents 内生效，销毁窗口会取消；旧调用方式仍可用。
+- AudioPlayer 临近结束预取下一首，不预播放；新媒体接管前解除旧元素监听，始终只有当前媒体出声。

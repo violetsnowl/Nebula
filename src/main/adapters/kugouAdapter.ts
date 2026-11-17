@@ -1,5 +1,6 @@
 ﻿import crypto from 'node:crypto';
 import type { HttpClient } from '../http';
+import { requestScope, throwIfCancelled } from '../requestScope';
 import type { CookieStore } from '../cookieStore';
 import type { Lyric, Playlist, PlaylistSummary, PlatformAdapter, QualityOption, SongUrl, Track } from '../types';
 import { parseLrc } from '../parsers/lyricParser';
@@ -141,7 +142,7 @@ export class KugouAdapter implements PlatformAdapter {
   constructor(
     private http: HttpClient,
     private cookies: CookieStore,
-  ) {}
+  ) { cookies.onChange?.(() => { this.vipCache = null; this.urlCache.clear(); }); }
 
   async fetchPlaylist(playlistId: string): Promise<Playlist> {
     const cookie = this.cookies.getHeader('kugou') ?? '';
@@ -357,7 +358,7 @@ export class KugouAdapter implements PlatformAdapter {
       // 检查缓存
       const ck = this.getCacheKey(h);
       const cached = this.urlCache.get(ck);
-      if (cached && cached.expireAt > Date.now()) {
+      if (!requestScope()?.forceRefresh && cached && cached.expireAt > Date.now()) {
         return { url: cached.url, quality: cached.quality };
       }
 
@@ -370,11 +371,13 @@ export class KugouAdapter implements PlatformAdapter {
       ];
 
       for (const route of routes) {
+        throwIfCancelled();
         try {
           const result = await route();
           if (result?.url) {
             // 缓存结果
             this.urlCache.set(ck, { url: result.url, quality: result.quality || '', expireAt: Date.now() + URL_CACHE_TTL_MS });
+            if (this.urlCache.size > 256) this.urlCache.delete(this.urlCache.keys().next().value!);
             return result;
           }
         } catch { /* 继续下一路 */ }

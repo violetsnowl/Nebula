@@ -1,40 +1,30 @@
 import type { AdapterMap } from '../adapters/index';
-import type { PlatformAdapter, ResolveResult, Track } from '../types';
+import type { Platform, ResolveResult, Track } from '../types';
 import type { FallbackTarget } from './platformRouter';
 import { durationSimilarity, titleSimilarity } from '../adapters/mappers';
 import { mapQualityTo } from '../quality';
+import { requestScope, RequestCancelled, throwIfCancelled, withRequestScope } from '../requestScope';
 
-const errMsg = (e: unknown) => (e instanceof Error ? e.message : String(e));
-const ADAPTER_TIMEOUT_MS = 10000;
-const PROBE_TIMEOUT_MS = 6000;
-
-/** 各平台的保真度档位（高到低），用来把偏好换成目标平台的同级档位（见 ../quality.ts）。 */
-const PLATFORM_LEVELS: Record<string, string[]> = {
-  netease: ['jymaster', 'hires', 'lossless', 'exhigh', 'standard'],
-  qq: ['flac', '320k', '128k'],
-  kugou: ['hires', 'flac', '320', '128'],
-  qishui: ['hires', 'lossless', 'exhigh', 'standard'],
+const PLAYABLE: Platform[] = ['netease', 'qq', 'kugou'];
+const LEVELS: Record<string, string[]> = {
+  netease: ['jymaster','hires','lossless','exhigh','standard'], qq: ['flac','320k','128k'], kugou: ['hires','flac','320','128'],
 };
-const levelFor = (platform: string, quality?: string) => mapQualityTo(PLATFORM_LEVELS[platform] ?? [], quality);
-
-/** URL probe injected by the main process (platform Referer/UA/Cookie applied). */
-export type UrlProbe = (url: string, platform: Track['platform']) => Promise<boolean>;
-
-function withTimeout<T>(p: Promise<T>, ms: number, label: string): Promise<T> {
-  return new Promise<T>((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`${label} timeout ${Math.round(ms / 1000)}s`)), ms);
-    p.then(
-      (v) => {
-        clearTimeout(timer);
-        resolve(v);
-      },
-      (e) => {
-        clearTimeout(timer);
-        reject(e);
-      },
-    );
-  });
-}
+export type UrlProbe = (url: string, platform: Platform, signal?: AbortSignal) => Promise<boolean>;
+export interface ResolveOptions { signal?: AbortSignal; forceRefresh?: boolean }
+export interface ResolverPolicy { totalMs: number; primaryMs: number; searchMs: number; candidateMs: number; probeMs: number; cacheMs: number }
+const POLICY: ResolverPolicy = { totalMs: 6000, primaryMs: 2300, searchMs: 1600, candidateMs: 2000, probeMs: 1000, cacheMs: 120000 };
+type Job = { control: AbortController; users: number; done: boolean; promise: Promise<ResolveResult> };
+type Timings = NonNullable<ResolveResult['timings']>;
+let sequence = 0;
+const failure = (t: Track, code: ResolveResult['code'] = 'NO_SOURCE'): ResolveResult => ({
+  url: '', platform: t.platform, sourceId: t.sourceId, fallback: false, playable: false, code,
+  error: code === 'CANCELLED' ? '播放请求已取消' : code === 'TIMEOUT' ? '音源解析超时' : '主平台与兜底平台均未获取到可播音源（含音源探测过滤）',
+});
+const codeOf = (e: unknown): 'TIMEOUT' | 'CANCELLED' | 'NO_SOURCE' => e instanceof RequestCancelled ? e.code : 'NO_SOURCE';
+const remember = <T>(map: Map<string, T>, key: string, value: T, max = 256): void => {
+  map.delete(key); map.set(key, value);
+  if (map.size > max) map.delete(map.keys().next().value!);
+};
 
 /** Match score: title 70% + duration 30%. */
 export function matchScore(candidate: Track, target: Track): number {
@@ -70,165 +60,152 @@ function filterCandidate(candidate: Track, target: Track): { ok: boolean; rank: 
   return { ok: true, rank, note: `${titleEq ? '精确' : '相似'} 时长${durOk ? '匹配' : '偏离'} 歌手${artistHit ? '命中' : '未命中'}` };
 }
 
-/**
- * Song source fallback dispatcher:
- * - resolve(): primary platform (single call, 10s timeout) -> probe URL -> fallback search;
- *   all failures return an explicit error (never silent empty string).
- * - enrichFallback(): fills fallbackUrl for the frontend <audio> onerror retry path.
- */
+
+/** 唯一解析入口：有界主源 → 并发安全候选 → 探测；缓存只保存已验证地址。 */
 export class SongResolver {
   private fallbackTargets: (() => Promise<FallbackTarget[]>) | null = null;
-
-  constructor(
-    private adapters: AdapterMap,
-    private log: (m: string) => void = (m) => console.warn('[SongResolver]', m),
-    private probe?: UrlProbe,
-  ) {}
-
-  /** 注入多平台 VIP 路由（electron 主进程接线；缺省时保持旧固定顺序）。 */
-  setFallbackTargets(getTargets: () => Promise<FallbackTarget[]>): void {
-    this.fallbackTargets = getTargets;
+  private cache = new Map<string, ResolveResult>();
+  private matches = new Map<string, { at: number; tracks: Track[] }>();
+  private jobs = new Map<string, Job>();
+  private health = new Map<string, { failures: number; until: number }>();
+  private epoch = 0;
+  private policy: ResolverPolicy;
+  constructor(private adapters: AdapterMap, private log: (m: string) => void = m => console.info('[SongResolver]', m), private probe?: UrlProbe, policy?: Partial<ResolverPolicy>) {
+    this.policy = { ...POLICY, ...policy };
   }
-
-  async resolve(track: Track, quality?: string): Promise<ResolveResult | null> {
-    if (track.originalUrl) {
-      return {
-        url: track.originalUrl,
-        fallback: false,
-        platform: track.platform,
-        sourceId: track.sourceId,
-        playable: true,
+  setFallbackTargets(getTargets: () => Promise<FallbackTarget[]>): void { this.fallbackTargets = getTargets; }
+  invalidate(): void {
+    this.epoch++; this.cache.clear(); this.matches.clear(); this.health.clear();
+    for (const job of this.jobs.values()) job.control.abort(new RequestCancelled('CANCELLED'));
+    this.jobs.clear();
+  }
+  private key(track: Track, quality?: string): string {
+    return JSON.stringify([track.platform,track.sourceId,quality || '',track.title,track.artist,track.duration]);
+  }
+  resolve(track: Track, quality?: string, options: ResolveOptions = {}): Promise<ResolveResult> {
+    if (options.signal?.aborted) return Promise.resolve(failure(track, 'CANCELLED'));
+    const key = this.key(track,quality), hit = this.cache.get(key);
+    if (!options.forceRefresh && hit?.expiresAt && hit.expiresAt > Date.now() + 5000) {
+      return Promise.resolve({ ...hit, traceId: `play-${++sequence}`, timings: [{stage:'cache',platform:hit.platform,ms:0,outcome:'hit'}] });
+    }
+    this.cache.delete(key);
+    const jobKey = key + (options.forceRefresh ? ':fresh' : ':normal');
+    let job = this.jobs.get(jobKey);
+    if (!job || job.control.signal.aborted) {
+      if (options.forceRefresh) this.epoch++;
+      const epoch = this.epoch;
+      const created: Job = { control: new AbortController(), users: 0, done: false, promise: Promise.resolve(failure(track)) };
+      created.promise = withRequestScope(this.policy.totalMs, () => this.run(track, quality), {
+        signal: created.control.signal, forceRefresh: options.forceRefresh, detached: true,
+      }).catch(e => failure(track,codeOf(e))).then(result => {
+        if (result.url && result.playable && epoch === this.epoch && !created.control.signal.aborted) remember(this.cache,key,result);
+        return result;
+      }).finally(() => { created.done = true; if (this.jobs.get(jobKey) === created) this.jobs.delete(jobKey); });
+      job = created; this.jobs.set(jobKey,created);
+    }
+    // 每位调用者独立取消；最后一位离开才中止共用请求（预取/前台不会互相取消）。
+    const shared = job; shared.users++;
+    return new Promise(resolve => {
+      let finished = false;
+      const finish = (result: ResolveResult) => {
+        if (finished) return; finished = true;
+        options.signal?.removeEventListener('abort',cancel);
+        shared.users--; if (!shared.users && !shared.done) shared.control.abort(new RequestCancelled('CANCELLED'));
+        resolve(result);
       };
-    }
-    try {
-      const direct = await withTimeout(
-        this.adapters[track.platform].fetchSongUrl(track.sourceId, undefined, levelFor(track.platform, quality), track.extra),
-        ADAPTER_TIMEOUT_MS,
-        `[${track.platform}] fetchSongUrl`,
-      );
-      if (direct?.url && (await this.acceptUrl(direct.url, track.platform, direct.error))) {
-        return {
-          url: direct.url,
-          fallback: false,
-          platform: track.platform,
-          sourceId: track.sourceId,
-          trial: direct.trial,
-          quality: direct.quality,
-          playable: direct.playable ?? true,
-          error: direct.error,
-        };
-      }
-      if (direct?.url) {
-        this.log(`primary URL failed probe, trying fallback: ${track.id}`);
-      }
-      if (direct?.error) this.log(`primary fetch failed: ${track.id} - ${direct.error}`);
-    } catch (err) {
-      this.log(`primary fetch error ${track.id}: ${errMsg(err)}`);
-    }
-    const fallbackResult = await this.resolveFallback(track, quality);
-    return (
-      fallbackResult ?? {
-        url: '',
-        fallback: true,
-        platform: track.platform,
-        sourceId: track.sourceId,
-        playable: false,
-        error: '主平台与兜底平台均未获取到可播音源（含音源探测过滤）',
-      }
-    );
+      const cancel = () => finish(failure(track,'CANCELLED'));
+      options.signal?.addEventListener('abort',cancel,{once:true});
+      if (options.signal?.aborted) cancel();
+      void shared.promise.then(finish);
+    });
   }
-
-  /** Secondary fallback: cross-platform search -> title/duration score -> try fetch. */
-  async resolveFallback(track: Track, quality?: string): Promise<ResolveResult | null> {
-    const keyword = `${track.title} ${track.artist}`.trim();
-    let targets: FallbackTarget[];
+  private async stage<T>(timings: Timings, stage: string, platform: string, ms: number, fn: () => Promise<T>): Promise<T> {
+    const at = Date.now(); let outcome = 'ok';
+    try { return await withRequestScope(ms,fn); }
+    catch(e) { outcome=codeOf(e); throw e; }
+    finally { timings.push({stage,platform,ms:Date.now()-at,outcome}); }
+  }
+  private async source(track: Track, platform: Platform, quality: string | undefined, fallback: boolean, timings: Timings): Promise<ResolveResult | null> {
+    throwIfCancelled();
+    const breaker = this.health.get(platform);
+    if (breaker && breaker.until > Date.now()) { timings.push({stage:'circuit',platform,ms:0,outcome:'open'}); return null; }
     try {
-      targets = this.fallbackTargets ? await this.fallbackTargets() : [];
-    } catch {
-      targets = [];
+      const direct = await this.stage(timings,'fetch',platform,this.policy.candidateMs,() => this.adapters[platform].fetchSongUrl(
+        track.sourceId, track.extra?.albumId == null ? undefined : String(track.extra.albumId), mapQualityTo(LEVELS[platform] || [],quality),track.extra,
+      ));
+      if (!direct?.url || direct.playable === false) { timings.push({stage:'availability',platform,ms:0,outcome:direct?.code || 'NO_SOURCE'}); return null; }
+      const accepted = !this.probe || await this.stage(timings,'probe',platform,this.policy.probeMs,() => this.probe!(direct.url,platform,requestScope()?.signal));
+      if (!accepted) { timings.push({stage:'availability',platform,ms:0,outcome:'PROBE_REJECTED'}); return null; }
+      this.health.delete(platform);
+      const now = Date.now();
+      return { url:direct.url, fallback, platform, sourceId:track.sourceId, trial:direct.trial, trialEndTime:direct.trialEndTime,
+        quality:direct.quality, playable:true, resolvedAt:now, expiresAt:Math.min(direct.expiresAt || Infinity, now+this.policy.cacheMs), ...(direct.trial ? {code:'TRIAL_ONLY' as const} : {}) };
+    } catch(e) {
+      if (codeOf(e) !== 'CANCELLED') {
+        const n=(this.health.get(platform)?.failures || 0)+1;
+        this.health.set(platform,{failures:n,until:n>=3?Date.now()+30000:0});
+      }
+      throwIfCancelled();
+      return null;
     }
-    const sources: Array<{ adapter: PlatformAdapter; tier: FallbackTarget['tier'] }> = targets.length
-      ? targets
-          .filter((t) => t.platform !== track.platform)
-          .map((t) => ({ adapter: this.adapters[t.platform as keyof AdapterMap], tier: t.tier }))
-          .filter((s): s is { adapter: PlatformAdapter; tier: FallbackTarget['tier'] } => !!s.adapter)
-      : [
-          { adapter: this.adapters.netease, tier: 'guest' as const },
-          { adapter: this.adapters.kugou, tier: 'guest' as const },
-        ];
-    for (const { adapter: source, tier } of sources) {
-      if (!source.searchSongs) continue;
-      try {
-        const candidates = await source.searchSongs(keyword, 15);
-        const scored = candidates
-          .map((c) => ({ candidate: c, score: matchScore(c, track), guard: filterCandidate(c, track) }))
-          .filter((s) => s.score >= 0.55 && s.guard.ok)
-          .sort(
-            (a, b) =>
-              a.guard.rank - b.guard.rank || b.score - a.score || a.candidate.title.length - b.candidate.title.length,
-          );
-        for (const { candidate, guard } of scored.slice(0, 3)) {
-          if (guard.note) this.log(`候选 @${source.platform} "${candidate.title}"：${guard.note}`);
-          const albumId =
-            typeof candidate.extra?.albumId === 'string' ? candidate.extra.albumId : undefined;
-          const url = await withTimeout(
-            // VIP/SVIP 平台按用户请求音质取链；免费/未登录平台用默认音质提高可用性
-            source.fetchSongUrl(
-              candidate.sourceId,
-              albumId,
-              tier === 'svip' || tier === 'vip' ? levelFor(source.platform, quality) : undefined,
-              candidate.extra,
-            ),
-            ADAPTER_TIMEOUT_MS,
-            `[${source.platform}] fallback fetchSongUrl`,
-          );
-          if (url?.url && (await this.acceptUrl(url.url, source.platform))) {
-            this.log(`fallback hit "${candidate.title} / ${candidate.artist}" @${source.platform}`);
-            return {
-              url: url.url,
-              fallback: true,
-              platform: source.platform,
-              sourceId: candidate.sourceId,
-              trial: url.trial,
-              quality: url.quality,
-              playable: url.playable ?? true,
-            };
-          }
+  }
+  private async run(track: Track, quality?: string, fallbackOnly = false): Promise<ResolveResult> {
+    const traceId = `play-${++sequence}`, timings: Timings = [], start=Date.now();
+    let direct: ResolveResult | null = null, result: ResolveResult;
+    try {
+      if (!fallbackOnly && PLAYABLE.includes(track.platform)) {
+        try { direct=await this.stage(timings,'primary',track.platform,this.policy.primaryMs,()=>this.source(track,track.platform,quality,false,timings)); } catch { throwIfCancelled(); }
+      }
+      result = direct?.url && !direct.trial ? direct : await this.fallback(track,quality,timings) || direct || failure(track);
+    } catch(e) { result=direct?.url ? direct : failure(track,codeOf(e)); }
+    const complete={...result,traceId,timings:[...timings]};
+    this.log(JSON.stringify({ traceId, ms:Date.now()-start, result:result.url?(result.trial?'TRIAL_ONLY':'OK'):result.code, platform:result.platform, fallback:result.fallback, timings }));
+    return complete;
+  }
+  private async fallback(track: Track, quality: string | undefined, timings: Timings): Promise<ResolveResult | null> {
+    let order: FallbackTarget[]=[];
+    if (this.fallbackTargets) {
+      try { order=await this.stage(timings,'priority','all',100,()=>this.fallbackTargets!()); } catch { throwIfCancelled(); }
+    }
+    const platforms = (order.length ? order.map(t=>t.platform) : PLAYABLE)
+      .filter((p): p is Platform => PLAYABLE.includes(p as Platform) && p !== track.platform && !!this.adapters[p as Platform]?.searchSongs);
+    const cancel = new AbortController();
+    try {
+      const tasks = [...new Set(platforms)].map(platform => withRequestScope(this.policy.totalMs,async()=> {
+        const matchKey=this.key(track)+':'+platform, hit=this.matches.get(matchKey);
+        let candidates: Track[];
+        if (hit && Date.now()-hit.at<24*3600_000) candidates=hit.tracks;
+        else {
+          const rows=await this.stage(timings,'search',platform,this.policy.searchMs,()=>this.adapters[platform].searchSongs!(`${track.title} ${track.artist}`.trim(),12));
+          candidates=rows.map(c=>({c,score:matchScore(c,track),guard:filterCandidate(c,track)}))
+            .filter(x=>x.guard.ok && x.score>=.55).sort((a,b)=>a.guard.rank-b.guard.rank || b.score-a.score).slice(0,2).map(x=>x.c);
+          if (candidates.length) remember(this.matches,matchKey,{at:Date.now(),tracks:candidates},512);
         }
-      } catch (err) {
-        this.log(`fallback search failed @${source.platform}: ${errMsg(err)}`);
-      }
-    }
-    this.log(`no fallback source found: ${keyword}`);
-    return null;
+        let trial: ResolveResult | null=null;
+        for (const c of candidates) {
+          throwIfCancelled();
+          const result=await this.source(c,platform,quality,true,timings);
+          if (result?.url && !result.trial) return result;
+          trial ??= result;
+        }
+        return trial;
+      },{signal:cancel.signal}).catch(()=>null));
+      if (!tasks.length) return null;
+      return await new Promise<ResolveResult | null>(resolve=> {
+        let remaining=tasks.length, trial: ResolveResult | null=null;
+        for (const task of tasks) void task.then(result=> {
+          if (result?.url && !result.trial) { resolve(result); return; }
+          trial ??= result;
+          if (--remaining===0) resolve(trial);
+        });
+      });
+    } finally { cancel.abort(new RequestCancelled('CANCELLED')); }
   }
-
-  /**
-   * Real URL probe before playback. Without an injected probe (smoke/offline) URLs pass through.
-   * Probe failures (403 / dead link / HTML error page) reject the candidate.
-   */
-  private async acceptUrl(url: string, platform: Track['platform'], directError?: string): Promise<boolean> {
-    if (!this.probe) return true;
-    try {
-      const ok = await withTimeout(this.probe(url, platform), PROBE_TIMEOUT_MS, 'audio probe');
-      if (!ok) {
-        this.log(`probe rejected: [${platform}] ${url.slice(0, 100)}${directError ? ` (${directError})` : ''}`);
-      }
-      return ok;
-    } catch (err) {
-      this.log(`probe error: ${errMsg(err)}`);
-      return false;
-    }
+  async resolveFallback(track: Track, quality?: string): Promise<ResolveResult | null> {
+    return withRequestScope(this.policy.totalMs,()=>this.run(track,quality,true)).catch(e=>failure(track,codeOf(e)));
   }
-
-  /** Returns a new Track with fallbackUrl filled (frontend <audio> onerror retry). */
   async enrichFallback(track: Track): Promise<Track> {
-    const result = await this.resolveFallback(track);
-    if (!result) return { ...track, fallbackUrl: '' };
-    return {
-      ...track,
-      originalUrl: result.fallback ? track.originalUrl : result.url,
-      fallbackUrl: result.fallback ? result.url : track.fallbackUrl,
-    };
+    const result=await this.resolveFallback(track);
+    return {...track,originalUrl:'',fallbackUrl:result?.url || ''};
   }
 }

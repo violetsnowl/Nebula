@@ -89,6 +89,8 @@ export interface SongUrl {
   playable?: boolean;
   /** Explicit fetch failure reason (never a silent empty url). */
   error?: string;
+  code?: string;
+  expiresAt?: number;
 }
 
 export interface ResolveResult {
@@ -102,6 +104,11 @@ export interface ResolveResult {
   quality?: string;
   playable?: boolean;
   error?: string;
+  code?: 'NO_SOURCE' | 'TIMEOUT' | 'CANCELLED' | 'TRIAL_ONLY';
+  resolvedAt?: number;
+  expiresAt?: number;
+  traceId?: string;
+  timings?: Array<{ stage: string; platform: string; ms: number; outcome: string }>;
 }
 
 /** Quality option surfaced to the frontend quality picker. */
