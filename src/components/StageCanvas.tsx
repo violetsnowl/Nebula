@@ -1,24 +1,21 @@
 import { memo } from 'react';
 import type { CSSProperties, MouseEvent as ReactMouseEvent, RefObject } from 'react';
 import { MusicCard } from './MusicCard';
-import { CULL_BUFFER } from '../lib/stage';
-import type { CardSpec, LayoutMetrics } from '../lib/layout';
+import type { CardSpec } from '../lib/layout';
 import type { Track } from '../lib/catalog';
 
 interface StageCanvasProps {
   stageRef: RefObject<HTMLDivElement>;
-  /** 有边界星云（#133 方向原型）：星层画布、环境色层、整片倾斜的平面 */
-  bounded: boolean;
+  /** 星层画布、环境色层、整片倾斜的平面 */
   starCanvasRef: RefObject<HTMLCanvasElement>;
   tintRef: RefObject<HTMLDivElement>;
   tilt: number;
-  /** 搜索命中（有边界星云里命中的亮、其余变暗；现有模式为 null） */
+  /** 搜索命中（命中的亮、其余变暗；没有搜索时为 null） */
   matchSet: ReadonlySet<number> | null;
   importing: boolean;
   uiHideCards: boolean;
   visibleIds: number[];
   effectiveCards: CardSpec[];
-  metrics: LayoutMetrics;
   pan: { x: number; y: number };
   zoom: number;
   hoveredId: number | null;
@@ -36,7 +33,6 @@ interface StageCanvasProps {
  */
 export const StageCanvas = memo(function StageCanvas({
   stageRef,
-  bounded,
   starCanvasRef,
   tintRef,
   tilt,
@@ -45,7 +41,6 @@ export const StageCanvas = memo(function StageCanvas({
   uiHideCards,
   visibleIds,
   effectiveCards,
-  metrics,
   pan,
   zoom,
   hoveredId,
@@ -63,8 +58,6 @@ export const StageCanvas = memo(function StageCanvas({
       <MusicCard
         key={card.id}
         card={card}
-        metrics={metrics}
-        buffer={CULL_BUFFER}
         pan={pan}
         zoom={zoom}
         hovered={card.id === hoveredId}
@@ -81,21 +74,15 @@ export const StageCanvas = memo(function StageCanvas({
   return (
     <div
       ref={stageRef}
-      className={`stage-3d${importing ? ' is-importing' : ''}${uiHideCards ? ' is-cards-hidden' : ''}${
-        bounded ? ' is-bounded' : ''
-      }${bounded && matchSet ? ' has-query' : ''}`}
+      className={`stage-3d is-bounded${importing ? ' is-importing' : ''}${uiHideCards ? ' is-cards-hidden' : ''}${
+        matchSet ? ' has-query' : ''
+      }`}
     >
-      {bounded ? (
-        <>
-          <div ref={tintRef} className="space-tint" aria-hidden="true" />
-          <div className="space-plane" style={{ '--tilt': tilt } as CSSProperties}>
-            <canvas ref={starCanvasRef} className="space-stars" aria-hidden="true" />
-            {cardNodes}
-          </div>
-        </>
-      ) : (
-        cardNodes
-      )}
+      <div ref={tintRef} className="space-tint" aria-hidden="true" />
+      <div className="space-plane" style={{ '--tilt': tilt } as CSSProperties}>
+        <canvas ref={starCanvasRef} className="space-stars" aria-hidden="true" />
+        {cardNodes}
+      </div>
     </div>
   );
 });

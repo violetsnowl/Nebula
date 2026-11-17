@@ -1,6 +1,6 @@
 /* eslint-disable */
 // Phase 1.5 自动化 QA（无头 Chrome + 本机 Chrome）
-// 验证：曲库总量 / 视口密度 / 零重叠 / 鱼眼景深 / 悬浮转正 / 无限回绕 / 虚拟化 / 背景系统
+// 验证：曲库总量 / 视口密度 / 重叠 / 透镜景深 / 悬浮转正 / 缩放下限 / 首尾相接 / 虚拟化 / 背景系统 / 拖动不闪烁
 
 const fs = require('fs');
 const os = require('os');
@@ -16,11 +16,10 @@ function log(label, value) {
   console.log(`[QA] ${label}: ${value}`);
 }
 
-const CELL = 340;
-const COLS = Math.ceil(Math.sqrt(1000 * (4 / 3)));
-const ROWS = Math.ceil(1000 / COLS);
-const TILE_W = COLS * CELL;
-const TILE_H = ROWS * CELL;
+/** 主舞台同时挂成 DOM 卡片的上限（与 src/hooks/stage/useStage.ts 的 MAX_MOUNT 一致）。 */
+const MAX_MOUNT = 140;
+/** 缩放下限（最远约 0.28 倍，封面还认得出；1000 首、1600×900 下约在这附近）。 */
+const ZOOM_FLOOR = 0.279;
 
 function parseMatrixScale(transform) {
   const m = transform.match(/^matrix(?:3d)?\((.*)\)$/);
@@ -60,22 +59,33 @@ async function main() {
     fs.writeFileSync(testPng, PNG.sync.write(p));
   }
 
+  // 本地静音音频（20 秒，8kHz 8 位单声道 WAV 的 data URL）：空域歌词逐字层那一项用它播放，
+  // 不再依赖外网 soundhelix.com（网慢时 10 秒内播不到第一句歌词，偶发失败，#139）
+  const lyricAudio = (() => {
+    const rate = 8000;
+    const n = rate * 20;
+    const b = Buffer.alloc(44 + n, 128);
+    b.write('RIFF', 0);
+    b.writeUInt32LE(36 + n, 4);
+    b.write('WAVEfmt ', 8);
+    b.writeUInt32LE(16, 16);
+    b.writeUInt16LE(1, 20);
+    b.writeUInt16LE(1, 22);
+    b.writeUInt32LE(rate, 24);
+    b.writeUInt32LE(rate, 28);
+    b.writeUInt16LE(1, 32);
+    b.writeUInt16LE(8, 34);
+    b.write('data', 36);
+    b.writeUInt32LE(n, 40);
+    return `data:audio/wav;base64,${b.toString('base64')}`;
+  })();
+
   const browser = await chromium.launch({
     executablePath: CHROME,
     headless: true,
     args: ['--force-color-profile=srgb', '--hide-scrollbars'],
   });
   const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
-  // 验收新星云期间（#134）：默认已是新星云，但主套件的断言（鱼眼、周期回绕、搜索聚簇……）是按旧卡片墙写的，
-  // 这里先固定旧卡片墙跑主套件；新星云由「主舞台方向原型」一节单独检查。旧卡片墙删除时这一套改写。
-  await page.addInitScript(() => {
-    try {
-      localStorage.setItem('music-nebula.stage-space.v3', JSON.stringify({ classic: true }));
-    } catch {
-      /* ignore */
-    }
-  });
-
   const errors = [];
   page.on('console', (msg) => {
     if (msg.type() === 'error' && !/Failed to load resource|ERR_|net::|Audio|media/i.test(msg.text())) {
@@ -147,18 +157,24 @@ async function main() {
       };
     });
     const visible = cards.filter((c) => c.intersect);
+    const stage = document.querySelector('.stage-3d');
     return {
       total: window.__nebula?.total ?? -1,
       mounted: cards.length,
       onScreen: visible.length,
       pan: window.__nebula?.pan(),
       cards: visible,
+      // 新星云的结构：有界舞台、星层画布；所有挂载卡片（不只是屏幕内的）都不带模糊滤镜
+      bounded: !!(stage && stage.classList.contains('is-bounded')),
+      canvas: !!document.querySelector('canvas.space-stars'),
+      blurred: cards.filter((c) => /blur\(/.test(c.filter)).length,
     };
   });
   log('曲库总量', stats.total);
-  log('已挂载 DOM 卡片数(≤60)', stats.mounted);
-  log('视口内卡片数', stats.onScreen);
+  log(`已挂载 DOM 卡片数(≤${MAX_MOUNT})`, stats.mounted);
+  log('视口内卡片数(15–140)', stats.onScreen);
   log('初始 pan', JSON.stringify(stats.pan));
+  log('有界舞台 / 星层画布', `${stats.bounded} / ${stats.canvas}`);
 
   // ---------- 2) 零重叠 ----------
   let overlaps = 0;
@@ -173,7 +189,8 @@ async function main() {
   }
   log('重叠卡片对数(允许自然重叠，仅记录)', overlaps);
 
-  // ---------- 3) 鱼眼景深 ----------
+  // ---------- 3) 透镜景深 ----------
+  // 新星云过 Sarkar–Brown 透镜：中心的卡片放大、层叠更高，外圈压缩变小；任何卡片都不加模糊
   const vw = 1600;
   const vh = 900;
   let nearest = null;
@@ -189,6 +206,7 @@ async function main() {
   log('中心最近卡片 scale/blur/dist', `${nearest.scale.toFixed(3)} / ${nearest.blur.toFixed(2)}px / ${Math.round(nearest.dist)}`);
   log('边缘最远卡片 scale/blur/dist', `${farthest.scale.toFixed(3)} / ${farthest.blur.toFixed(2)}px / ${Math.round(farthest.dist)}`);
   log('中心卡 z-index / 边缘卡 z-index', `${nearest.z} / ${farthest.z}`);
+  log('带模糊滤镜的卡片数(应为 0)', stats.blurred);
 
   // ---------- 4) 帧耗时 ----------
   const idleFrameMs = await page.evaluate(
@@ -264,7 +282,10 @@ async function main() {
       const d = Math.hypot(cx - vw / 2, cy - vh / 2);
       if (d < bestD) {
         bestD = d;
-        best = { x: cx, y: cy };
+        // 同时记下悬浮前的缩放，悬浮后要比它大
+        const m = getComputedStyle(el).transform.match(/^matrix(?:3d)?\((.*)\)$/);
+        const n = m ? m[1].split(',').map(Number) : [0, 0];
+        best = { x: cx, y: cy, baseScale: Math.hypot(n[0], n[1]) };
       }
     }
     return best;
@@ -299,7 +320,7 @@ async function main() {
   log('悬浮后旋转角(应≈0)', hoverDeg);
   log('悬浮后 blur(应=0)', hoverBlur);
   log('悬浮后 zIndex', hoverState?.z);
-  log('悬浮后 scale(应>基础)', hoverState?.scale.toFixed(3));
+  log('悬浮前 / 后 scale(后应更大)', `${hoverTarget.baseScale.toFixed(3)} / ${hoverState?.scale.toFixed(3)}`);
   await page.mouse.move(20, 20);
 
   // ---------- 6) 拖拽平移 ----------
@@ -327,19 +348,44 @@ async function main() {
   log('拖拽后 pan / 卡片--x', `${JSON.stringify(afterDrag.pan)} / ${afterDrag.x}`);
   log('拖拽后挂载数', afterDrag.mounted);
 
-  // ---------- 7) 滚轮远移（周期回绕） ----------
+  // ---------- 7) 缩放下限 + 首尾相接 ----------
+  // 滚轮一直往外缩：停在下限（最远约 0.28 倍），再滚也不会更低
   await page.mouse.move(800, 450);
-  for (let i = 0; i < 8; i++) {
-    await page.mouse.wheel(0, 1600);
-    await page.waitForTimeout(50);
+  const wheelOut = async (n) => {
+    for (let i = 0; i < n; i++) {
+      await page.mouse.wheel(0, 1600);
+      await page.waitForTimeout(50);
+    }
+    await page.waitForTimeout(500);
+  };
+  await wheelOut(6);
+  const zoomFloor1 = await page.evaluate(() => window.__nebula.zoom());
+  await wheelOut(10);
+  const zoomFloor2 = await page.evaluate(() => window.__nebula.zoom());
+  log('滚轮缩到底后 zoom(应 ≥ 下限)', zoomFloor1.toFixed(4));
+  log('继续滚轮后 zoom(应不再变小)', zoomFloor2.toFixed(4));
+  // 首尾相接：镜头飞到离原点很近的地方（pan 本该是负的），pan 要回绕进 [0, period)；再长距离拖几次仍在范围内
+  const period = await page.evaluate(() => window.__nebula.space().period);
+  await page.evaluate((T) => window.__nebula.lookAt(T * 0.02, T * 0.02, 1), period);
+  await page.waitForTimeout(600);
+  const wrapA = await page.evaluate(() => ({ pan: window.__nebula.pan(), mounted: document.querySelectorAll('.music-card').length }));
+  for (const [x0, x1, dy] of [[100, 1500, 120], [1500, 100, -180], [100, 1500, 200], [1500, 100, -60]]) {
+    await page.mouse.move(x0, 300);
+    await page.mouse.down();
+    await page.mouse.move(x1, 300 + dy, { steps: 10 });
+    await page.mouse.up();
+    await page.waitForTimeout(250);
   }
-  await page.waitForTimeout(500);
+  await page.waitForTimeout(1200);
   const afterWheel = await page.evaluate(() => ({
-    pan: window.__nebula?.pan(),
+    pan: window.__nebula.pan(),
     mounted: document.querySelectorAll('.music-card').length,
   }));
-  log('滚轮后 pan(应 < tileHeight 12320，证明回绕)', JSON.stringify(afterWheel.pan));
-  log('滚轮远移后挂载数(应>0)', afterWheel.mounted);
+  const inPeriod = (p) => p.x >= 0 && p.x < period && p.y >= 0 && p.y < period;
+  log('period', Math.round(period));
+  log('飞到原点附近后 pan(应在 [0,period)，且 x 回绕到靠近 period)', JSON.stringify(wrapA.pan));
+  log('长距离拖动后 pan(应仍在 [0,period))', JSON.stringify(afterWheel.pan));
+  log('回绕后挂载数(应>0)', `${wrapA.mounted} / ${afterWheel.mounted}`);
 
   // ---------- 8) 回到中心 ----------
   // 还没有当前歌时「回到中心」按设计隐藏（visibility:hidden），Playwright 的可见性检查点不了；
@@ -666,47 +712,97 @@ async function main() {
     !lsClosed.dataLs && !lsClosed.root && !lsClosed.hero && lsClosed.coverVisible;
   log('听音空间进出', JSON.stringify({ lsOpen, lsClosed }));
 
-  // 主舞台星云（#133 / #134 / #135）：三种排法都能排布（位置都是有限数）、有封面层画布；
-  // 画布首尾相接、没有边界（#136）；滚轮一直往外缩会停在下限（最远约 0.28 倍，封面还认得出；小歌单下限更高）；切回旧卡片墙后一切照旧
-  const spaceLab = await page.evaluate(async () => {
-    // 每次换模式舞台都会重建 __nebula，所以每次都取最新的
-    const n = () => window.__nebula;
-    if (!n() || !n().stageMode) return { ok: false };
-    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
-    const probe = () => {
+  // 主舞台星云（#133 / #134 / #135 / #136 / #137）：三种排法都能排布（位置都是有限数）、有封面层画布；
+  // 画布首尾相接、没有边界；滚轮一直往外缩会停在下限（最远约 0.28 倍，封面还认得出；小歌单下限更高）；
+  // 拖动不闪烁（#137 回归）：换排法等够久之后，拖动期间没有卡片重放进场动画、DOM 里没有卡片被挪动，也没有同一首歌挂了两张。
+  // 顺序最后落在默认排法（按颜色），后面的用例都跑在默认体验上。
+  const spaceLab = { ok: true };
+  if (!(await page.evaluate(() => !!(window.__nebula && window.__nebula.stageMode)))) spaceLab.ok = false;
+  const probeStage = () =>
+    page.evaluate(() => {
+      const n = window.__nebula;
       const st = document.querySelector('.stage-3d');
       const cards = [...document.querySelectorAll('.stage-3d .music-card')];
       const bad = cards.filter((c) => !Number.isFinite(parseFloat(c.style.getPropertyValue('--x')))).length;
-      const sp = n().space();
-      return { bounded: !!(st && st.classList.contains('is-bounded')), canvas: !!document.querySelector('.space-stars'), cards: cards.length, bad, zoom: +sp.zoom.toFixed(3), period: Math.round(sp.period), clusters: sp.clusters };
-    };
-    const out = { ok: true };
-    for (const m of ['cluster', 'chroma', 'random']) {
-      n().stageMode(m);
-      await wait(1000);
-      const a = probe();
+      const sp = n.space();
+      const ids = cards.map((c) => c.getAttribute('data-song-id'));
+      return {
+        bounded: !!(st && st.classList.contains('is-bounded')),
+        canvas: !!document.querySelector('.space-stars'),
+        cards: cards.length,
+        bad,
+        dups: ids.length - new Set(ids).size,
+        zoom: +sp.zoom.toFixed(3),
+        period: Math.round(sp.period),
+        clusters: sp.clusters,
+        labelsIsArray: Array.isArray(sp.labels),
+      };
+    });
+  for (const m of spaceLab.ok ? ['cluster', 'random', 'chroma'] : []) {
+    // 每次换排法舞台都会重建 __nebula，所以每次都取最新的；等够久（> 1s），让进场淡入（data-arriving 约 0.9s）过去
+    await page.evaluate((mode) => window.__nebula.stageMode(mode), m);
+    await page.waitForTimeout(1400);
+    const a = await probeStage();
+    // 拖动不闪烁：监听进场动画重放 + 卡片 DOM 节点被挪动（同一次回调里既被移除又被加入）
+    await page.evaluate(() => {
+      const st = document.querySelector('.stage-3d');
+      const plane = document.querySelector('.space-plane');
+      const w = (window.__qaFlicker = { anim: 0, moved: 0, arriving: st.hasAttribute('data-arriving') });
+      st.addEventListener(
+        'animationstart',
+        (e) => {
+          if (e.animationName === 'space-card-in') w.anim++;
+        },
+        true,
+      );
+      new MutationObserver((recs) => {
+        const removed = new Set();
+        const added = new Set();
+        for (const r of recs) {
+          r.removedNodes.forEach((x) => x.classList && x.classList.contains('music-card') && removed.add(x));
+          r.addedNodes.forEach((x) => x.classList && x.classList.contains('music-card') && added.add(x));
+        }
+        for (const x of added) if (removed.has(x)) w.moved++;
+      }).observe(plane, { childList: true });
+    });
+    await page.evaluate(() => {
+      const c = window.__nebula.space().center;
+      window.__nebula.lookAt(c.x, c.y, 1);
+    });
+    await page.waitForTimeout(1200);
+    for (const [x0, y0, x1, y1] of [[400, 450, 1100, 450], [1100, 450, 400, 520], [800, 200, 800, 700], [800, 700, 820, 150]]) {
+      await page.mouse.move(x0, y0);
+      await page.mouse.down();
+      await page.mouse.move(x1, y1, { steps: 14 });
+      await page.mouse.up();
+      await page.waitForTimeout(350);
+    }
+    await page.waitForTimeout(800);
+    const flicker = await page.evaluate(() => ({ ...window.__qaFlicker, dragMounted: document.querySelectorAll('.stage-3d .music-card').length }));
+    const dragDups = (await probeStage()).dups;
+    await page.mouse.move(20, 20);
+    // 滚轮一直往外缩，看停在不在下限
+    await page.evaluate(async () => {
       const st = document.querySelector('.stage-3d');
       const r = st.getBoundingClientRect();
       for (let i = 0; i < 20; i++) st.dispatchEvent(new WheelEvent('wheel', { deltaY: 120, clientX: r.width / 2, clientY: r.height / 2, bubbles: true, cancelable: true }));
-      await wait(1000);
-      out[m] = { a, b: probe() };
-    }
-    n().stageMode('classic');
-    await wait(1000);
-    out.classic = probe();
-    return out;
-  });
+    });
+    await page.waitForTimeout(1000);
+    spaceLab[m] = { a, b: await probeStage(), flicker: { ...flicker, dragDups } };
+  }
   const spaceOk =
     spaceLab.ok &&
     ['cluster', 'chroma', 'random'].every((m) => {
       const v = spaceLab[m];
-      return v.a.bounded && v.a.canvas && v.a.cards >= 3 && v.a.bad === 0 && v.a.period > 0 && v.b.zoom >= 0.279 && v.b.bad === 0;
+      return (
+        v.a.bounded && v.a.canvas && v.a.cards >= 8 && v.a.bad === 0 && v.a.dups === 0 && v.a.period > 0 && v.b.zoom >= 0.279 && v.b.bad === 0 &&
+        // #137 回归：拖动期间没有进场动画重放、没有卡片 DOM 被挪动、没有重复的歌
+        !v.flicker.arriving && v.flicker.anim === 0 && v.flicker.moved === 0 && v.flicker.dragDups === 0 && v.flicker.dragMounted > 0
+      );
     }) &&
     spaceLab.cluster.a.clusters > 1 &&
-    !spaceLab.classic.bounded &&
-    !spaceLab.classic.canvas &&
-    spaceLab.classic.cards >= 8;
-  log('主舞台方向原型', JSON.stringify(spaceLab));
+    spaceLab.cluster.a.labelsIsArray;
+  log('主舞台星云', JSON.stringify(spaceLab));
 
 
   // 10b. 点击卡片播放
@@ -993,11 +1089,11 @@ async function main() {
 
   // 10c-. 空域歌词换用听音空间的逐字层（#124）：当前句是 .u 逐字、带扫光进度；倾斜不超过 3°；
   // 漫游（没进入聆听）时退成氛围：当前句半透明；旧的扫光 / 上浮节点不再出现
-  await page.evaluate(() => {
+  await page.evaluate((audio) => {
     const n = window.__nebula;
-    const s0 = { ...n.songsData()[1], source: 'netease', sourceId: 'qa-lyric' };
+    const s0 = { ...n.songsData()[1], source: 'netease', sourceId: 'qa-lyric', audio };
     n.player.playSong(s0, [s0]);
-  });
+  }, lyricAudio);
   await page.mouse.move(700, 250);
   await page.waitForSelector('.lyrics-layer .flow-lyric.is-current .u', { timeout: 10000 }).catch(() => {});
   await page.waitForTimeout(400);
@@ -1105,24 +1201,29 @@ async function main() {
     !spaceOk ||
     !lsLayoutOk ||
     stats.total !== 1000 ||
-    stats.mounted > 60 ||
-    stats.onScreen < 8 ||
-    stats.onScreen > 30 ||
-    nearest.scale < 1.7 ||
-    farthest.scale > 0.7 ||
-    nearest.scale - farthest.scale < 1.0 ||
+    stats.mounted > MAX_MOUNT ||
+    stats.onScreen < 15 ||
+    stats.onScreen > MAX_MOUNT ||
+    !stats.bounded ||
+    !stats.canvas ||
+    // 透镜景深：中心的卡片更大、层叠更高；新星云不用模糊滤镜
+    nearest.scale - farthest.scale < 0.05 ||
     nearest.z <= farthest.z ||
-    // 景深（NEBULA_UI_SYSTEM §8.2）：焦点卡片完全不模糊；只有最外圈有微模糊（最大约 1.1px）
-    nearest.blur > 0 ||
-    farthest.blur < 0.5 ||
+    stats.blurred > 0 ||
     idleFrameMs > 150 ||
     !hoverState ||
     hoverDeg === null ||
     Math.abs(hoverDeg) > 1 ||
     hoverBlur !== 0 ||
     hoverState.z !== '10000' ||
+    hoverState.scale <= hoverTarget.baseScale ||
     beforeDrag.pan.x === afterDrag.pan.x ||
-    afterWheel.pan.y >= TILE_H ||
+    zoomFloor1 < ZOOM_FLOOR ||
+    Math.abs(zoomFloor2 - zoomFloor1) > 0.002 ||
+    !inPeriod(wrapA.pan) ||
+    wrapA.pan.x < period / 2 ||
+    !inPeriod(afterWheel.pan) ||
+    wrapA.mounted === 0 ||
     afterWheel.mounted === 0 ||
     importTotal !== 16 ||
     mountedAfterImport < 10 ||
@@ -1158,17 +1259,26 @@ async function main() {
   const diagnostics = {
     listenSpace: !listenOk,
     listenLayout: !lsLayoutOk,
-    spaceLab: !spaceOk,
+    stageNebula: !spaceOk,
     total: stats.total !== 1000,
-    mounted: stats.mounted > 60,
-    onScreen: stats.onScreen < 8 || stats.onScreen > 30,
-    fisheyeScale: nearest.scale < 1.7 || farthest.scale > 0.7 || nearest.scale - farthest.scale < 1.0,
-    fisheyeZ: nearest.z <= farthest.z,
-    fisheyeBlur: nearest.blur > 0 || farthest.blur < 0.5,
+    mounted: stats.mounted > MAX_MOUNT,
+    onScreen: stats.onScreen < 15 || stats.onScreen > MAX_MOUNT,
+    stageStructure: !stats.bounded || !stats.canvas,
+    lensScale: nearest.scale - farthest.scale < 0.05,
+    lensZ: nearest.z <= farthest.z,
+    noBlur: stats.blurred > 0,
     idleMs: idleFrameMs > 150,
-    hover: !hoverState || hoverDeg === null || Math.abs(hoverDeg) > 1 || hoverBlur !== 0 || hoverState.z !== '10000',
+    hover:
+      !hoverState ||
+      hoverDeg === null ||
+      Math.abs(hoverDeg) > 1 ||
+      hoverBlur !== 0 ||
+      hoverState.z !== '10000' ||
+      hoverState.scale <= hoverTarget.baseScale,
     drag: beforeDrag.pan.x === afterDrag.pan.x,
-    wheel: afterWheel.pan.y >= TILE_H || afterWheel.mounted === 0,
+    zoomFloor: zoomFloor1 < ZOOM_FLOOR || Math.abs(zoomFloor2 - zoomFloor1) > 0.002,
+    wrapTorus:
+      !inPeriod(wrapA.pan) || wrapA.pan.x < period / 2 || !inPeriod(afterWheel.pan) || wrapA.mounted === 0 || afterWheel.mounted === 0,
     importOk: importTotal !== 16 || mountedAfterImport < 10,
     play: !playState1.title || !playState1.playing,
     nav: idAfterNext === idBefore,

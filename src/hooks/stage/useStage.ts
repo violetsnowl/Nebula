@@ -1,24 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { MutableRefObject, RefObject } from 'react';
 import { audioPlayer, FOREIGN_SONG_ID } from '../../lib/audio/AudioPlayer';
-import {
-  CARD_HEIGHT,
-  CARD_WIDTH,
-  SEED,
-  cardScreenPos,
-  computeTileSize,
-  generateCards,
-  type CardSpec,
-  type LayoutMetrics,
-} from '../../lib/layout';
-import { fisheyeFilter, fisheyeMetaAlpha, fisheyeScale, fisheyeZIndex } from '../../lib/fisheye';
+import { CARD_HEIGHT, CARD_WIDTH } from '../../lib/layout';
 import { makeMetaBox, resolveMetaVisibility, type MetaBox } from '../../lib/metaOverlap';
-import { buildSpatialIndex, queryVisibleIds } from '../../lib/spatial';
-import { CULL_BUFFER, type FrameBus } from '../../lib/stage';
+import type { FrameBus } from '../../lib/stage';
 import { initGlassGlow, registerProximity, unregisterProximity } from '../../lib/glassGlow';
 import type { Track } from '../../lib/catalog';
-import { mulberry32 } from '../../lib/rng';
-import { buildClusterPositions, matchSongs, panForCentering, type SearchMatch } from '../../lib/search';
+import { matchSongs, type SearchMatch } from '../../lib/search';
 import { PanController } from '../../lib/panEngine';
 import { listenBus, onListenFrame, partOffset } from '../../lib/listenMode';
 import type { PanFrame } from '../../lib/panEngine';
@@ -27,7 +15,7 @@ import type { DesktopTrack } from '../../lib/playlist/ipcClient';
 import { libraryService } from '../../lib/library';
 import { preferredQuality } from '../../lib/preferences';
 import type { ImportStatus } from '../../lib/playlistTypes';
-import { getSpaceLab, registerSpaceCommand, setSpaceLab, useSpaceLab, type StageMode } from '../../lib/space/lab';
+import { getSpaceLab, registerSpaceCommand, setSpaceLab, useSpaceLab, type StageLayout } from '../../lib/space/lab';
 import { buildChroma, buildCluster, buildRandom, queryRect, zoomFloor, type SpaceWorld } from '../../lib/space/world';
 import { camCenter, lensDelta, project, worldPerPixel, type Proj } from '../../lib/space/lens';
 import { ensureTones, oklabToRgb, toneOf, useToneProgress } from '../../lib/space/tone';
@@ -36,7 +24,7 @@ import { StarField, type StarFrame } from '../../lib/space/stars';
 import { onThumbsReady } from '../../lib/space/thumbs';
 
 /**
- * 有边界星云里同时挂成 DOM 卡片的上限。几百张卡片同时变动时样式重算太贵（实测每张约 50µs/帧，
+ * 星云里同时挂成 DOM 卡片的上限。几百张卡片同时变动时样式重算太贵（实测每张约 50µs/帧，
  * 0.3 倍缩放下 190 张时拖动每帧 40–50ms），所以小卡片交给星层画布画缩略图。
  */
 const MAX_MOUNT = 140;
@@ -71,7 +59,7 @@ interface UseStageOptions {
   controllerRef: MutableRefObject<PanController | null>;
   /** 当前曲库（渲染卡片 + 曲库刷新）。 */
   songs: Track[];
-  /** 搜索命中（簇团替换有效布局）。 */
+  /** 搜索命中（命中的亮、其余变暗）。 */
   searchMatches: SearchMatch[];
   /** 搜索聚簇定位（__nebula.search 接线）。 */
   applySearch: (matches: SearchMatch[], focusIndex: number | null) => void;
@@ -81,17 +69,14 @@ interface UseStageOptions {
   completeImport: (status: ImportStatus, message: string) => void;
   /** 当前播放歌曲 id（低频 context 注入，避免 stage 依赖 playback hook）。 */
   currentSongId: number | null;
-  /** 由 App 声明并传给 useSearchCluster 的布局 refs（useStage 渲染时写入）。 */
-  metricsRef: MutableRefObject<LayoutMetrics>;
-  effectiveCardsRef: MutableRefObject<CardSpec[]>;
-  /** 有边界星云（#133 方向原型，现有模式为 null），同上由 useStage 渲染时写入。 */
-  worldRef: MutableRefObject<SpaceWorld | null>;
+  /** 由 App 声明并传给 useSearchCluster 的星云 ref（useStage 渲染时写入）。 */
+  worldRef: MutableRefObject<SpaceWorld>;
 }
 
 /**
  * 舞台领域（docs/project/ARCHITECTURE.md §2，最后迁移的高风险块）：
  * 拥有 hovered/visible/failed/liked/渐进揭示/PanController/虚拟化渲染数据；
- * 只依赖 lib（audioPlayer / LibraryService / 布局 / 空间索引 / 搜索），不依赖其他 hook。
+ * 只依赖 lib（audioPlayer / LibraryService / 星云布局与透镜 / 搜索），不依赖其他 hook。
  */
 export function useStage({
   controllerRef,
@@ -101,8 +86,6 @@ export function useStage({
   contextMenuRef,
   completeImport,
   currentSongId,
-  metricsRef,
-  effectiveCardsRef,
   worldRef,
 }: UseStageOptions) {
   const [hoveredId, setHoveredId] = useState<number | null>(null);
@@ -122,23 +105,22 @@ export function useStage({
   const spawnFromCenterRef = useRef<Set<number> | null>(null);
   const lastFailedSongRef = useRef<number | null>(null);
 
-  // 主舞台方向原型（#133）：现有卡片墙 / A 色彩星图 / B 星团，由开发者面板切换，默认现有
+  // 星云的排法（设置 › 外观 › 星云怎么排）：按歌手 / 按颜色 / 随机
   const lab = useSpaceLab();
   const toneProgress = useToneProgress();
-  // 两个方向都要封面色调（A 按它排布，缩小时每首歌画成这个颜色的星）：切过去时把缺的排队去取，1441 张只取一次
+  // 按颜色排布、缩小时每首歌画成封面颜色的星：把缺的封面色调排队去取，1441 张只取一次
   useEffect(() => {
-    if (lab.mode !== 'classic') ensureTones(songs.map((s) => s.cover ?? '').filter(Boolean));
-  }, [lab.mode, songs]);
-  // 两个方向都按色调排（A 全部、B 的单曲歌手）：一批取完（version 变）再排一次
+    ensureTones(songs.map((s) => s.cover ?? '').filter(Boolean));
+  }, [songs]);
+  // 按颜色（全部）、按歌手（单曲歌手）都按色调排：一批取完（version 变）再排一次
   const toneVersion = lab.mode === 'chroma' || lab.mode === 'cluster' ? toneProgress.version : 0;
   // 色雾按色调画：随机排法的布局不依赖色调，但色雾要跟着色调更新
   const hazeVersionRef = useRef(0);
   hazeVersionRef.current = toneProgress.version;
-  const world = useMemo<SpaceWorld | null>(() => {
-    if (lab.mode === 'chroma') return buildChroma(songs);
+  const world = useMemo<SpaceWorld>(() => {
     if (lab.mode === 'cluster') return buildCluster(songs);
     if (lab.mode === 'random') return buildRandom(songs);
-    return null;
+    return buildChroma(songs);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lab.mode, songs, toneVersion]);
   worldRef.current = world;
@@ -146,40 +128,9 @@ export function useStage({
   const worldNowRef = useRef(world);
   worldNowRef.current = world;
 
-  // 派生布局（与 useSearchCluster 共用：渲染时写 refs，回调运行时读）
-  const cards = useMemo(() => generateCards(mulberry32(SEED), songs), [songs]);
-  const metrics = useMemo(() => computeTileSize(songs.length), [songs.length]);
-  metricsRef.current = metrics;
-  // 搜索「把命中的卡挪到画布中心」只属于现有卡片墙；有边界星云里卡片不动，命中的亮、其余变暗，镜头飞过去
-  const clusterPositions = useMemo(
-    () =>
-      world
-        ? new Map<number, { x: number; y: number }>()
-        : buildClusterPositions(
-            cards,
-            searchMatches.map((m) => m.index),
-            metrics,
-          ),
-    [cards, searchMatches, metrics, world],
-  );
-  const effectiveCards = useMemo(
-    () =>
-      world
-        ? world.cards
-        : clusterPositions.size
-          ? cards.map((c, i) => {
-              const p = clusterPositions.get(i);
-              return p ? { ...c, x: p.x, y: p.y } : c;
-            })
-          : cards,
-    [cards, clusterPositions, world],
-  );
-  effectiveCardsRef.current = effectiveCards;
-  const spatial = useMemo(() => buildSpatialIndex(world ? [] : effectiveCards, metrics), [effectiveCards, metrics, world]);
-  const matchSet = useMemo(
-    () => (world && searchMatches.length ? new Set(searchMatches.map((m) => m.index)) : null),
-    [world, searchMatches],
-  );
+  const effectiveCards = world.cards;
+  // 搜索时命中的卡片亮、其余变暗；卡片不挪，镜头飞过去
+  const matchSet = useMemo(() => (searchMatches.length ? new Set(searchMatches.map((m) => m.index)) : null), [searchMatches]);
   const matchSetRef = useRef(matchSet);
   matchSetRef.current = matchSet;
   const starCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -192,16 +143,11 @@ export function useStage({
   const tintAtRef = useRef(0);
   const lastStarFrameRef = useRef<StarFrame | null>(null);
   const handleCardPlayRef = useRef<(songId: number) => Promise<void>>(async () => {});
-  const spatialRef = useRef(spatial);
-  spatialRef.current = spatial;
 
-  const panRef = useRef({
-    x: (metrics.tileWidth - (typeof window !== 'undefined' ? window.innerWidth : 1280)) / 2,
-    y: (metrics.tileHeight - (typeof window !== 'undefined' ? window.innerHeight : 800)) / 2,
-  });
+  const panRef = useRef({ x: 0, y: 0 });
   const frameBusRef = useRef<FrameBus>({
-    x: panRef.current.x,
-    y: panRef.current.y,
+    x: 0,
+    y: 0,
     zoom: 1,
     vw: typeof window !== 'undefined' ? window.innerWidth : 1280,
     vh: typeof window !== 'undefined' ? window.innerHeight : 800,
@@ -261,7 +207,7 @@ export function useStage({
   });
 
   /**
-   * 有边界星云的一帧（#133）：查镜头周围的卡片 → 过透镜投影 → 太小 / 超出上限的画成星，其余挂成卡片；
+   * 星云的一帧（#133）：查镜头周围的卡片 → 过透镜投影 → 太小 / 超出上限的画成星，其余挂成卡片；
    * 卡片在屏幕边缘、透镜外圈、缩小时淡出（透明度，不用滤镜，省重绘）；散开 / 退潮照旧在屏幕坐标上推。
    */
   const boundedFrame = useCallback((frame: PanFrame, world: SpaceWorld) => {
@@ -352,7 +298,6 @@ export function useStage({
         mountedA[q.id] = 0; // 还没挂上（下一次渲染才有）：先由画布画
         continue;
       }
-      el.classList.remove('is-offscreen');
       if (spawnSet?.has(q.id)) {
         el.style.setProperty('--x', `${vw / 2 - CARD_WIDTH / 2}px`);
         el.style.setProperty('--y', `${vh / 2 - CARD_HEIGHT / 2}px`);
@@ -457,131 +402,7 @@ export function useStage({
     frameBusRef.current.zoom = frame.zoom;
     frameBusRef.current.vw = frame.vw;
     frameBusRef.current.vh = frame.vh;
-    const worldNow = worldNowRef.current;
-    if (worldNow) {
-      boundedFrame(frame, worldNow);
-      return;
-    }
-    starsRef.current?.clear();
-    const cardsNow = effectiveCardsRef.current;
-    const spatialNow = spatialRef.current;
-    const metricsNow = metricsRef.current;
-    const ids = queryVisibleIds(cardsNow, spatialNow, frame, CULL_BUFFER, metricsNow).filter(
-      (id) => id < revealedRef.current,
-    );
-    const maxDist = Math.hypot(frame.vw, frame.vh) / 2;
-    const spawnSet = spawnFromCenterRef.current;
-    // 漫游 / 聆听交接「散开」（NEBULA_UI_SYSTEM §7.1）：卡片中心按离歌词区的远近向外推，景深按推开后的位置算
-    const partK = listenBus.style === 'part' ? listenBus.k : 0;
-    // 「退潮」（#124）：卡片像退去的潮水，向外、略向下漂散（离中心越远漂得越多），材质由 CSS 化成薄雾
-    const ebbK = listenBus.style === 'ebb' ? listenBus.k : 0;
-    partActiveRef.current = partK > 0 || ebbK > 0;
-
-    const metaPool = metaPoolRef.current;
-    let metaN = 0;
-
-    const cur = visibleRef.current;
-    let changed = ids.length !== cur.size;
-    if (!changed) {
-      for (const id of ids) {
-        if (!cur.has(id)) {
-          changed = true;
-          break;
-        }
-      }
-    }
-    if (changed) {
-      visibleRef.current = new Set(ids);
-      setVisibleIds(ids);
-    }
-
-    for (const id of ids) {
-      const el = cardEls.current.get(id);
-      if (!el) continue;
-      const card = cardsNow[id];
-      if (!card) continue;
-      const pos = cardScreenPos(
-        card,
-        panRef.current,
-        metricsNow.tileWidth,
-        metricsNow.tileHeight,
-        frame.vw,
-        frame.vh,
-        CULL_BUFFER,
-        frame.zoom,
-      );
-      if (!pos) {
-        el.classList.add('is-offscreen');
-        continue;
-      }
-      el.classList.remove('is-offscreen');
-      if (spawnSet?.has(id)) {
-        el.style.setProperty('--x', `${frame.vw / 2 - CARD_WIDTH / 2}px`);
-        el.style.setProperty('--y', `${frame.vh / 2 - CARD_HEIGHT / 2}px`);
-        el.style.setProperty('--scale', '0.9');
-        el.style.setProperty('--card-filter', 'none');
-        el.style.setProperty('--meta-a', '1');
-        el.style.zIndex = '1';
-        spawnSet.delete(id);
-        continue;
-      }
-      let x = pos.x;
-      let y = pos.y;
-      let dist = pos.dist;
-      let pushDim = 0;
-      if (partK > 0) {
-        const cx = pos.x + CARD_WIDTH / 2;
-        const cy = pos.y + CARD_HEIGHT / 2;
-        const p = partOffset(cx, cy, frame.vw, frame.vh, partK, listenBus.layout, id * 2.399);
-        x += p.x - cx;
-        y += p.y - cy;
-        dist = Math.hypot(p.x - frame.vw / 2, p.y - frame.vh / 2);
-        pushDim = p.push;
-      } else if (ebbK > 0) {
-        const cx = pos.x + CARD_WIDTH / 2;
-        const cy = pos.y + CARD_HEIGHT / 2;
-        x += (cx - frame.vw / 2) * 0.18 * ebbK;
-        y += (cy - frame.vh * 0.45) * 0.14 * ebbK + frame.vh * 0.05 * ebbK;
-      }
-      const depthFilter = fisheyeFilter(dist, maxDist);
-      el.style.setProperty('--x', `${x}px`);
-      el.style.setProperty('--y', `${y}px`);
-      el.style.setProperty('--scale', String(Math.min(3.4, fisheyeScale(dist, maxDist) * frame.zoom)));
-      el.style.setProperty(
-        '--card-filter',
-        pushDim > 0.01
-          ? `${depthFilter === 'none' ? '' : `${depthFilter} `}brightness(${(1 - 0.42 * pushDim).toFixed(3)})`
-          : depthFilter,
-      );
-      const scale = Math.min(3.4, fisheyeScale(dist, maxDist) * frame.zoom);
-      const z = fisheyeZIndex(dist, maxDist);
-      el.style.zIndex = String(z);
-      // --meta-a 先按景深（焦点圈内为 1）写一个初值，循环后再由防压盖判断改写
-      const base = fisheyeMetaAlpha(dist, maxDist);
-      el.style.setProperty('--meta-a', String(base));
-      if (cardBoxHRef.current === 0) cardBoxHRef.current = el.offsetHeight;
-      const box = (metaPool[metaN] ??= makeMetaBox());
-      box.id = id;
-      box.el = el;
-      box.x = x;
-      box.y = y;
-      box.s = scale;
-      box.rot = card.rotateZ;
-      box.z = z;
-      box.base = base;
-      box.exempt = card.track.id === currentSongIdRef.current;
-      metaN++;
-    }
-
-    // 标题防压盖：只有结果变成 0 的才需要再写一次（0.3s 透明度过渡沿用 CSS）
-    if (metaN > 1 && cardBoxHRef.current > 0) {
-      resolveMetaVisibility(metaPool, metaN, cardBoxHRef.current);
-      for (let i = 0; i < metaN; i++) {
-        const b = metaPool[i]!;
-        if (b.alpha !== b.base) b.el!.style.setProperty('--meta-a', String(b.alpha));
-      }
-    }
-    for (let i = 0; i < metaN; i++) metaPool[i]!.el = null; // 不让池持有已卸载卡片的元素
+    boundedFrame(frame, worldNowRef.current);
   }, []);
 
   // 新挂载的卡片 / 换了正在播放的歌：补一帧，让防压盖按最新的屏幕坐标重新判断（空闲时没有别的帧会来做）
@@ -589,16 +410,16 @@ export function useStage({
     controllerRef.current?.refresh();
   }, [visibleIds, currentSongId, controllerRef]);
 
-  // 星层画布：有边界星云时才挂（StageCanvas 渲染），换模式时重建
+  // 星层画布（StageCanvas 渲染），换排法时重建
   useEffect(() => {
-    starsRef.current = world && starCanvasRef.current ? new StarField(starCanvasRef.current) : null;
+    starsRef.current = starCanvasRef.current ? new StarField(starCanvasRef.current) : null;
   }, [world]);
 
   // 打开 / 换排法时整片淡入（#137）：只在这之后约 0.9s 内新挂上的卡片淡入，拖动时进来的卡片不淡入。
   // 用 data 属性而不是 class：className 归 React 管，重渲染会冲掉手动加的 class
   useEffect(() => {
     const stage = stageRef.current;
-    if (!stage || !world) return;
+    if (!stage) return;
     stage.dataset.arriving = '';
     const t = window.setTimeout(() => delete stage.dataset.arriving, 900);
     return () => {
@@ -608,12 +429,12 @@ export function useStage({
   }, [world]);
 
   // 小封面缩略图陆续到了：补画一帧
-  useEffect(() => (world ? onThumbsReady(() => controllerRef.current?.refresh()) : undefined), [world, controllerRef]);
+  useEffect(() => onThumbsReady(() => controllerRef.current?.refresh()), [world, controllerRef]);
 
   // 点画布上的小封面也能播放（DOM 卡片自己处理点击）；按下到松开移动超过 5px 算拖动，不算点击
   useEffect(() => {
     const stage = stageRef.current;
-    if (!stage || !world) return;
+    if (!stage) return;
     let down: { x: number; y: number } | null = null;
     const onDown = (e: PointerEvent) => {
       down = { x: e.clientX, y: e.clientY };
@@ -640,7 +461,7 @@ export function useStage({
 
   // 透镜强度、搜索命中、封面色调（色雾）变了：补一帧
   useEffect(() => {
-    if (world) controllerRef.current?.refresh();
+    controllerRef.current?.refresh();
   }, [lab.lens, world, matchSet, controllerRef, toneProgress.version]);
 
   // PanController 生命周期 + __nebula 调试口
@@ -648,47 +469,34 @@ export function useStage({
     const stage = stageRef.current;
     if (!stage) return;
 
-    // 星云：开场镜头对准正在播放的那首，而不是固定的位置；缩放不低于下限（小歌单 / 大屏幕下限更高）
+    // 开场镜头对准正在播放的那首，而不是固定的位置；缩放不低于下限（小歌单 / 大屏幕下限更高）
     const w = world;
-    let initialX = (metrics.tileWidth - window.innerWidth) / 2;
-    let initialY = (metrics.tileHeight - window.innerHeight) / 2;
-    let initialZoom = 1;
-    if (w) {
-      initialZoom = Math.max(0.62, zoomFloor(w, window.innerWidth, window.innerHeight));
-      const sid = audioPlayer.getState().song?.id ?? -1;
-      const inWorld = sid >= 0 && sid < w.cards.length;
-      initialX = (inWorld ? w.px[sid]! : 0) - window.innerWidth / (2 * initialZoom);
-      initialY = (inWorld ? w.py[sid]! : 0) - window.innerHeight / (2 * initialZoom);
-    }
+    const initialZoom = Math.max(0.62, zoomFloor(w, window.innerWidth, window.innerHeight));
+    const sid0 = audioPlayer.getState().song?.id ?? -1;
+    const inWorld = sid0 >= 0 && sid0 < w.cards.length;
     const controller = new PanController(stage, {
-      tileWidth: metrics.tileWidth,
-      tileHeight: metrics.tileHeight,
-      initialX,
-      initialY,
+      initialX: (inWorld ? w.px[sid0]! : 0) - window.innerWidth / (2 * initialZoom),
+      initialY: (inWorld ? w.py[sid0]! : 0) - window.innerHeight / (2 * initialZoom),
       initialZoom,
-      bounded: w
-        ? {
-            // 首尾相接、没有边界（#136）。缩放下限：最远也要认得出封面（约 48px，0.28 倍）；
-            // 一屏不超过周期的一部分（大歌单 60%），同一首歌不会在同一屏出现两次（见 zoomFloor）
-            period: w.period,
-            zoomMin: (vw, vh) => zoomFloor(w, vw, vh),
-            zoomMax: 2.4,
-            worldPerPixel: (sx, sy, f) => worldPerPixel(sx, sy, f, lensDelta(getSpaceLab().lens, f.zoom)),
-          }
-        : undefined,
+      bounded: {
+        // 首尾相接、没有边界（#136）。缩放下限：最远也要认得出封面（约 48px，0.28 倍）；
+        // 一屏不超过周期的一部分（大歌单 60%），同一首歌不会在同一屏出现两次（见 zoomFloor）
+        period: w.period,
+        zoomMin: (vw, vh) => zoomFloor(w, vw, vh),
+        zoomMax: 2.4,
+        worldPerPixel: (sx, sy, f) => worldPerPixel(sx, sy, f, lensDelta(getSpaceLab().lens, f.zoom)),
+      },
       onFrame: handleFrame,
       onPanStart: () => setHoveredId(null),
     });
     controllerRef.current = controller;
     controller.start();
-    const offCommands = w
-      ? [
-          registerSpaceCommand('focusCurrent', () => {
-            const sid = audioPlayer.getState().song?.id ?? -1;
-            if (sid >= 0 && sid < w.cards.length) controller.animateToCenter(w.px[sid]!, w.py[sid]!, 1);
-          }),
-        ]
-      : [];
+    const offCommands = [
+      registerSpaceCommand('focusCurrent', () => {
+        const sid = audioPlayer.getState().song?.id ?? -1;
+        if (sid >= 0 && sid < w.cards.length) controller.animateToCenter(w.px[sid]!, w.py[sid]!, 1);
+      }),
+    ];
 
     window.__nebula = {
       reset: () => controller.reset(),
@@ -709,7 +517,7 @@ export function useStage({
         applySearch(m, m[0]!.index);
       },
       zoom: () => controllerRef.current?.zoom ?? 1,
-      stageMode: (m: StageMode) => setSpaceLab({ mode: m }),
+      stageMode: (m: StageLayout) => setSpaceLab({ mode: m }),
       space: () => {
         const c = controllerRef.current;
         const vw = window.innerWidth;
@@ -718,9 +526,9 @@ export function useStage({
           mode: getSpaceLab().mode,
           zoom: c?.zoom ?? 1,
           center: c ? { x: c.pan.x + vw / (2 * c.zoom), y: c.pan.y + vh / (2 * c.zoom) } : null,
-          period: w?.period ?? 0,
-          clusters: w?.clusters.length ?? 0,
-          labels: (w?.clusters ?? [])
+          period: w.period,
+          clusters: w.clusters.length,
+          labels: w.clusters
             .filter((c) => c.label)
             .map((c) => ({ name: c.name, kind: c.label!.kind, x: c.label!.x, y: c.label!.y, songs: c.ids.length })),
         };
@@ -735,7 +543,7 @@ export function useStage({
       window.__nebula = undefined;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [metrics, handleFrame, songs.length, applySearch, world]);
+  }, [handleFrame, songs.length, applySearch, world]);
 
   // 播放器失败事件 → 卡片置灰
   useEffect(
@@ -882,23 +690,10 @@ export function useStage({
     const controller = controllerRef.current;
     const song = audioPlayer.getState().song;
     const w = worldNowRef.current;
-    if (w && controller) {
-      // 有边界星云：飞回正在播放的那首；没有就回到星云中心
-      if (song && song.id >= 0 && song.id < w.cards.length) controller.animateToCenter(w.px[song.id]!, w.py[song.id]!, 1);
-      else controller.animateToCenter(0, 0, 0.92);
-      return;
-    }
-    if (song && controller) {
-      const card = effectiveCardsRef.current[song.id];
-      if (card) {
-        const z = controller.zoom;
-        const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
-        const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
-        controller.animateTo(panForCentering({ x: card.x, y: card.y }, vw, vh, z));
-        return;
-      }
-    }
-    controller?.reset();
+    if (!controller) return;
+    // 飞回正在播放的那首；没有就回到星云中心
+    if (song && song.id >= 0 && song.id < w.cards.length) controller.animateToCenter(w.px[song.id]!, w.py[song.id]!, 1);
+    else controller.animateToCenter(0, 0, 0.92);
   }, []);
 
   const handleToggleLike = useCallback(() => {
@@ -918,7 +713,6 @@ export function useStage({
     stageRef,
     starCanvasRef,
     tintRef,
-    world,
     matchSet,
     tilt: lab.tilt,
     frameBusRef,
@@ -929,7 +723,6 @@ export function useStage({
     failedIds,
     likedIds,
     liked,
-    metrics,
     effectiveCards,
     registerEl,
     handleHoverChange,

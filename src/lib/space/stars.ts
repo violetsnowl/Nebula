@@ -48,7 +48,6 @@ export class StarField {
   private dpr = 1;
   private chip = new Map<string, string>();
   private p: Proj = { sx: 0, sy: 0, s: 0, u: 0 };
-  private empty = true;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d');
@@ -75,13 +74,6 @@ export class StarField {
     const css = `rgb(${r},${g},${b})`;
     if (t) this.chip.set(key, css); // 灰色不缓存，取到色调后自然换色
     return css;
-  }
-
-  clear(): void {
-    if (!this.ctx || this.empty) return;
-    this.ctx.setTransform(1, 0, 0, 1, 0, 0);
-    this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
-    this.empty = true;
   }
 
   /** DOM 卡片的封面中心：盒子（172 × boxH）按盒中心缩放，封面在盒子上部。 */
@@ -120,7 +112,6 @@ export class StarField {
     this.fit(cam.vw, cam.vh);
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, cam.vw, cam.vh);
-    let drew = false;
 
     // 小封面
     const p = this.p;
@@ -150,7 +141,6 @@ export class StarField {
         ctx.fill();
       }
       if (track.id === f.currentId) cur = { x, y, s: size };
-      drew = true;
     }
     ctx.globalAlpha = 1;
 
@@ -209,8 +199,6 @@ export class StarField {
         ctx.fillText(c.name, p.sx, p.sy);
         ctx.shadowBlur = 0;
       }
-      drew = true;
     }
-    this.empty = !drew;
   }
 }

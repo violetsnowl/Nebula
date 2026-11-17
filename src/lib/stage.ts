@@ -7,5 +7,3 @@ export interface FrameBus {
   vh: number;
 }
 
-/** 视口外挂载缓冲。 */
-export const CULL_BUFFER = 300;

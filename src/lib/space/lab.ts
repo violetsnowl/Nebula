@@ -5,21 +5,15 @@ import { useSyncExternalStore } from 'react';
  *   - chroma：按封面颜色——横向沿彩虹走，纵向由暗到鲜艳（默认，#137 用户确认：第一眼最好看）
  *   - cluster：按歌手——同一位歌手的歌聚成一团，星团均匀散在画布上
  *   - random：随机——每次打开重新撒一遍，同一次使用里位置不变
- * 设置在「设置 › 外观 › 星云怎么排」。
- *
- * 开发者面板「舞台实验室」（Ctrl+Shift+M）另外能退回旧的随机卡片墙（classic，验收期间的退路），
- * 调透镜强度和镜头倾角。旧卡片墙在用户验收新星云后删除。
+ * 设置在「设置 › 外观 › 星云怎么排」；开发者面板「舞台实验室」（Ctrl+Shift+M）另外能调透镜强度和镜头倾角。
  */
 export type StageLayout = 'cluster' | 'chroma' | 'random';
-export type StageMode = StageLayout | 'classic';
 
 export interface SpaceLab {
   /** 用户设置的排法 */
   layout: StageLayout;
-  /** 开发者面板：退回旧卡片墙 */
-  classic: boolean;
-  /** 实际生效的模式（classic 优先） */
-  mode: StageMode;
+  /** 实际生效的排法（始终等于 layout；setSpaceLab({ mode }) 就是改 layout） */
+  mode: StageLayout;
   /** 透镜强度：中心放大 1 + lens 倍（只在放大到一定程度后生效，缩小看全貌时是平面地图）。 */
   lens: number;
   /** 镜头倾角（度）：整片星云一起后仰。 */
@@ -31,13 +25,13 @@ export interface SpaceLab {
 }
 
 // 换了新键：原型阶段（#133）在 v1 存过「现有 / A / B」；#134–#136 比较三种排法时在 v2 里存过各自的选择。
-// 都不带过来，新星云从默认的「按颜色」开始（#137）
+// 都不带过来，新星云从默认的「按颜色」开始（#137）。v3 里若还存着旧卡片墙的 classic 标记，读取时直接忽略
 const KEY = 'music-nebula.stage-space.v3';
 const LAYOUTS: StageLayout[] = ['cluster', 'chroma', 'random'];
-const DEFAULTS: SpaceLab = { layout: 'chroma', classic: false, mode: 'chroma', lens: 0.8, tilt: 0, tint: true, open: false };
+const DEFAULTS: SpaceLab = { layout: 'chroma', mode: 'chroma', lens: 0.8, tilt: 0, tint: true, open: false };
 
-function withMode(s: Omit<SpaceLab, 'mode'> & { mode?: StageMode }): SpaceLab {
-  return { ...s, mode: s.classic ? 'classic' : s.layout };
+function withMode(s: Omit<SpaceLab, 'mode'>): SpaceLab {
+  return { ...s, mode: s.layout };
 }
 
 function load(): SpaceLab {
@@ -47,7 +41,6 @@ function load(): SpaceLab {
     const v = JSON.parse(raw) as Partial<SpaceLab>;
     return withMode({
       layout: LAYOUTS.includes(v.layout as StageLayout) ? (v.layout as StageLayout) : DEFAULTS.layout,
-      classic: v.classic === true,
       lens: typeof v.lens === 'number' ? Math.min(1.5, Math.max(0, v.lens)) : DEFAULTS.lens,
       tilt: typeof v.tilt === 'number' ? Math.min(20, Math.max(0, v.tilt)) : DEFAULTS.tilt,
       tint: typeof v.tint === 'boolean' ? v.tint : DEFAULTS.tint,
@@ -65,18 +58,10 @@ export function getSpaceLab(): SpaceLab {
   return state;
 }
 
-/**
- * 改设置。传 mode 时：'classic' = 退回旧卡片墙；其余 = 设成这种排法并离开旧卡片墙。
- */
+/** 改设置。传 mode 就是换排法（同时改 layout）。 */
 export function setSpaceLab(patch: Partial<SpaceLab>): void {
   const next = { ...state, ...patch };
-  if (patch.mode) {
-    if (patch.mode === 'classic') next.classic = true;
-    else {
-      next.layout = patch.mode;
-      next.classic = false;
-    }
-  }
+  if (patch.mode) next.layout = patch.mode;
   state = withMode(next);
   try {
     const { open: _open, mode: _mode, ...persist } = state;

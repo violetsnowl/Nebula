@@ -78,10 +78,6 @@
   gap: 6px;
   transition: opacity 0.25s ease;
 }
-.space-lab .sl-body.is-off {
-  opacity: 0.38;
-  pointer-events: none;
-}
 .space-lab .sl-row {
   display: grid;
   grid-template-columns: 4.6em 1fr 3.2em;

@@ -1,22 +1,18 @@
 import { memo, useEffect, useRef, useState, type MouseEvent } from 'react';
 import type { CSSProperties } from 'react';
-import { cardScreenPos } from '../lib/layout';
-import type { CardSpec, LayoutMetrics } from '../lib/layout';
-import { fisheyeFilter, fisheyeMetaAlpha, fisheyeScale, fisheyeZIndex } from '../lib/fisheye';
+import type { CardSpec } from '../lib/layout';
 import { registerGlass } from '../lib/glass';
 import { placeholderBg } from '../lib/coverPlaceholder';
-import { boundedCardStyle, getActiveWorld } from '../lib/space/active';
+import { boundedCardStyle } from '../lib/space/active';
 
 interface MusicCardProps {
   card: CardSpec;
-  metrics: LayoutMetrics;
-  buffer: number;
   pan: { x: number; y: number };
   zoom: number;
   hovered: boolean;
   isCurrent: boolean;
   isFailed: boolean;
-  /** 有边界星云里的搜索命中 */
+  /** 搜索命中 */
   matched?: boolean;
   onPlay: (songId: number) => void;
   onContextMenu?: (e: MouseEvent, track: CardSpec['track']) => void;
@@ -26,8 +22,6 @@ interface MusicCardProps {
 
 function MusicCardImpl({
   card,
-  metrics,
-  buffer,
   pan,
   zoom,
   hovered,
@@ -46,22 +40,8 @@ function MusicCardImpl({
     if (!hovered || !chipRef.current) return;
     return registerGlass(chipRef.current, 'g2');
   }, [hovered]);
-  const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
-  const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
-  const pos = cardScreenPos(card, pan, metrics.tileWidth, metrics.tileHeight, vw, vh, buffer, zoom);
-  const maxDist = Math.hypot(vw, vh) / 2;
-
-  // 有边界星云（#133）：初始位置按透镜投影算，和舞台帧循环一致；透明度从 0 起，下一帧淡入
-  const bounded = boundedCardStyle(card, pan, zoom);
-  const style = bounded ?? {
-    '--x': `${pos?.x ?? 0}px`,
-    '--y': `${pos?.y ?? 0}px`,
-    '--rz': `${card.rotateZ}deg`,
-    '--scale': pos ? Math.min(3.4, fisheyeScale(pos.dist, maxDist) * zoom) : 1,
-    '--card-filter': pos ? fisheyeFilter(pos.dist, maxDist) : 'none',
-    '--meta-a': pos ? fisheyeMetaAlpha(pos.dist, maxDist) : 1,
-    zIndex: pos ? fisheyeZIndex(pos.dist, maxDist) : 1,
-  } as CSSProperties;
+  // 初始位置按透镜投影算，和舞台帧循环一致（之后位置全由帧循环写入）
+  const style = boundedCardStyle(card, pan, zoom);
 
   const { track } = card;
 
@@ -70,7 +50,7 @@ function MusicCardImpl({
       ref={(el) => registerEl(card.id, el)}
       className={`music-card${hovered ? ' is-hovered' : ''}${isCurrent ? ' is-current' : ''}${
         isFailed ? ' is-failed' : ''
-      }${matched ? ' is-match' : ''}${pos || bounded ? '' : ' is-offscreen'}`}
+      }${matched ? ' is-match' : ''}`}
       style={style}
       data-x={card.x}
       data-y={card.y}
@@ -130,13 +110,13 @@ function MusicCardImpl({
 }
 
 /**
- * 有边界星云（#133）里卡片位置全由舞台帧循环写入，平移 / 缩放不需要重渲染卡片：
- * 只因 pan / zoom 变了就跳过（一屏几百张时，每次可见集合变化都整批重渲染会让拖动掉帧）。现有模式照旧比较全部属性。
+ * 卡片位置全由舞台帧循环写入，平移 / 缩放不需要重渲染卡片：
+ * 只因 pan / zoom 变了就跳过（一屏几百张时，每次可见集合变化都整批重渲染会让拖动掉帧）。
  */
 function sameCard(prev: MusicCardProps, next: MusicCardProps): boolean {
   for (const k of Object.keys(next) as (keyof MusicCardProps)[]) {
     if (prev[k] === next[k]) continue;
-    if ((k === 'pan' || k === 'zoom') && getActiveWorld()) continue;
+    if (k === 'pan' || k === 'zoom') continue;
     return false;
   }
   return true;

@@ -14,11 +14,11 @@ import { OverlayStack } from './components/OverlayStack';
 import { TooltipLayer } from './components/TooltipLayer';
 import { LyricSourceProbe } from './components/LyricSourceProbe';
 import { SpaceLabPanel } from './components/SpaceLabPanel';
-import type { StageMode } from './lib/space/lab';
+import type { StageLayout } from './lib/space/lab';
 import type { SpaceWorld } from './lib/space/world';
 import { audioPlayer } from './lib/audio/AudioPlayer';
 import type { PanController } from './lib/panEngine';
-import { SEED, type CardSpec, type LayoutMetrics } from './lib/layout';
+import { SEED } from './lib/layout';
 import type { BackgroundSetting } from './lib/backgrounds';
 import { generateTracks, isDemoNebulaEnabled } from './lib/catalog';
 import type { Track } from './lib/catalog';
@@ -74,10 +74,10 @@ declare global {
       setSongAudio: (id: number, url: string) => void;
       search: (q: string) => void;
       zoom: () => number;
-      /** 主舞台方向原型（#133）：切换布局、读镜头状态（QA / 调试用） */
-      stageMode: (m: StageMode) => void;
+      /** 切换星云排法、读镜头状态（QA / 调试用） */
+      stageMode: (m: StageLayout) => void;
       space: () => {
-        mode: StageMode;
+        mode: StageLayout;
         zoom: number;
         center: { x: number; y: number } | null;
         period: number;
@@ -222,10 +222,8 @@ export default function App() {
   // ---------- 搜索聚簇 + 舞台（useSearchCluster 先声明 refs，useStage 渲染时填充） ----------
   const controllerRef = useRef<PanController | null>(null);
   // 值在 useStage 渲染时填充；null! 仅为早期声明（运行时 action 时已赋值）
-  const metricsRef = useRef<LayoutMetrics>(null!);
-  const effectiveCardsRef = useRef<CardSpec[]>(null!);
-  const worldRef = useRef<SpaceWorld | null>(null);
-  const searchCluster = useSearchCluster({ controllerRef, effectiveCardsRef, metricsRef, worldRef });
+  const worldRef = useRef<SpaceWorld>(null!);
+  const searchCluster = useSearchCluster({ controllerRef, worldRef });
   const {
     searchMatches,
     applySearch,
@@ -243,15 +241,12 @@ export default function App() {
     contextMenuRef,
     completeImport,
     currentSongId,
-    metricsRef,
-    effectiveCardsRef,
     worldRef,
   });
   const {
     stageRef,
     starCanvasRef,
     tintRef,
-    world,
     matchSet,
     tilt,
     frameBusRef,
@@ -260,7 +255,6 @@ export default function App() {
     hoveredId,
     visibleIds,
     failedIds,
-    metrics,
     effectiveCards,
     registerEl,
     handleHoverChange,
@@ -612,7 +606,6 @@ export default function App() {
 
       <StageCanvas
         stageRef={stageRef}
-        bounded={!!world}
         starCanvasRef={starCanvasRef}
         tintRef={tintRef}
         tilt={tilt}
@@ -621,7 +614,6 @@ export default function App() {
         uiHideCards={uiHideCards}
         visibleIds={visibleIds}
         effectiveCards={effectiveCards}
-        metrics={metrics}
         pan={panRef.current}
         zoom={frameBusRef.current.zoom}
         hoveredId={hoveredId}

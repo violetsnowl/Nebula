@@ -1,14 +1,13 @@
 import { memo, useEffect } from 'react';
-import { runSpaceCommand, setSpaceLab, useSpaceLab, type StageMode } from '../lib/space/lab';
+import { runSpaceCommand, setSpaceLab, useSpaceLab, type StageLayout } from '../lib/space/lab';
 import { useToneProgress } from '../lib/space/tone';
 import './space-lab.css';
 
 /**
  * 舞台实验室（#133 原型 → #134）：开发者面板，默认隐藏，Ctrl+Shift+M 开关。
- * 排法正式入口在「设置 › 外观 › 星云怎么排」；这里另外能退回旧卡片墙（验收期间的退路）、调透镜和倾角。
+ * 排法正式入口在「设置 › 外观 › 星云怎么排」；这里另外能调透镜和倾角。
  */
-const MODES: { v: StageMode; label: string; hint: string }[] = [
-  { v: 'classic', label: '旧墙', hint: '旧的随机卡片墙（周期回绕 + 鱼眼），验收新星云期间的退路' },
+const MODES: { v: StageLayout; label: string; hint: string }[] = [
   { v: 'chroma', label: '按颜色', hint: '横向沿彩虹走，纵向由暗到鲜艳（默认）' },
   { v: 'cluster', label: '按歌手', hint: '同一位歌手的歌聚成一团，星团均匀散开；单曲歌手按颜色排在空隙里' },
   { v: 'random', label: '随机', hint: '不按歌手也不按颜色，每次打开重新撒一遍' },
@@ -30,7 +29,6 @@ export const SpaceLabPanel = memo(function SpaceLabPanel({ songCount }: { songCo
   }, [lab.open]);
 
   if (!lab.open) return null;
-  const bounded = lab.mode !== 'classic';
   const hint = MODES.find((m) => m.v === lab.mode)!.hint;
   const sampling = tones.total > 0 && tones.done < tones.total;
 
@@ -54,7 +52,7 @@ export const SpaceLabPanel = memo(function SpaceLabPanel({ songCount }: { songCo
       </div>
       <p className="sl-hint">{hint}</p>
 
-      <div className={`sl-body${bounded ? '' : ' is-off'}`} aria-disabled={!bounded}>
+      <div className="sl-body">
         <label className="sl-row">
           <span>透镜</span>
           <input
@@ -63,7 +61,6 @@ export const SpaceLabPanel = memo(function SpaceLabPanel({ songCount }: { songCo
             max={1.5}
             step={0.05}
             value={lab.lens}
-            disabled={!bounded}
             onChange={(e) => setSpaceLab({ lens: Number(e.target.value) })}
           />
           <em>{lab.lens === 0 ? '关' : `×${(1 + lab.lens).toFixed(2)}`}</em>
@@ -76,28 +73,25 @@ export const SpaceLabPanel = memo(function SpaceLabPanel({ songCount }: { songCo
             max={20}
             step={1}
             value={lab.tilt}
-            disabled={!bounded}
             onChange={(e) => setSpaceLab({ tilt: Number(e.target.value) })}
           />
           <em>{lab.tilt}°</em>
         </label>
-        <button type="button" className="sl-row sl-tg" aria-pressed={lab.tint} disabled={!bounded} onClick={() => setSpaceLab({ tint: !lab.tint })}>
+        <button type="button" className="sl-row sl-tg" aria-pressed={lab.tint} onClick={() => setSpaceLab({ tint: !lab.tint })}>
           <span>环境色跟随镜头</span>
           <i aria-hidden="true" />
         </button>
         <div className="sl-actions">
-          <button type="button" disabled={!bounded} onClick={() => runSpaceCommand('focusCurrent')}>
+          <button type="button" onClick={() => runSpaceCommand('focusCurrent')}>
             回到正在播放
           </button>
         </div>
       </div>
 
       <footer className="sl-foot">
-        {bounded && sampling
+        {sampling
           ? `正在给封面取色 ${tones.done} / ${tones.total}（第一次要等一会儿，取完 A 会重新排一次）`
-          : bounded
-            ? `${songCount} 首 · 最远缩到封面还认得出 · 排法也可以在「设置 › 外观」里换`
-            : 'Ctrl+Shift+M 开关这个面板 · 旧卡片墙只在验收期间保留'}
+          : `${songCount} 首 · 最远缩到封面还认得出 · 排法也可以在「设置 › 外观」里换`}
       </footer>
     </section>
   );

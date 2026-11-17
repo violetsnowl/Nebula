@@ -9,17 +9,15 @@ export interface PanFrame {
 }
 
 export interface PanControllerOptions {
-  tileWidth: number;
-  tileHeight: number;
   initialX: number;
   initialY: number;
   initialZoom?: number;
   /**
    * 主舞台星云（#133–#136）：画布首尾相接（周期 period，正方形），没有边界、没有中心；
    * 滚轮缩放以屏幕中心为锚（透镜中心）；拖动按手下那一点的局部放大率换算，手下的卡片跟着手走；
-   * 飞行（搜索、回到正在播放）走首尾相接里最近的那条路。最小缩放随窗口大小变。不传 = 旧卡片墙，行为不变。
+   * 飞行（搜索、回到正在播放）走首尾相接里最近的那条路。最小缩放随窗口大小变。
    */
-  bounded?: {
+  bounded: {
     period: number;
     /** 最小缩放 */
     zoomMin: (vw: number, vh: number) => number;
@@ -41,8 +39,6 @@ const MAX_INERTIA_VELOCITY = 7;
 const WHEEL_SETTLE_MS = 160;
 const SAMPLE_WINDOW_MS = 120;
 const ANIMATE_MS = 950;
-export const ZOOM_MIN = 0.45;
-export const ZOOM_MAX = 2.6;
 
 /**
  * 无限平移引擎（Pointer + Wheel + 惯性 + 周期回绕）。
@@ -62,7 +58,7 @@ export class PanController {
   private dragging = false;
   private samples: { x: number; y: number; t: number }[] = [];
   private disposed = false;
-  /** 拖动换算：1 屏幕像素 = 多少世界坐标（现有卡片墙恒为 1）。 */
+  /** 拖动换算：1 屏幕像素 = 多少世界坐标（按手下那一点的局部放大率算）。 */
   private dragK = 1;
   private anim = 0;
 
@@ -82,7 +78,7 @@ export class PanController {
     };
   }
 
-  /** 平滑飞到某个镜头中心（世界坐标），可同时改缩放（有边界星云的搜索、回到正在播放、看全貌）。 */
+  /** 平滑飞到某个镜头中心（世界坐标），可同时改缩放（搜索、回到正在播放）。 */
   animateToCenter(cx: number, cy: number, zoom = this.zoom, ms = ANIMATE_MS): void {
     this.mode = 'idle';
     this.velocity = { x: 0, y: 0 };
@@ -91,11 +87,9 @@ export class PanController {
     const c0x = this.pan.x + vw / (2 * z0);
     const c0y = this.pan.y + vh / (2 * z0);
     // 首尾相接：目标取离当前镜头最近的那一份，走最短的路
-    const T = this.opts.bounded?.period ?? 0;
-    if (T > 0) {
-      cx = c0x + (cx - c0x - T * Math.round((cx - c0x) / T));
-      cy = c0y + (cy - c0y - T * Math.round((cy - c0y) / T));
-    }
+    const T = this.opts.bounded.period;
+    cx = c0x + (cx - c0x - T * Math.round((cx - c0x) / T));
+    cy = c0y + (cy - c0y - T * Math.round((cy - c0y) / T));
     const start = performance.now();
     const token = ++this.anim;
     const step = (now: number): void => {
@@ -143,16 +137,10 @@ export class PanController {
     const vw = this.container.clientWidth || window.innerWidth;
     const vh = this.container.clientHeight || window.innerHeight;
     this.anim++;
-    if (this.opts.bounded) {
-      // 有边界星云：回到星云中心
-      this.zoom = Math.max(0.62, this.opts.bounded.zoomMin(vw, vh));
-      this.pan.x = -vw / (2 * this.zoom);
-      this.pan.y = -vh / (2 * this.zoom);
-    } else {
-      this.pan.x = (this.opts.tileWidth - vw) / 2;
-      this.pan.y = (this.opts.tileHeight - vh) / 2;
-      this.zoom = 1;
-    }
+    // 回到星云中心
+    this.zoom = Math.max(0.62, this.opts.bounded.zoomMin(vw, vh));
+    this.pan.x = -vw / (2 * this.zoom);
+    this.pan.y = -vh / (2 * this.zoom);
     this.velocity = { x: 0, y: 0 };
     this.mode = 'idle';
     this.container.classList.remove('is-panning', 'is-grabbing');
@@ -164,25 +152,6 @@ export class PanController {
     this.requestFrame();
   }
 
-  /** 平滑动画定位到目标 pan 位置（搜索定位等场景；硬定位仍走 reset）。 */
-  animateTo(target: { x: number; y: number }): void {
-    this.mode = 'idle';
-    this.velocity = { x: 0, y: 0 };
-    const fromX = this.pan.x;
-    const fromY = this.pan.y;
-    const start = performance.now();
-
-    const step = (now: number): void => {
-      const t = Math.min(1, Math.max(0, (now - start) / ANIMATE_MS));
-      const e = 1 - Math.pow(1 - t, 3);
-      this.pan.x = fromX + (target.x - fromX) * e;
-      this.pan.y = fromY + (target.y - fromY) * e;
-      this.requestFrame();
-      if (t < 1) requestAnimationFrame(step);
-    };
-    requestAnimationFrame(step);
-  }
-
   private requestFrame(): void {
     if (!this.raf && !this.disposed) {
       this.raf = requestAnimationFrame(this.tick);
@@ -192,15 +161,10 @@ export class PanController {
   private onPointerDown = (e: PointerEvent): void => {
     if (this.activePointer) return;
     if (e.pointerType === 'mouse' && e.button !== 0) return;
-    const b = this.opts.bounded;
-    if (b) {
-      // 有边界星云：手一按下就停住正在进行的飞行；按手下那一点的放大率换算拖动距离
-      this.anim++;
-      const { vw, vh } = this.size();
-      this.dragK = b.worldPerPixel(e.clientX, e.clientY, { x: this.pan.x, y: this.pan.y, vw, vh, zoom: this.zoom });
-    } else {
-      this.dragK = 1;
-    }
+    // 手一按下就停住正在进行的飞行；按手下那一点的放大率换算拖动距离
+    this.anim++;
+    const { vw, vh } = this.size();
+    this.dragK = this.opts.bounded.worldPerPixel(e.clientX, e.clientY, { x: this.pan.x, y: this.pan.y, vw, vh, zoom: this.zoom });
     this.activePointer = { id: e.pointerId, x: e.clientX, y: e.clientY, t: performance.now() };
     this.downPos = { x: e.clientX, y: e.clientY };
     this.dragging = false;
@@ -271,32 +235,16 @@ export class PanController {
     const delta =
       e.deltaMode === 1 ? e.deltaY * 40 : e.deltaMode === 2 ? e.deltaY * this.container.clientHeight : e.deltaY;
     const factor = Math.exp(-delta * 0.0014);
+    // 以屏幕中心（透镜中心）为锚缩放，镜头中心不动
     const b = this.opts.bounded;
-    if (b) {
-      // 有边界星云：以屏幕中心（透镜中心）为锚缩放，镜头中心不动
-      this.anim++;
-      const { vw, vh } = this.size();
-      const nextZoom = Math.min(b.zoomMax, Math.max(b.zoomMin(vw, vh), this.zoom * factor));
-      const cx = this.pan.x + vw / (2 * this.zoom);
-      const cy = this.pan.y + vh / (2 * this.zoom);
-      this.zoom = nextZoom;
-      this.pan.x = cx - vw / (2 * nextZoom);
-      this.pan.y = cy - vh / (2 * nextZoom);
-      this.lastWheelAt = performance.now();
-      this.requestFrame();
-      return;
-    }
-    // 滚轮缩放（以光标为锚点，光标下的世界点保持不动）
-    const nextZoom = Math.min(ZOOM_MAX, Math.max(ZOOM_MIN, this.zoom * factor));
-    if (Math.abs(nextZoom - this.zoom) > 1e-4) {
-      const mx = e.clientX;
-      const my = e.clientY;
-      const wx = this.pan.x + mx / this.zoom;
-      const wy = this.pan.y + my / this.zoom;
-      this.zoom = nextZoom;
-      this.pan.x = wx - mx / nextZoom;
-      this.pan.y = wy - my / nextZoom;
-    }
+    this.anim++;
+    const { vw, vh } = this.size();
+    const nextZoom = Math.min(b.zoomMax, Math.max(b.zoomMin(vw, vh), this.zoom * factor));
+    const cx = this.pan.x + vw / (2 * this.zoom);
+    const cy = this.pan.y + vh / (2 * this.zoom);
+    this.zoom = nextZoom;
+    this.pan.x = cx - vw / (2 * nextZoom);
+    this.pan.y = cy - vh / (2 * nextZoom);
     this.lastWheelAt = performance.now();
     this.requestFrame();
   };
@@ -329,25 +277,19 @@ export class PanController {
     if (now - this.lastWheelAt < WHEEL_SETTLE_MS) keep = true;
 
     const b = this.opts.bounded;
-    if (b) {
-      const { vw, vh } = this.size();
-      // 缩放不低于下限（窗口变大后下限会变高）；以屏幕中心为锚
-      const zMin = b.zoomMin(vw, vh);
-      if (this.zoom < zMin) {
-        const ccx = this.pan.x + vw / (2 * this.zoom);
-        const ccy = this.pan.y + vh / (2 * this.zoom);
-        this.zoom = zMin;
-        this.pan.x = ccx - vw / (2 * zMin);
-        this.pan.y = ccy - vh / (2 * zMin);
-      }
-      // 首尾相接：把 pan 收进一个周期（世界是周期的，收回来看不出任何变化）
-      this.pan.x = wrap(this.pan.x, b.period);
-      this.pan.y = wrap(this.pan.y, b.period);
-    } else {
-      // 周期回绕：把 pan 收进 [0, tile)，内容周期性重复 → 视觉无边界
-      this.pan.x = wrap(this.pan.x, this.opts.tileWidth);
-      this.pan.y = wrap(this.pan.y, this.opts.tileHeight);
+    const { vw, vh } = this.size();
+    // 缩放不低于下限（窗口变大后下限会变高）；以屏幕中心为锚
+    const zMin = b.zoomMin(vw, vh);
+    if (this.zoom < zMin) {
+      const ccx = this.pan.x + vw / (2 * this.zoom);
+      const ccy = this.pan.y + vh / (2 * this.zoom);
+      this.zoom = zMin;
+      this.pan.x = ccx - vw / (2 * zMin);
+      this.pan.y = ccy - vh / (2 * zMin);
     }
+    // 首尾相接：把 pan 收进一个周期（世界是周期的，收回来看不出任何变化）
+    this.pan.x = wrap(this.pan.x, b.period);
+    this.pan.y = wrap(this.pan.y, b.period);
 
     this.opts.onFrame({
       x: this.pan.x,

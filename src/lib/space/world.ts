@@ -254,7 +254,6 @@ function finish(
     id: i,
     x: px[i]! - CARD_WIDTH / 2,
     y: py[i]! - CARD_HEIGHT / 2,
-    rotateZ: 0,
     track,
   }));
   return { mode, cards, px, py, period: T, clusters, clusterOf, grid: buildGrid(px, py, T) };
