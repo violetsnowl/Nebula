@@ -30,6 +30,9 @@ const {
   primeNcmApi,
   normalizeCookieHeader,
   validatePlatformCookie,
+  SPOTIFY_CLIENT_ID,
+  SPOTIFY_REDIRECT_PORT,
+  SPOTIFY_SCOPES,
 } = require('../dist-main/index.cjs');
 
 // wallpaper:// 自定义协议（壁纸预览/媒体服务，支持 Range）
@@ -49,7 +52,6 @@ protocol.registerSchemesAsPrivileged([
 const UA =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36';
 const DEV_URL = process.env.VITE_DEV_SERVER_URL;
-const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID || '';
 /** 主窗口引用（供子窗口回传背景设置）。 */
 let mainWindow = null;
 
@@ -61,19 +63,20 @@ function createSpotifyOAuth(cookies) {
     start: () =>
       new Promise((resolve) => {
         if (busy) return resolve(false);
-        if (!SPOTIFY_CLIENT_ID) {
-          console.error("[Spotify] 请设置环境变量 SPOTIFY_CLIENT_ID（免费在 developer.spotify.com 注册）");
-          resolve(false);
-          return;
-        }
         busy = true;
         const verifier = crypto.randomBytes(32).toString('base64url');
         const challenge = crypto.createHash('sha256').update(verifier).digest('base64url');
-        const port = 43891;
-        const redirectUri = `http://localhost:${port}/callback`;
+        // 桌面客户端 ID 只接受登记过的回调：http://127.0.0.1:5588/login
+        const port = SPOTIFY_REDIRECT_PORT;
+        const redirectUri = `http://127.0.0.1:${port}/login`;
         const server = http.createServer(async (req, res) => {
-          const url = new URL(req.url, `http://localhost:${port}`);
-          if (url.pathname !== '/callback' || !url.searchParams.get('code')) return;
+          const url = new URL(req.url, `http://127.0.0.1:${port}`);
+          if (url.pathname !== '/login') return;
+          if (!url.searchParams.get('code')) {
+            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+            res.end('<p style="font-family:sans-serif">Spotify 授权未完成，可关闭窗口</p>');
+            return;
+          }
           const code = url.searchParams.get('code');
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
           res.end('<script>window.close()</script><p style="font-family:sans-serif">登录成功，可关闭窗口</p>');
@@ -103,11 +106,15 @@ function createSpotifyOAuth(cookies) {
             busy = false;
           }
         });
-        server.listen(port, () => {
+        server.on('error', () => {
+          busy = false;
+          resolve(false);
+        });
+        server.listen(port, '127.0.0.1', () => {
           const authUrl =
             `https://accounts.spotify.com/authorize?client_id=${SPOTIFY_CLIENT_ID}` +
             `&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}` +
-            `&scope=${encodeURIComponent('playlist-read-private playlist-read-collaborative user-library-read')}` +
+            `&scope=${encodeURIComponent(SPOTIFY_SCOPES)}` +
             `&code_challenge_method=S256&code_challenge=${challenge}`;
           const win = new BrowserWindow({
             width: 520,
@@ -617,7 +624,11 @@ app.whenReady().then(async () => {
       kind: 'oauth',
       getAccount: async () => {
         const rec = cookies.get('spotify');
-        return rec?.cookies ? { userId: 'spotify', nickname: 'Spotify 用户' } : null;
+        if (!rec?.cookies) return null;
+        const me = await adapters.spotify.fetchMe();
+        if (me === 'expired') return { loggedIn: false, authStatus: 'expired', error: 'Spotify 登录已过期，请重新授权' };
+        if (!me) return { loggedIn: true, authStatus: 'unknown', userId: 'spotify', nickname: 'Spotify 用户' };
+        return { loggedIn: true, authStatus: 'valid', userId: me.id, nickname: me.nickname, avatarUrl: me.avatarUrl, isVip: me.premium, isSvip: false };
       },
       getMyPlaylists: () => adapters.spotify.getMyPlaylists(),
     },

@@ -4,6 +4,14 @@ import type { AlbumDetail, Lyric, Playlist, PlatformAdapter, SongUrl, Track } fr
 import { requestScope, withRequestScope } from '../requestScope';
 
 const API = 'https://api.spotify.com/v1';
+/**
+ * Spotify 登录用的客户端身份：默认用 Spotify 桌面客户端的公开 ID（开源播放器 librespot 等都用它），
+ * 用户不用去开发者后台注册应用，也不受开发模式 5 个用户的限制；设了环境变量 SPOTIFY_CLIENT_ID 则用自己的。
+ * 回调地址必须是这个 ID 登记过的形式：http://127.0.0.1:5588/login（folia 2026-10 实测）。
+ */
+export const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID || '65b708073fc0480ea92a077233ca87bd';
+export const SPOTIFY_REDIRECT_PORT = 5588;
+export const SPOTIFY_SCOPES = 'playlist-read-private playlist-read-collaborative user-library-read user-read-private user-read-email';
 type PlaylistPage={items?:Array<{track?:Record<string,any>;item?:Record<string,any>}>;next?:string|null;total?:number};
 
 function mapSpotifyTrack(raw: Record<string, any> | undefined | null): Track | null {
@@ -151,6 +159,21 @@ export class SpotifyAdapter implements PlatformAdapter {
     }
   }
 
+  /**
+   * 当前账号：昵称、头像、是否 Premium。
+   * 令牌失效且续期失败（401）返回 'expired'；网络异常等暂时查不到返回 null，不当作登出。
+   */
+  async fetchMe(): Promise<{ id: string; nickname: string; avatarUrl?: string; premium: boolean } | 'expired' | null> {
+    if (!this.cookies.get('spotify')?.cookies) return 'expired';
+    try {
+      const me = await this.authedRequest<{ id?: string; display_name?: string; images?: Array<{ url?: string }>; product?: string }>(`${API}/me`);
+      if (!me?.id) return null;
+      return { id: me.id, nickname: me.display_name || 'Spotify 用户', avatarUrl: me.images?.[0]?.url, premium: me.product === 'premium' };
+    } catch (err) {
+      return err instanceof Error && /HTTP 401/.test(err.message) ? 'expired' : null;
+    }
+  }
+
   /** 自动附带 Bearer；401 时用 refresh_token 换新后重试一次。 */
   private async authedRequest<T>(url: string): Promise<T> {
     try {
@@ -165,8 +188,8 @@ export class SpotifyAdapter implements PlatformAdapter {
   private async refreshToken(): Promise<boolean> {
     const rec = this.cookies.get('spotify');
     const refresh = rec?.token;
-    const clientId = process.env.SPOTIFY_CLIENT_ID;
-    if (!refresh || !clientId) return false;
+    const clientId = SPOTIFY_CLIENT_ID;
+    if (!refresh) return false;
     try {
       const res = await fetch('https://accounts.spotify.com/api/token', {
         method: 'POST',
