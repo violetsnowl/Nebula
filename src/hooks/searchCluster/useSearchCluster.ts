@@ -4,7 +4,7 @@ import { buildClusterPositions, panForCentering, type SearchMatch } from '../../
 import type { PanController } from '../../lib/panEngine';
 import type { CardSpec, LayoutMetrics } from '../../lib/layout';
 import { getSpaceLab } from '../../lib/space/lab';
-import { searchTarget, type BoundedWorld } from '../../lib/space/world';
+import { searchTarget, type SpaceWorld } from '../../lib/space/world';
 
 interface UseSearchClusterOptions {
   /** 舞台控制器（App 组合层传入 stage ref）。 */
@@ -14,7 +14,7 @@ interface UseSearchClusterOptions {
   /** 瓦片尺寸。 */
   metricsRef: RefObject<LayoutMetrics>;
   /** 有边界星云（#133 方向原型；现有卡片墙为 null）。 */
-  worldRef: RefObject<BoundedWorld | null>;
+  worldRef: RefObject<SpaceWorld | null>;
 }
 
 /**

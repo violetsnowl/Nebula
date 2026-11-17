@@ -15,7 +15,7 @@ import { TooltipLayer } from './components/TooltipLayer';
 import { LyricSourceProbe } from './components/LyricSourceProbe';
 import { SpaceLabPanel } from './components/SpaceLabPanel';
 import type { StageMode } from './lib/space/lab';
-import type { BoundedWorld } from './lib/space/world';
+import type { SpaceWorld } from './lib/space/world';
 import { audioPlayer } from './lib/audio/AudioPlayer';
 import type { PanController } from './lib/panEngine';
 import { SEED, type CardSpec, type LayoutMetrics } from './lib/layout';
@@ -80,7 +80,7 @@ declare global {
         mode: StageMode;
         zoom: number;
         center: { x: number; y: number } | null;
-        radius: number;
+        period: number;
         clusters: number;
       };
     };
@@ -220,7 +220,7 @@ export default function App() {
   // 值在 useStage 渲染时填充；null! 仅为早期声明（运行时 action 时已赋值）
   const metricsRef = useRef<LayoutMetrics>(null!);
   const effectiveCardsRef = useRef<CardSpec[]>(null!);
-  const worldRef = useRef<BoundedWorld | null>(null);
+  const worldRef = useRef<SpaceWorld | null>(null);
   const searchCluster = useSearchCluster({ controllerRef, effectiveCardsRef, metricsRef, worldRef });
   const {
     searchMatches,

@@ -15,13 +15,12 @@ export interface PanControllerOptions {
   initialY: number;
   initialZoom?: number;
   /**
-   * 有边界的星云（#133 / #135）：不周期回绕；滚轮缩放以屏幕中心为锚（透镜中心）；
-   * 拖动按手下那一点的局部放大率换算，手下的卡片跟着手走。不传 = 旧卡片墙，行为不变。
-   * 最小缩放和镜头能走多远都随窗口大小变（#135：不让人缩到能看见整片星云、也不让星云的边缘进画面）。
+   * 主舞台星云（#133–#136）：画布首尾相接（周期 period，正方形），没有边界、没有中心；
+   * 滚轮缩放以屏幕中心为锚（透镜中心）；拖动按手下那一点的局部放大率换算，手下的卡片跟着手走；
+   * 飞行（搜索、回到正在播放）走首尾相接里最近的那条路。最小缩放随窗口大小变。不传 = 旧卡片墙，行为不变。
    */
   bounded?: {
-    /** 镜头中心离星云中心最远多少（世界坐标） */
-    clampRadius: (zoom: number, vw: number, vh: number) => number;
+    period: number;
     /** 最小缩放 */
     zoomMin: (vw: number, vh: number) => number;
     zoomMax: number;
@@ -91,6 +90,12 @@ export class PanController {
     const z0 = this.zoom;
     const c0x = this.pan.x + vw / (2 * z0);
     const c0y = this.pan.y + vh / (2 * z0);
+    // 首尾相接：目标取离当前镜头最近的那一份，走最短的路
+    const T = this.opts.bounded?.period ?? 0;
+    if (T > 0) {
+      cx = c0x + (cx - c0x - T * Math.round((cx - c0x) / T));
+      cy = c0y + (cy - c0y - T * Math.round((cy - c0y) / T));
+    }
     const start = performance.now();
     const token = ++this.anim;
     const step = (now: number): void => {
@@ -335,21 +340,9 @@ export class PanController {
         this.pan.x = ccx - vw / (2 * zMin);
         this.pan.y = ccy - vh / (2 * zMin);
       }
-      // 镜头中心不走出允许的半径（惯性撞到边缘就停）
-      const cx = this.pan.x + vw / (2 * this.zoom);
-      const cy = this.pan.y + vh / (2 * this.zoom);
-      const d = Math.hypot(cx, cy);
-      const maxD = b.clampRadius(this.zoom, vw, vh);
-      if (d > maxD) {
-        const k = maxD / d;
-        this.pan.x = cx * k - vw / (2 * this.zoom);
-        this.pan.y = cy * k - vh / (2 * this.zoom);
-        if (this.mode === 'inertia') {
-          this.mode = 'idle';
-          this.velocity = { x: 0, y: 0 };
-          keep = now - this.lastWheelAt < WHEEL_SETTLE_MS;
-        }
-      }
+      // 首尾相接：把 pan 收进一个周期（世界是周期的，收回来看不出任何变化）
+      this.pan.x = wrap(this.pan.x, b.period);
+      this.pan.y = wrap(this.pan.y, b.period);
     } else {
       // 周期回绕：把 pan 收进 [0, tile)，内容周期性重复 → 视觉无边界
       this.pan.x = wrap(this.pan.x, this.opts.tileWidth);

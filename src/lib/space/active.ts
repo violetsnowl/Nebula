@@ -2,18 +2,18 @@ import type { CSSProperties } from 'react';
 import { CARD_HEIGHT, CARD_WIDTH, type CardSpec } from '../layout';
 import { getSpaceLab } from './lab';
 import { lensDelta, project, type Proj } from './lens';
-import type { BoundedWorld } from './world';
+import type { SpaceWorld } from './world';
 
 /**
  * 当前生效的有边界星云（#133）。舞台在渲染时写入（和 metricsRef 一样的做法），
  * 卡片组件渲染时据此算初始位置——必须和舞台帧循环算的一致，否则卡片会从错的位置滑过来（transform 有 0.45s 过渡）。
  * 现有卡片墙模式下为 null。
  */
-let active: BoundedWorld | null = null;
-export function setActiveWorld(w: BoundedWorld | null): void {
+let active: SpaceWorld | null = null;
+export function setActiveWorld(w: SpaceWorld | null): void {
   active = w;
 }
-export function getActiveWorld(): BoundedWorld | null {
+export function getActiveWorld(): SpaceWorld | null {
   return active;
 }
 
@@ -28,7 +28,7 @@ export function boundedCardStyle(card: CardSpec, pan: { x: number; y: number }, 
   if (!active) return null;
   const vw = typeof window !== 'undefined' ? window.innerWidth : 1280;
   const vh = typeof window !== 'undefined' ? window.innerHeight : 800;
-  const p = project(card.x + CARD_WIDTH / 2, card.y + CARD_HEIGHT / 2, { x: pan.x, y: pan.y, zoom, vw, vh }, lensDelta(getSpaceLab().lens, zoom), tmp);
+  const p = project(card.x + CARD_WIDTH / 2, card.y + CARD_HEIGHT / 2, { x: pan.x, y: pan.y, zoom, vw, vh }, lensDelta(getSpaceLab().lens, zoom), tmp, active.period);
   return {
     '--x': `${p.sx - CARD_WIDTH / 2}px`,
     '--y': `${p.sy - CARD_HEIGHT / 2}px`,

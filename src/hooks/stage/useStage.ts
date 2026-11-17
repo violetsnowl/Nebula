@@ -28,7 +28,7 @@ import { libraryService } from '../../lib/library';
 import { preferredQuality } from '../../lib/preferences';
 import type { ImportStatus } from '../../lib/playlistTypes';
 import { getSpaceLab, registerSpaceCommand, setSpaceLab, useSpaceLab, type StageMode } from '../../lib/space/lab';
-import { buildChroma, buildCluster, buildRandom, queryDisc, type BoundedWorld } from '../../lib/space/world';
+import { buildChroma, buildCluster, buildRandom, queryRect, zoomFloor, type SpaceWorld } from '../../lib/space/world';
 import { camCenter, lensDelta, project, worldPerPixel, type Proj } from '../../lib/space/lens';
 import { ensureTones, oklabToRgb, toneOf, useToneProgress } from '../../lib/space/tone';
 import { setActiveWorld } from '../../lib/space/active';
@@ -83,7 +83,7 @@ interface UseStageOptions {
   metricsRef: MutableRefObject<LayoutMetrics>;
   effectiveCardsRef: MutableRefObject<CardSpec[]>;
   /** 有边界星云（#133 方向原型，现有模式为 null），同上由 useStage 渲染时写入。 */
-  worldRef: MutableRefObject<BoundedWorld | null>;
+  worldRef: MutableRefObject<SpaceWorld | null>;
 }
 
 /**
@@ -132,7 +132,7 @@ export function useStage({
   // 色雾按色调画：随机排法的布局不依赖色调，但色雾要跟着色调更新
   const hazeVersionRef = useRef(0);
   hazeVersionRef.current = toneProgress.version;
-  const world = useMemo<BoundedWorld | null>(() => {
+  const world = useMemo<SpaceWorld | null>(() => {
     if (lab.mode === 'chroma') return buildChroma(songs);
     if (lab.mode === 'cluster') return buildCluster(songs);
     if (lab.mode === 'random') return buildRandom(songs);
@@ -262,14 +262,13 @@ export function useStage({
    * 有边界星云的一帧（#133）：查镜头周围的卡片 → 过透镜投影 → 太小 / 超出上限的画成星，其余挂成卡片；
    * 卡片在屏幕边缘、透镜外圈、缩小时淡出（透明度，不用滤镜，省重绘）；散开 / 退潮照旧在屏幕坐标上推。
    */
-  const boundedFrame = useCallback((frame: PanFrame, world: BoundedWorld) => {
+  const boundedFrame = useCallback((frame: PanFrame, world: SpaceWorld) => {
     const lab = getSpaceLab();
     const z = frame.zoom;
     const vw = frame.vw;
     const vh = frame.vh;
     const delta = lensDelta(lab.lens, z);
     const { cx, cy } = camCenter(frame);
-    const rs = Math.hypot(vw, vh) / 2;
     const n = world.cards.length;
     if (mountedARef.current.length !== n) mountedARef.current = new Float32Array(n);
     const mountedA = mountedARef.current;
@@ -281,10 +280,11 @@ export function useStage({
       const was = visibleRef.current;
       const cand = candRef.current;
       cand.length = 0;
-      queryDisc(world, cx, cy, (rs / z) * 1.12 + 260, cand);
+      // 画布首尾相接（#136）：查镜头周围一个屏幕大小（加一圈余量）的矩形，取每首歌离镜头最近的那一份
+      queryRect(world, cx, cy, vw / (2 * z) + 220 / z, vh / (2 * z) + 260 / z, cand);
       for (const id of cand) {
         if (id >= revealedRef.current) continue;
-        project(world.px[id]!, world.py[id]!, frame, delta, p);
+        project(world.px[id]!, world.py[id]!, frame, delta, p, world.period);
         const size = CARD_WIDTH * p.s;
         // 小于 56px 的交给画布（这时 DOM 卡片本来就淡到 0 了，挂着只是白白重算样式）
         if (size < MIN_CARD_PX) continue;
@@ -621,13 +621,13 @@ export function useStage({
     const stage = stageRef.current;
     if (!stage) return;
 
-    // 有边界星云：开场镜头对准正在播放的那首（没有就对准星云中心），而不是固定的画布中心
+    // 星云：开场镜头对准正在播放的那首，而不是固定的位置；缩放不低于下限（小歌单 / 大屏幕下限更高）
     const w = world;
     let initialX = (metrics.tileWidth - window.innerWidth) / 2;
     let initialY = (metrics.tileHeight - window.innerHeight) / 2;
     let initialZoom = 1;
     if (w) {
-      initialZoom = 0.62;
+      initialZoom = Math.max(0.62, zoomFloor(w, window.innerWidth, window.innerHeight));
       const sid = audioPlayer.getState().song?.id ?? -1;
       const inWorld = sid >= 0 && sid < w.cards.length;
       initialX = (inWorld ? w.px[sid]! : 0) - window.innerWidth / (2 * initialZoom);
@@ -641,13 +641,10 @@ export function useStage({
       initialZoom,
       bounded: w
         ? {
-            // 不让人缩到看见整片星云（#135，用户反馈：全貌「一言难尽」，放大进星云里才好看）：
-            //   - 最远也要认得出封面：卡片在屏幕上约 48px（0.28 倍，正好是一面小封面拼成的墙）；
-            //   - 大屏幕视野更大，再收一点：视野半径不超过星云半径的 60%；
-            //   - 小歌单一屏装得下，就停在默认缩放（0.62）。
-            zoomMin: (vw, vh) => Math.max(0.28, Math.min(0.62, Math.hypot(vw, vh) / 2 / (0.6 * w.radius))),
-            // 镜头走到边上时，视野里星云外的空处不超过约三分之一：边缘只是变稀，看不到整团的轮廓
-            clampRadius: (z, vw, vh) => Math.max(0, w.radius * 0.96 - (0.68 * Math.hypot(vw, vh)) / 2 / z),
+            // 首尾相接、没有边界（#136）。缩放下限：最远也要认得出封面（约 48px，0.28 倍）；
+            // 一屏不超过周期的一部分（大歌单 60%），同一首歌不会在同一屏出现两次（见 zoomFloor）
+            period: w.period,
+            zoomMin: (vw, vh) => zoomFloor(w, vw, vh),
             zoomMax: 2.4,
             worldPerPixel: (sx, sy, f) => worldPerPixel(sx, sy, f, lensDelta(getSpaceLab().lens, f.zoom)),
           }
@@ -694,7 +691,7 @@ export function useStage({
           mode: getSpaceLab().mode,
           zoom: c?.zoom ?? 1,
           center: c ? { x: c.pan.x + vw / (2 * c.zoom), y: c.pan.y + vh / (2 * c.zoom) } : null,
-          radius: w?.radius ?? 0,
+          period: w?.period ?? 0,
           clusters: w?.clusters.length ?? 0,
         };
       },

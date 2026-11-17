@@ -4,7 +4,7 @@ import { project, type CamLike, type Proj } from './lens';
 import { thumbOf } from './thumbs';
 import { oklabToRgb, toneOf } from './tone';
 import { placeholderFill } from '../coverPlaceholder';
-import type { BoundedWorld } from './world';
+import type { SpaceWorld } from './world';
 
 /**
  * 封面层（#133 星层 → #134 重做）：画在 DOM 卡片下面的一张画布，承接所有「不挂 DOM」的歌。
@@ -15,7 +15,7 @@ import type { BoundedWorld } from './world';
  *     和 DOM 卡片同位置、同圆角、同样的边缘 / 外圈淡出，56–72px 之间和 DOM 卡片交叉淡化；
  *     缩略图还没到时先画一块封面代表色的小方块，到了自然换成封面；
  *   - #135：不再允许缩到看见整片星云（最远约 0.28 倍，封面约 48px），看全貌用的色雾去掉；
- *   - 按歌手时拉远会标出较大星团（6 首以上）的歌手名，大星团先占位，重叠的不写。
+ *   - 按歌手时标出较大星团（6 首以上）的歌手名：正常缩放下很淡，拉远时清楚一些；大星团先占位，重叠的不写。
  */
 const GRAY: [number, number, number] = [96, 100, 112];
 
@@ -25,7 +25,7 @@ function smoothstep(a: number, b: number, x: number): number {
 }
 
 export interface StarFrame {
-  world: BoundedWorld;
+  world: SpaceWorld;
   cam: CamLike;
   delta: number;
   /** 每首歌已经作为 DOM 卡片显示的程度（0–1，只按大小算，不含边缘淡出），画布按 1 − 它画 */
@@ -97,7 +97,7 @@ export class StarField {
     const n = f.world.cards.length;
     for (let i = 0; i < n; i++) {
       if (f.mounted[i]! > 0.5) continue;
-      project(f.world.px[i]!, f.world.py[i]!, f.cam, f.delta, p);
+      project(f.world.px[i]!, f.world.py[i]!, f.cam, f.delta, p, f.world.period);
       const size = CARD_WIDTH * p.s;
       if (size < 8) continue;
       const cy = this.coverY(p, f.boxH);
@@ -126,7 +126,7 @@ export class StarField {
     for (let i = 0; i < n; i++) {
       const left = 1 - mounted[i]!;
       if (left <= 0.02) continue;
-      project(world.px[i]!, world.py[i]!, cam, delta, p);
+      project(world.px[i]!, world.py[i]!, cam, delta, p, world.period);
       const size = Math.max(3, CARD_WIDTH * p.s);
       const half = size * 0.6 + 4;
       if (p.sx < -half || p.sy < -half || p.sx > cam.vw + half || p.sy > cam.vh + half) continue;
@@ -165,16 +165,17 @@ export class StarField {
     }
 
     // 按歌手：拉远时标星团名（6 首以上的歌手）。大星团先占位，和已放的名字重叠的就不写
-    const labelA = world.mode === 'cluster' ? 1 - smoothstep(0.3, 0.46, cam.zoom) : 0;
+    // #136：正常缩放下也淡淡写出歌手名（像地图上的地名），一眼知道这一团是谁；拉远时清楚一些
+    const labelA = world.mode === 'cluster' ? 0.42 + 0.58 * (1 - smoothstep(0.32, 0.6, cam.zoom)) : 0;
     if (labelA > 0.02) {
       ctx.textAlign = 'center';
       ctx.textBaseline = 'bottom';
       const taken: number[] = [];
       for (const c of world.clusters) {
         if (c.ids.length < 6) continue;
-        project(c.cx, c.cy - c.r, cam, delta, p);
+        project(c.cx, c.cy - c.r, cam, delta, p, world.period);
         if (p.sx < -200 || p.sy < -40 || p.sx > cam.vw + 200 || p.sy > cam.vh + 40) continue;
-        const size = Math.round(Math.min(20, 10.5 + Math.sqrt(c.ids.length) * 1.1));
+        const size = Math.round(Math.min(16, 10.5 + Math.sqrt(c.ids.length) * 0.8));
         ctx.font = `600 ${size}px Inter, "Segoe UI", "Noto Sans SC", "Microsoft YaHei", sans-serif`;
         const w = ctx.measureText(c.name).width;
         const x0 = p.sx - w / 2 - 6;
@@ -190,7 +191,7 @@ export class StarField {
         }
         if (overlap) continue;
         taken.push(x0, y0, x1, y1);
-        let a = labelA * (0.5 + 0.4 * smoothstep(4, 30, c.ids.length));
+        let a = labelA * (0.55 + 0.3 * smoothstep(6, 30, c.ids.length));
         if (match) a *= c.ids.some((id) => match.has(id)) ? 1.6 : 0.35;
         // 名字压在封面上，带一点暗影保证读得清
         ctx.shadowColor = 'rgba(0,0,0,0.65)';

@@ -5,15 +5,18 @@ import { chromaOf, hueOf, toneOf } from './tone';
 import { zoomToFit } from './lens';
 
 /**
- * 主舞台星云（#133 原型 → #134 做成设置项）。和旧卡片墙的区别：
- *   - 世界有边界（一整片星云，中心在原点），不再周期回绕；缩小能看到它的全貌和形状；
- *   - 三种排法：按歌手（星团）、按封面颜色（色彩星图）、随机（每次打开重撒）；
- *   - 真正的中心密、四周稀：卡片间距从中心 196px 往外逐渐放宽，外圈留出空气。
+ * 主舞台星云（#133 原型 → #134 设置项 → #136 无边界）。
  *
- * 点的分布用「蓝噪声」（Bridson 泊松圆盘采样，间距随半径变化）：随机但任意两点不近于设定间距，
- * 186px 以上的间距下卡片（172px）不会重叠。#133 用的是向日葵点阵，缩到全貌时会露出 13 / 21 / 34 条一组的螺旋
- * （像万花筒、LED 点阵，用户反馈），蓝噪声没有这种图案。
- * 轮廓也不再是正圆：按「带起伏的半径」取点，边缘像一团云。
+ * #136（用户提议）：去掉边界和「中心密、四周稀」，改成一张首尾相接、没有尽头的平铺画布——
+ * 往一个方向一直拖会从另一边接回来（像在星球表面走），用户永远看不见边界，也没有中心；
+ * 疏密处处一样，唯一的焦点是镜头的透镜（以屏幕中心放大）。
+ *
+ * 画布是边长 period 的正方形，四边首尾相接。点的分布直接在首尾相接的画布上做蓝噪声
+ * （泊松圆盘采样，距离按首尾相接算），接缝两边同样是「随机但不挤」，没有一条线。
+ * 三种排法：
+ *   - 随机：均匀撒满，每次打开换种子；
+ *   - 按封面颜色：往右 = 色相沿彩虹走一圈（色相本来首尾相接），往下 = 由暗到鲜艳再回到暗；
+ *   - 按歌手：星团均匀散开（不再越大越靠中心），单曲歌手按颜色填在团与团之间。
  */
 export interface SpaceCluster {
   key: string;
@@ -26,30 +29,31 @@ export interface SpaceCluster {
 
 export type WorldMode = 'chroma' | 'cluster' | 'random';
 
-export interface BoundedWorld {
+export interface SpaceWorld {
   mode: WorldMode;
   cards: CardSpec[];
-  /** 卡片盒中心（世界坐标） */
+  /** 卡片盒中心（世界坐标，0 ≤ x, y < period） */
   px: Float64Array;
   py: Float64Array;
-  /** 整片星云的半径 */
-  radius: number;
+  /** 首尾相接的周期（正方形边长） */
+  period: number;
   /** 按歌手时的星团（其余排法为空） */
   clusters: SpaceCluster[];
   /** 每首歌属于哪个星团（其余排法为 -1） */
   clusterOf: Int32Array;
-  grid: { cell: number; min: number; cols: number; cells: number[][] };
+  grid: { cell: number; cols: number; cells: number[][] };
 }
 
 const TAU = Math.PI * 2;
+/** 卡片最小间距（处处一样）：卡片 172px，不会重叠 */
+const SPACING = 190;
+/** 小歌单的最小周期：太小的话拖一下就转回来了 */
+const MIN_PERIOD = 1800;
+/** 泊松圆盘采样每个点大约占 1.5 s² 的面积 */
+const AREA_PER_POINT = 1.5;
 /** 按颜色 / 按歌手用固定种子（同一份歌单每次排出来一样，方便记住位置）；随机每次打开换一个。 */
 const FIXED_SEED = 20261116;
 const SESSION_SEED = (Math.random() * 0xffffffff) >>> 0;
-
-function smoothstep(a: number, b: number, x: number): number {
-  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-}
 
 function hash(s: string): number {
   let h = 2166136261;
@@ -60,15 +64,6 @@ function hash(s: string): number {
   return h >>> 0;
 }
 
-interface Pt {
-  x: number;
-  y: number;
-  /** 排序用的半径（带轮廓起伏） */
-  r: number;
-  /** 方位角 0–2π */
-  a: number;
-}
-
 function angle01(a: number): number {
   return ((a % TAU) + TAU) % TAU;
 }
@@ -76,122 +71,121 @@ function angDiff(a: number, b: number): number {
   const d = Math.abs(a - b) % TAU;
   return d > Math.PI ? TAU - d : d;
 }
+function mod(v: number, T: number): number {
+  return ((v % T) + T) % T;
+}
+/** 首尾相接时 a 到 b 的最短位移（-T/2 ~ T/2）。 */
+export function wrapDelta(d: number, T: number): number {
+  return d - T * Math.round(d / T);
+}
 
-/** 轮廓起伏：几个低频正弦叠加，±amp 左右，让外缘像云而不是正圆。 */
-function rimNoise(rng: RNG, amp: number): (a: number) => number {
-  const terms = [2, 3, 5, 7].map((k, i) => ({ k, ph: rng() * TAU, w: amp / (1 + i * 0.7) }));
-  return (a: number) => 1 + terms.reduce((s, t) => s + t.w * Math.sin(t.k * a + t.ph), 0);
+interface Pt {
+  x: number;
+  y: number;
 }
 
 /**
- * 变间距的泊松圆盘采样，取最靠里的 count 个点（按带起伏的半径排序）。
- * spacing(r) 是半径 r 处两点的最小距离（随半径不减）；exclude 返回 true 的位置不放点（按歌手时绕开星团）。
- * 活动表空了但点还不够（被星团隔开的空隙）时，在范围内随机补种子继续长。
+ * 首尾相接画布上的泊松圆盘采样（间距 s 处处一样），长满为止。
+ * exclude 返回 true 的位置不放点（按歌手时绕开星团）；被隔开的空隙随机补种子。
  */
-function blueNoise(
-  count: number,
-  spacing: (r: number) => number,
-  rng: RNG,
-  amp: number,
-  exclude?: (x: number, y: number) => boolean,
-): Pt[] {
-  if (count <= 0) return [];
-  const sMin = spacing(0);
-  const cell = sMin / Math.SQRT2;
-  // 估计需要的范围：泊松圆盘每个点约占 1.5 s² 的面积，多留 40% 给轮廓取舍和避让
-  let R = 0;
-  for (let n = 0; n < count * 1.4; R += 40) n += (TAU * R * 40) / (1.5 * spacing(R) ** 2);
-  const noise = rimNoise(rng, amp);
-  for (let attempt = 0; attempt < 6; attempt++, R *= 1.25) {
-    const pts: { x: number; y: number }[] = [];
-    const grid = new Map<number, number>();
-    const key = (gx: number, gy: number) => (gx + 32768) * 65536 + (gy + 32768);
-    const sMax = spacing(R);
-    const reachCells = Math.ceil(sMax / cell);
-    const fits = (x: number, y: number): boolean => {
-      if (x * x + y * y > R * R) return false;
-      if (exclude?.(x, y)) return false;
-      const s = spacing(Math.hypot(x, y));
-      const gx = Math.floor(x / cell);
-      const gy = Math.floor(y / cell);
-      for (let dx = -reachCells; dx <= reachCells; dx++) {
-        for (let dy = -reachCells; dy <= reachCells; dy++) {
-          const q = grid.get(key(gx + dx, gy + dy));
-          if (q === undefined) continue;
-          const o = pts[q]!;
-          const need = Math.max(s, spacing(Math.hypot(o.x, o.y)));
-          if ((o.x - x) ** 2 + (o.y - y) ** 2 < need * need) return false;
-        }
-      }
-      return true;
-    };
-    const add = (x: number, y: number) => {
-      grid.set(key(Math.floor(x / cell), Math.floor(y / cell)), pts.length);
-      pts.push({ x, y });
-      active.push(pts.length - 1);
-    };
-    const active: number[] = [];
-    if (fits(0, 0)) add(0, 0);
-    let reseeds = 0;
-    while (reseeds < 400) {
-      if (!active.length) {
-        // 补种子：在范围里随机找一个能放的位置（被星团隔开的空隙也能长满）
-        reseeds++;
-        const rr = R * Math.sqrt(rng());
-        const th = rng() * TAU;
-        const x = rr * Math.cos(th);
-        const y = rr * Math.sin(th);
-        if (fits(x, y)) add(x, y);
-        continue;
-      }
-      const ai = Math.floor(rng() * active.length);
-      const p = pts[active[ai]!]!;
-      const s = spacing(Math.hypot(p.x, p.y));
-      let found = false;
-      for (let k = 0; k < 30; k++) {
-        const th = rng() * TAU;
-        const d = s * (1 + rng());
-        const x = p.x + d * Math.cos(th);
-        const y = p.y + d * Math.sin(th);
-        if (fits(x, y)) {
-          add(x, y);
-          found = true;
-          break;
-        }
-      }
-      if (!found) {
-        active[ai] = active[active.length - 1]!;
-        active.pop();
+function torusPoisson(T: number, s: number, rng: RNG, exclude?: (x: number, y: number) => boolean): Pt[] {
+  const cols = Math.max(1, Math.floor(T / (s / Math.SQRT2)));
+  const cell = T / cols;
+  const grid = new Int32Array(cols * cols).fill(-1);
+  const pts: Pt[] = [];
+  const active: number[] = [];
+  const reach = Math.ceil(s / cell);
+  const s2 = s * s;
+  const fits = (x: number, y: number): boolean => {
+    if (exclude?.(x, y)) return false;
+    const gx = Math.floor(x / cell);
+    const gy = Math.floor(y / cell);
+    for (let dy = -reach; dy <= reach; dy++) {
+      const ry = mod(gy + dy, cols) * cols;
+      for (let dx = -reach; dx <= reach; dx++) {
+        const q = grid[ry + mod(gx + dx, cols)]!;
+        if (q < 0) continue;
+        const o = pts[q]!;
+        const ddx = wrapDelta(o.x - x, T);
+        const ddy = wrapDelta(o.y - y, T);
+        if (ddx * ddx + ddy * ddy < s2) return false;
       }
     }
-    if (pts.length < count) continue;
-    const out: Pt[] = pts.map((p) => {
-      const a = angle01(Math.atan2(p.y, p.x));
-      return { x: p.x, y: p.y, r: Math.hypot(p.x, p.y) / noise(a), a };
-    });
-    out.sort((a, b) => a.r - b.r);
-    out.length = count;
-    return out;
+    return true;
+  };
+  const add = (x: number, y: number) => {
+    grid[Math.floor(y / cell) * cols + Math.floor(x / cell)] = pts.length;
+    pts.push({ x, y });
+    active.push(pts.length - 1);
+  };
+  let reseeds = 0;
+  while (reseeds < 500) {
+    if (!active.length) {
+      reseeds++;
+      const x = rng() * T;
+      const y = rng() * T;
+      if (fits(x, y)) add(x, y);
+      continue;
+    }
+    const ai = Math.floor(rng() * active.length);
+    const p = pts[active[ai]!]!;
+    let found = false;
+    for (let k = 0; k < 30; k++) {
+      const th = rng() * TAU;
+      const d = s * (1 + rng());
+      const x = mod(p.x + d * Math.cos(th), T);
+      const y = mod(p.y + d * Math.sin(th), T);
+      if (fits(x, y)) {
+        add(x, y);
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      active[ai] = active[active.length - 1]!;
+      active.pop();
+    }
   }
-  // 极端情况兜底（不会走到）：按螺线排
-  return Array.from({ length: count }, (_, k) => {
-    const r = sMin * Math.sqrt(k + 0.5);
-    const a = angle01(k * 2.399963);
-    return { x: r * Math.cos(a), y: r * Math.sin(a), r, a };
-  });
+  return pts;
 }
 
-function buildGrid(px: Float64Array, py: Float64Array, radius: number): BoundedWorld['grid'] {
-  const cell = 520;
-  const min = -radius - cell;
-  const cols = Math.ceil((2 * radius + 2 * cell) / cell) + 1;
+/** 正好 count 个点：按估计的周期撒满，多了随机去掉几个（空位很分散），少了放大周期重来。 */
+function evenPoints(count: number, rng: RNG): { pts: Pt[]; T: number } {
+  let s = SPACING;
+  let T = Math.sqrt(count * AREA_PER_POINT) * s;
+  if (T < MIN_PERIOD) {
+    // 小歌单：周期不小于 MIN_PERIOD，间距相应放大
+    s = MIN_PERIOD / Math.sqrt(Math.max(1, count) * AREA_PER_POINT);
+    T = MIN_PERIOD;
+  }
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const pts = torusPoisson(T, s, rng);
+    if (pts.length >= count) {
+      for (let i = pts.length - 1; i > 0; i--) {
+        const j = Math.floor(rng() * (i + 1));
+        [pts[i], pts[j]] = [pts[j]!, pts[i]!];
+      }
+      pts.length = count;
+      return { pts, T };
+    }
+    T *= Math.sqrt(count / Math.max(1, pts.length)) * 1.03;
+  }
+  // 兜底（不会走到）：网格
+  const side = Math.ceil(Math.sqrt(count));
+  T = side * s * 1.2;
+  return { pts: Array.from({ length: count }, (_, k) => ({ x: ((k % side) + 0.5) * (T / side), y: (Math.floor(k / side) + 0.5) * (T / side) })), T };
+}
+
+function buildGrid(px: Float64Array, py: Float64Array, T: number): SpaceWorld['grid'] {
+  const cols = Math.max(1, Math.floor(T / 520));
+  const cell = T / cols;
   const cells: number[][] = Array.from({ length: cols * cols }, () => []);
   for (let i = 0; i < px.length; i++) {
-    const cx = Math.floor((px[i]! - min) / cell);
-    const cy = Math.floor((py[i]! - min) / cell);
-    cells[cy * cols + cx]!.push(i);
+    const gx = Math.min(cols - 1, Math.floor(px[i]! / cell));
+    const gy = Math.min(cols - 1, Math.floor(py[i]! / cell));
+    cells[gy * cols + gx]!.push(i);
   }
-  return { cell, min, cols, cells };
+  return { cell, cols, cells };
 }
 
 function finish(
@@ -199,13 +193,18 @@ function finish(
   songs: Track[],
   px: Float64Array,
   py: Float64Array,
+  T: number,
   clusters: SpaceCluster[],
   clusterOf: Int32Array,
-): BoundedWorld {
-  let radius = 0;
-  for (let i = 0; i < px.length; i++) radius = Math.max(radius, Math.hypot(px[i]!, py[i]!));
-  for (const c of clusters) radius = Math.max(radius, Math.hypot(c.cx, c.cy) + c.r);
-  radius += 120;
+): SpaceWorld {
+  for (let i = 0; i < px.length; i++) {
+    px[i] = mod(px[i]!, T);
+    py[i] = mod(py[i]!, T);
+  }
+  for (const c of clusters) {
+    c.cx = mod(c.cx, T);
+    c.cy = mod(c.cy, T);
+  }
   const cards: CardSpec[] = songs.map((track, i) => ({
     id: i,
     x: px[i]! - CARD_WIDTH / 2,
@@ -213,45 +212,44 @@ function finish(
     rotateZ: 0,
     track,
   }));
-  return { mode, cards, px, py, radius, clusters, clusterOf, grid: buildGrid(px, py, radius) };
+  return { mode, cards, px, py, period: T, clusters, clusterOf, grid: buildGrid(px, py, T) };
 }
 
-/** 世界圆盘内（圆心 cx, cy，半径 R）的卡片 id，写进 out。 */
-export function queryDisc(w: BoundedWorld, cx: number, cy: number, R: number, out: number[]): void {
-  const { cell, min, cols, cells } = w.grid;
-  const x0 = Math.max(0, Math.floor((cx - R - min) / cell));
-  const x1 = Math.min(cols - 1, Math.floor((cx + R - min) / cell));
-  const y0 = Math.max(0, Math.floor((cy - R - min) / cell));
-  const y1 = Math.min(cols - 1, Math.floor((cy + R - min) / cell));
-  const R2 = R * R;
+/**
+ * 镜头中心 (cx, cy) 周围半宽 hx、半高 hy 的矩形里的卡片 id（首尾相接），写进 out。
+ * 调用方保证矩形不超过一个周期（缩放下限保证），所以每首歌只会出现一次。
+ */
+export function queryRect(w: SpaceWorld, cx: number, cy: number, hx: number, hy: number, out: number[]): void {
+  const { cell, cols, cells } = w.grid;
+  const T = w.period;
+  const x0 = Math.floor((cx - hx) / cell);
+  const x1 = Math.floor((cx + hx) / cell);
+  const y0 = Math.floor((cy - hy) / cell);
+  const y1 = Math.floor((cy + hy) / cell);
+  const seen = cols * cols < (x1 - x0 + 1) * (y1 - y0 + 1) ? new Set<number>() : null;
   for (let gy = y0; gy <= y1; gy++) {
+    const ry = mod(gy, cols) * cols;
     for (let gx = x0; gx <= x1; gx++) {
-      const arr = cells[gy * cols + gx]!;
-      for (const id of arr) {
-        const dx = w.px[id]! - cx;
-        const dy = w.py[id]! - cy;
-        if (dx * dx + dy * dy <= R2) out.push(id);
+      const key = ry + mod(gx, cols);
+      if (seen) {
+        if (seen.has(key)) continue;
+        seen.add(key);
+      }
+      for (const id of cells[key]!) {
+        if (Math.abs(wrapDelta(w.px[id]! - cx, T)) <= hx && Math.abs(wrapDelta(w.py[id]! - cy, T)) <= hy) out.push(id);
       }
     }
   }
 }
 
-/**
- * 最小间距：中心 186px，往外逐渐放宽到 280px（卡片 172px，不会重叠）。
- * 蓝噪声的平均间距比最小间距大 10–30%，所以比向日葵点阵（196px）收紧一点，疏密观感和 #133 相当。
- */
-const spacingFalloff = (r: number) => 186 + 94 * smoothstep(0, 5000, r);
-
-// ---------------------------------------------------------------- 色彩顺序（按颜色全部、按歌手的单曲歌手）
+// ---------------------------------------------------------------- 色彩顺序 + 按色带分配
 
 /**
- * 封面颜色的「由内到外」顺序 + 方位角：
- *   - 近中性的封面（OKLab 彩度 < 0.035，用户曲库里约占一半，色相只是噪声）在内圈，按明暗从深到浅排；
- *   - 有颜色的在外圈，按彩度从淡到浓排；
- *   于是半径方向是一条连续的过渡：深 → 浅灰 → 粉彩 → 鲜艳。方位角 = 色相（红在正上方）。
+ * 封面颜色的「深度」次序：近中性的封面（OKLab 彩度 < 0.035，用户曲库里约一半，色相只是噪声）在前，按明暗从深到浅；
+ * 有颜色的在后，按彩度从淡到浓。色相角 0–2π（红在 0）。
  */
-const HUE_ROTATE = -Math.PI / 2 - 0.5; // OKLab 红约 0.5 弧度 → 屏幕正上方
 const NEUTRAL_C = 0.035;
+const HUE_ROTATE = -0.5; // OKLab 红约 0.5 弧度 → 0
 
 function colorOrder(songs: Track[], ids: number[]): { order: number[]; hueAng: Map<number, number> } {
   const key = new Map<number, number>();
@@ -261,7 +259,6 @@ function colorOrder(songs: Track[], ids: number[]): { order: number[]; hueAng: M
     const c = t ? chromaOf(t) : 0;
     const L = t ? t[0] : 0.5;
     hueAng.set(i, t ? angle01(hueOf(t) + HUE_ROTATE) : 0);
-    // 中性：0–1 按亮度；有颜色：1 起按彩度
     key.set(i, c < NEUTRAL_C ? L : 1 + c);
   }
   const order = [...ids].sort((a, b) => key.get(a)! - key.get(b)! || a - b);
@@ -269,78 +266,69 @@ function colorOrder(songs: Track[], ids: number[]): { order: number[]; hueAng: M
 }
 
 /**
- * 点（已按带起伏的半径由内到外排好）切成一圈一圈（每圈厚约 1.3 个间距），歌按 order 依次分到各圈；
- * 每一圈里点按方位角排、歌按色相排，再找一个整体旋转，让每张封面的方位尽量贴近它真实的色相角。
- * 点是蓝噪声，圈与圈之间没有可见的界线。
+ * 在首尾相接的画布上按颜色分配：横向（x）= 色相，绕一圈正好一个周期；
+ * 纵向（y）= 深度，上下两半镜像（y = 0 和周期处最暗、正中最鲜艳），上下接缝也是连续的。
+ * 点按「深度坐标」切成一条条色带（每条厚约 1.3 个间距），歌按 order 依次分到各带；
+ * 带内点按 x 排、歌按色相排，再找一个整体平移，让每张封面的横向位置尽量贴近它的色相。
  */
-function assignRings(
-  pts: Pt[],
-  order: number[],
-  hueAng: Map<number, number>,
-  spacing: (r: number) => number,
-  px: Float64Array,
-  py: Float64Array,
-): void {
+function assignBands(pts: Pt[], order: number[], hueAng: Map<number, number>, T: number, s: number, px: Float64Array, py: Float64Array): void {
   const n = order.length;
+  const depth = (p: Pt) => 1 - Math.abs((2 * p.y) / T - 1);
+  const idx = pts.map((_, k) => k).sort((a, b) => depth(pts[a]!) - depth(pts[b]!));
+  const bandD = Math.max(1e-6, (2.6 * s) / T);
   let start = 0;
-  let r0 = pts[0]?.r ?? 0;
+  let d0 = depth(pts[idx[0]!]!);
   for (let k = 1; k <= n; k++) {
-    if (k < n && pts[k]!.r - r0 < 1.3 * spacing(r0)) continue;
-    const ring = Array.from({ length: k - start }, (_, j) => start + j).sort((a, b) => pts[a]!.a - pts[b]!.a);
+    if (k < n && depth(pts[idx[k]!]!) - d0 < bandD) continue;
+    const band = idx.slice(start, k).sort((a, b) => pts[a]!.x - pts[b]!.x);
     const songsIn = order.slice(start, k).sort((a, b) => hueAng.get(a)! - hueAng.get(b)!);
-    const m = ring.length;
+    const m = band.length;
     let best = 0;
     let bestCost = Infinity;
     for (let sh = 0; sh < m; sh++) {
       let cost = 0;
-      for (let i = 0; i < m; i++) cost += angDiff(pts[ring[(i + sh) % m]!]!.a, hueAng.get(songsIn[i]!)!);
+      for (let i = 0; i < m; i++) cost += angDiff((pts[band[(i + sh) % m]!]!.x / T) * TAU, hueAng.get(songsIn[i]!)!);
       if (cost < bestCost) {
         bestCost = cost;
         best = sh;
       }
     }
     for (let i = 0; i < m; i++) {
-      const p = pts[ring[(i + best) % m]!]!;
+      const p = pts[band[(i + best) % m]!]!;
       px[songsIn[i]!] = p.x;
       py[songsIn[i]!] = p.y;
     }
     start = k;
-    if (k < n) r0 = pts[k]!.r;
+    if (k < n) d0 = depth(pts[idx[k]!]!);
   }
 }
 
 // ---------------------------------------------------------------- 按封面颜色
 
-/** 方位角 = 色相，半径 = 由深到浅、由淡到浓（见 colorOrder）。半径按「名次」分配，密度由点的分布控制。 */
-export function buildChroma(songs: Track[]): BoundedWorld {
+export function buildChroma(songs: Track[]): SpaceWorld {
   const n = songs.length;
+  const { pts, T } = evenPoints(n, mulberry32(FIXED_SEED));
   const { order, hueAng } = colorOrder(songs, Array.from({ length: n }, (_, i) => i));
-  const pts = blueNoise(n, spacingFalloff, mulberry32(FIXED_SEED), 0.1);
   const px = new Float64Array(n);
   const py = new Float64Array(n);
-  assignRings(pts, order, hueAng, spacingFalloff, px, py);
-  return finish('chroma', songs, px, py, [], new Int32Array(n).fill(-1));
+  assignBands(pts, order, hueAng, T, SPACING, px, py);
+  return finish('chroma', songs, px, py, T, [], new Int32Array(n).fill(-1));
 }
 
 // ---------------------------------------------------------------- 随机
 
 /** 不按颜色也不按歌手：每次打开换一个种子重新撒，同一次使用里不变（同一份歌单算出来一样）。 */
-export function buildRandom(songs: Track[]): BoundedWorld {
+export function buildRandom(songs: Track[]): SpaceWorld {
   const n = songs.length;
   const rng = mulberry32(SESSION_SEED);
-  const pts = blueNoise(n, spacingFalloff, rng, 0.1);
-  const ids = Array.from({ length: n }, (_, i) => i);
-  for (let i = n - 1; i > 0; i--) {
-    const j = Math.floor(rng() * (i + 1));
-    [ids[i], ids[j]] = [ids[j]!, ids[i]!];
-  }
+  const { pts, T } = evenPoints(n, rng);
   const px = new Float64Array(n);
   const py = new Float64Array(n);
-  ids.forEach((id, k) => {
-    px[id] = pts[k]!.x;
-    py[id] = pts[k]!.y;
+  pts.forEach((p, k) => {
+    px[k] = p.x;
+    py[k] = p.y;
   });
-  return finish('random', songs, px, py, [], new Int32Array(n).fill(-1));
+  return finish('random', songs, px, py, T, [], new Int32Array(n).fill(-1));
 }
 
 // ---------------------------------------------------------------- 按歌手
@@ -351,13 +339,66 @@ function primaryArtist(artist: string | undefined): { key: string; name: string 
   return { key: name.toLowerCase() || '(未知歌手)', name: name || '未知歌手' };
 }
 
+/** 一团歌的形状：蓝噪声取最靠里的 m 个，带一点轮廓起伏（团是一块完整的形状，不首尾相接）。 */
+function blobPoints(m: number, s: number, rng: RNG): Pt[] {
+  const cell = s / Math.SQRT2;
+  const R = Math.sqrt(m * AREA_PER_POINT * 1.6) * s * 0.62 + s;
+  const grid = new Map<number, number>();
+  const key = (gx: number, gy: number) => (gx + 4096) * 8192 + (gy + 4096);
+  const pts: Pt[] = [];
+  const active: number[] = [];
+  const fits = (x: number, y: number) => {
+    if (x * x + y * y > R * R) return false;
+    const gx = Math.floor(x / cell);
+    const gy = Math.floor(y / cell);
+    for (let dy = -2; dy <= 2; dy++)
+      for (let dx = -2; dx <= 2; dx++) {
+        const q = grid.get(key(gx + dx, gy + dy));
+        if (q === undefined) continue;
+        const o = pts[q]!;
+        if ((o.x - x) ** 2 + (o.y - y) ** 2 < s * s) return false;
+      }
+    return true;
+  };
+  const add = (x: number, y: number) => {
+    grid.set(key(Math.floor(x / cell), Math.floor(y / cell)), pts.length);
+    pts.push({ x, y });
+    active.push(pts.length - 1);
+  };
+  add(0, 0);
+  while (active.length) {
+    const ai = Math.floor(rng() * active.length);
+    const p = pts[active[ai]!]!;
+    let found = false;
+    for (let k = 0; k < 30; k++) {
+      const th = rng() * TAU;
+      const d = s * (1 + rng());
+      const x = p.x + d * Math.cos(th);
+      const y = p.y + d * Math.sin(th);
+      if (fits(x, y)) {
+        add(x, y);
+        found = true;
+        break;
+      }
+    }
+    if (!found) {
+      active[ai] = active[active.length - 1]!;
+      active.pop();
+    }
+  }
+  const ph = rng() * TAU;
+  const rr = (p: Pt) => Math.hypot(p.x, p.y) / (1 + 0.08 * Math.sin(3 * Math.atan2(p.y, p.x) + ph));
+  pts.sort((a, b) => rr(a) - rr(b));
+  return pts.slice(0, Math.min(m, pts.length));
+}
+
 /**
- * 同一歌手的歌聚成一团（团内 186px 蓝噪声，像墙一样密；轮廓略有起伏），同一张专辑的歌挨在一个扇区里。
- * 两首以上的星团从大到小，依次放在「离中心最近、又和已放的星团保持间距」的位置：最大的在中心。
- * 星团之间的间距 56 + 0.32 × 较小星团半径，给歌词和光留出空气。
- * 只有一首歌的歌手（用户曲库里 484 位，占三分之一）填进星团之间和外围的空位，按颜色排（内深外艳、方位按色相）。
+ * 同一歌手的歌聚成一团（团内 186px 蓝噪声，像墙一样密），同一张专辑的歌挨在一个扇区里。
+ * 两首以上的星团从大到小，依次放在画布上均匀分布的候选位置（低差异序列）中第一个放得下的地方，
+ * 星团之间的间距 56 + 0.32 × 较小星团半径，给歌词和光留出空气——没有中心，大星团散在各处。
+ * 只有一首歌的歌手填进团与团之间的空位，按颜色分色带（和按颜色排法同一套规则）。
  */
-export function buildCluster(songs: Track[]): BoundedWorld {
+export function buildCluster(songs: Track[]): SpaceWorld {
   const n = songs.length;
   const groups = new Map<string, { name: string; ids: number[] }>();
   songs.forEach((s, i) => {
@@ -371,7 +412,6 @@ export function buildCluster(songs: Track[]): BoundedWorld {
     .map(([key, g]) => ({ key, name: g.name, ids: g.ids, r: 0, cx: 0, cy: 0, lx: [] as number[], ly: [] as number[] }))
     .sort((a, b) => b.ids.length - a.ids.length || (a.key < b.key ? -1 : 1));
 
-  // 团内：蓝噪声（种子按歌手名，形状每次一样），专辑按歌数从多到少排、同专辑连续；点按方位角排，同专辑落在同一个扇区
   for (const c of list) {
     const m = c.ids.length;
     if (m === 1) {
@@ -380,10 +420,10 @@ export function buildCluster(songs: Track[]): BoundedWorld {
       c.r = 98;
       continue;
     }
-    const raw = blueNoise(m, () => S, mulberry32(hash(c.key)), 0.08);
-    // 以点的重心为团心
-    const gx = raw.reduce((s, p) => s + p.x, 0) / m;
-    const gy = raw.reduce((s, p) => s + p.y, 0) / m;
+    let raw = blobPoints(m, S, mulberry32(hash(c.key)));
+    if (raw.length < m) raw = blobPoints(m, S * 0.98, mulberry32(hash(c.key) + 1));
+    const gx = raw.reduce((s, p) => s + p.x, 0) / raw.length;
+    const gy = raw.reduce((s, p) => s + p.y, 0) / raw.length;
     const pts = raw.map((p) => ({ x: p.x - gx, y: p.y - gy, a: angle01(Math.atan2(p.y - gy, p.x - gx)) }));
     const albumSize = new Map<string, number>();
     for (const id of c.ids) {
@@ -408,104 +448,103 @@ export function buildCluster(songs: Track[]): BoundedWorld {
 
   const singles = list.filter((c) => c.ids.length === 1);
   const multi = list.filter((c) => c.ids.length > 1);
-
-  // 两首以上的星团由大到小贪心放置：候选点由近到远（黄金角螺线采样），网格加速碰撞检查
   const gapOf = (a: number, b: number) => 56 + 0.32 * Math.min(a, b);
-  const CELL = 700;
-  const grid = new Map<string, number[]>();
-  const each = (x: number, y: number, rr: number, f: (k: string) => boolean | void) => {
-    for (let gx = Math.floor((x - rr) / CELL); gx <= Math.floor((x + rr) / CELL); gx++)
-      for (let gy = Math.floor((y - rr) / CELL); gy <= Math.floor((y + rr) / CELL); gy++) if (f(`${gx},${gy}`) === false) return;
-  };
-  const STEP = 70;
-  const lastByR = new Map<number, number>();
-  let lastAny = 0;
-  multi.forEach((c, idx) => {
-    const reach = c.r + 56 + 0.32 * c.r;
-    let m = Math.floor(Math.max(lastByR.get(Math.round(c.r)) ?? 0, 0.3 * lastAny));
-    for (;; m++) {
-      const rho = STEP * Math.sqrt(m);
-      const th = m * 2.399963;
-      const x = rho * Math.cos(th);
-      const y = rho * Math.sin(th);
-      let ok = true;
-      each(x, y, reach, (key) => {
-        const arr = grid.get(key);
-        if (!arr) return;
-        for (const q of arr) {
-          const o = multi[q]!;
-          if (Math.hypot(o.cx - x, o.cy - y) < c.r + o.r + gapOf(c.r, o.r)) {
-            ok = false;
-            return false;
+  const SP = 200;
+
+  // 周期按面积估：星团（含一半间距）+ 单曲歌手的点；放不下就放大重来
+  let area = singles.length * AREA_PER_POINT * SP * SP;
+  for (const c of multi) area += Math.PI * (c.r + gapOf(c.r, 98) / 2) ** 2 * 1.25;
+  let T = Math.max(MIN_PERIOD, Math.sqrt(area));
+  const px = new Float64Array(n);
+  const py = new Float64Array(n);
+  // R2 低差异序列：候选位置在画布上均匀铺开（比随机更匀，没有聚堆）
+  const g2 = 1.32471795724474602596;
+  const a1 = 1 / g2;
+  const a2 = 1 / (g2 * g2);
+  for (let attempt = 0; attempt < 8; attempt++, T *= 1.08) {
+    let ok = true;
+    let k = 0;
+    for (let ci = 0; ci < multi.length; ci++) {
+      const c = multi[ci]!;
+      let placed = false;
+      for (let tries = 0; tries < 6000; tries++, k++) {
+        const x = (0.5 + a1 * k) % 1 * T;
+        const y = (0.5 + a2 * k) % 1 * T;
+        let clear = true;
+        for (let oi = 0; oi < ci; oi++) {
+          const o = multi[oi]!;
+          const dx = wrapDelta(o.cx - x, T);
+          const dy = wrapDelta(o.cy - y, T);
+          const need = c.r + o.r + gapOf(c.r, o.r);
+          if (dx * dx + dy * dy < need * need) {
+            clear = false;
+            break;
           }
         }
-      });
-      if (ok) {
-        c.cx = x;
-        c.cy = y;
-        lastByR.set(Math.round(c.r), m);
-        lastAny = m;
+        if (clear) {
+          c.cx = x;
+          c.cy = y;
+          placed = true;
+          break;
+        }
+      }
+      if (!placed) {
+        ok = false;
         break;
       }
     }
-    each(c.cx, c.cy, c.r, (key) => {
-      const arr = grid.get(key);
-      if (arr) arr.push(idx);
-      else grid.set(key, [idx]);
-    });
-  });
-
-  // 单曲歌手：在星团之外的空位上撒蓝噪声（离星团边缘至少 98 + 30px），由内到外取够数，再按颜色分圈排
-  const px = new Float64Array(n);
-  const py = new Float64Array(n);
-  if (singles.length) {
-    const SP = 200;
+    if (!ok) continue;
+    // 单曲歌手：团外的空位撒蓝噪声（离星团边缘至少 98 + 30px），够数就按颜色分色带
     const blocked = (x: number, y: number) => {
-      let hit = false;
-      each(x, y, 98 + 30, (key) => {
-        const arr = grid.get(key);
-        if (!arr) return;
-        for (const q of arr) {
-          const o = multi[q]!;
-          if (Math.hypot(o.cx - x, o.cy - y) < o.r + 98 + 30) {
-            hit = true;
-            return false;
-          }
-        }
-      });
-      return hit;
+      for (const o of multi) {
+        const dx = wrapDelta(o.cx - x, T);
+        const dy = wrapDelta(o.cy - y, T);
+        const need = o.r + 98 + 30;
+        if (dx * dx + dy * dy < need * need) return true;
+      }
+      return false;
     };
-    const free = blueNoise(singles.length, () => SP, mulberry32(FIXED_SEED + 1), 0.1, blocked);
-    const ids = singles.map((c) => c.ids[0]!);
-    const { order, hueAng } = colorOrder(songs, ids);
-    assignRings(free, order, hueAng, () => SP, px, py);
-    for (const c of singles) {
-      c.cx = px[c.ids[0]!]!;
-      c.cy = py[c.ids[0]!]!;
+    const free = singles.length ? torusPoisson(T, SP, mulberry32(FIXED_SEED + 1 + attempt), blocked) : [];
+    if (free.length < singles.length) continue;
+    const rng = mulberry32(FIXED_SEED + 7);
+    for (let i = free.length - 1; i > 0; i--) {
+      const j = Math.floor(rng() * (i + 1));
+      [free[i], free[j]] = [free[j]!, free[i]!];
     }
-  }
-
-  const clusterOf = new Int32Array(n);
-  const clusters: SpaceCluster[] = list.map((c, ci) => {
-    c.ids.forEach((id, j) => {
-      px[id] = c.cx + c.lx[j]!;
-      py[id] = c.cy + c.ly[j]!;
-      clusterOf[id] = ci;
+    free.length = singles.length;
+    if (singles.length) {
+      const ids = singles.map((c) => c.ids[0]!);
+      const { order, hueAng } = colorOrder(songs, ids);
+      assignBands(free, order, hueAng, T, SP, px, py);
+      for (const c of singles) {
+        c.cx = px[c.ids[0]!]!;
+        c.cy = py[c.ids[0]!]!;
+      }
+    }
+    const clusterOf = new Int32Array(n);
+    const clusters: SpaceCluster[] = list.map((c, ci) => {
+      c.ids.forEach((id, j) => {
+        px[id] = c.cx + c.lx[j]!;
+        py[id] = c.cy + c.ly[j]!;
+        clusterOf[id] = ci;
+      });
+      return { key: c.key, name: c.name, cx: c.cx, cy: c.cy, r: c.r, ids: c.ids };
     });
-    return { key: c.key, name: c.name, cx: c.cx, cy: c.cy, r: c.r, ids: c.ids };
-  });
-  return finish('cluster', songs, px, py, clusters, clusterOf);
+    return finish('cluster', songs, px, py, T, clusters, clusterOf);
+  }
+  // 放不下（不会走到）：退回随机
+  return { ...buildRandom(songs), mode: 'cluster' };
 }
 
 // ---------------------------------------------------------------- 搜索落点
 
 /**
- * 搜索后镜头飞去哪里：
+ * 搜索后镜头飞去哪里（世界坐标；镜头会走首尾相接里最近的那条路）：
  *   - 按歌手：命中大多落在同一个星团（搜歌手）→ 飞到这个星团，缩放到正好装下它；
  *   - 指定了某一首（从下拉里点的）或命中很分散 → 飞到那一首，缩放 1。
  */
 export function searchTarget(
-  w: BoundedWorld,
+  w: SpaceWorld,
   matchIds: number[],
   focus: number | null,
   preferSong: boolean,
@@ -519,7 +558,7 @@ export function searchTarget(
     const count = new Map<number, number>();
     for (const id of ids) {
       const c = w.clusterOf[id]!;
-      count.set(c, (count.get(c) ?? 0) + 1);
+      if (c >= 0) count.set(c, (count.get(c) ?? 0) + 1);
     }
     let best = -1;
     let bestN = 0;
@@ -536,4 +575,15 @@ export function searchTarget(
   }
   const id = focus != null && focus >= 0 && focus < w.cards.length ? focus : ids[0]!;
   return { cx: w.px[id]!, cy: w.py[id]!, zoom: 1 };
+}
+
+/**
+ * 缩放下限：最远也要认得出封面（约 48px，0.28 倍）；同时一屏不超过周期的一部分，
+ * 同一首歌不会在同一屏里出现两次，转一圈也不会太快（大歌单 60%，小歌单最多 92%）。
+ */
+export function zoomFloor(w: SpaceWorld, vw: number, vh: number): number {
+  const n = w.cards.length;
+  const t = Math.min(1, Math.max(0, (n - 60) / 340));
+  const share = 0.92 - 0.32 * (t * t * (3 - 2 * t));
+  return Math.max(0.28, vw / (share * w.period), vh / (share * w.period));
 }

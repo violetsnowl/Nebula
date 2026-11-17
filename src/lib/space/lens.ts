@@ -42,14 +42,23 @@ export function camCenter(f: CamLike): { cx: number; cy: number } {
   return { cx: f.x + f.vw / (2 * f.zoom), cy: f.y + f.vh / (2 * f.zoom) };
 }
 
-/** 世界点 (wx, wy) → 屏幕。结果写进 out（每帧上千次，不分配对象）。 */
-export function project(wx: number, wy: number, f: CamLike, delta: number, out: Proj): Proj {
+/**
+ * 世界点 (wx, wy) → 屏幕。结果写进 out（每帧上千次，不分配对象）。
+ * period > 0：画布首尾相接（#136），取离镜头最近的那一份。
+ */
+export function project(wx: number, wy: number, f: CamLike, delta: number, out: Proj, period = 0): Proj {
   const z = f.zoom;
   const hw = f.vw / 2;
   const hh = f.vh / 2;
   const rs = Math.hypot(hw, hh);
-  const dx = (wx - (f.x + hw / z)) * z;
-  const dy = (wy - (f.y + hh / z)) * z;
+  let ox = wx - (f.x + hw / z);
+  let oy = wy - (f.y + hh / z);
+  if (period > 0) {
+    ox -= period * Math.round(ox / period);
+    oy -= period * Math.round(oy / period);
+  }
+  const dx = ox * z;
+  const dy = oy * z;
   const r = Math.hypot(dx, dy);
   const u = r / rs;
   let k: number;
