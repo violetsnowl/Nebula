@@ -420,3 +420,10 @@ git switch review/backend-playback-overhaul
 - **修正**：仅在该函数内取得 `current = lines[pick.idx]` 后判断存在性，缺行使用原有 SAMPLE_LINE，effect 仍按原逻辑换句。没有改视觉、时序或歌词生成规则。
 - **复现与验证**：新增 `scripts/ui-playback-regression.cjs` 在真实 Chrome 中编译运行原生产 React 组件；第4句→空数组→新歌，以及第6句→单句短数组。原版稳定抛出 `Cannot read properties of undefined (reading 'translation')`；修复后2/2通过，组件仍挂载、新词正确显示、pageerror为0。已纳入 pnpm qa，未触碰 qa.cjs 两个主对话负责的在线测试。
 - **相似访问排查**：LyricsLayer 引擎数组在同一轮按同一 lines 构造，使用活动下标处有缺行/缺引擎检查；currentLyricIndex 先处理空数组并在当前数组内二分；nextUsable 按当前数组边界遍历。未为这些已有保护的位置添加无关改动。
+
+### 13.2 P0：同一录音被显示格式误伤（#B10）
+
+- **根因**：第一轮 artists 在去HTML前按 `/` 分割，`</em>` 的斜杠污染艺术家集合；把未知括注全部当录音版本；canonicalArtist 只识别极小别名表，QQ的读音括注无法与其他平台主名匹配。
+- **修正**：`parsers/metadataText.ts` 先清理高亮与常见实体；recordingMatch拆歌手前调用，各平台映射同时清理title/artist/artists/album。括注只在含Live、Remix、DJ、改编、伴奏、纯音乐、Ver.、Remaster、THE FIRST TAKE等版本词时形成约束；译名和Explicit忽略。艺术家尾部括注别名去掉，feat/合作仍保留。删除指定椎名林檎曲目的写死分支。
+- **验证**：任务书所列两首高亮歌曲、三首译名、Explicit、四种歌手别名、指定曲目通用规则、合法同Live共12正例；Lemon/LOSER翻唱、Godzilla伴奏、Love The Way You Lie Live、DJ/网友改编/纯音乐/THE FIRST TAKE/Ver./Remaster、Lie/Lies等15反例。新增27例在第一轮17例正确，修后27例正确；总143/143，30正例全部接纳、113反例全部拒绝。额外2项验证酷狗真实搜索适配器映射→SongResolver门禁及QQ字段清理，防止只修纯函数而适配器继续透出标签。
+- **边界**：严格标题主体、全部歌手集合、时长与必要专辑条件未放宽。规则改善不等于已重跑用户80首私人曲库；等待合法提供的凭据副本时继续其他工作。

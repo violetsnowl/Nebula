@@ -19,8 +19,36 @@ cases.push({kind:'假名',target:{...cases[0].target,title:'サクラ'},candidat
 cases.push({kind:'繁简',target:{...cases[0].target,title:'愛的夢'},candidate:{...cases[0].candidate,title:'爱的梦'},expected:true});
 cases.push({kind:'合作歌手缺失',target:{...cases[0].target,artists:['甲','乙']},candidate:{...cases[0].candidate,artist:'甲'},expected:false});
 cases.push({kind:'已核对的本曲译名与歌手括注',target:cases[0].target,candidate:{...cases[0].candidate,title:'丸ノ内サディスティック (丸之内虐待狂)',artist:'椎名林檎 (しいな りんご)'},expected:true});
+const round2 = [];
+function pair(kind,title,artist,candidate,expected=true) {
+ const target={...cases[0].target,title,artist,duration:220};
+ round2.push({kind,target,candidate:{...target,platform:'kugou',duration:221,...candidate},expected});
+}
+pair('酷狗英文高亮','In The End','Linkin Park',{title:'<em>In The End</em>',artist:'<em>Linkin Park</em>',artists:['<em>Linkin Park</em>']});
+pair('酷狗中文高亮','彩色的黑','吉克隽逸',{title:'<em>彩色的黑</em>',artist:'<em>吉克隽逸</em>'});
+pair('括注译名1','花びらたちのマーチ (花瓣的游行)','Aimer',{title:'花びらたちのマーチ'});
+pair('括注译名2','10月無口な君を忘れる (忘却10月沉默的你)','あたらよ',{title:'10月無口な君を忘れる'});
+pair('括注译名3','The Other Side Of Paradise（天堂彼岸）','Glass Animals',{title:'The Other Side Of Paradise'});
+pair('Explicit标记','Godzilla (Explicit)','Eminem',{title:'Godzilla'});
+for(const [base,alias]of [['ROSÉ','로제'],['米津玄師','よねづ けんし'],['YOASOBI','ヨアソビ'],['BLACKPINK','블랙핑크']])pair('歌手别名'+base,'公开同一录音',`${base} (${alias})`,{artist:base});
+pair('通用规则覆盖指定曲','丸ノ内サディスティック (丸之内虐待狂)','椎名林檎 (しいな りんご)',{title:'丸ノ内サディスティック',artist:'椎名林檎'});
+pair('相同Live版本允许','Love The Way You Lie (Live)','Eminem',{title:'Love The Way You Lie (Live)'});
+pair('Lemon翻唱拒绝','Lemon','米津玄師',{artist:'monogataru'},false);
+pair('LOSER翻唱拒绝','LOSER','米津玄師',{artist:'柳'},false);
+pair('Godzilla伴奏拒绝','Godzilla','Eminem',{title:'Godzilla (伴奏)'},false);
+pair('LoveTheWayLive拒绝','Love The Way You Lie','Eminem',{title:'Love The Way You Lie (Live)'},false);
+for(const version of ['DJ版','网友改编','纯音乐','THE FIRST TAKE','Acoustic Ver.','Radio Edit','Remastered'])pair('保留版本门禁'+version,'群青','YOASOBI',{title:`群青 (${version})`},false);
+pair('无括号DJ拒绝','群青','YOASOBI',{title:'群青 DJ版'},false);
+pair('词尾不同拒绝','Lie','NF',{title:'Lies'},false);
+pair('高亮不能掩盖不同歌手','In The End','Linkin Park',{artist:'<em>其他歌手</em>'},false);
+pair('合作名单不能忽略','合唱作品','甲 / 乙',{artist:'甲 (feat. 丙)'},false);
+cases.push(...round2);
 for(const c of cases)assert.equal(api.recordingMatch(c.candidate,c.target).ok,c.expected,c.kind);
 console.log(`严格录音匹配 ${cases.length}/${cases.length}`);
+if(fs.existsSync('dist-main/round1.cjs')){
+ const previous=require('../dist-main/round1.cjs');
+ console.log(JSON.stringify({round2Cases:round2.length,round1Correct:round2.filter(c=>previous.recordingMatch(c.candidate,c.target).ok===c.expected).length,round2Correct:round2.length}));
+}
 if(fs.existsSync('dist-main/baseline.cjs')){
  const baseline=require('../dist-main/baseline.cjs');let wrong=0,accepted=0,negatives=0;
  for(const c of cases){
@@ -38,3 +66,12 @@ assert.equal(result.quality,'320k');assert.equal(calls.length,1);assert.equal(ca
 calls=[];await adapter.fetchSongUrl('song-id',undefined,'128k',{mediaMid:'media-id'});assert.ok(calls[0].opts.body.req_0.param.filename.every(f=>f.startsWith('M500')));
 const anon=new api.QqAdapter({requestJson:async()=>({req_0:{data:{midurlinfo:[]}}})},{getHeader:()=>''});assert.equal((await anon.fetchSongUrl('id',undefined,undefined,{mediaMid:'media'})).code,'LOGIN_REQUIRED');
 console.log('QQ 批量文件、登录 comm、实际档位、向下降级、匿名错误 5/5');
+const kg=new api.KugouAdapter({requestJson:async()=>({data:{lists:[{FileHash:'same-recording',SongName:'<em>In The End</em>',SingerName:'<em>Linkin Park</em>',AlbumName:'<em>Hybrid Theory</em>',Duration:221}]}})},{getHeader:()=>''});
+const found=await kg.searchSongs('In The End Linkin Park');
+assert.equal(found[0].title,'In The End');assert.equal(found[0].artist,'Linkin Park');assert.deepEqual(found[0].artists,['Linkin Park']);assert.equal(found[0].album,'Hybrid Theory');
+const target={...round2[0].target,album:'Hybrid Theory'};
+const resolver=new api.SongResolver({netease:{fetchSongUrl:async()=>null},qq:{searchSongs:async()=>[]},kugou:{searchSongs:async()=>found,fetchSongUrl:async()=>({url:'https://test/same'})}},()=>{},async()=>true);
+assert.equal((await resolver.resolve(target)).platform,'kugou');
+const qqMapped=api.mapQQTrack({mid:'same',name:'<em>歌名</em>',singer:[{name:'<em>歌手</em>'}],album:{name:'<em>专辑</em>'}});
+assert.deepEqual([qqMapped.title,qqMapped.artist,qqMapped.artists[0],qqMapped.album],['歌名','歌手','歌手','专辑']);
+console.log('搜索适配器清理与真实路由门禁 2/2');
