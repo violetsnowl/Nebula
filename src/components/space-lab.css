@@ -47,7 +47,7 @@
 /* 三段切换：同宽，选中的那段底色提亮 */
 .space-lab .sl-seg {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 2px;
   padding: 2px;
   border-radius: 11px;

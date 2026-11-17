@@ -16,6 +16,7 @@ import { DOCK_PLATFORM_ORDER, platformMeta } from './platforms';
 import { IconCheck, IconChevronLeft, IconChevronRight, IconExternal, IconImage, IconRefresh } from './icons';
 import { setListenSettings as setListenSpaceSettings, useListenSettings as useListenSpaceSettings } from '../lib/listen/settings';
 import { ListenPreview } from './listen/ListenPreview';
+import { setSpaceLab, useSpaceLab, type StageLayout } from '../lib/space/lab';
 import { detectScript, toEngineLine, type EngineLine } from '../lib/listen/model';
 import { TYPO, measureUnits, renderUnits, unitFrame, waveOf, wholeLift, type UnitRt } from '../lib/listen/words';
 import './listen/lyric-words.css';
@@ -871,6 +872,13 @@ function LyricPreview({
 
 type BgChoice = 'env' | 'fog' | 'custom' | 'wallpaper';
 
+/** 星云怎么排（#134）：三种排法同一套视觉，只是聚类方式不同。 */
+const LAYOUT_HINT: Record<StageLayout, string> = {
+  cluster: '同一位歌手的歌聚成一团，歌越多越靠中心；只有一首歌的歌手按封面颜色排在空隙里。',
+  chroma: '按封面颜色排成一片：同色系挨在一起，中间深、外圈艳。新歌单第一次要给封面取色，取完会重排一次。',
+  random: '不按歌手也不按颜色。每次打开都重新撒一遍，这次用完之前位置不变。',
+};
+
 const BG_DESC: Record<BgChoice, string> = {
   env: '颜色取自封面，换歌时整个空间一起换色',
   fog: '在封面色调里隐约浮着一层放大、模糊的封面',
@@ -1254,6 +1262,7 @@ export const AccountDock = memo(function AccountDock({
 
   // 听音空间的歌词设置（§9.9）：与星云歌词的设置分开存
   const lsSettings = useListenSpaceSettings();
+  const stageLab = useSpaceLab();
   const loggedCount = DOCK_PLATFORM_ORDER.filter((p) => accounts[p]?.loggedIn).length;
   const avatarUrl =
     DOCK_PLATFORM_ORDER.map((p) => accounts[p]).find((a) => a?.loggedIn && a.avatarUrl)?.avatarUrl ?? null;
@@ -1677,6 +1686,23 @@ export const AccountDock = memo(function AccountDock({
         {materialTile('frost', '磨砂', '磨砂 · 更柔、更安静')}
       </div>
       <p className="hint-line">播放条、两侧小球、面板、弹窗和菜单一起切换。</p>
+      <div className="g-title">星云</div>
+      <div className="group">
+        <div className="row">
+          <span className="lbl">星云怎么排</span>
+          <Seg
+            label="星云怎么排"
+            value={stageLab.layout}
+            options={[
+              { value: 'cluster', label: '按歌手' },
+              { value: 'chroma', label: '按颜色' },
+              { value: 'random', label: '随机' },
+            ]}
+            onChange={(v) => setSpaceLab({ mode: v })}
+          />
+        </div>
+        <span className="row-hint">{LAYOUT_HINT[stageLab.layout]}</span>
+      </div>
       <div className="g-title">画面</div>
       <div className="group">
         <div className="row">

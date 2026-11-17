@@ -14,18 +14,30 @@ const PROXIMITY_GATE = '.glass, .glass-btn, .music-card, .search-drop';
 let initialized = false;
 const proximityTargets = new Set<HTMLElement>();
 
+/** 每个目标上次写入的状态：没变就不写（写 CSS 变量会让整张卡连同子元素重算样式）。 */
+const nearState = new WeakMap<HTMLElement, boolean>();
+const nearBuf: { el: HTMLElement; near: boolean }[] = [];
+
 function onPointerMove(e: PointerEvent): void {
   const t = e.target as HTMLElement | null;
   if (!t || !t.closest?.(PROXIMITY_GATE)) return;
+  // 先把位置全部读完，再统一写（#134）：原来读一张写一张，每张卡都会强制浏览器重算一次样式（布局抖动），
+  // 卡片一多（有边界星云一屏四五十张），鼠标在卡片上移动就会卡
+  nearBuf.length = 0;
   for (const el of proximityTargets) {
     const r = el.getBoundingClientRect();
     const cx = r.left + r.width / 2;
     const cy = r.top + r.height / 2;
     const d = Math.hypot(e.clientX - cx, e.clientY - cy);
-    const near = d < NEAR_RADIUS + Math.max(r.width, r.height) / 2;
+    nearBuf.push({ el, near: d < NEAR_RADIUS + Math.max(r.width, r.height) / 2 });
+  }
+  for (const { el, near } of nearBuf) {
+    if (nearState.get(el) === near) continue;
+    nearState.set(el, near);
     el.style.setProperty('--near-z', near ? '26px' : '0px');
     el.style.setProperty('--near-s', near ? '1.045' : '1');
   }
+  nearBuf.length = 0;
 }
 
 export function initGlassGlow(): () => void {

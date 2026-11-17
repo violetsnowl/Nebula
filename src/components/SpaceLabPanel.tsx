@@ -4,14 +4,14 @@ import { useToneProgress } from '../lib/space/tone';
 import './space-lab.css';
 
 /**
- * 舞台实验室（#133 主舞台方向原型）：开发者面板，默认隐藏，Ctrl+Shift+M 开关。
- * 在「现有 / A 色彩星图 / B 星团」之间切换，调透镜和倾角，用真实封面比较两个方向。
- * 只影响主舞台的布局；默认是现有卡片墙，平时用的样子不变。
+ * 舞台实验室（#133 原型 → #134）：开发者面板，默认隐藏，Ctrl+Shift+M 开关。
+ * 排法正式入口在「设置 › 外观 › 星云怎么排」；这里另外能退回旧卡片墙（验收期间的退路）、调透镜和倾角。
  */
 const MODES: { v: StageMode; label: string; hint: string }[] = [
-  { v: 'classic', label: '现有', hint: '随机卡片墙（周期回绕 + 鱼眼）' },
-  { v: 'chroma', label: 'A 色彩星图', hint: '按封面颜色排成一片色轮：中间是黑白灰，越鲜艳越靠外，同一圈按色相绕一周' },
-  { v: 'cluster', label: 'B 星团', hint: '同一位歌手的歌聚成一团，歌越多越大、越靠中心；单曲歌手散在外圈' },
+  { v: 'classic', label: '旧墙', hint: '旧的随机卡片墙（周期回绕 + 鱼眼），验收新星云期间的退路' },
+  { v: 'cluster', label: '按歌手', hint: '同一位歌手的歌聚成一团，歌越多越大、越靠中心；单曲歌手按颜色排在空隙里' },
+  { v: 'chroma', label: '按颜色', hint: '按封面颜色排成一片：同色系挨在一起，中间深、外圈艳' },
+  { v: 'random', label: '随机', hint: '不按歌手也不按颜色，每次打开重新撒一遍' },
 ];
 
 export const SpaceLabPanel = memo(function SpaceLabPanel({ songCount }: { songCount: number }) {
@@ -99,8 +99,8 @@ export const SpaceLabPanel = memo(function SpaceLabPanel({ songCount }: { songCo
         {bounded && sampling
           ? `正在给封面取色 ${tones.done} / ${tones.total}（第一次要等一会儿，取完 A 会重新排一次）`
           : bounded
-            ? `${songCount} 首 · 滚轮缩小看全貌，星星就是你的歌`
-            : 'Ctrl+Shift+M 开关这个面板 · 只影响主舞台的布局'}
+            ? `${songCount} 首 · 滚轮缩小看全貌 · 排法也可以在「设置 › 外观」里换`
+            : 'Ctrl+Shift+M 开关这个面板 · 旧卡片墙只在验收期间保留'}
       </footer>
     </section>
   );

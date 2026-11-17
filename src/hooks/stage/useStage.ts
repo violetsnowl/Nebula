@@ -28,7 +28,7 @@ import { libraryService } from '../../lib/library';
 import { preferredQuality } from '../../lib/preferences';
 import type { ImportStatus } from '../../lib/playlistTypes';
 import { getSpaceLab, registerSpaceCommand, setSpaceLab, useSpaceLab, type StageMode } from '../../lib/space/lab';
-import { buildChroma, buildCluster, overviewZoom, queryDisc, type BoundedWorld } from '../../lib/space/world';
+import { buildChroma, buildCluster, buildRandom, overviewZoom, queryDisc, type BoundedWorld } from '../../lib/space/world';
 import { camCenter, lensDelta, project, worldPerPixel, type Proj } from '../../lib/space/lens';
 import { ensureTones, oklabToRgb, toneOf, useToneProgress } from '../../lib/space/tone';
 import { setActiveWorld } from '../../lib/space/active';
@@ -128,10 +128,14 @@ export function useStage({
     if (lab.mode !== 'classic') ensureTones(songs.map((s) => s.cover ?? '').filter(Boolean));
   }, [lab.mode, songs]);
   // 两个方向都按色调排（A 全部、B 的单曲歌手）：一批取完（version 变）再排一次
-  const toneVersion = lab.mode !== 'classic' ? toneProgress.version : 0;
+  const toneVersion = lab.mode === 'chroma' || lab.mode === 'cluster' ? toneProgress.version : 0;
+  // 色雾按色调画：随机排法的布局不依赖色调，但色雾要跟着色调更新
+  const hazeVersionRef = useRef(0);
+  hazeVersionRef.current = toneProgress.version;
   const world = useMemo<BoundedWorld | null>(() => {
     if (lab.mode === 'chroma') return buildChroma(songs);
     if (lab.mode === 'cluster') return buildCluster(songs);
+    if (lab.mode === 'random') return buildRandom(songs);
     return null;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lab.mode, songs, toneVersion]);
@@ -399,6 +403,7 @@ export function useStage({
     sf.boxH = cardBoxHRef.current;
     sf.match = matchSetRef.current;
     sf.currentId = currentSongIdRef.current;
+    sf.toneVersion = hazeVersionRef.current;
     starsRef.current?.draw(sf);
 
     // 环境色跟随：镜头附近卡片的封面色调（越大越靠中心权重越高），每 220ms 更新一次，CSS 过渡负责平滑
@@ -606,10 +611,10 @@ export function useStage({
     };
   }, [world]);
 
-  // 透镜强度变了：补一帧
+  // 透镜强度、搜索命中、封面色调（色雾）变了：补一帧
   useEffect(() => {
     if (world) controllerRef.current?.refresh();
-  }, [lab.lens, world, matchSet, controllerRef]);
+  }, [lab.lens, world, matchSet, controllerRef, toneProgress.version]);
 
   // PanController 生命周期 + __nebula 调试口
   useEffect(() => {

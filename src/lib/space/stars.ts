@@ -2,17 +2,22 @@ import type { Track } from '../catalog';
 import { CARD_HEIGHT, CARD_WIDTH } from '../layout';
 import { project, type CamLike, type Proj } from './lens';
 import { thumbOf } from './thumbs';
-import { starRgb, toneOf } from './tone';
+import { oklabToRgb, toneOf } from './tone';
 import type { BoundedWorld } from './world';
 
 /**
- * 星层（#133）：画在卡片下面的一张画布，承接所有「不挂 DOM」的歌：
- *   - 屏幕上 20–72px 的：画圆角小封面（和 DOM 卡片同位置、同圆角、同样的边缘 / 外圈淡出），
- *     和 DOM 卡片在 56–72px 之间交叉淡化，缩放时看不出换了一种画法；
- *   - 再小的：化成一颗星，颜色是封面的代表色（保留明暗次序），叠加混合，越密越亮，像星云的核；
- *   - B 在缩小时标出星团（歌手）名，大星团先占位，重叠的不写。
+ * 封面层（#133 星层 → #134 重做）：画在 DOM 卡片下面的一张画布，承接所有「不挂 DOM」的歌。
+ *
+ * #133 缩到全貌时把每首歌画成一样的发光点，加上向日葵点阵的螺旋，看起来像万花筒、LED 点阵，
+ * 和这个软件没有关系（用户反馈）。现在：
+ *   - 一直画真封面：屏幕上 72px 以下到最远的 6px 左右，都是圆角小封面（远处用 18px 的小图）；
+ *     和 DOM 卡片同位置、同圆角、同样的边缘 / 外圈淡出，56–72px 之间和 DOM 卡片交叉淡化；
+ *     缩略图还没到时先画一块封面代表色的小方块，到了自然换成封面；
+ *   - 缩小看全貌时，底下铺一层很淡的色雾：每首歌的封面色在世界坐标里晕开、模糊，越密的地方越亮，
+ *     远看是一团发光的云（预先画好的一张小图，每帧只画一次）；
+ *   - 按歌手时在缩小时标出星团（歌手）名，大星团先占位，重叠的不写。
  */
-const GRAY = '182,186,198';
+const GRAY: [number, number, number] = [150, 154, 166];
 
 function smoothstep(a: number, b: number, x: number): number {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
@@ -29,14 +34,8 @@ export interface StarFrame {
   boxH: number;
   match: ReadonlySet<number> | null;
   currentId: number | null;
-}
-
-interface Thumb {
-  img: CanvasImageSource;
-  x: number;
-  y: number;
-  s: number;
-  a: number;
+  /** 封面色调的版本（取完一批加一）：色雾据此重画 */
+  toneVersion: number;
 }
 
 export class StarField {
@@ -44,10 +43,12 @@ export class StarField {
   private w = 0;
   private h = 0;
   private dpr = 1;
-  private color = new Map<string, string>();
+  private chip = new Map<string, string>();
   private p: Proj = { sx: 0, sy: 0, s: 0, u: 0 };
-  private thumbs: Thumb[] = [];
   private empty = true;
+  private haze: HTMLCanvasElement | null = null;
+  private hazeWorld: BoundedWorld | null = null;
+  private hazeVersion = -1;
 
   constructor(private canvas: HTMLCanvasElement) {
     this.ctx = canvas.getContext('2d');
@@ -63,16 +64,53 @@ export class StarField {
     this.canvas.height = Math.round(vh * dpr);
   }
 
-  private rgbOf(track: Track): string {
+  /** 缩略图没到时的小方块颜色：封面代表色（略提亮），没有色调先用灰。 */
+  private chipOf(track: Track): string {
     const key = track.cover ?? '';
-    const hit = this.color.get(key);
+    const hit = this.chip.get(key);
     if (hit) return hit;
     const t = toneOf(track.cover);
-    if (!t) return GRAY; // 还没取到色调：先灰着，取到后自然换色（不缓存灰色）
-    const [r, g, b] = starRgb(t);
-    const css = `${r},${g},${b}`;
-    this.color.set(key, css);
+    const [r, g, b] = t ? oklabToRgb(0.25 + 0.7 * t[0], t[1] * 1.4, t[2] * 1.4) : GRAY;
+    const css = `rgb(${r},${g},${b})`;
+    if (t) this.chip.set(key, css); // 灰色不缓存，取到色调后自然换色
     return css;
+  }
+
+  /** 色雾：每首歌的封面色在世界坐标里晕开，叠加后模糊。世界或色调变了才重画（一张 384px 的小图）。 */
+  private hazeOf(world: BoundedWorld, version: number): HTMLCanvasElement | null {
+    if (this.haze && this.hazeWorld === world && this.hazeVersion === version) return this.haze;
+    const N = 384;
+    const R = world.radius;
+    const k = N / (2 * R);
+    const raw = document.createElement('canvas');
+    raw.width = N;
+    raw.height = N;
+    const g = raw.getContext('2d');
+    if (!g) return null;
+    g.globalCompositeOperation = 'lighter';
+    const rad = Math.max(4, 300 * k);
+    for (let i = 0; i < world.cards.length; i++) {
+      const t = toneOf(world.cards[i]!.track.cover);
+      const [r, gg, b] = t ? oklabToRgb(0.5 + 0.35 * t[0], t[1] * 2.2, t[2] * 2.2) : GRAY;
+      const x = (world.px[i]! + R) * k;
+      const y = (world.py[i]! + R) * k;
+      const grad = g.createRadialGradient(x, y, 0, x, y, rad);
+      grad.addColorStop(0, `rgba(${r},${gg},${b},0.11)`);
+      grad.addColorStop(1, `rgba(${r},${gg},${b},0)`);
+      g.fillStyle = grad;
+      g.fillRect(x - rad, y - rad, rad * 2, rad * 2);
+    }
+    const out = document.createElement('canvas');
+    out.width = N;
+    out.height = N;
+    const o = out.getContext('2d');
+    if (!o) return null;
+    o.filter = 'blur(7px)';
+    o.drawImage(raw, 0, 0);
+    this.haze = out;
+    this.hazeWorld = world;
+    this.hazeVersion = version;
+    return out;
   }
 
   clear(): void {
@@ -100,9 +138,10 @@ export class StarField {
       if (f.mounted[i]! > 0.5) continue;
       project(f.world.px[i]!, f.world.py[i]!, f.cam, f.delta, p);
       const size = CARD_WIDTH * p.s;
-      if (size < 20) continue;
+      if (size < 8) continue;
       const cy = this.coverY(p, f.boxH);
-      if (Math.abs(x - p.sx) <= size / 2 && Math.abs(y - cy) <= size / 2 && p.u < bestU) {
+      const half = Math.max(size / 2, 5);
+      if (Math.abs(x - p.sx) <= half && Math.abs(y - cy) <= half && p.u < bestU) {
         best = i;
         bestU = p.u;
       }
@@ -113,77 +152,74 @@ export class StarField {
   draw(f: StarFrame): void {
     const ctx = this.ctx;
     if (!ctx) return;
-    const { cam } = f;
+    const { cam, world, delta, mounted, match } = f;
     this.fit(cam.vw, cam.vh);
     ctx.setTransform(this.dpr, 0, 0, this.dpr, 0, 0);
     ctx.clearRect(0, 0, cam.vw, cam.vh);
-    ctx.globalCompositeOperation = 'lighter';
-    const { world, delta, mounted, match } = f;
+    let drew = false;
+
+    // 色雾：缩小看全貌时才出现（缩放 0.34 → 0.14 渐入）；这时透镜已经退成平面，按线性换算即可
+    const hazeA = 1 - smoothstep(0.14, 0.34, cam.zoom);
+    if (hazeA > 0.02) {
+      const haze = this.hazeOf(world, f.toneVersion);
+      if (haze) {
+        const R = world.radius;
+        const z = cam.zoom;
+        ctx.globalCompositeOperation = 'screen';
+        ctx.globalAlpha = 0.85 * hazeA * (match ? 0.5 : 1);
+        ctx.drawImage(haze, (-R - cam.x) * z, (-R - cam.y) * z, 2 * R * z, 2 * R * z);
+        ctx.globalAlpha = 1;
+        ctx.globalCompositeOperation = 'source-over';
+        drew = true;
+      }
+    }
+
+    // 小封面
     const p = this.p;
     const n = world.cards.length;
-    const thumbs = this.thumbs;
-    thumbs.length = 0;
-    let drew = false;
-    let cur: { x: number; y: number; r: number; rgb: string } | null = null;
+    let cur: { x: number; y: number; s: number } | null = null;
     for (let i = 0; i < n; i++) {
       const left = 1 - mounted[i]!;
       if (left <= 0.02) continue;
       project(world.px[i]!, world.py[i]!, cam, delta, p);
-      const size = CARD_WIDTH * p.s;
-      const half = Math.max(24, size * 0.6);
+      const size = Math.max(3, CARD_WIDTH * p.s);
+      const half = size * 0.6 + 4;
       if (p.sx < -half || p.sy < -half || p.sx > cam.vw + half || p.sy > cam.vh + half) continue;
-      let a = left;
+      const edge = Math.min(p.sx, cam.vw - p.sx, p.sy, cam.vh - p.sy);
+      const edgeA = smoothstep(-0.3 * size, 0.42 * size, edge);
+      const airA = 1 - 0.4 * smoothstep(0.38, 1.05, p.u);
+      let a = left * edgeA * airA;
       if (match) a *= match.has(i) ? 1 : 0.16;
+      if (a <= 0.02) continue;
       const track = world.cards[i]!.track;
-      // 小封面：和 DOM 卡片同样的边缘淡出、外圈淡出
-      const thumbA = smoothstep(14, 24, size);
-      let img: CanvasImageSource | null = null;
-      if (thumbA > 0.02) {
-        img = thumbOf(track.cover);
-        if (img) {
-          const edge = Math.min(p.sx, cam.vw - p.sx, p.sy, cam.vh - p.sy);
-          const edgeA = smoothstep(-0.3 * size, 0.42 * size, edge);
-          const airA = 1 - 0.4 * smoothstep(0.38, 1.05, p.u);
-          thumbs.push({ img, x: p.sx, y: this.coverY(p, f.boxH), s: size, a: a * thumbA * edgeA * airA });
-        }
-      }
-      // 星：封面越小越像星；有缩略图时随缩略图出现而退场
-      const starA = img ? 1 - thumbA : 1;
-      if (starA > 0.02) {
-        const rr = Math.min(9, Math.max(1.8, size * 0.3));
-        const sa = a * starA * (0.55 + 0.45 * smoothstep(1.8, 5, rr));
-        const rgb = this.rgbOf(track);
-        if (track.id === f.currentId) cur = { x: p.sx, y: p.sy, r: rr, rgb };
-        ctx.fillStyle = `rgba(${rgb},${(0.15 * sa).toFixed(3)})`;
+      const x = p.sx - size / 2;
+      const y = this.coverY(p, f.boxH) - size / 2;
+      const img = thumbOf(track.cover, size);
+      ctx.globalAlpha = Math.min(1, a);
+      if (img) {
+        ctx.drawImage(img, x, y, size, size);
+      } else {
+        ctx.fillStyle = this.chipOf(track);
         ctx.beginPath();
-        ctx.arc(p.sx, p.sy, rr * 2.3, 0, Math.PI * 2);
+        ctx.roundRect(x, y, size, size, Math.max(1, size * 0.08));
         ctx.fill();
-        ctx.fillStyle = `rgba(${rgb},${Math.min(1, 0.85 * sa).toFixed(3)})`;
-        ctx.beginPath();
-        ctx.arc(p.sx, p.sy, rr, 0, Math.PI * 2);
-        ctx.fill();
-        drew = true;
       }
-    }
-    ctx.globalCompositeOperation = 'source-over';
-    // 小封面画在星上面
-    for (const t of thumbs) {
-      if (t.a <= 0.02) continue;
-      ctx.globalAlpha = Math.min(1, t.a);
-      ctx.drawImage(t.img, t.x - t.s / 2, t.y - t.s / 2, t.s, t.s);
+      if (track.id === f.currentId) cur = { x, y, s: size };
       drew = true;
     }
     ctx.globalAlpha = 1;
-    // 正在播放的那一颗：一圈细环
+
+    // 正在播放的那一张：一圈细框
     if (cur) {
-      ctx.strokeStyle = `rgba(${cur.rgb},0.9)`;
+      const pad = Math.max(2, cur.s * 0.12);
+      ctx.strokeStyle = 'rgba(255,255,255,0.85)';
       ctx.lineWidth = 1.5;
       ctx.beginPath();
-      ctx.arc(cur.x, cur.y, cur.r * 2 + 6, 0, Math.PI * 2);
+      ctx.roundRect(cur.x - pad, cur.y - pad, cur.s + 2 * pad, cur.s + 2 * pad, Math.max(2, (cur.s + 2 * pad) * 0.1));
       ctx.stroke();
-      drew = true;
     }
-    // B：缩小时标星团名（4 首以上的歌手）。大星团先占位，和已放的名字重叠的就不写
+
+    // 按歌手：缩小时标星团名（4 首以上的歌手）。大星团先占位，和已放的名字重叠的就不写
     const labelA = world.mode === 'cluster' ? 1 - smoothstep(0.3, 0.5, cam.zoom) : 0;
     if (labelA > 0.02) {
       ctx.textAlign = 'center';
@@ -209,10 +245,14 @@ export class StarField {
         }
         if (overlap) continue;
         taken.push(x0, y0, x1, y1);
-        let a = labelA * (0.42 + 0.4 * smoothstep(4, 30, c.ids.length));
+        let a = labelA * (0.5 + 0.4 * smoothstep(4, 30, c.ids.length));
         if (match) a *= c.ids.some((id) => match.has(id)) ? 1.6 : 0.35;
-        ctx.fillStyle = `rgba(236,238,245,${Math.min(1, a).toFixed(3)})`;
+        // 名字压在封面上，带一点暗影保证读得清
+        ctx.shadowColor = 'rgba(0,0,0,0.65)';
+        ctx.shadowBlur = 6;
+        ctx.fillStyle = `rgba(240,242,248,${Math.min(1, a).toFixed(3)})`;
         ctx.fillText(c.name, p.sx, p.sy - 4);
+        ctx.shadowBlur = 0;
       }
       drew = true;
     }

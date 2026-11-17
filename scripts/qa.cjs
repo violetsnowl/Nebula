@@ -66,6 +66,15 @@ async function main() {
     args: ['--force-color-profile=srgb', '--hide-scrollbars'],
   });
   const page = await browser.newPage({ viewport: { width: 1600, height: 900 } });
+  // 验收新星云期间（#134）：默认已是新星云，但主套件的断言（鱼眼、周期回绕、搜索聚簇……）是按旧卡片墙写的，
+  // 这里先固定旧卡片墙跑主套件；新星云由「主舞台方向原型」一节单独检查。旧卡片墙删除时这一套改写。
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem('music-nebula.stage-space.v2', JSON.stringify({ classic: true }));
+    } catch {
+      /* ignore */
+    }
+  });
 
   const errors = [];
   page.on('console', (msg) => {
@@ -672,7 +681,7 @@ async function main() {
       return { bounded: !!(st && st.classList.contains('is-bounded')), canvas: !!document.querySelector('.space-stars'), cards: cards.length, bad, zoom: +sp.zoom.toFixed(3), radius: Math.round(sp.radius), clusters: sp.clusters };
     };
     const out = { ok: true };
-    for (const m of ['cluster', 'chroma']) {
+    for (const m of ['cluster', 'chroma', 'random']) {
       n().stageMode(m);
       await wait(1000);
       const a = probe();
@@ -689,7 +698,7 @@ async function main() {
   });
   const spaceOk =
     spaceLab.ok &&
-    ['cluster', 'chroma'].every((m) => {
+    ['cluster', 'chroma', 'random'].every((m) => {
       const v = spaceLab[m];
       return v.a.bounded && v.a.canvas && v.a.cards >= 3 && v.a.bad === 0 && v.a.radius > 0 && v.b.cards === 0 && v.b.zoom <= 0.2;
     }) &&
