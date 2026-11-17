@@ -1143,6 +1143,48 @@ async function main() {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(900);
 
+  // 10g++. 听音空间大封面清晰度（#158）：后端实测原图更大 → 解码好后换上原图；
+  // 听音空间开着时换到一首读不出原图尺寸的歌 → 不连换两次，直接落在它自己的小图上
+  const bigCover = await page.evaluate(async (audio) => {
+    const mk = (px, color) => {
+      const c = document.createElement('canvas');
+      c.width = c.height = px;
+      const g = c.getContext('2d');
+      g.fillStyle = color;
+      g.fillRect(0, 0, px, px);
+      return c.toDataURL('image/png');
+    };
+    const small = mk(64, '#c04080');
+    const big = mk(900, '#40c080');
+    const small2 = mk(64, '#8040c0');
+    window.nebulaAPI.coverInfo = async (t) =>
+      t.sourceId === 'qa-cover-big'
+        ? { ok: true, data: { url: big, width: 900, height: 900, verified: true } }
+        : { ok: true, data: { url: t.cover, verified: false } };
+    const n = window.__nebula;
+    const base = n.songsData()[0];
+    const heroHas = (u) => (document.querySelector('.ls-hero')?.getAttribute('style') || '').includes(u);
+    const until = async (f, ms) => {
+      const t0 = performance.now();
+      while (!f() && performance.now() - t0 < ms) await new Promise((r) => setTimeout(r, 80));
+      return f();
+    };
+    const s1 = { ...base, source: 'qq', sourceId: 'qa-cover-big', cover: small, audio };
+    n.player.playSong(s1, [s1]);
+    await new Promise((r) => setTimeout(r, 300));
+    document.querySelector('.bp-cover[data-np-cover]').click();
+    const upgraded = await until(() => heroHas(big), 4000);
+    const s2 = { ...base, source: 'qq', sourceId: 'qa-cover-small', cover: small2, audio };
+    n.player.playSong(s2, [s2]);
+    const second = await until(() => heroHas(small2), 3000);
+    await new Promise((r) => setTimeout(r, 1000));
+    return { upgraded, second, settled: heroHas(small2) && !heroHas(big) };
+  }, lyricAudio);
+  const bigCoverOk = bigCover.upgraded && bigCover.second && bigCover.settled;
+  log('听音空间大封面换原图', JSON.stringify(bigCover));
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(1000);
+
   // 10h. 本地音乐导入：顶部边缘感应 → 圆形按钮 → 星云卡片生成
   await page.mouse.move(800, 4);
   await page.waitForTimeout(600);
@@ -1269,6 +1311,7 @@ async function main() {
 
   const failed =
     !lapseOk ||
+    !bigCoverOk ||
     !listenOk ||
     !spaceOk ||
     !lsLayoutOk ||
@@ -1360,6 +1403,7 @@ async function main() {
     failedRecover: !failedRecovered,
     qualityMenu: qualityItems < 3 || !qualityState.quality || !qualityState.switched,
     authLapse: !lapseOk,
+    bigCover: !bigCoverOk,
     firstRunEmpty: !emptyOk,
     edgeHide: !edgeHideOk,
     panelStays: !panelStays,

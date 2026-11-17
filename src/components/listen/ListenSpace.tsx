@@ -4,7 +4,7 @@ import type { Track } from '../../lib/catalog';
 import type { LyricLineUI } from '../../lib/lyrics';
 import type { DesktopTrack } from '../../lib/playlist/ipcClient';
 import { setListenSettings, useListenSettings } from '../../lib/listen/settings';
-import { hiResCover } from '../../lib/listen/coverUrl';
+import { useBigCover } from '../../lib/listen/bigCover';
 import { applyListenLayout } from '../../lib/listen/layout';
 import { placeholderBg } from '../../lib/coverPlaceholder';
 import { qualityName } from '../../lib/quality';
@@ -143,7 +143,8 @@ export const ListenSpace = memo(function ListenSpace({
   const rafRef = useRef(0);
   const curRef = useRef<Rect | null>(null);
 
-  const cover = song?.cover ? hiResCover(song.cover) : '';
+  // 大封面用实测够清楚的原图（#158）：先小图，大图后台解码好再淡入换上
+  const cover = useBigCover(song ?? null, open);
   // 没有封面图的歌（本地 / 演示 / 后端没拿到）：和播放条封面同一个低饱和占位
   const art = useArtCrossfade(
     cover
