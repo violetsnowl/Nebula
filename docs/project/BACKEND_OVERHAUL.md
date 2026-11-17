@@ -409,3 +409,14 @@ git switch review/backend-playback-overhaul
 ```
 
 完整报告的仓库位置固定为 `docs/project/BACKEND_OVERHAUL.md`。交付目录另放同文副本、证据目录和校验清单，供不打开Git也能审阅。GitHub 403仅影响远程推送，不影响本地8个提交和bundle；没有要求用户在中途授权或等待扫码。
+
+## 13. 第二轮修正
+
+本轮从 `41c1404` 原分支继续，编号自 #B9 起；按第二轮任务书**不合并 origin/main**。上文 §1–§12 是第一轮报告，保留当时数据与限制；本节记录第二轮变化。反馈提供的国内网络真实账号80首复核结果（点歌到出声0.66–0.98秒、逐字3→69/80等）来自主对话，不冒充本轮本机测量。第二轮任务书存于 `BACKEND_OVERHAUL_ROUND2_BRIEF.md`。
+
+### 13.1 P0：歌词中段切歌导致界面卸载（#B9）
+
+- **根因**：`AccountDock.tsx/LyricPreview` 的 `pick` 属于上一份歌词；新 props 已变成空/短数组，effect 尚未重新计算 pick，render 就把 undefined 传入 toEngineLine。不是后端歌词 translation 字段必须存在。
+- **修正**：仅在该函数内取得 `current = lines[pick.idx]` 后判断存在性，缺行使用原有 SAMPLE_LINE，effect 仍按原逻辑换句。没有改视觉、时序或歌词生成规则。
+- **复现与验证**：新增 `scripts/ui-playback-regression.cjs` 在真实 Chrome 中编译运行原生产 React 组件；第4句→空数组→新歌，以及第6句→单句短数组。原版稳定抛出 `Cannot read properties of undefined (reading 'translation')`；修复后2/2通过，组件仍挂载、新词正确显示、pageerror为0。已纳入 pnpm qa，未触碰 qa.cjs 两个主对话负责的在线测试。
+- **相似访问排查**：LyricsLayer 引擎数组在同一轮按同一 lines 构造，使用活动下标处有缺行/缺引擎检查；currentLyricIndex 先处理空数组并在当前数组内二分；nextUsable 按当前数组边界遍历。未为这些已有保护的位置添加无关改动。

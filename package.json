@@ -19,7 +19,8 @@
     "qa:live-new": "pnpm build:main && node scripts/live-check-new.mjs",
     "qa:desktop-play": "node scripts/desktop-play-smoke.mjs",
     "preview": "vite preview",
-    "qa": "node scripts/check-arch.mjs && node scripts/qa.cjs",
+    "qa": "node scripts/check-arch.mjs && node scripts/ui-playback-regression.cjs && node scripts/qa.cjs",
+    "qa:ui-playback": "node scripts/ui-playback-regression.cjs",
     "check:arch": "node scripts/check-arch.mjs"
   },
   "dependencies": {

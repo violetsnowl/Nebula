@@ -726,9 +726,11 @@ function LyricPreview({
   pickRef.current = pick;
 
   const line: EngineLine = useMemo(() => {
-    if (pick.idx < 0) return SAMPLE_LINE;
+    // 切歌先清空/替换歌词，pick 要到 effect 才更新；旧下标不保证仍存在。
+    const current = lines[pick.idx];
+    if (!current) return SAMPLE_LINE;
     const nx = nextUsable(lines, pick.idx);
-    return toEngineLine(lines[pick.idx]!, nx ? nx.timeMs / 1000 : undefined);
+    return toEngineLine(current, nx ? nx.timeMs / 1000 : undefined);
   }, [lines, pick.idx]);
   const lineDataRef = useRef(line);
   lineDataRef.current = line;
