@@ -190,6 +190,12 @@ export class KugouLogin {
         }
       }
     }
+    // 头像：扫码登录时已存了昵称，上面那段不会进；头像单独从本人创建的歌单里取。
+    if (!avatar && result?.kind === 'ok') {
+      const own = result.items.find((it) => String(it.list_create_userid ?? '') === ticket.userid && it.create_user_pic);
+      avatar = String(own?.create_user_pic || '');
+    }
+    if (avatar) avatar = avatar.replace(/^http:\/\//, 'https://');
 
     return {
       loggedIn: true,

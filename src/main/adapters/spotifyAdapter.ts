@@ -40,7 +40,51 @@ function mapSpotifyTrack(raw: Record<string, any> | undefined | null): Track | n
 }
 
 /**
- * Spotify 适配器：歌单/我的歌单/搜索走官方 Web API（需 OAuth Token）。
+ * Spotify 自家 App 用的查询服务（pathfinder，固定名字的持久化查询）。
+ * 桌面客户端身份在公开 Web API 上第一次请求就被 429（全世界的开源播放器共用这个身份，额度总是满的；
+ * 2026-11-18 用户账号实测，folia 2026-10-08 记录相同），所以账号、我的歌单、歌单曲目都走这里，用的是同一个登录令牌。
+ * 查询名和哈希来自 folia 2026-10 的实测记录；Spotify 改版换掉某个查询时会返回错误，届时按日志更新哈希。
+ */
+const PATHFINDER = 'https://api-partner.spotify.com/pathfinder/v2/query';
+const QUERY_HASH = {
+  profileAttributes: '53bcb064f6cd18c23f752bc324a791194d20df612d8e1239c735144ab0399ced',
+  libraryV3: '390c78e5b951029bad359785e69b07b536a509c581cbcd0aded5e5067f187455',
+  fetchLibraryTracks: '087278b20b743578a6262c2b0b4bcd20d879c503cc359a2285baf083ef944240',
+  fetchPlaylist: 'cd2275433b29f7316176e7b5b5e098ae7744724e1a52d63549c76636b3257749',
+} as const;
+/** 「已点赞的歌曲」在我们这里的歌单 id（Spotify 里它不是普通歌单）。 */
+export const SPOTIFY_LIKED_ID = 'liked';
+const IMPORT_LIMIT = 5000;
+type Source = { url?: string; width?: number; height?: number };
+const largest = (sources?: Source[]): Source | undefined =>
+  [...(sources || [])].filter((s) => s?.url).sort((a, b) => (b.width || 0) * (b.height || 0) - (a.width || 0) * (a.height || 0))[0];
+
+/** pathfinder 的曲目（歌单曲目是 trackDuration，点赞曲目是 duration）。 */
+export function mapPathfinderTrack(d: Record<string, any> | undefined | null, uri?: string): Track | null {
+  const id = String(d?.uri || uri || '').split(':').pop() || '';
+  if (!d?.name || !/^[0-9A-Za-z]{22}$/.test(id)) return null;
+  const artists: string[] = (d.artists?.items || []).map((a: any) => a?.profile?.name).filter(Boolean);
+  const cover = largest(d.albumOfTrack?.coverArt?.sources);
+  const ms = Number(d.trackDuration?.totalMilliseconds ?? d.duration?.totalMilliseconds ?? 0);
+  return {
+    id: `spotify:${id}`,
+    title: String(d.name),
+    artist: artists[0] ?? '未知歌手',
+    artists,
+    album: String(d.albumOfTrack?.name ?? ''),
+    cover: cover?.url ?? '',
+    coverInfo: cover?.url ? { url: cover.url, width: cover.width, height: cover.height, verified: false } : undefined,
+    duration: Math.round(ms / 1000),
+    platform: 'spotify',
+    sourceId: id,
+    originalUrl: '',
+    fallbackUrl: '',
+    quality: 'ogg',
+  };
+}
+
+/**
+ * Spotify 适配器：账号、我的歌单、歌单曲目走 pathfinder；公开 Web API 只作后备（多半 429）。
  * 注意：Spotify 不提供 MP3 直链，播放由 SongResolver 兜底到网易云/酷狗完成。
  */
 export class SpotifyAdapter implements PlatformAdapter {
@@ -52,7 +96,68 @@ export class SpotifyAdapter implements PlatformAdapter {
   ) {}
 
   async fetchPlaylist(playlistId: string): Promise<Playlist> {
-    return withRequestScope(60000,()=>this.fetchPlaylistPages(playlistId));
+    return withRequestScope(60000, async () => {
+      if (playlistId === SPOTIFY_LIKED_ID) return this.fetchLikedPages();
+      try {
+        return await this.fetchPlaylistViaQuery(playlistId);
+      } catch (err) {
+        console.warn('[Spotify] 查询服务读歌单失败，改用公开接口:', err instanceof Error ? err.message : '');
+        return this.fetchPlaylistPages(playlistId);
+      }
+    });
+  }
+
+  /** pathfinder 调用：带登录令牌；401 时续期后重试一次。 */
+  private query<T>(name: keyof typeof QUERY_HASH, variables: Record<string, unknown>): Promise<T> {
+    return this.authedRequest<T>(PATHFINDER, {
+      method: 'POST',
+      headers: { 'app-platform': 'WebPlayer', Accept: 'application/json' },
+      body: { variables, operationName: name, extensions: { persistedQuery: { version: 1, sha256Hash: QUERY_HASH[name] } } },
+    });
+  }
+
+  private async fetchPlaylistViaQuery(playlistId: string): Promise<Playlist> {
+    const uri = `spotify:playlist:${playlistId}`;
+    const tracks: Track[] = [];
+    let name = '', cover = '', description: string | undefined, total = Infinity;
+    for (let offset = 0; offset < Math.min(total, IMPORT_LIMIT); ) {
+      const res = await this.query<any>('fetchPlaylist', { uri, offset, limit: 100, enableWatchFeedEntrypoint: false });
+      const pl = res?.data?.playlistV2;
+      if (!pl?.content) throw new Error(res?.errors?.[0]?.message || 'Spotify 没有返回歌单内容');
+      if (offset === 0) {
+        name = String(pl.name ?? '');
+        cover = largest(pl.images?.items?.[0]?.sources)?.url ?? '';
+        description = pl.description || undefined;
+      }
+      total = Number(pl.content.totalCount ?? 0);
+      const rows: any[] = pl.content.items || [];
+      if (!rows.length) break;
+      for (const row of rows) {
+        const t = mapPathfinderTrack(row?.itemV2?.data);
+        if (t) tracks.push(t);
+      }
+      offset += rows.length;
+    }
+    return { id: playlistId, platform: 'spotify', name: name || '未命名歌单', cover, description, tracks };
+  }
+
+  private async fetchLikedPages(): Promise<Playlist> {
+    const tracks: Track[] = [];
+    let total = Infinity;
+    for (let offset = 0; offset < Math.min(total, IMPORT_LIMIT); ) {
+      const res = await this.query<any>('fetchLibraryTracks', { offset, limit: 100 });
+      const page = res?.data?.me?.library?.tracks;
+      if (!page) throw new Error(res?.errors?.[0]?.message || 'Spotify 没有返回点赞歌曲');
+      total = Number(page.totalCount ?? 0);
+      const rows: any[] = page.items || [];
+      if (!rows.length) break;
+      for (const row of rows) {
+        const t = mapPathfinderTrack(row?.track?.data, row?.track?._uri);
+        if (t) tracks.push(t);
+      }
+      offset += rows.length;
+    }
+    return { id: SPOTIFY_LIKED_ID, platform: 'spotify', name: '已点赞的歌曲', cover: tracks[0]?.cover ?? '', tracks };
   }
   private async fetchPlaylistPages(playlistId:string):Promise<Playlist> {
     const data = await this.authedRequest<{
@@ -108,20 +213,46 @@ export class SpotifyAdapter implements PlatformAdapter {
     }
   }
 
+  /** 我的歌单：「已点赞的歌曲」+ 资料库里的歌单（pathfinder）；歌单数各取一次总数。 */
   async getMyPlaylists() {
     try {
-      const data = await this.authedRequest<{
-        items?: Array<{ id?: string; name?: string; images?: Array<{ url?: string }>; tracks?: { total?: number } }>;
-      }>(`${API}/me/playlists?limit=50`);
-      return (data?.items ?? [])
-        .map((p) => ({
-          id: String(p.id ?? ''),
-          name: p.name ?? '未命名歌单',
-          cover: p.images?.[0]?.url ?? '',
-          trackCount: p.tracks?.total ?? 0,
-        }))
-        .filter((p) => p.id);
-    } catch {
+      const [liked, lib] = await Promise.all([
+        this.query<any>('fetchLibraryTracks', { offset: 0, limit: 1 }).catch(() => null),
+        this.query<any>('libraryV3', {
+          filters: ['Playlists'], order: null, textFilter: '', features: [], limit: 50, offset: 0, flatten: true,
+          expandedFolders: [], folderUri: null, includeFoldersWhenFlattening: true,
+        }),
+      ]);
+      const rows: any[] = lib?.data?.me?.libraryV3?.items || [];
+      const lists = rows
+        .map((r) => r?.item?.data)
+        .filter((d) => d?.__typename === 'Playlist' && /^spotify:playlist:/.test(String(d?.uri || '')));
+      const counts = await Promise.all(
+        lists.map((d) =>
+          this.query<any>('fetchPlaylist', { uri: d.uri, offset: 0, limit: 1, enableWatchFeedEntrypoint: false })
+            .then((r) => Number(r?.data?.playlistV2?.content?.totalCount ?? 0))
+            .catch(() => 0),
+        ),
+      );
+      const out = lists.map((d, i) => ({
+        id: String(d.uri).split(':').pop()!,
+        name: String(d.name || '未命名歌单'),
+        cover: largest(d.images?.items?.[0]?.sources)?.url ?? '',
+        trackCount: counts[i] ?? 0,
+      }));
+      const likedPage = liked?.data?.me?.library?.tracks;
+      if (likedPage && Number(likedPage.totalCount) > 0) {
+        const first = likedPage.items?.[0]?.track?.data;
+        out.unshift({
+          id: SPOTIFY_LIKED_ID,
+          name: '已点赞的歌曲',
+          cover: largest(first?.albumOfTrack?.coverArt?.sources)?.url ?? '',
+          trackCount: Number(likedPage.totalCount),
+        });
+      }
+      return out;
+    } catch (err) {
+      console.warn('[Spotify] 读取我的歌单失败:', err instanceof Error ? err.message : '');
       return [];
     }
   }
@@ -166,22 +297,33 @@ export class SpotifyAdapter implements PlatformAdapter {
   async fetchMe(): Promise<{ id: string; nickname: string; avatarUrl?: string; premium: boolean } | 'expired' | null> {
     if (!this.cookies.get('spotify')?.cookies) return 'expired';
     try {
-      const me = await this.authedRequest<{ id?: string; display_name?: string; images?: Array<{ url?: string }>; product?: string }>(`${API}/me`);
-      if (!me?.id) return null;
-      return { id: me.id, nickname: me.display_name || 'Spotify 用户', avatarUrl: me.images?.[0]?.url, premium: me.product === 'premium' };
+      // 公开 /v1/me 对这个身份总是 429，改用 Spotify 自家 App 的账号查询；是否 Premium 这里读不到，按否处理。
+      const res = await this.query<any>('profileAttributes', {});
+      const p = res?.data?.me?.profile;
+      if (!p?.username && !p?.uri) return null;
+      return {
+        id: String(p.username || String(p.uri).split(':').pop()),
+        nickname: String(p.name || p.username || 'Spotify 用户'),
+        avatarUrl: largest(p.avatar?.sources)?.url,
+        premium: false,
+      };
     } catch (err) {
       return err instanceof Error && /HTTP 401/.test(err.message) ? 'expired' : null;
     }
   }
 
   /** 自动附带 Bearer；401 时用 refresh_token 换新后重试一次。 */
-  private async authedRequest<T>(url: string): Promise<T> {
+  private async authedRequest<T>(
+    url: string,
+    extra: { method?: 'GET' | 'POST'; headers?: Record<string, string>; body?: unknown } = {},
+  ): Promise<T> {
+    const opts = { platform: 'spotify' as const, ...extra } as Parameters<HttpClient['requestJson']>[1];
     try {
-      return await this.http.requestJson<T>(url, { platform: 'spotify' });
+      return await this.http.requestJson<T>(url, opts);
     } catch (err) {
       const status = err instanceof Error && /HTTP 401/.test(err.message) ? 401 : 0;
       if (status !== 401 || !(await this.refreshToken())) throw err;
-      return await this.http.requestJson<T>(url, { platform: 'spotify' });
+      return await this.http.requestJson<T>(url, opts);
     }
   }
 

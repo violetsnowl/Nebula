@@ -39,5 +39,15 @@ await test('请求 Spotify 带 Bearer，不把令牌塞进 Cookie 头', async ()
   assert.equal(h.cookie, undefined);
 });
 
+await test('Spotify 自家查询服务的曲目：歌单（trackDuration）与点赞（duration）都能解析', () => {
+  const art = { profile: { name: '甲' } };
+  const cover = { sources: [{ url: 'https://i/s', width: 64, height: 64 }, { url: 'https://i/l', width: 640, height: 640 }] };
+  const a = api.mapPathfinderTrack({ uri: 'spotify:track:0123456789abcdefghijkl', name: '歌', artists: { items: [art] }, albumOfTrack: { name: '专辑', coverArt: cover }, trackDuration: { totalMilliseconds: 262000 } });
+  assert.deepEqual([a.id, a.title, a.artist, a.album, a.cover, a.duration], ['spotify:0123456789abcdefghijkl', '歌', '甲', '专辑', 'https://i/l', 262]);
+  const b = api.mapPathfinderTrack({ name: '歌2', artists: { items: [art] }, albumOfTrack: { coverArt: cover }, duration: { totalMilliseconds: 1000 } }, 'spotify:track:abcdefghijkl0123456789');
+  assert.equal(b.sourceId, 'abcdefghijkl0123456789'); assert.equal(b.duration, 1);
+  assert.equal(api.mapPathfinderTrack({ name: '无效', uri: 'spotify:episode:x' }), null);
+});
+
 fs.rmSync(dir, { recursive: true, force: true });
 console.log(`Spotify 登录令牌回归 ${n}/${n}`);

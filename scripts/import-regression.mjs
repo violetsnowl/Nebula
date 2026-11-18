@@ -21,7 +21,16 @@ for(const platform of Object.keys(urls)){
 }
 assert.deepEqual(b.resolveAdapterByUrl('https://m.kugou.com/?specialid=3756318'),{platform:'kugou',id:'3756318'});n++;
 const first=responses.spotify.tracks.items[0].track;let calls=0;
-const paged=new b.SpotifyAdapter({requestJson:async()=>++calls===1?{id:'test',items:{items:[{item:first}],next:'https://api.spotify.com/v1/playlists/test/items?offset=1'}}:{items:[{item:{...first,id:'second'}},{item:{...first,id:'episode',type:'episode'}}],next:null}},cookies);
+const paged=new b.SpotifyAdapter({requestJson:async(url)=>url.includes('pathfinder')?{}:++calls===1?{id:'test',items:{items:[{item:first}],next:'https://api.spotify.com/v1/playlists/test/items?offset=1'}}:{items:[{item:{...first,id:'second'}},{item:{...first,id:'episode',type:'episode'}}],next:null}},cookies);
 assert.equal((await paged.fetchPlaylist('test')).tracks.length,2);assert.equal(calls,2);n++;console.log('通过 Spotify 新旧字段与多页歌曲导入');
-const denied=new b.SpotifyAdapter({requestJson:async()=>({id:'test',name:'无条目权限'})},cookies);await assert.rejects(denied.fetchPlaylist('test'),/访问权限/);n++;console.log('通过 Spotify 无条目权限不伪装空歌单');
+const denied=new b.SpotifyAdapter({requestJson:async(url)=>url.includes('pathfinder')?{}:({id:'test',name:'无条目权限'})},cookies);await assert.rejects(denied.fetchPlaylist('test'),/访问权限/);n++;console.log('通过 Spotify 无条目权限不伪装空歌单');
+// Spotify 优先走自家查询服务（公开接口对桌面客户端身份总是 429，#171）：两页拼完整、不碰公开接口
+{
+  const row=(id)=>({itemV2:{data:{uri:'spotify:track:'+id,name:'测试曲',artists:{items:[{profile:{name:'测试歌手'}}]},albumOfTrack:{name:'测试专辑',coverArt:{sources:[{url:'https://i.scdn.co/image/l',width:640,height:640}]}},trackDuration:{totalMilliseconds:180000}}}});
+  const seen=[];
+  const pf=new b.SpotifyAdapter({requestJson:async(url,opts)=>{seen.push(url);const off=opts.body.variables.offset;return {data:{playlistV2:{name:'查询服务歌单',images:{items:[]},content:{totalCount:3,items:off===0?[row('aaaaaaaaaaaaaaaaaaaaa1'),row('aaaaaaaaaaaaaaaaaaaaa2')]:[row('aaaaaaaaaaaaaaaaaaaaa3')]}}}};}},cookies);
+  const pl=await pf.fetchPlaylist('test');
+  assert.equal(pl.tracks.length,3);assert.equal(pl.name,'查询服务歌单');assert.equal(pl.tracks[2].duration,180);
+  assert.ok(seen.every(u=>u.includes('pathfinder')));n++;console.log('通过 Spotify 查询服务分页导入');
+}
 console.log(`五平台导入契约 ${n}/${n}`);
