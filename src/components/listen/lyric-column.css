@@ -114,9 +114,11 @@
   margin-top: 0.22em;
 }
 
-/* 假名注音（#172）：汉字正上方一层小字，居中，不扫色；跟着整句亮暗。有注音的句子上面让出一点空。
+/* 假名注音（#172）：汉字正上方的小字，居中，不扫色；跟着整句亮暗。有注音的句子上面让出一点空。
+   #174：挂在所属汉字的逐字单元里，跟着字一起浮起、放大、落回（单元本身就是它的定位基准）。
    日语读音（#173）：罗马音（data-jr）和汉字注音（data-jk）各自开关，可以同时显示 */
-.lc-root .ly-line.has-rb .ly-main {
+.lc-root .ly-line.has-rb .ly-main,
+.lc-root .ly-line.has-rb .u {
   position: relative;
 }
 .lc-root .ly-rb {

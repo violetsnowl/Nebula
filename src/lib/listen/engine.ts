@@ -63,7 +63,7 @@ interface Row {
   /** 正文节点（整句条目的浮起也作用在它上面）。 */
   main: HTMLElement | null;
   rts: UnitRt[] | null;
-  /** 假名注音节点（#172），与正文里的汉字段一一对应。 */
+  /** 假名注音节点（#172），与正文里的汉字段一一对应；#174 起挂在所属的逐字单元里。 */
   rubies?: HTMLElement[];
   whole: Vars | null;
   dots: Vars[] | null;
@@ -93,10 +93,30 @@ interface RubyBox {
 }
 
 /**
- * 正文里每段汉字的位置（#172）：按 DOM 里文字的实际字形量（Range），相对正文节点、去掉整句缩放。
+ * 每段汉字开头所在的逐字单元（#174）：按单元顺序找连续的汉字段（单元之间有空格就断开），
+ * 段数和注音个数对不上返回 null。
+ */
+function rubyHosts(rts: UnitRt[], count: number): HTMLElement[] | null {
+  const hosts: HTMLElement[] = [];
+  let inRun = false;
+  for (const r of rts) {
+    for (const ch of r.u.t) {
+      if (isKanji(ch)) {
+        if (!inRun) hosts.push(r.v.el);
+        inRun = true;
+      } else inRun = false;
+    }
+    if (r.u.sp) inRun = false;
+  }
+  return hosts.length === count ? hosts : null;
+}
+
+/**
+ * 每段汉字的位置（#172）：按 DOM 里文字的实际字形量（Range），换算到注音所挂的节点（逐字单元或正文）里，去掉缩放。
  * 汉字段的个数和注音对不上（逐字词块和整句文字不一致时）返回 null，这句不标。
  */
-function measureRuby(main: HTMLElement, count: number): RubyBox[] | null {
+function measureRuby(main: HTMLElement, rubies: HTMLElement[]): RubyBox[] | null {
+  const count = rubies.length;
   const walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT, {
     acceptNode: (n) => ((n.parentElement?.closest('.ly-rb') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT)),
   });
@@ -120,9 +140,11 @@ function measureRuby(main: HTMLElement, count: number): RubyBox[] | null {
   }
   if (open) runs.push(open);
   if (runs.length !== count) return null;
-  const mr = main.getBoundingClientRect();
-  const k = main.offsetWidth ? mr.width / main.offsetWidth : 1;
-  return runs.map((r) => {
+  return runs.map((r, i) => {
+    // 注音相对它所挂的节点定位（逐字单元自己有 transform，是注音的包含块）
+    const host = rubies[i]!.parentElement ?? main;
+    const mr = host.getBoundingClientRect();
+    const k = host.offsetWidth ? mr.width / host.offsetWidth : 1;
     const range = document.createRange();
     range.setStart(r.sn, r.so);
     range.setEnd(r.en, r.eo);
@@ -372,17 +394,20 @@ export class LyricEngine {
       row.whole = new Vars(main);
     }
     el.appendChild(main);
-    // 假名注音（#172）：汉字正上方一层独立的小字（不放进逐字单元，免得跟着扫光和波浪），位置在 measure 里按实际字形算
+    // 假名注音（#172）：汉字正上方的小字，位置在 measure 里按实际字形算。
+    // #174：挂进这段汉字开头所在的逐字单元里，跟着字一起扫光时的浮起、长音放大、退场落回；
+    // 整句条目挂在正文上（正文整体浮起，注音一起动）。单元里的汉字段数对不上时也退回挂在正文上
     if (e.ja) el.classList.add('is-ja');
     if (e.rb) {
       el.classList.add('has-rb');
-      row.rubies = e.rb.map((kana) => {
+      const hosts = row.rts ? rubyHosts(row.rts, e.rb.length) : null;
+      row.rubies = e.rb.map((kana, i) => {
         const rb = document.createElement('span');
         rb.className = 'ly-rb';
         const k = document.createElement('span');
         k.textContent = kana;
         rb.appendChild(k);
-        main.appendChild(rb);
+        (hosts?.[i] ?? main).appendChild(rb);
         return rb;
       });
     }
@@ -458,7 +483,7 @@ export class LyricEngine {
       r.top = top;
       top += r.h + gap;
       if (r.rts) measureUnits(r.rts);
-      if (r.rubies && r.main) rubyAt.push([r.rubies, measureRuby(r.main, r.rubies.length)]);
+      if (r.rubies && r.main) rubyAt.push([r.rubies, measureRuby(r.main, r.rubies)]);
     }
     // 读完再写（#172）
     for (const [els, boxes] of rubyAt) {
