@@ -175,3 +175,14 @@ view blocks（同层互不依赖，组合只由 App 完成）
   - `getAccount` 实际请求歌单接口核验，20017 = 票据失效。
 - **Spotify**：`SPOTIFY_CLIENT_ID` 默认用桌面客户端公开 ID，回调 `http://127.0.0.1:5588/login`；`fetchMe()` 区分 401 过期和暂时查不到。
 - 平台 × 功能完成度：`docs/project/PLATFORM_MATRIX.md`。每补一个缺口就改那张表。
+
+## QQ 登录自动续期（#178，2026-11-18）
+
+- `src/main/services/qqRenew.ts`：
+  - `canRenewQq`：只认 QQ 号网页登录，且 psrf_qqopenid / access_token / refresh_token 和网页票据都在；微信登录、原生 musicid/musickey 对不续。
+  - `buildQqRenewRequest` → `music.login.LoginServer/Login`（loginMode=2，comm.tmeLoginType=2）。
+  - `applyQqRenewal`：返回成功、有新 musickey、musicid 与 openid 对得上才合并；只改 qm_keyst / qqmusic_key / psrf_musickey_createtime 和服务器发回的新授权令牌，其余字段与顺序原样。
+  - `QqRenewService`：同一时间只续一次；失败后 30 分钟内不自动重试；新票据用独立的 `QqSessionService` 核验有效才写入；续期期间登录变了（换号、退出）就丢弃结果。日志只写事件和返回码。
+- 触发：`electron/main.cjs` 里 `qqRenew.start()`：启动 20 秒后检查一次，之后每 6 小时；票据用满 2 天（`QQ_RENEW_AFTER_MS`）就续。`qqSession(http).onExpired` 确认过期时也续一次；`QqLogin.getAccount` 发现过期时先等续期，续上了按新票据重查。
+- 写入走 `CookieStore.set`（原子写），触发 `cookies.onChange`，取链 / 兜底 / 会员缓存随之清空。
+- 回归：`scripts/qq-renew-regression.mjs`（15 项，离线，已接入 `qa:backend`）。

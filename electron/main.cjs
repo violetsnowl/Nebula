@@ -19,6 +19,7 @@ const {
   KugouLogin,
   QishuiLogin,
   QqRightsService,
+  QqRenewService,
   qqSession,
   createQishuiLoginAdapter,
   AudioProxy,
@@ -601,7 +602,10 @@ app.whenReady().then(async () => {
   protocol.handle('wallpaper', (request) => wallpaperLibrary.handle(request));
   const login = new NeteaseLogin(http, cookies);
   const qqRights = new QqRightsService(http);
-  const qqLogin = new QqLogin(http, cookies, qqRights);
+  // QQ 号登录自动续期：启动 20 秒后检查一次、之后每 6 小时；票据用满 2 天或确认过期时续（见 services/qqRenew.ts）
+  const qqRenew = new QqRenewService(http, cookies);
+  app.once('before-quit', qqRenew.start());
+  const qqLogin = new QqLogin(http, cookies, qqRights, qqRenew);
   const kugouLogin = new KugouLogin(cookies, http);
   const qishuiLogin = new QishuiLogin(cookies, { BrowserWindow, session });
 

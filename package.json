@@ -10,7 +10,7 @@
     "build:main": "esbuild src/main/index.ts --bundle --platform=node --format=cjs --target=node18 --outfile=dist-main/index.cjs --log-level=warning --external:@neteasecloudmusicapienhanced/* --external:qrcode",
     "build:desktop": "tsc --noEmit && vite build --outDir dist && pnpm build:main",
     "desktop": "node scripts/desktop-check.mjs && electron .",
-    "qa:backend": "pnpm build:main && node scripts/backend-smoke.mjs && node scripts/player-regression.mjs && node scripts/router-regression.mjs && node scripts/matching-regression.mjs && node scripts/source-lifetime-regression.mjs && node scripts/qq-session-regression.mjs && node scripts/lyric-regression.mjs && node scripts/metadata-regression.mjs && node scripts/import-regression.mjs && node scripts/romanize-regression.mjs && node scripts/kugou-login-regression.mjs && node scripts/spotify-auth-regression.mjs",
+    "qa:backend": "pnpm build:main && node scripts/backend-smoke.mjs && node scripts/player-regression.mjs && node scripts/router-regression.mjs && node scripts/matching-regression.mjs && node scripts/source-lifetime-regression.mjs && node scripts/qq-session-regression.mjs && node scripts/qq-renew-regression.mjs &&node scripts/lyric-regression.mjs && node scripts/metadata-regression.mjs && node scripts/import-regression.mjs && node scripts/romanize-regression.mjs && node scripts/kugou-login-regression.mjs && node scripts/spotify-auth-regression.mjs",
     "qa:media": "node scripts/media-regression.cjs",
     "qa:electron": "pnpm build:desktop && node scripts/electron-regression.cjs",
     "qa:long-pause": "node scripts/player-long-pause.cjs",

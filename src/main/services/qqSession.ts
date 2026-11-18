@@ -44,7 +44,10 @@ export function parseQqLoginProbe(part:any, expectedUin:string):QqAuthStatus {
 /** 仅缓存脱离凭据值的核验状态；按整份Cookie隔离，换票据即重新核验。 */
 export class QqSessionService {
   private cache=new Map<string,{status:QqAuthStatus;until:number}>();
+  private expiredListeners=new Set<(cookie:string)=>void>();
   constructor(private http:HttpClient) {}
+  /** 确认过期时通知（自动续期用）；返回取消订阅函数。 */
+  onExpired(fn:(cookie:string)=>void):()=>void {this.expiredListeners.add(fn);return ()=>{this.expiredListeners.delete(fn);};}
   private cached(cookie:string) {
     const hit=this.cache.get(qqSessionKey(cookie));return hit && hit.until>Date.now()?hit:undefined;
   }
@@ -56,6 +59,7 @@ export class QqSessionService {
     const key=qqSessionKey(cookie);this.cache.delete(key);
     this.cache.set(key,{status,until:Date.now()+(status==='valid'?300_000:status==='expired'?30_000:15_000)});
     if(this.cache.size>16)this.cache.delete(this.cache.keys().next().value!);
+    if(status==='expired')for(const fn of this.expiredListeners){try{fn(cookie);}catch{/* 监听方自理 */}}
     return status;
   }
   observe(cookie:string,part:unknown):QqAuthStatus {

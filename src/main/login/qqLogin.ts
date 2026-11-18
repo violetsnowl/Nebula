@@ -2,6 +2,7 @@ import type { CookieStore } from '../cookieStore';
 import type { HttpClient } from '../http';
 import type { AccountInfo, PlaylistSummary } from '../types';
 import type { QqRightsService } from '../services/qqRights';
+import type { QqRenewService } from '../services/qqRenew';
 import { QQ_AUTH_EXPIRED, qqCredential, qqSession } from '../services/qqSession';
 import { validatePlatformCookie } from '../cookieStore';
 
@@ -25,6 +26,7 @@ export class QqLogin {
     private http: HttpClient,
     private cookies: CookieStore,
     private qqRights?: QqRightsService,
+    private renewer?: Pick<QqRenewService, 'renew'>,
   ) {}
 
   async createQr(): Promise<{ unikey: string; payload: string; imageDataUrl: string }> {
@@ -87,11 +89,14 @@ export class QqLogin {
     }
   }
 
-  async getAccount(): Promise<AccountInfo | null> {
+  async getAccount(renewed = false): Promise<AccountInfo | null> {
     const cookie = this.cookies.getHeader('qq') ?? '';
     if(!cookie)return null;
     const {uin}=qqCredential(cookie),session=qqSession(this.http);
     const authStatus=await session.check(cookie);
+    // 确认过期时先试着自动续期一次，续上了就按新票据重查。
+    if(authStatus==='expired' && this.renewer && !renewed && (await this.renewer.renew('expired').catch(() => null))?.ok)
+      return this.getAccount(true);
     // 只有确认过期或票据缺失才算登出；核验接口超时 / 异常（unknown）不能让 QQ 歌单整片消失。
     if(authStatus==='expired' || authStatus==='missing')return {loggedIn:false,authStatus,
       error:authStatus==='expired'?QQ_AUTH_EXPIRED:'QQ 音乐播放票据不完整，请重新登录'};
