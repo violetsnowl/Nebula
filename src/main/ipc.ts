@@ -4,12 +4,17 @@ import type { CookieStore } from './cookieStore';
 import type { NeteaseLogin } from './login/neteaseLogin';
 import type { SongResolver } from './services/songResolver';
 import type { LyricService } from './services/lyricService';
-import type { Platform, Track } from './types';
+import type { Platform, PlaylistSummary, Track } from './types';
 import type { LoginAdapter } from './login/index';
 import type { AudioProxy } from './audioProxy';
 import { CoverService,coverCandidates } from './services/coverService';
 import type { WallpaperLibrary } from './services/wallpaperLibrary';
 import { normalizeCookieHeader, validatePlatformCookie } from './cookieStore';
+
+/** 歌单自己没有封面时用的图：第一首有封面的歌。 */
+export function firstTrackCover(tracks: Array<Pick<Track, 'cover'>>): string {
+  return tracks.find(t => /^https?:\/\//i.test(t.cover || ''))?.cover || '';
+}
 
 /** 仅依赖 ipcMain.handle 形状，避免在纯 Node 冒烟测试中引入 electron。 */
 export interface IpcLike {
@@ -35,6 +40,27 @@ export interface IpcDeps {
 
 export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
   const covers=new CoverService();
+  // 没有封面的歌单（酷我「我喜欢听」等系统歌单）用第一首歌的封面补；只缓存取到的结果，进程内有效。
+  const firstCovers = new Map<string, string>();
+  const fillPlaylistCovers = async (platform: Platform, list: PlaylistSummary[]): Promise<PlaylistSummary[]> => {
+    const adapter = deps.adapters[platform];
+    if (!adapter) return list;
+    const missing = list.filter(p => !p.cover).slice(0, 8);
+    await Promise.all(missing.map(async p => {
+      const key = `${platform}:${p.id}`;
+      let cover = firstCovers.get(key) || '';
+      if (!cover) {
+        try {
+          cover = adapter.fetchPlaylistFirstCover
+            ? await adapter.fetchPlaylistFirstCover(p.id)
+            : firstTrackCover((await adapter.fetchPlaylist(p.id)).tracks);
+        } catch { /* 补不上就保持空，前端显示占位 */ }
+        if (cover) firstCovers.set(key, cover);
+      }
+      if (cover) p.cover = cover;
+    }));
+    return list;
+  };
   const owners = new WeakMap<object, Map<string, AbortController>>();
   const testingOwner = {};
   const requestsFor = (event: unknown) => {
@@ -67,17 +93,21 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
     return {
       platformName: target.platform,
       name: playlist.name,
-      cover: playlist.cover,
+      cover: playlist.cover || firstTrackCover(playlist.tracks),
       tracks: playlist.tracks.map(t=>({...t,coverInfo:t.coverInfo || (t.cover?{url:coverCandidates(t)[0] || t.cover,verified:false}:undefined)})),
     };
   });
 
   safe('nebula:import-playlist-id', async ({ platform, id }: { platform: Platform; id: string }) => {
     const playlist = await deps.adapters[platform].fetchPlaylist(id);
+    if (!playlist.cover) {
+      const cover = firstTrackCover(playlist.tracks);
+      if (cover) firstCovers.set(`${platform}:${id}`, cover);
+    }
     return {
       platformName: platform,
       name: playlist.name,
-      cover: playlist.cover,
+      cover: playlist.cover || firstTrackCover(playlist.tracks),
       tracks: playlist.tracks.map(t=>({...t,coverInfo:t.coverInfo || (t.cover?{url:coverCandidates(t)[0] || t.cover,verified:false}:undefined)})),
     };
   });
@@ -222,7 +252,7 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
   safe('nebula:login:playlists', async ({ platform }: { platform: string }) => {
     const a = deps.loginAdapters[platform];
     if (!a?.getMyPlaylists) return [];
-    return a.getMyPlaylists();
+    return fillPlaylistCovers(platform as Platform, await a.getMyPlaylists());
   });
   safe('nebula:login:spotify:start', async () => {
     if (!deps.spotifyOAuth) throw new Error('Spotify OAuth 未配置');

@@ -2,7 +2,7 @@
 import assert from 'node:assert/strict';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
-const { createSheetHost, BODY_RADIUS } = require('../electron/embeddedSheet.cjs');
+const { createSheetHost, createWidthFitter, BODY_RADIUS, FIT_MIN_ZOOM } = require('../electron/embeddedSheet.cjs');
 const print = (s) => process.stdout.write(s + '\n');
 let n = 0;
 const test = async (name, fn) => { await fn(); n++; print('通过 ' + name); };
@@ -201,6 +201,66 @@ await test('只认主窗口渲染进程发来的消息（陌生 sender 的位置
   assert.equal(children.size, 0);
   handlers['nebula:sheet:close']({ sender: {} }, { id: s.id });
   assert.equal(host.getCurrent(), s);
+});
+
+// 按宽度适配（#184）：假 webContents，scrollWidth 是页面排版宽度（CSS 像素，不随缩放变），clientWidth = 视口宽 / 缩放
+function fakeWc({ designWidth, viewWidth, scrollbar = 0 }) {
+  const wc = {
+    zoom: 1, viewWidth, designWidth, listeners: {}, destroyed: false,
+    isDestroyed() { return this.destroyed; },
+    on(k, fn) { this.listeners[k] = fn; }, removeListener(k) { delete this.listeners[k]; },
+    getZoomFactor() { return this.zoom; }, setZoomFactor(z) { this.zoom = z; },
+    async executeJavaScript() {
+      const cw = Math.floor(this.viewWidth / this.zoom) - scrollbar;
+      return { sw: Math.max(this.designWidth, cw), cw };
+    },
+  };
+  return wc;
+}
+const settle = () => new Promise((r) => setTimeout(r, 1950));
+
+await test('按宽度适配：页面比正文区宽就整页缩小到刚好放下；变宽放大回去，最多 100%；关闭恢复原缩放', async () => {
+  const wc = fakeWc({ designWidth: 1200, viewWidth: 900 });
+  const f = createWidthFitter(wc);
+  f.schedule(); await settle();
+  assert.ok(Math.abs(wc.zoom - 0.75) < 0.011, '缩到 900/1200');
+  const m = await wc.executeJavaScript(); assert.ok(m.sw <= m.cw + 1, '不再有横向溢出');
+  wc.viewWidth = 1056; f.refit(); await settle();
+  assert.ok(Math.abs(wc.zoom - 0.88) < 0.011, '窗口变宽跟着放大');
+  wc.viewWidth = 1600; f.refit(); await settle();
+  assert.equal(wc.zoom, 1, '放得下就不超过 100%');
+  wc.viewWidth = 300; f.refit(); await settle();
+  assert.equal(wc.zoom, FIT_MIN_ZOOM, '太窄时停在下限');
+  // 换页面：清零重量，自适应排版的页面不缩放
+  wc.listeners['did-start-navigation']({}, 'https://x', false, true);
+  assert.equal(wc.zoom, 1);
+  wc.designWidth = 0; wc.viewWidth = 900; wc.listeners['did-finish-load'](); await settle();
+  assert.equal(wc.zoom, 1, '本来就放得下的页面不动');
+  wc.zoom = 0.6; f.dispose();
+  assert.equal(wc.zoom, 1, '关闭时恢复接管前的缩放');
+  assert.equal(wc.listeners['did-finish-load'], undefined);
+});
+
+await test('按宽度适配：竖向滚动条占的宽度也算进去；没有 executeJavaScript 的视图不出错', async () => {
+  const wc = fakeWc({ designWidth: 1200, viewWidth: 900, scrollbar: 17 });
+  const f = createWidthFitter(wc);
+  f.schedule(); await settle(); f.schedule(); await settle();
+  const m = await wc.executeJavaScript(); assert.ok(m.sw <= m.cw + 1, '留出滚动条后不再横向溢出');
+  f.dispose();
+  const bare = createWidthFitter({ on() {}, removeListener() {} });
+  bare.schedule(); bare.dispose();
+});
+
+await test('按宽度适配：宽度跟着视口走的页面，缩放中一瞬间的溢出不会让它放不大回去', async () => {
+  const wc = fakeWc({ designWidth: 1000, viewWidth: 883 });
+  const f = createWidthFitter(wc);
+  f.schedule(); await settle();
+  assert.ok(wc.zoom < 0.9);
+  // 模拟一次假溢出：页面在缩放过程中量到 1211
+  wc.designWidth = 1211; f.schedule(); await settle();
+  wc.designWidth = 1000; wc.viewWidth = 1056; f.refit(); await settle();
+  assert.equal(wc.zoom, 1, '弹窗变宽后回到 100%');
+  f.dispose();
 });
 
 print(`内嵌页面宿主回归 ${n}/${n}`);

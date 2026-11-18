@@ -12,8 +12,115 @@
 /** 外壳正文区圆角（与渲染进程 .lgs-body 一致）。 */
 const BODY_RADIUS = 14;
 
+/** 自动缩放的下限：再小字就看不清了，宁可留横向滚动条。 */
+const FIT_MIN_ZOOM = 0.5;
+const FIT_MEASURE = `(() => {
+  const d = document.documentElement, b = document.body;
+  return { sw: Math.max(d.scrollWidth, b ? b.scrollWidth : 0), cw: d.clientWidth };
+})()`;
+
 function isHttpUrl(url) {
   return /^https?:\/\//i.test(String(url || ''));
+}
+
+/**
+ * 按宽度适配：官网登录页按桌面宽度排版（酷我 / QQ 首页最小宽度 1200 左右），弹窗正文区装不下时只露出左上角，
+ * 右上角的登录按钮要拖横向滚动条才看得见。
+ * 做法：量页面的排版宽度（scrollWidth，CSS 像素，不随缩放变），比可视宽度大就把整页缩小到刚好放下，最多 100%。
+ * 换页面、弹窗宽度变化时都回到 100% 重新量。
+ */
+function createWidthFitter(wc) {
+  let designWidth = 0;
+  let disposed = false;
+  let timers = [];
+  const alive = () => !disposed && wc && !(wc.isDestroyed && wc.isDestroyed());
+  const canFit = typeof wc?.executeJavaScript === 'function' && typeof wc?.setZoomFactor === 'function';
+  const originalZoom = (() => {
+    try {
+      return typeof wc?.getZoomFactor === 'function' ? wc.getZoomFactor() : 1;
+    } catch {
+      return 1;
+    }
+  })();
+
+  async function measure() {
+    if (!canFit || !alive()) return;
+    let m;
+    try {
+      m = await wc.executeJavaScript(FIT_MEASURE, false);
+    } catch {
+      return; // 页面正在跳转
+    }
+    if (!alive() || !m || !(m.cw > 0)) return;
+    const z0 = wc.getZoomFactor();
+    if (m.sw > m.cw) designWidth = Math.max(designWidth, m.sw);
+    if (!designWidth) return;
+    // 可视宽度（不含竖向滚动条）换成窗口像素；减 2px 并向下取整到千分位，免得取整误差留下一两像素的横向滚动条
+    const availableDip = m.cw * z0 - 2;
+    const target = Math.max(FIT_MIN_ZOOM, Math.min(1, Math.floor((availableDip / designWidth) * 1000) / 1000));
+    if (Math.abs(target - z0) >= 0.002) wc.setZoomFactor(target);
+  }
+
+  /** 页面排版可能在加载后才定型（异步渲染）：当场量一次，再补两次。 */
+  function schedule() {
+    if (!canFit || !alive()) return;
+    timers.forEach(clearTimeout);
+    timers = [0, 400, 1500].map((ms) => setTimeout(() => void measure(), ms));
+  }
+
+  /**
+   * 弹窗宽度变了：等拖动停下（200ms），回到 100% 重新量。不沿用记下的宽度——
+   * 有的页面宽度跟着视口走（酷我），缩放过程中一瞬间的溢出会被当成排版宽度，之后就放不大回去了（#184 实测）。
+   */
+  function refit() {
+    if (!canFit || !alive()) return;
+    timers.forEach(clearTimeout);
+    timers = [
+      setTimeout(() => {
+        if (!alive()) return;
+        designWidth = 0;
+        try {
+          wc.setZoomFactor(1);
+        } catch {
+          return;
+        }
+        timers = [150, 600, 1500].map((ms) => setTimeout(() => void measure(), ms));
+      }, 200),
+    ];
+  }
+
+  const onStart = (_e, _url, isInPlace, isMainFrame) => {
+    if (isMainFrame === false || isInPlace) return;
+    designWidth = 0;
+    try {
+      if (alive()) wc.setZoomFactor(1);
+    } catch {
+      /* ignore */
+    }
+  };
+  if (canFit) {
+    wc.on?.('did-start-navigation', onStart);
+    wc.on?.('did-finish-load', schedule);
+    wc.on?.('did-navigate-in-page', schedule);
+  }
+
+  return {
+    schedule,
+    refit,
+    dispose() {
+      disposed = true;
+      timers.forEach(clearTimeout);
+      if (!canFit || !wc || (wc.isDestroyed && wc.isDestroyed())) return;
+      wc.removeListener?.('did-start-navigation', onStart);
+      wc.removeListener?.('did-finish-load', schedule);
+      wc.removeListener?.('did-navigate-in-page', schedule);
+      try {
+        wc.setZoomFactor(originalZoom); // 接管来的页面（汽水签名引擎）还要继续用，恢复原缩放
+      } catch {
+        /* ignore */
+      }
+    },
+  };
 }
 
 /**
@@ -73,6 +180,8 @@ function createSheetHost({ WebContentsView, ipcMain, getMainWindow }) {
       });
     }
 
+    const fitter = createWidthFitter(wc);
+    let lastWidth = 0;
     let attached = false;
     let finished = false;
     let resolveClosed;
@@ -107,6 +216,7 @@ function createSheetHost({ WebContentsView, ipcMain, getMainWindow }) {
       if (current === sheet) current = null;
       win.removeListener?.('closed', onWindowClosed);
       win.webContents?.removeListener?.('did-navigate', onNavigate);
+      fitter.dispose();
       detach();
       // 自己创建的页面用完销毁；接管来的页面（汽水签名引擎）只摘下来，后面还要继续用
       if (!adopted) {
@@ -148,6 +258,12 @@ function createSheetHost({ WebContentsView, ipcMain, getMainWindow }) {
           win.contentView.addChildView(view);
           resolveShown();
         }
+        // 宽度变了（首次挂上 / 窗口缩放）就重新适配；只改高度不用
+        if (width !== lastWidth) {
+          if (lastWidth) fitter.refit();
+          else fitter.schedule();
+          lastWidth = width;
+        }
       },
       isAttached: () => attached,
     };
@@ -174,4 +290,4 @@ function createSheetHost({ WebContentsView, ipcMain, getMainWindow }) {
   return { open, getCurrent: () => current };
 }
 
-module.exports = { createSheetHost, BODY_RADIUS };
+module.exports = { createSheetHost, createWidthFitter, BODY_RADIUS, FIT_MIN_ZOOM };

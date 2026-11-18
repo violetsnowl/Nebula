@@ -145,6 +145,8 @@ export interface PlatformAdapter {
   /** 已核验的会话状态；不发网络请求，用于阻止失效账号复用解析缓存。 */
   getAuthStatus?(): 'missing' | 'valid' | 'expired' | 'unknown';
   fetchPlaylist(playlistId: string): Promise<Playlist>;
+  /** 歌单没有封面时用来补的图（第一首歌的封面）；只取一首，比整份 fetchPlaylist 省。没实现的平台由 IPC 退回 fetchPlaylist。 */
+  fetchPlaylistFirstCover?(playlistId: string): Promise<string>;
   fetchSongUrl(songId: string, albumId?: string, quality?: string, extra?: Record<string, unknown>): Promise<SongUrl | null>;
   fetchLyric(songId: string, timeMs?: number): Promise<Lyric | null>;
   fetchComments?(songId: string, page?: number): Promise<CommentResult | null>;

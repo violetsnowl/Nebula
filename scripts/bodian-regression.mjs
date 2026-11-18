@@ -7,7 +7,7 @@ import path from 'node:path';
 // 波点适配器 / 登录回归：假传输层，不联网（所有 ID、token 都是合成的）。依赖 pnpm build:main 产物。
 const require=createRequire(import.meta.url);
 const api=require('../dist-main/index.cjs');
-const {CookieStore,BodianAdapter,BodianLogin,bodianSign,encodeBodianQuery,parseBodianSession,parseBodianPlaylistId,createAdapters,resolveAdapterByUrl,validatePlatformCookie,normalizeCookieHeader,coverCandidates,audioPlatform}=api;
+const {CookieStore,BodianAdapter,BodianLogin,bodianSelfFromPlaylists,bodianSign,encodeBodianQuery,parseBodianSession,parseBodianPlaylistId,createAdapters,resolveAdapterByUrl,validatePlatformCookie,normalizeCookieHeader,coverCandidates,audioPlatform}=api;
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'bodian-regression-'));
 let seq=0;
 const UID='424242',TOKEN='0123456789abcdef0123456789abcdef',DEV='a'.repeat(32);
@@ -127,16 +127,21 @@ await test('扫码确认：状态里直接带凭证不再换取；换取失败 /
 await test('账号信息：无凭证 null / 残缺 missing / 有效 valid / -101 expired / 其他 unknown',async()=>{
  assert.equal(await new BodianLogin(newStore(),fake({}).transport).getAccount(),null);
  assert.deepEqual(await new BodianLogin(newStore('foo=1'),fake({}).transport).getAccount(),{loggedIn:false,authStatus:'missing',error:'波点登录信息不完整，请重新登录'});
- const profile=()=>ok({id:Number(UID),token:TOKEN,userInfo:{nickname:'资料昵称',headImg:'https://img4.kuwo.cn/h.jpg'},payInfo:{vipType:2,isVipBoolean:true}});
- const f=fake({'/api/service/playlist/userCreate':()=>ok({playLists:[]}),'/api/ucenter/users/login':profile});
+ // 资料取自自建歌单的作者字段：只认作者是本人的歌单；http 头像升 https；users/login 不再调用
+ const lists={playLists:[
+  {id:1,name:'别人的',creatorId:999,author:{id:999,name:'别人',icon:'http://thirdqq.qlogo.cn/x/other/100',isVip:1}},
+  {id:2,name:'我喜欢',creatorId:Number(UID),creatorName:'平铺昵称',creatorIcon:'http://thirdqq.qlogo.cn/x/me/100',author:{id:Number(UID),name:'作者昵称',icon:'http://thirdqq.qlogo.cn/x/me/100',isVip:1}},
+ ]};
+ const f=fake({'/api/service/playlist/userCreate':()=>ok(lists)});
  const acc=await new BodianLogin(newStore(LOGGED),f.transport).getAccount();
- assert.deepEqual(acc,{loggedIn:true,authStatus:'valid',userId:UID,nickname:'资料昵称',avatarUrl:'https://img4.kuwo.cn/h.jpg',vipType:2,isVip:true,isSvip:false});
+ assert.deepEqual(acc,{loggedIn:true,authStatus:'valid',userId:UID,nickname:'作者昵称',avatarUrl:'https://thirdqq.qlogo.cn/x/me/100',vipType:1,isVip:true,isSvip:false});
  const uq=f.calls[0].q;assert.equal(uq.get('userId'),UID);assert.equal(uq.get('uid'),UID);assert.equal(uq.get('token'),TOKEN);assert.equal(f.calls[0].headers.devid,DEV);
- checkSign(f.calls[1].url);
- // 资料接口失败不影响有效判定，昵称回退到登录时存的
+ assert.equal(f.calls.length,1,'只请求一次 userCreate');
+ // 只有平铺字段也能取到
+ assert.deepEqual(bodianSelfFromPlaylists({playLists:[{creatorId:UID,creatorName:'平铺',creatorIcon:'https://img4.kuwo.cn/h.jpg'}]},UID),{nickname:'平铺',avatarUrl:'https://img4.kuwo.cn/h.jpg',isVip:false});
+ // 没有自建歌单：有效判定不受影响，昵称回退到登录时存的，没有头像
  const s=newStore();s.set('bodian',LOGGED,undefined,'存的昵称');
- const f2=fake({'/api/service/playlist/userCreate':()=>ok({}),'/api/ucenter/users/login':()=>({__status:500,__body:{code:-1,msg:'Service error'}})});
- const a2=await new BodianLogin(s,f2.transport).getAccount();assert.equal(a2.authStatus,'valid');assert.equal(a2.nickname,'存的昵称');assert.equal(a2.avatarUrl,undefined);
+ const a2=await new BodianLogin(s,fake({'/api/service/playlist/userCreate':()=>ok({playLists:[]})}).transport).getAccount();assert.equal(a2.authStatus,'valid');assert.equal(a2.nickname,'存的昵称');assert.equal(a2.avatarUrl,undefined);
  // 过期
  const exp=await new BodianLogin(newStore(LOGGED),fake({'/api/service/playlist/userCreate':()=>({code:-101,msg:'登录失效'})}).transport).getAccount();
  assert.deepEqual(exp,{loggedIn:false,authStatus:'expired',error:'波点登录已过期，请重新登录'});
@@ -146,13 +151,11 @@ await test('账号信息：无凭证 null / 残缺 missing / 有效 valid / -101
   assert.equal(a.loggedIn,true);assert.equal(a.authStatus,'unknown');assert.equal(a.userId,UID);assert.equal(a.nickname,'波点用户');
  }
 });
-await test('账号信息：资料接口换发新 token 时写回，旧 uid 不符不写',async()=>{
- const NEW='f'.repeat(32);
- const mk=id=>fake({'/api/service/playlist/userCreate':()=>ok({}),'/api/ucenter/users/login':()=>ok({id,token:NEW,userInfo:{nickname:'n'}})});
- const s=newStore(LOGGED);await new BodianLogin(s,mk(Number(UID)).transport).getAccount();
- assert.deepEqual(parseBodianSession(s.getHeader('bodian')),{uid:UID,token:NEW,devId:DEV});
- const s2=newStore(LOGGED);await new BodianLogin(s2,mk(1).transport).getAccount();
- assert.equal(parseBodianSession(s2.getHeader('bodian')).token,TOKEN);
+await test('账号信息：不再调用 users/login（读资料实测 HTTP 500），票据原样保留',async()=>{
+ const f=fake({'/api/service/playlist/userCreate':()=>ok({playLists:[]}),'/api/ucenter/users/login':()=>{throw new Error('不该调用');}});
+ const s=newStore(LOGGED);const a=await new BodianLogin(s,f.transport).getAccount();
+ assert.equal(a.authStatus,'valid');assert.equal(f.calls.length,1);
+ assert.deepEqual(parseBodianSession(s.getHeader('bodian')),{uid:UID,token:TOKEN,devId:DEV});
 });
 await test('我的歌单：红心第一 + 自建 + 收藏；专辑排除；过滤后为空的页不算结束；ID 带 source',async()=>{
  const pages={1:[{id:1,name:'专辑A',sourceType:6},{id:2,name:'专辑B',sourceType:6}],2:[{id:300,name:'收藏甲 &amp; 乙',pic:'http://img1.kwcdn.kuwo.cn/a_700.jpg',sourceType:4,musicCount:12},{id:1,name:'专辑C',sourceType:6}],3:[{id:301,name:'收藏丙',sourceType:4,musicCount:3}],4:[]};

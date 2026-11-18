@@ -27,7 +27,7 @@ export * from './services/qqSession';
 export * from './services/qqRenew';
 export * from './services/platformRouter';
 export * from './login/index';
-export { registerIpcHandlers } from './ipc';
+export { registerIpcHandlers, firstTrackCover } from './ipc';
 export type { IpcLike, IpcDeps } from './ipc';
 
 export { recordingMatch, identityText, searchKeyword } from './services/recordingMatch';

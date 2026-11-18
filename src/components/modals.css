@@ -681,9 +681,9 @@
   color: var(--fg-3s);
 }
 
-/* 登录弹窗：宽 min(900px, 92vw)，高 min(700px, 84vh)；正文区是第三方页面的位置 */
+/* 登录弹窗：宽 min(1100px, 92vw)，高 min(760px, 84vh)；正文区是第三方页面的位置（页面比正文区宽时主进程整页缩小适配） */
 .info-modal.lgs-panel {
-  height: min(700px, 84vh);
+  height: min(760px, 84vh);
 }
 
 .lgs-logo {

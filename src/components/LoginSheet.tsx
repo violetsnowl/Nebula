@@ -4,7 +4,7 @@ import { IconClose } from './icons';
 import { LOGIN_HOW, platformMeta } from './platforms';
 import './modals.css';
 
-const SHELL_STYLE = { '--mdl-w': '900px' } as CSSProperties;
+const SHELL_STYLE = { '--mdl-w': '1100px' } as CSSProperties;
 /** 进场动画 0.28s；动画事件没触发（减少动态效果 / 窗口被遮住）时的兜底。 */
 const READY_FALLBACK_MS = 450;
 const LEAVE_MS = 280;

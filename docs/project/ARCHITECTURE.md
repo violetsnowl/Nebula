@@ -196,6 +196,7 @@ view blocks（同层互不依赖，组合只由 App 完成）
 - 汽水改为扫码类登录（kind 'qr'，二维码显示在账号面板）；签名引擎从隐藏窗口改为从不挂载的 `WebContentsView`，2046 时经 `present` 显示在弹窗里，弹窗被关就取消验证。
 - **Spotify 不用内嵌**：Google 不允许在 Electron 的窗口 / 视图里登录（「此浏览器或应用不安全」）。改用 `shell.openExternal` 打开默认浏览器授权（PKCE + 本机回环 `127.0.0.1:5588`，10 分钟超时），能复用用户浏览器里的登录。YouTube Music 同理，见快照。
 - 壁纸库：桌面版也用应用内的 `WallpaperPicker`，外壳同信息弹窗；独立窗口 `view=wallpaper` 与相关 IPC 已删除。
+- 宽度适配（#184）：`createWidthFitter` 在页面加载完、弹窗宽度变化（停下 200ms 后）时量页面，排版宽度大于可视宽度就整页缩小到刚好放下（`setZoomFactor`，下限 0.5，最多 100%）；换页面、宽度变化都先回到 100% 再量。接管来的视图关闭时恢复原缩放。登录弹窗宽 1100。
 - 已知限制：焦点在第三方页面里时 Esc 由那个页面接收（点叉或遮罩可关）；第三方页面的 `window.open` 在同一视图里打开；位置按 CSS px 当 DIP，页面缩放不是 1 时会偏。
 - 加新平台时：需要官方网页登录的用 sheet host，不再新建 `BrowserWindow`；需要 Google 账号的走默认浏览器。
 

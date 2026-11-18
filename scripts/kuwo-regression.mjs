@@ -6,7 +6,7 @@ import path from 'node:path';
 // 酷我适配器回归：假 http，不联网。依赖 pnpm build:main 产物。
 const require=createRequire(import.meta.url);
 const api=require('../dist-main/index.cjs');
-const {CookieStore,KuwoAdapter,KuwoLogin,parseKuwoSession,mapKuwoMyPlaylists,kuwoCoverUrl,validatePlatformCookie,normalizeCookieHeader,resolveAdapterByUrl,coverCandidates,audioPlatform}=api;
+const {CookieStore,KuwoAdapter,KuwoLogin,kuwoAvatarUrl,firstTrackCover,parseKuwoSession,mapKuwoMyPlaylists,kuwoCoverUrl,validatePlatformCookie,normalizeCookieHeader,resolveAdapterByUrl,coverCandidates,audioPlatform}=api;
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'kuwo-regression-'));
 let seq=0;
 const newStore=cookie=>{const s=new CookieStore(path.join(tmp,`c${++seq}.json`));if(cookie)s.set('kuwo',cookie);return s;};
@@ -128,6 +128,23 @@ await test('账号信息：无 cookie → null；残缺 → missing；完整 →
  const acc=await new KuwoLogin(newStore(LOGGED)).getAccount();
  assert.deepEqual(acc,{loggedIn:true,authStatus:'unknown',userId:'424242',nickname:'测试用户',avatarUrl:'http://img1.kuwo.cn/star/userhead/1.jpg'});
  assert.equal((await new KuwoLogin(newStore('userid=5; sid=a')).getAccount()).nickname,'酷我用户');
+ // 官网实际写法（#184 实测）：昵称在 uname3，pic3 外面包一层双引号；微信头像 /132 换原图 /0 并升 https
+ const real='userid=5; sid=a; uname3=%E5%BE%AE%E4%BF%A1%E7%94%A8%E6%88%B7; pic3=%22http%3A%2F%2Fthirdwx.qlogo.cn%2Fmmopen%2Fvi_32%2Fabc%2F132%22; t3=weixin';
+ const a2=await new KuwoLogin(newStore(real)).getAccount();
+ assert.equal(a2.nickname,'微信用户');assert.equal(a2.avatarUrl,'https://thirdwx.qlogo.cn/mmopen/vi_32/abc/0');
+ assert.equal(kuwoAvatarUrl('"javascript:alert(1)"'),'');assert.equal(kuwoAvatarUrl(''),'');
+});
+
+await test('没有封面的歌单（我喜欢听）：只取第一首的专辑图补上；详情也用首歌封面兜底',async()=>{
+ const seen=[];
+ const http={requestJson:async url=>{seen.push(url);const q=new URL(url).searchParams;return {title:'我喜欢听',pic:'',total:2,musiclist:q.get('rn')==='5'?[{id:'1',name:'无图',albumpic:''},row(1)]:[row(1),row(2)]};}};
+ const a=new KuwoAdapter(http,newStore(LOGGED));
+ assert.equal(await a.fetchPlaylistFirstCover('9'),'http://img2.kuwo.cn/star/albumcover/500/6/48/1.jpg');
+ assert.equal(new URL(seen[0]).searchParams.get('rn'),'5');
+ assert.equal(await a.fetchPlaylistFirstCover('bad'),'');
+ assert.equal((await a.fetchPlaylist('9')).cover,'http://img2.kuwo.cn/star/albumcover/500/6/48/1.jpg');
+ assert.equal(firstTrackCover([{cover:''},{cover:'https://x/a.jpg'}]),'https://x/a.jpg');
+ assert.equal(firstTrackCover([]),'');
 });
 await test('封面 / 音频域名：酷我保持 http，音频走 kuwo 代理白名单',()=>{
  assert.equal(kuwoCoverUrl('http://img2.kuwo.cn/star/albumcover/120/6/48/1.jpg'),'http://img2.kuwo.cn/star/albumcover/500/6/48/1.jpg');

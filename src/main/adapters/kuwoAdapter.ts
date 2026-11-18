@@ -114,7 +114,23 @@ export class KuwoAdapter implements PlatformAdapter {
       if (rows.length < PAGE_SIZE || (total && (pn + 1) * PAGE_SIZE >= total)) break;
     }
     if (!tracks.length) throw new Error('酷我歌单不存在、为空或未公开');
-    return { id: pid, platform: 'kuwo', name: name || `酷我歌单 ${pid}`, cover, description: description || undefined, tracks };
+    return { id: pid, platform: 'kuwo', name: name || `酷我歌单 ${pid}`, cover: cover || tracks.find(t => t.cover)?.cover || '', description: description || undefined, tracks };
+  }
+
+  /** 「我喜欢听」这类系统歌单没有封面：只取第一首的专辑图。 */
+  async fetchPlaylistFirstCover(playlistId: string): Promise<string> {
+    const pid = String(playlistId || '').trim();
+    if (!/^\d+$/.test(pid)) return '';
+    const data = await this.http.requestJson<{ musiclist?: Array<Record<string, any>> }>(
+      `${PLAYLIST_API}?op=getlistinfo&pid=${pid}&pn=0&rn=5&${COMMON_QUERY}`,
+      { platform: 'kuwo', timeoutMs: 8000 },
+    );
+    const rows = Array.isArray(data?.musiclist) ? data.musiclist : [];
+    for (const row of rows) {
+      const cover = mapKuwoTrack(row)?.cover;
+      if (cover) return cover;
+    }
+    return '';
   }
 
   /** 取链：失败 / 提示音 / 明显短于歌曲时长一律返回 null，让路由器去兜底平台。 */

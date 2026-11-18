@@ -20,6 +20,26 @@ const QR_WAITING = 1;
 const QR_CONFIRMED = 3;
 const QR_EXPIRED = 2;
 
+/**
+ * playlist/userCreate 的每个歌单都带作者：author { id, name, icon, isVip }，以及平铺的 creatorId / creatorName / creatorIcon。
+ * 取第一个作者是本人的歌单；头像多为 QQ / 微信第三方头像，统一升 https。
+ */
+export function bodianSelfFromPlaylists(data: unknown, uid: string): { nickname: string; avatarUrl: string; isVip: boolean } | null {
+  const lists = (data as { playLists?: unknown })?.playLists;
+  if (!Array.isArray(lists)) return null;
+  for (const p of lists as Array<Record<string, any>>) {
+    const author = p?.author ?? {};
+    if (pick(author.id, p?.creatorId) !== String(uid)) continue;
+    const icon = pick(author.icon, p?.creatorIcon);
+    return {
+      nickname: pick(author.name, p?.creatorName),
+      avatarUrl: /^https?:\/\//i.test(icon) ? icon.replace(/^http:\/\//i, 'https://') : '',
+      isVip: Number(author.isVip) === 1,
+    };
+  }
+  return null;
+}
+
 function pick(...values: unknown[]): string {
   for (const v of values) {
     const s = String(v ?? '').trim();
@@ -103,40 +123,30 @@ export class BodianLogin {
     if (!session) return { loggedIn: false, authStatus: 'missing', error: '波点登录信息不完整，请重新登录' };
 
     let authStatus: 'valid' | 'unknown' = 'unknown';
+    let nickname = rec.nickname || '';
+    let avatarUrl = '';
+    let isVip = false;
     try {
       const res = await this.api.userCreate(session);
       if (BODIAN_AUTH_REJECT_CODES.has(res.code)) {
         console.warn(`[BodianLogin] 票据失效 错误码=${res.code}`);
         return { loggedIn: false, authStatus: 'expired', error: BODIAN_AUTH_EXPIRED };
       }
-      if (res.code === 200) authStatus = 'valid';
-      else console.warn(`[BodianLogin] 核验接口返回错误码=${res.code}，按未知处理`);
+      if (res.code === 200) {
+        authStatus = 'valid';
+        // 资料取自自建歌单的作者字段（users/login 的 GET 读资料实测一律 HTTP 500，#184）。
+        const me = bodianSelfFromPlaylists(res.data, session.uid);
+        if (me) {
+          nickname = me.nickname || nickname;
+          avatarUrl = me.avatarUrl;
+          isVip = me.isVip;
+        }
+      } else console.warn(`[BodianLogin] 核验接口返回错误码=${res.code}，按未知处理`);
     } catch (err) {
       // 网络异常：不能判登出，也不能确认有效。
       console.warn('[BodianLogin] 票据核验请求失败，按未知处理:', err instanceof Error ? err.message : '');
     }
-
-    let nickname = rec.nickname || '';
-    let avatarUrl = '';
-    let vipType = 0;
-    let isVip = false;
-    if (authStatus === 'valid') {
-      try {
-        // 资料读不到不影响登录态。服务端若在这里换发了新 token（PyBodian 的做法是照单全收），同样写回，免得旧票据失效。
-        const res = await this.api.call('/api/ucenter/users/login', { session, signed: true });
-        const data = res.code === 200 ? res.data : null;
-        if (data) {
-          nickname = pick(data.userInfo?.nickname, nickname);
-          avatarUrl = pick(data.userInfo?.headImg, data.userInfo?.avatar, data.userInfo?.headPic, data.userInfo?.pic);
-          vipType = Number(data.payInfo?.vipType ?? data.userInfo?.vipType) || 0;
-          isVip = !!(data.payInfo?.isVipBoolean || data.userInfo?.isVip);
-          const fresh = pick(data.token);
-          if (fresh && fresh !== session.token && pick(data.id, data.uid) === session.uid && !/[;\s]/.test(fresh)) {
-            this.cookies.set('bodian', `uid=${session.uid}; token=${fresh}; devid=${bodianDevId(session)}`, undefined, nickname || undefined);
-          }
-        }
-      } catch { /* 忽略 */ }
-    }
+    const vipType = isVip ? 1 : 0;
     return {
       loggedIn: true,
       authStatus,
