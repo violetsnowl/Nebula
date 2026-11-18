@@ -75,10 +75,9 @@
 
 ## 4. 当前状态速览
 
-- 架构收敛 9 步全部完成，App.tsx 从 1411 行收敛到 587 行；依赖规则由 `scripts/check-arch.mjs` 机制化强制。
-- **最新状态一律以 `docs/meta/CONTEXT_SNAPSHOT.md` 为准**（本段仅为 2026-08-19 的历史快照锚点）。
-- 当前活跃任务是「Nebula Player 重构」：P1（Bottom Player）已完成待用户复验，下一步等用户的全局 UI 底层重构母稿，再回 P2。
-- 主要待办见 `docs/project/NOTES.md`；已废弃决策见 `docs/design/LYRICS_SYSTEM.md` §8「明确不做」。
+- **最新状态、活跃任务和待办一律以 `docs/meta/CONTEXT_SNAPSHOT.md` 为准**，本节不再记进度。
+- 架构收敛 9 步全部完成；依赖规则由 `scripts/check-arch.mjs` 机制化强制（随 `pnpm qa` 运行）。
+- 平台功能缺口见 `docs/project/PLATFORM_MATRIX.md`；踩坑见 `docs/project/NOTES.md`；已废弃决策见 `docs/design/LYRICS_SYSTEM.md` §8「明确不做」。
 
 ---
 

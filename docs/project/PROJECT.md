@@ -5,15 +5,13 @@
 
 ## 1. 项目定位
 
-一个全屏 3D 音乐卡片墙播放器：
+一个全屏的音乐星云播放器：
 
-- 主界面是带透视感的 3D 舞台，数千张音乐卡片按“中心密、四周稀”伪随机散落，形成音乐星云。
-- 鱼眼透视：离视口中心越近的卡片越大越亮，越远越小且带模糊；中心卡片可放大至 1.8x~2.2x，边缘衰减至 0.4x~0.6x。
-- 无限平移画布（类 Google Earth / Figma）：拖拽或滚轮可漫游，视口外卡片通过虚拟化裁剪（只渲染视口 + 缓冲区内的卡片）。
-- 底部悬浮播放控制条（Glassmorphism），全局 AudioPlayer 单例驱动播放/暂停/上下曲/进度/收藏。
-- 支持网易云 / QQ 音乐 / Spotify / 酷狗 / 汽水多平台账号登录，登录后自动拉取"我的歌单"；左侧歌单导入 Dock（小球 → 胶囊 → 窗口）支持账号歌单与手动链接导入。
-- 歌单、音源、歌词、评论通过统一 Adapter 接入；音源失败自动跨平台兜底（SongResolver）。
-- 歌曲详情 / 歌手主页 / 评论页面已接入（底部条与歌名/歌手点击进入）。
+- 主界面是一片首尾相接、没有尽头的封面星云（`NEBULA_UI_SYSTEM` §8.0）：三种排法（按颜色默认 / 按歌手 / 随机），镜头中心有透镜，可拖动、缩放（有上下限），搜索时镜头飞到命中的星团。旧的「周期回绕卡片墙 + 径向鱼眼」已在 #139 删除。
+- 底部播放条（液态 / 磨砂玻璃），全局 AudioPlayer 单例驱动；点封面进入整屏听音空间（大封面一镜到底、歌词阅读栏、右栏原地详情和评论）。
+- 支持网易云 / QQ 音乐 / Spotify / 酷狗 / 汽水多平台账号登录，登录后自动拉取「我的歌单」；左侧 Dock 管歌单与导入，右侧 Dock 管账号与设置。
+- 歌单、音源、歌词、评论、歌曲详情通过统一 Adapter 接入；本平台取不到时按「同一录音」跨平台兜底（SongResolver / LyricService），完成度见 `PLATFORM_MATRIX.md`。
+- 歌曲详情 / 歌手主页 / 专辑页 / 评论页已接入。
 
 ## 2. 技术栈与结构
 
@@ -32,8 +30,9 @@ music-nebula/
 │  │  ├─ http.ts               # 统一请求层：Referer/UA 伪造 + Cookie 注入 + JSON/表单
 │  │  ├─ ipc.ts                # IPC 处理器（playlist / login / cookie / lyric / comment）
 │  │  └─ index.ts              # 后端统一出口（esbuild 打包为 dist-main/index.cjs）
-│  ├─ components/              # LoginPanel 等前端组件
-│  ├─ lib/                     # 前端核心：layout（布局）/ fisheye / panEngine / audio / playlist
+│  ├─ components/              # 视图区块：舞台、歌词层、两侧 Dock、听音空间（listen/）、播放条（player/）、弹窗
+│  ├─ hooks/                   # 领域 hooks（按 src/hooks/<domain>/，见 ARCHITECTURE.md）
+│  ├─ lib/                     # 前端核心：space/（星云）/ listen/（歌词阅读栏）/ glass/（材质）/ panEngine / audio / playlist
 │  └─ App.tsx 等
 ├─ electron/
 │  ├─ main.cjs                 # Electron 主进程：窗口、网络拦截（防盗链）、登录接线
@@ -86,9 +85,8 @@ pnpm qa:playback-live # 默认 108 条公开跨平台挑战样本联网统计
 
 ### 4.1 布局 / 视觉（前端）
 
-- 无限画布按网格 + 伪随机扰动分布卡片；视口虚拟化只挂载可视区 + 缓冲区的卡片（可见卡片 15~25 张）。
-- 鱼眼曲线由 `src/lib/fisheye.ts` 控制：中心大、边缘小 + 模糊 + z-index 随距离提升；悬浮卡片转正（rotateZ→0）、放大、置顶。
-- 背景系统支持内置动态/静态背景 + 用户自定义上传，选择持久化到 localStorage。
+- 星云由 `src/lib/space/` 实现（`world.ts` 首尾相接的画布与排法、`lens.ts` 透镜、`stars.ts` 小封面画布），`useStage` 的帧循环驱动；屏幕上 56px 以下的卡片画在画布上，DOM 卡片上限 140 张（见 NOTES「舞台卡片的 DOM 成本」）。视觉与参数以 `NEBULA_UI_SYSTEM` §8 为准。
+- 背景系统：环境光（封面取色）/ 雾中封面 / 自定义图片 / 壁纸库，选择持久化到 localStorage。
 
 ### 4.2 登录（重要！易踩坑）
 
@@ -96,7 +94,10 @@ pnpm qa:playback-live # 默认 108 条公开跨平台挑战样本联网统计
 - eapi 请求需携带设备 Cookie（osver / deviceId / WNMCID / appver 等）与客户端 UA，见 `src/main/encrypt/ncmCrypto.ts`。
 - 扫码流程：`createQr()` 返回 `{ unikey, payload }` → 前端本地生成二维码 → `pollLogin(unikey)` 轮询（801 等待 / 802 已扫待确认 / 803 成功）。
 - 登录成功后 cookie 存入 `CookieStore`（按平台隔离，明文 JSON，位于 `app.getPath('userData')`）。
-- QQ 扫码为实验性（ptlogin2）；Spotify 走 OAuth（需 `SPOTIFY_CLIENT_ID`）；酷狗/汽水无公开登录接口（标注不可用）。
+- QQ 走官方登录页（独立分区 `persist:qq-music-login`）扫码，读取分区 Cookie 落库；ptlogin2 扫码为实验性。
+- 酷狗：手机端扫码登录（#164），歌单接口只认手机端票据。
+- 汽水：扫码登录（签名引擎）。
+- Spotify：OAuth，默认用 Spotify 桌面客户端的公开 Client ID（#165），设了 `SPOTIFY_CLIENT_ID` 环境变量则用自己的；账号和歌单走 Spotify 自家查询服务（#171）。
 
 ### 4.3 音源 / 防盗链
 

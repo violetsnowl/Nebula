@@ -12,7 +12,7 @@
 3. `docs/meta/USER_PROFILE.md` — 用户画像与审美偏好
 4. 本文件「当前状态」
 5. `docs/project/PROJECT.md` + `docs/project/ARCHITECTURE.md`
-6. `docs/design/*`（`NEBULA_UI_SYSTEM`（全局 UI 真源）/ `LYRICS_SYSTEM`；UI 分支另有播放器三份母稿；`UI_SPEC` 已被取代）
+6. `docs/design/*`（`NEBULA_UI_SYSTEM`（全局 UI 真源）/ `LYRICS_SYSTEM` / 播放器三份母稿；`UI_SPEC` 已被取代）
 7. `docs/project/CHANGE_LOG.md` 最近 20 条 + `docs/project/NOTES.md`
 
 ## 模型迭代与连续性（为什么这份文件存在）

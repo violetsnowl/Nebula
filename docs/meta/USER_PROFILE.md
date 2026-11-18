@@ -41,5 +41,5 @@
 
 ## 5. 领域现状速记（细节见 CONTEXT_SNAPSHOT）
 
-- 平台：网易云 / QQ 取链 + 多平台 VIP 路由可用；酷狗歌单导入已修；汽水放弃取链（歌单走网易云 / QQ 兜底）；Spotify 仅专辑详情。
-- 当前活跃任务：Nebula Player 重构（Bottom Player / Listening Space / Spatial+Inner Lyrics / Music Orb / Atmosphere / Frosted）。
+- 平台：网易云 / QQ 取链 + 多平台 VIP 路由可用；酷狗手机扫码登录、Spotify 桌面客户端身份登录，歌单都能读；汽水取链有新路线待做（现在歌单走网易云 / QQ 兜底）。用户自己的曲库 1442 首全是 QQ 歌。
+- 当前进展与活跃任务一律看 `CONTEXT_SNAPSHOT.md`（本节不再记）。
