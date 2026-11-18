@@ -444,7 +444,7 @@ function SpotifyLogin({ onSuccess }: { onSuccess: () => void }) {
     setStatus('正在打开 Spotify 授权窗口…');
     const r = await window.nebulaAPI.spotifyLoginStart();
     if (!r.ok || !r.data) {
-      setStatus('授权未完成（需配置 SPOTIFY_CLIENT_ID）');
+      setStatus('授权未完成，请重试');
       return;
     }
     setStatus('授权成功');

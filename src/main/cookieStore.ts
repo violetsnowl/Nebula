@@ -107,7 +107,8 @@ export class CookieStore {
   }
 
   set(platform: Platform, cookies: string, token?: string, nickname?: string): void {
-    const normalized = normalizeCookieHeader(cookies);
+    // Spotify 存的是访问令牌（Bearer），不是 Cookie 头；按 Cookie 格式清洗会把它洗成空串。
+    const normalized = platform === 'spotify' ? String(cookies || '').trim() : normalizeCookieHeader(cookies);
     this.data[platform] = {
       cookies: normalized,
       token,

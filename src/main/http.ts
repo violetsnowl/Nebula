@@ -75,7 +75,7 @@ export class HttpClient {
       ...opts.headers,
     };
     const cookie = opts.cookie ?? this.cookies.getHeader(opts.platform);
-    if (cookie) headers.Cookie = cookie;
+    if (cookie && opts.platform !== 'spotify') headers.Cookie = cookie;
     if (opts.platform === 'spotify') {
       const token = this.cookies.get('spotify')?.cookies;
       if (token) headers.Authorization = `Bearer ${token}`;

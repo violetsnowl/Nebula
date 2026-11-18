@@ -69,18 +69,37 @@ function createSpotifyOAuth(cookies) {
         // 桌面客户端 ID 只接受登记过的回调：http://127.0.0.1:5588/login
         const port = SPOTIFY_REDIRECT_PORT;
         const redirectUri = `http://127.0.0.1:${port}/login`;
+        let win = null;
+        // 收到授权码后进入换令牌阶段：此时窗口被关掉（不论是用户关还是我们关）都不能当作失败。
+        let exchanging = false;
+        let settled = false;
+        const finish = (ok) => {
+          if (settled) return;
+          settled = true;
+          busy = false;
+          server.close();
+          if (win && !win.isDestroyed()) win.close();
+          resolve(ok);
+        };
+        const page = (text) =>
+          `<!doctype html><meta charset="utf-8"><title>Spotify 登录</title><p style="font-family:sans-serif;padding:24px">${text}</p>`;
         const server = http.createServer(async (req, res) => {
           const url = new URL(req.url, `http://127.0.0.1:${port}`);
-          if (url.pathname !== '/login') return;
-          if (!url.searchParams.get('code')) {
-            res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-            res.end('<p style="font-family:sans-serif">Spotify 授权未完成，可关闭窗口</p>');
+          if (url.pathname !== '/login') {
+            res.writeHead(404);
+            res.end();
             return;
           }
           const code = url.searchParams.get('code');
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-          res.end('<script>window.close()</script><p style="font-family:sans-serif">登录成功，可关闭窗口</p>');
-          server.close();
+          if (!code || exchanging) {
+            res.end(page(code ? '正在完成 Spotify 登录…' : 'Spotify 授权未完成，可以关闭这个窗口'));
+            if (!code) finish(false);
+            return;
+          }
+          exchanging = true;
+          // 不在页面里 window.close()：窗口一关就会先报失败，令牌换回来时界面已经停在「未完成」。
+          res.end(page('正在完成 Spotify 登录…'));
           try {
             const tokenRes = await fetch('https://accounts.spotify.com/api/token', {
               method: 'POST',
@@ -96,19 +115,19 @@ function createSpotifyOAuth(cookies) {
             const tok = await tokenRes.json();
             if (tok.access_token) {
               cookies.set('spotify', tok.access_token, tok.refresh_token ?? '', 'Spotify');
-              resolve(true);
+              finish(true);
             } else {
-              resolve(false);
+              console.warn('[Spotify] 换取令牌失败：', tok.error || tokenRes.status);
+              finish(false);
             }
-          } catch {
-            resolve(false);
-          } finally {
-            busy = false;
+          } catch (err) {
+            console.warn('[Spotify] 换取令牌请求失败：', err instanceof Error ? err.message : '');
+            finish(false);
           }
         });
-        server.on('error', () => {
-          busy = false;
-          resolve(false);
+        server.on('error', (err) => {
+          console.warn('[Spotify] 本地回调端口不可用：', err && err.code);
+          finish(false);
         });
         server.listen(port, '127.0.0.1', () => {
           const authUrl =
@@ -116,7 +135,7 @@ function createSpotifyOAuth(cookies) {
             `&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}` +
             `&scope=${encodeURIComponent(SPOTIFY_SCOPES)}` +
             `&code_challenge_method=S256&code_challenge=${challenge}`;
-          const win = new BrowserWindow({
+          win = new BrowserWindow({
             width: 520,
             height: 720,
             title: 'Spotify 登录',
@@ -124,9 +143,8 @@ function createSpotifyOAuth(cookies) {
           });
           win.loadURL(authUrl);
           win.on('closed', () => {
-            server.close();
-            busy = false;
-            resolve(false);
+            win = null;
+            if (!exchanging) finish(false);
           });
         });
       }),
