@@ -90,6 +90,17 @@ export function validatePlatformCookie(platform: Platform, normalized: string): 
     }
     return { ok: true };
   }
+  if (platform === 'bodian') {
+    // 波点扫码登录：uid 为非零数字，token 非空。
+    const uid = pairs.get('uid') ?? '';
+    if (!/^\d+$/.test(uid) || /^0+$/.test(uid)) {
+      return { ok: false, error: 'INVALID_BODIAN_COOKIE: cookie 缺少有效的 uid' };
+    }
+    if (!pairs.get('token')) {
+      return { ok: false, error: 'INVALID_BODIAN_COOKIE: cookie 缺少 token' };
+    }
+    return { ok: true };
+  }
   return { ok: true };
 }
 

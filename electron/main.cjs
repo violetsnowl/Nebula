@@ -19,6 +19,7 @@ const {
   KugouLogin,
   QishuiLogin,
   KuwoLogin,
+  BodianLogin,
   QqRightsService,
   QqRenewService,
   qqSession,
@@ -678,6 +679,7 @@ app.whenReady().then(async () => {
   const kugouLogin = new KugouLogin(cookies, http);
   const qishuiLogin = new QishuiLogin(cookies, { BrowserWindow, session });
   const kuwoLogin = new KuwoLogin(cookies);
+  const bodianLogin = new BodianLogin(cookies);
 
   // 启动探活：已存 cookie 自动校验登录态，失败仅标记未登录，不抛异常
   login.probeLogin();
@@ -711,6 +713,15 @@ app.whenReady().then(async () => {
     },
     qishui: createQishuiLoginAdapter({ getAccount: () => qishuiLogin.getAccount(), getMyPlaylists: () => adapters.qishui.fetchMyPlaylists() }),
     kuwo: createKuwoLoginAdapter({ getAccount: () => kuwoLogin.getAccount(), getMyPlaylists: () => adapters.kuwo.fetchMyPlaylists() }),
+    bodian: {
+      platform: 'bodian',
+      name: '波点音乐',
+      kind: 'qr',
+      createQr: () => bodianLogin.createQr(),
+      pollLogin: (unikey) => bodianLogin.pollLogin(unikey),
+      getAccount: () => bodianLogin.getAccount(),
+      getMyPlaylists: () => adapters.bodian.fetchMyPlaylists(),
+    },
     spotify: {
       platform: 'spotify',
       name: 'Spotify',

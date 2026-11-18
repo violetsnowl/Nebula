@@ -58,11 +58,12 @@
 - 顺序：酷我 → 波点 → YouTube Music → Apple Music（最后）。第一阶段每家做到「能登录、能看到我的歌单、歌单能播放」，歌从哪取、歌词从哪来不限；各家都接完、平台列定住后，第二阶段再按功能横向补全（歌词来源互补、内容页、搜索、会员识别等）。
 - 每家开工前先探路；参照 folia（AGPL）只借思路和参数，代码自写；MIT 许可的库可以直接用（如 youtubei.js、PyBodian 的协议参考）。加一个平台要改的地方见 ARCHITECTURE「加一个平台要改的地方」。
 - 进度：
-  - 酷我 #180 已接入，待用户用真实账号验收：登录窗口 → 我的歌单 → 播放；
-  - 波点：协议已查清（MIT 的 PyBodian：`bd-api.kuwo.cn`，波点 App 扫码，自建 / 红心 / 收藏歌单，本平台取链仅限中国大陆网络），等用户给一条波点歌单分享链接后做链接导入；
+  - 酷我 #180 用户验收通过；
+  - 波点 #182 已接入（协议参考 MIT 的 PyBodian），待用户扫码验收：登录 → 我的歌单 → 分享链接导入 → 整曲播放；整曲音频域名、checkRight 状态值、账号字段要真实登录后核对；
   - YouTube Music：Google 不允许在 Electron 窗口登录，参照 folia 用系统 Chrome / Edge 独立配置目录登录，再无窗口读取 Cookie；接口用 youtubei.js（MIT）；播放先走跨平台；
   - Apple Music：参照 folia 在官方 music.apple.com 页面里登录和读资料库，不提取令牌；放最后。
-- 待用户提供：四个平台的 logo（放 `docs/logo/`），一条波点歌单分享链接。
+- 素材已到：四个平台的 logo 在 `docs/logo/`；波点分享链接格式 `h5app.kuwo.cn/m/bodian/collection.html?uid=…&playlistId=…&source=…`。
+- 用户 2026-11-18 另提：登录窗口（QQ / 酷我 / Spotify 授权 / 汽水二维码）和壁纸库不要用带系统标题栏的独立窗口，改成软件内嵌、风格一致；排在波点之后、YouTube Music 之前做。
 
 ### 已落地、待用户确认（#177 之后）
 

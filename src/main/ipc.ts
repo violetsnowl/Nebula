@@ -63,7 +63,7 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
   safe('nebula:import-playlist', async ({ url }: { url?: string }) => {
     if (!url) throw new Error('缺少歌单链接');
     const target: UrlTarget | null = resolveAdapterByUrl(url);
-    if (!target) throw new Error('无法识别的歌单链接（支持网易云 / QQ音乐 / 酷狗 / 酷我 / Spotify / 汽水）');
+    if (!target) throw new Error('无法识别的歌单链接（支持网易云 / QQ音乐 / 酷狗 / 酷我 / 波点 / Spotify / 汽水）');
     const playlist = await deps.adapters[target.platform].fetchPlaylist(target.id);
     return {
       platformName: target.platform,

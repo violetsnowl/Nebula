@@ -15,6 +15,7 @@ export * from './adapters/neteaseAdapter';
 export * from './adapters/qqAdapter';
 export * from './adapters/kugouAdapter';
 export * from './adapters/kuwoAdapter';
+export * from './adapters/bodianAdapter';
 export * from './adapters/spotifyAdapter';
 export * from './quality';
 export * from './services/songResolver';

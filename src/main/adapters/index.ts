@@ -7,6 +7,7 @@ import { KugouAdapter } from './kugouAdapter';
 import { SpotifyAdapter } from './spotifyAdapter';
 import { QishuiAdapter } from './qishuiAdapter';
 import { KuwoAdapter } from './kuwoAdapter';
+import { BodianAdapter } from './bodianAdapter';
 
 export type AdapterMap = Record<Platform, PlatformAdapter>;
 
@@ -18,6 +19,7 @@ export function createAdapters(http: HttpClient, cookies: CookieStore): AdapterM
     spotify: new SpotifyAdapter(http, cookies),
     qishui: new QishuiAdapter(http, cookies),
     kuwo: new KuwoAdapter(http, cookies),
+    bodian: new BodianAdapter(http, cookies),
   };
 }
 
@@ -50,6 +52,11 @@ export function resolveAdapterByUrl(input: string): UrlTarget | null {
   if (/qishui\.com/.test(url) || /douyin\.com/.test(url)) {
     const id = url.match(/id=([\d]+)/i)?.[1] ?? url.match(/playlist\/([\d]+)/i)?.[1];
     if (id) return { platform: 'qishui', id };
+  }
+  // 波点分享页（h5app.kuwo.cn/m/bodian/collection.html）与酷我同属 kuwo.cn，必须排在酷我规则之前。
+  if (/(?:^|[/.@])kuwo\.cn(?:[:/?#]|$)/i.test(url) && /\/bodian\//i.test(url)) {
+    const id = url.match(/[?&]playlistId=(\d+)/i)?.[1];
+    if (id) return { platform: 'bodian', id: `${id}:${url.match(/[?&]source=(\d+)/i)?.[1] || '5'}` };
   }
   if (/(?:^|[/.@])kuwo\.cn(?:[:/?#]|$)/i.test(url)) {
     const id = url.match(/playlist_detail\/(\d+)/i)?.[1] ?? url.match(/[?&#]pid=(\d+)/i)?.[1];

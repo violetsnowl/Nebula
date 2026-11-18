@@ -16,6 +16,7 @@ export { KugouLogin } from './kugouLogin';
 export { QishuiLogin } from './qishuiLogin';
 export { QqLogin, hash33 } from './qqLogin';
 export { KuwoLogin } from './kuwoLogin';
+export { BodianLogin } from './bodianLogin';
 
 export function createKugouLoginAdapter(kugouLogin: {
   getAccount: () => Promise<AccountInfo | null>;

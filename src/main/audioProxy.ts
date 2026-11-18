@@ -8,7 +8,7 @@ const HOSTS: Array<[string, Platform]> = [
   ['music.163.com','netease'], ['music.126.net','netease'],
   ['qq.com','qq'], ['gtimg.cn','qq'], ['gtimg.com','qq'], ['qpic.cn','qq'],
   ['kugou.com','kugou'], ['kugou.com.cn','kugou'], ['kugou.net','kugou'],
-  ['kuwo.cn','kuwo'],
+  ['kuwo.cn','kuwo'], // 波点（bodian）的试听地址也在 *.kuwo.cn；整曲域名待真实登录验证，见 bodianAdapter.fetchSongUrl 的 TODO
 ];
 export function audioPlatform(url: URL): Platform | null {
   if (!['https:','http:'].includes(url.protocol) || url.username || url.password) return null;

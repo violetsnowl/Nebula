@@ -143,7 +143,7 @@ function ManualImport({
           ref={inputRef}
           className="input"
           type="text"
-          placeholder="网易云 / QQ / 酷狗 / 酷我 / 汽水 / Spotify 的歌单链接"
+          placeholder="网易云 / QQ / 酷狗 / 酷我 / 波点 / 汽水 / Spotify 的歌单链接"
           aria-label="歌单链接"
           value={value}
           onChange={(e) => setValue(e.target.value)}

@@ -539,6 +539,85 @@ function KugouLogin({ onSuccess }: { onSuccess: () => void }) {
   );
 }
 
+/** 波点音乐：手机端扫码登录（用波点音乐 App 扫码）。 */
+function BodianLogin({ onSuccess }: { onSuccess: () => void }) {
+  const [qr, setQr] = useState<string | null>(null);
+  const [status, setStatus] = useState('');
+  const unikeyRef = useRef<string | null>(null);
+  const pollRef = useRef<number | null>(null);
+  const failRef = useRef(0);
+
+  const stopPoll = useCallback(() => {
+    if (pollRef.current !== null) {
+      window.clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
+  const start = useCallback(async () => {
+    if (!window.nebulaAPI) return;
+    stopPoll();
+    setQr(null);
+    setStatus('正在生成二维码…');
+    const res = await window.nebulaAPI.loginQrFor('bodian');
+    if (!res.ok) {
+      setStatus(`获取二维码失败：${res.error}`);
+      return;
+    }
+    unikeyRef.current = res.data.unikey;
+    if (res.data.imageDataUrl) {
+      setQr(res.data.imageDataUrl);
+    } else {
+      try {
+        setQr(await QRCode.toDataURL(res.data.payload, { width: 296, margin: 1 }));
+      } catch {
+        setStatus('二维码生成失败，请刷新重试');
+        return;
+      }
+    }
+    setStatus('用波点音乐 App 扫码登录');
+    failRef.current = 0;
+    pollRef.current = window.setInterval(async () => {
+      if (!unikeyRef.current) return;
+      try {
+        const r = await window.nebulaAPI!.loginPollFor('bodian', unikeyRef.current);
+        if (!r.ok) {
+          failRef.current++;
+          if (failRef.current >= 3) {
+            setStatus(`轮询失败：${r.error}，请刷新二维码`);
+            stopPoll();
+          } else {
+            setStatus(`连接波动，自动重试（${failRef.current}/3）`);
+          }
+          return;
+        }
+        failRef.current = 0;
+        if (r.data.ok) {
+          stopPoll();
+          setStatus(r.data.message);
+          onSuccess();
+        } else {
+          setStatus(r.data.message);
+        }
+      } catch {
+        /* ignore */
+      }
+    }, 3000);
+  }, [onSuccess, stopPoll]);
+
+  useEffect(() => stopPoll, [stopPoll]);
+
+  return (
+    <div className="rp-flow">
+      {qr ? <img className="rp-qr" src={qr} alt="波点登录二维码" /> : <div className="rp-qr is-empty" />}
+      <div className="rp-flow-status">{status || '未登录波点音乐'}</div>
+      <button type="button" className="btn primary full" onClick={start}>
+        {qr ? '刷新二维码' : '开始扫码登录'}
+      </button>
+    </div>
+  );
+}
+
 /** 汽水音乐：签名引擎 + 扫码登录。 */
 function QishuiLogin({ onSuccess }: { onSuccess: () => void }) {
   const [busy, setBusy] = useState(false);
@@ -629,6 +708,7 @@ function PlatformLogin({
   if (platform === 'kugou') return <KugouLogin onSuccess={() => onRefresh('kugou')} />;
   if (platform === 'qishui') return <QishuiLogin onSuccess={() => onRefresh('qishui')} />;
   if (platform === 'kuwo') return <KuwoLogin onSuccess={() => onRefresh('kuwo')} />;
+  if (platform === 'bodian') return <BodianLogin onSuccess={() => onRefresh('bodian')} />;
   if (platform === 'spotify') return <SpotifyLogin onSuccess={() => onRefresh('spotify')} />;
   return (
     <div className="rp-flow">
@@ -645,6 +725,7 @@ const LOGIN_HOW: Record<string, string> = {
   qishui: '在官方登录页扫码，登录后自动回到这里',
   spotify: '在浏览器里授权，授权完成后自动回到这里',
   kuwo: '在酷我官网登录：账号密码、短信或 QQ / 微信',
+  bodian: '用波点音乐 App 扫码登录',
 };
 
 /** 账号详情：已登录 = 账号信息 + 刷新 / 退出；未登录 = 该平台既有的登录流程。 */

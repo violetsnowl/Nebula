@@ -4,6 +4,7 @@ import kugouLogo from '../../docs/logo/kugou.webp';
 import qishuiLogo from '../../docs/logo/qishui.png';
 import spotifyLogo from '../../docs/logo/spotify-logo.webp';
 import kuwoLogo from '../../docs/logo/kuwo.png';
+import bodianLogo from '../../docs/logo/bodian.webp';
 
 export interface PlatformMeta {
   id: string;
@@ -21,10 +22,11 @@ export const PLATFORM_META: Record<string, PlatformMeta> = {
   qishui: { id: 'qishui', name: '汽水音乐', logo: qishuiLogo, brand: '#ff5a79' },
   spotify: { id: 'spotify', name: 'Spotify', logo: spotifyLogo, brand: '#1db954' },
   kuwo: { id: 'kuwo', name: '酷我音乐', logo: kuwoLogo, brand: '#ffb400' },
+  bodian: { id: 'bodian', name: '波点音乐', logo: bodianLogo, brand: '#00e0b8' },
 };
 
 /** 左右 Dock 统一的平台顺序（与后端 platform id 一致）。 */
-export const DOCK_PLATFORM_ORDER = ['netease', 'qq', 'kugou', 'kuwo', 'qishui', 'spotify'] as const;
+export const DOCK_PLATFORM_ORDER = ['netease', 'qq', 'kugou', 'kuwo', 'bodian', 'qishui', 'spotify'] as const;
 
 export function platformMeta(id: string): PlatformMeta {
   return PLATFORM_META[id] ?? { id, name: id, logo: '', brand: '#8b93b8' };

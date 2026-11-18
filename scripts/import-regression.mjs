@@ -11,8 +11,12 @@ const responses={
 };
 const cookies={getHeader:p=>p==='qishui'?'SYNTHETIC=1':'',get:()=>null,onChange:()=>{}},http={requestJson:async(_url,opts)=>responses[opts.platform]};
 const adapters=b.createAdapters(http,cookies),handlers=new Map();
+// 波点走自己的 https 传输层（取链是带体 GET），导入契约用假传输层，不联网
+adapters.bodian=new b.BodianAdapter(http,cookies,async req=>({status:200,text:JSON.stringify(new URL(req.url).pathname.endsWith('/musicList')
+ ?{code:200,data:{total:1,list:[{id:900001,name:'测试曲',album:'测试专辑',albumPic:'https://img4.kuwo.cn/test.jpg',artist:'测试歌手',artists:[singer],duration:180}]}}
+ :{code:200,data:{name:'公开测试',pic:'http://img1.kwcdn.kuwo.cn/test.jpg'}})}));
 b.registerIpcHandlers({handle:(k,f)=>handlers.set(k,f)},{adapters,cookies,resolver:{},lyricService:{},login:{},audioProxy:{urlFor:u=>u}});
-const urls={netease:'https://music.163.com/#/playlist?id=1',qq:'https://y.qq.com/n/ryqq/playlist/1',kugou:'https://www.kugou.com/yy/special/single/3756318.html',spotify:'https://open.spotify.com/playlist/test',qishui:'https://www.qishui.com/playlist/1',kuwo:'https://www.kuwo.cn/playlist_detail/1'};
+const urls={netease:'https://music.163.com/#/playlist?id=1',qq:'https://y.qq.com/n/ryqq/playlist/1',kugou:'https://www.kugou.com/yy/special/single/3756318.html',spotify:'https://open.spotify.com/playlist/test',qishui:'https://www.qishui.com/playlist/1',kuwo:'https://www.kuwo.cn/playlist_detail/1',bodian:'https://h5app.kuwo.cn/m/bodian/collection.html?uid=1&playlistId=1&source=4&ownerId='};
 let n=0;
 for(const platform of Object.keys(urls)){
  const r=await handlers.get('nebula:import-playlist')(null,{url:urls[platform]});assert.equal(r.ok,true,r.error);assert.equal(r.data.tracks.length,1);
@@ -34,4 +38,4 @@ const denied=new b.SpotifyAdapter({requestJson:async(url)=>url.includes('pathfin
   assert.equal(pl.tracks.length,3);assert.equal(pl.name,'查询服务歌单');assert.equal(pl.tracks[2].duration,180);
   assert.ok(seen.every(u=>u.includes('pathfinder')));n++;console.log('通过 Spotify 查询服务分页导入');
 }
-console.log(`六平台导入契约 ${n}/${n}`);
+console.log(`七平台导入契约 ${n}/${n}`);
