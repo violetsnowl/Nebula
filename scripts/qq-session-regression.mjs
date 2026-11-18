@@ -127,17 +127,33 @@ await test('已有解析缓存也不能覆盖后来确认的登录过期',async(
  const resolver=new SongResolver(a,()=>{},async()=>true);assert.equal((await resolver.resolve(song)).playable,true);
  expired=true;assert.equal((await resolver.resolve(song)).code,'AUTH_EXPIRED');
 });
-await test('官方登录窗口等待真正音乐票据，成功关闭不被closed事件改成取消',async()=>{
+/** 从 electron/main.cjs 截出 createQqLoginWindow，用假的内嵌弹窗宿主 + 假定时器在沙箱里运行。 */
+function loadQqLogin(header){
  const source=fs.readFileSync('electron/main.cjs','utf8');
  const start=source.indexOf('function createQqLoginWindow('),end=source.indexOf('function createKugouLoginWindow(',start);
- let timer,header='uin=12345; p_skey=fixture',writes=0;
- class Window {listeners={};setTitle(){} loadURL(){} on(k,fn){this.listeners[k]=fn;} isDestroyed(){return false;} close(){this.listeners.closed?.();}}
+ const state={timer:null,header,opened:[],closeReason:null};
+ let resolveClosed;
+ const sheetHost={open:o=>{state.opened.push(o);const closed=new Promise(r=>{resolveClosed=r;});
+  return {closed,close:reason=>{state.closeReason=reason;resolveClosed(reason);}};}};
  const fn=vm.runInNewContext('('+source.slice(start,end).trim()+')',{
-  session:{fromPartition:()=>({clearStorageData:async()=>{},cookies:{get:async()=>header.split('; ').map(x=>({name:x.split('=')[0],value:x.split('=')[1]}))}})},
-  BrowserWindow:Window,normalizeCookieHeader:api.normalizeCookieHeader,validatePlatformCookie,
-  setInterval:cb=>{timer=cb;return 1;},clearInterval:()=>{},console:{warn:()=>{}},
+  session:{fromPartition:()=>({clearStorageData:async()=>{},cookies:{get:async()=>state.header.split('; ').map(x=>({name:x.split('=')[0],value:x.split('=')[1]}))}})},
+  sheetHost,normalizeCookieHeader:api.normalizeCookieHeader,validatePlatformCookie,
+  setInterval:cb=>{state.timer=cb;return 1;},clearInterval:()=>{},console:{warn:()=>{}},
  });
- const result=fn({set:()=>{writes++;}});await new Promise(r=>setImmediate(r));await timer();assert.equal(writes,0);
- header='uin=12345; qm_keyst=fixture';await timer();assert.equal((await result).ok,true);assert.equal(writes,1);
+ return {fn,state,userClose:()=>resolveClosed('user')};
+}
+await test('官方登录页在内嵌弹窗里打开，用独立分区，等待真正音乐票据，成功收起弹窗而不被关闭事件改成取消',async()=>{
+ const {fn,state}=loadQqLogin('uin=12345; p_skey=fixture');let writes=0;
+ const result=fn({set:()=>{writes++;}});await new Promise(r=>setImmediate(r));
+ assert.equal(state.opened.length,1);assert.equal(state.opened[0].platform,'qq');
+ assert.equal(state.opened[0].partition,'persist:qq-music-login');assert.equal(state.opened[0].url,'https://y.qq.com/');
+ await state.timer();assert.equal(writes,0);assert.equal(state.closeReason,null);
+ state.header='uin=12345; qm_keyst=fixture';await state.timer();
+ assert.equal((await result).ok,true);assert.equal(writes,1);assert.equal(state.closeReason,'done');
+});
+await test('用户关闭登录弹窗得到「登录窗口已关闭」，之后不再写入',async()=>{
+ const {fn,state,userClose}=loadQqLogin('uin=12345; p_skey=fixture');let writes=0;
+ const result=fn({set:()=>{writes++;}});await new Promise(r=>setImmediate(r));
+ userClose();const r=await result;assert.equal(r.ok,false);assert.equal(r.error,'登录窗口已关闭');assert.equal(writes,0);
 });
 console.log(`QQ 会话与权益回归 ${passed}/${passed}`);

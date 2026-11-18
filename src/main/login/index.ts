@@ -1,4 +1,5 @@
 import type { AccountInfo, PlaylistSummary } from '../types';
+import type { QishuiLogin } from './qishuiLogin';
 
 export interface LoginAdapter {
   platform: string;
@@ -46,16 +47,36 @@ export function createKuwoLoginAdapter(kuwoLogin: {
   };
 }
 
-export function createQishuiLoginAdapter(qishuiLogin: {
-  getAccount: () => Promise<AccountInfo | null>;
-  getMyPlaylists?: () => Promise<PlaylistSummary[]>;
-}): LoginAdapter {
+/**
+ * 汽水音乐：扫码登录（二维码由签名引擎生成，显示在账号面板里，和酷狗 / 波点同一套）。
+ * 二次验证（2046）的验证页由 QishuiLogin 经内嵌弹窗显示；checkQrConnect 同一时间只有一次在跑，
+ * 渲染进程每 2 秒轮询一次也不会重复触发验证。
+ */
+export function createQishuiLoginAdapter(
+  qishuiLogin: Pick<QishuiLogin, 'getQrCode' | 'checkQrConnect' | 'getAccount'>,
+  extra: { getMyPlaylists?: () => Promise<PlaylistSummary[]> } = {},
+): LoginAdapter {
   return {
     platform: 'qishui',
     name: '汽水音乐',
-    kind: 'window',
+    kind: 'qr',
+    createQr: async () => {
+      const { token, scanUrl } = await qishuiLogin.getQrCode();
+      return { unikey: token, payload: scanUrl };
+    },
+    pollLogin: async (token) => {
+      try {
+        const data = await qishuiLogin.checkQrConnect(token);
+        // 成功判定以 qishuiLogin 内部单一真源为准（含凭证校验 + cookie 持久化）
+        if (data._loginOk === true) return { ok: true, message: '汽水音乐登录成功' };
+        if (data.status === 'scanned') return { ok: false, message: '已扫码，请在手机上确认' };
+        return { ok: false, message: '用汽水音乐 App 扫码登录' };
+      } catch (err) {
+        const reason = err instanceof Error ? err.message : String(err);
+        return { ok: false, message: `验证异常：${reason}（持续重试中…）` };
+      }
+    },
     getAccount: () => qishuiLogin.getAccount(),
-    getMyPlaylists: qishuiLogin.getMyPlaylists,
-    unavailableReason: undefined,
+    getMyPlaylists: extra.getMyPlaylists,
   };
 }

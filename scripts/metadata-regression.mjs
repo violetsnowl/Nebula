@@ -13,6 +13,15 @@ await test('各平台原图候选保留有效小图',()=>{
  assert.equal(b.coverCandidates({platform:'qq',cover:'https://y.gtimg.cn/music/photo_new/T002R500x500M000abc.jpg'})[0],'https://y.gtimg.cn/music/photo_new/T002M000abc.jpg');
  assert.deepEqual(b.coverCandidates({platform:'spotify',cover:'https://i.scdn.co/image/a'}),['https://i.scdn.co/image/a']);
 });
+await test('汽水封面：图床不认不带后缀的地址，统一补尺寸后缀；原图用 ~tplv-obj.image（#183）',()=>{
+ const base='https://p3-luna.douyinpic.com/img/tos-cn-v-2774c002/abc';
+ assert.equal(b.qishuiCoverUrl({urls:['https://p3-luna.douyinpic.com/img/'],uri:'tos-cn-v-2774c002/abc'}),base+b.QISHUI_TRACK_COVER);
+ assert.equal(b.qishuiCoverUrl(base),base+b.QISHUI_TRACK_COVER);
+ assert.equal(b.qishuiCoverUrl(base+'~c5_300x300.jpg'),base+'~c5_300x300.jpg');
+ assert.equal(b.qishuiCoverUrl({urls:['https://p3-luna.douyinpic.com/img/'],uri:'tos-cn-v-2774c002/abc'},'~c5_300x300.jpg'),base+'~c5_300x300.jpg');
+ assert.deepEqual(b.coverCandidates({platform:'qishui',cover:base+'~c5_500x500.jpg'}),[base+'~tplv-obj.image',base+'~c5_500x500.jpg']);
+ assert.equal(b.coverCandidates({platform:'qishui',cover:base})[0],base+'~tplv-obj.image');
+});
 await test('封面探测拒绝任意内网目标，不伪造像素',async()=>{const r=await new b.CoverService().inspect({platform:'qq',cover:'http://127.0.0.1:1/test'});assert.equal(r.verified,false);assert.equal(r.width,undefined)});
 await test('QQ 表情保留实际 emoji，未知编码明确占位',()=>{assert.equal(b.cleanQqComment('你好[em]e400123[/em]'),'你好［表情］');assert.equal(b.cleanQqComment('[em]😀[/em]'),'😀')});
 await test('保存凭据不输出任何原文或前缀',async()=>{

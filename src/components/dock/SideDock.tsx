@@ -43,7 +43,7 @@ interface SideDockProps {
 /** 点这些界面时侧面板保持打开（播放条、顶栏、另一侧 Dock、弹窗、弹层、提示）。 */
 const KEEP_OPEN =
   '.side-dock, .player-surface, .topbar, .info-overlay, .ctx-menu, .ctx-backdrop, ' +
-  '.wallpaper-overlay, .queue-pop, .vol-pop, .quality-pop, .tooltip-bubble, .center-btn, .lyric-probe, ' +
+  '.queue-pop, .vol-pop, .quality-pop, .tooltip-bubble, .center-btn, .lyric-probe, ' +
   // 首次启动空状态的三个按钮：面板开着时点它们不能被「点外面关面板」吞掉（第一下只关面板、第二下才生效）
   '.empty-nebula .en-acts';
 

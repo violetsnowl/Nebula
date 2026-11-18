@@ -648,3 +648,116 @@
   font-weight: 600;
   color: var(--fg);
 }
+
+/* ---------- 内嵌页面弹窗（登录页 / 验证页，LoginSheet）与壁纸库（WallpaperPicker） ----------
+   同一套外壳：.info-overlay + 同级的 .info-veil + .info-modal（G3，22px，不注册边缘折射）。
+   页头 = 小标题 + 一句话说明；右上角关闭沿用 .mdl-x。 */
+
+.sht-head {
+  position: relative;
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 22px 56px 16px 26px;
+}
+
+.sht-text {
+  min-width: 0;
+}
+
+.sht-title {
+  margin: 0;
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: 0.02em;
+  color: #fff;
+}
+
+.sht-sub {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--fg-3s);
+}
+
+/* 登录弹窗：宽 min(900px, 92vw)，高 min(700px, 84vh)；正文区是第三方页面的位置 */
+.info-modal.lgs-panel {
+  height: min(700px, 84vh);
+}
+
+.lgs-logo {
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  object-fit: cover;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  font-weight: 600;
+}
+
+/* 正文区：WebContentsView 盖在这块上面（圆角 14px 与视图一致）；页面画出来之前露出这里的占位文字 */
+.lgs-body {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  margin: 0 22px 22px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 13px;
+  color: var(--fg-3s);
+}
+
+/* 收起：透明度 + 8px 位移，遮罩淡出 */
+.info-overlay.is-out .info-veil {
+  animation: info-veil-out 0.28s var(--ease-std) both;
+}
+
+.info-overlay.is-out .info-modal {
+  animation: info-modal-out 0.28s var(--ease-std) both;
+}
+
+@keyframes info-veil-out {
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes info-modal-out {
+  to {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+}
+
+/* 壁纸库：宽 min(1100px, 92vw)，高 84vh；网格是唯一的滚动容器（悬浮滚动条挂在弹窗上） */
+.info-modal.wps-panel {
+  height: 84vh;
+}
+
+.wps-hint {
+  flex: none;
+  padding: 0 30px 10px;
+  font-size: 12px;
+  color: var(--fg-3s);
+}
+
+.wps-hint.is-note {
+  color: var(--fg-2);
+}
+
+.wps-hint.is-error {
+  color: rgba(255, 120, 120, 0.9);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .info-overlay.is-out .info-veil,
+  .info-overlay.is-out .info-modal {
+    animation-duration: 0.01s;
+  }
+}

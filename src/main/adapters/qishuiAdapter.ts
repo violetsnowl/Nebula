@@ -52,8 +52,12 @@ const QISHUI_QUALITY_TIERS: Array<{ level: string; label: string }> = [
   { level: 'standard', label: '标准 128k' },
 ];
 
-/** 汽水封面 URL 补全：urls[0] 常为占位 base（如 .../img/），需拼接 uri + 尺寸后缀。 */
-function qishuiCoverUrl(cover: any, suffix = ''): string {
+/**
+ * 汽水封面 URL 补全：urls[0] 常为占位 base（如 .../img/），需拼接 uri + 尺寸后缀。
+ * 图床不认不带后缀的地址（实测一律 400 JSON），所以默认补 500 像素；`~tplv-obj.image` 是原图（#183）。
+ */
+export const QISHUI_TRACK_COVER = '~c5_500x500.jpg';
+export function qishuiCoverUrl(cover: any, suffix = QISHUI_TRACK_COVER): string {
   if (!cover) return '';
   if (typeof cover === 'string') {
     return /^https?:\/\//i.test(cover) ? (suffix && !cover.includes('~') ? cover + suffix : cover) : '';
@@ -435,7 +439,7 @@ export class QishuiAdapter implements PlatformAdapter {
         artist: item.author || item.artist || '',
         artists: item.artists?.map((a: any) => a.name || '') || [],
         album: item.album?.name || '',
-        cover: item.cover?.url_list?.[0] || '',
+        cover: qishuiCoverUrl(item.cover),
         duration: Number(item.duration || 0),
         platform: 'qishui',
         sourceId: id,

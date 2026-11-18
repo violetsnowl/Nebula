@@ -180,6 +180,26 @@ export interface DesktopCommentResult {
 
 type IpcResult<T> = Promise<{ ok: true; data: T } | { ok: false; error: string }>;
 
+/** 主进程要求显示的内嵌页面弹窗。 */
+export interface DesktopSheetOpen {
+  id: number;
+  platform: string;
+  title: string;
+  /** 页头一句话说明；缺省按平台取登录说明。 */
+  hint?: string;
+  /** 页面画出来之前的占位文字。 */
+  placeholder?: string;
+}
+
+/** 弹窗正文区位置（CSS 像素 = DIP，相对窗口内容区左上角）。 */
+export interface DesktopSheetBounds {
+  id: number;
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
 export interface DesktopApi {
   importPlaylist: (url: string) => IpcResult<DesktopPlaylistResult>;
   resolveSong: (track: DesktopTrack, quality?: string, options?: { requestId?: string; forceRefresh?: boolean }) => IpcResult<DesktopResolveResult | null>;
@@ -211,16 +231,17 @@ export interface DesktopApi {
   spotifyLoginStatus: () => IpcResult<boolean>;
   qqLoginWindow: () => IpcResult<{ ok: boolean; message?: string; error?: string }>;
   kugouLoginWindow: () => IpcResult<{ ok: boolean; message?: string; error?: string }>;
-  qishuiLoginWindow: () => IpcResult<{ ok: boolean; message?: string; error?: string }>;
   kuwoLoginWindow: () => IpcResult<{ ok: boolean; message?: string; error?: string }>;
   openLocalDirectory: () => IpcResult<{ tracks: DesktopTrack[]; canceled?: boolean }>;
   openExternal: (url: string) => IpcResult<boolean>;
   wallpaperList: () => IpcResult<DesktopWallpaperItem[]>;
   wallpaperInfo: () => IpcResult<{ weInstalled: boolean; weLaunchUrl: string }>;
   wallpaperSet: (id: string) => IpcResult<DesktopWallpaperSetResult>;
-  wallpaperOpen: () => IpcResult<boolean>;
-  wallpaperApplied: (data: DesktopWallpaperSetResult) => void;
-  onWallpaperApplied: (cb: (data: DesktopWallpaperSetResult) => void) => () => void;
+  /** 内嵌页面弹窗（登录页 / 验证页）：主进程请求渲染进程画外壳，渲染进程回报正文区位置、用户关闭。 */
+  onSheetOpen: (cb: (sheet: DesktopSheetOpen) => void) => () => void;
+  onSheetClosed: (cb: (sheet: { id: number }) => void) => () => void;
+  sheetBounds: (payload: DesktopSheetBounds) => void;
+  sheetClose: (id: number) => void;
   setCookie: (platform: string, cookie: string, token?: string, nickname?: string) => IpcResult<boolean>;
   getCookie: (platform: string) => IpcResult<unknown>;
   clearCookie: (platform: string) => IpcResult<boolean>;

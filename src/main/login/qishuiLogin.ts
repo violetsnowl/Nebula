@@ -38,8 +38,18 @@ function buildCookieString(obj: Record<string, string>): string {
   return Object.entries(obj).map(([k, v]) => `${k}=${v}`).join('; ');
 }
 
+/** 内嵌弹窗句柄（见 electron/embeddedSheet.cjs）。 */
+export interface SheetHandle {
+  /** 弹窗关闭原因：done = 调用方自己收起；user / superseded / window-closed / reset / unavailable = 被动关闭。 */
+  closed: Promise<string>;
+  /** 页面已挂到弹窗里（或弹窗已结束）。 */
+  shown: Promise<void>;
+  close: (reason?: string) => void;
+}
+
 export class QishuiLogin {
-  private window: any = null;
+  /** 签名引擎页面：一个从不主动挂载的 WebContentsView；二次验证（2046）时才经 present 交给主窗口的内嵌弹窗显示。 */
+  private view: any = null;
   private authSession: any = null;
   private msToken = '';
   private browserInfo: any = null;
@@ -53,7 +63,12 @@ export class QishuiLogin {
 
   constructor(
     private cookies: CookieStore,
-    private electronModules: { BrowserWindow: any; session: any },
+    private electronModules: {
+      WebContentsView: any;
+      session: any;
+      /** 把验证页（签名引擎的视图）显示在主窗口的内嵌弹窗里；返回的句柄在弹窗关闭时 resolve（'done' = 我们自己收起）。 */
+      present: (view: any, title: string) => SheetHandle;
+    },
   ) {}
 
   /** 启动本地 HTTP server 托管签名引擎 HTML（必须用 HTTP 而非 file://，否则 XHR cookie 不写入 session） */
@@ -140,12 +155,12 @@ export class QishuiLogin {
     });
   }
 
-  /** 初始化签名引擎（隐藏 BrowserWindow + BDMS SDK） */
+  /** 初始化签名引擎（未挂载的 WebContentsView + BDMS SDK） */
   private async initSignEngine(): Promise<void> {
     if (this.initialized) return;
 
     await this.startAssetServer();
-    const { BrowserWindow, session } = this.electronModules;
+    const { WebContentsView, session } = this.electronModules;
     const ses = session.fromPartition(AUTH_PARTITION);
     this.authSession = ses;
 
@@ -209,11 +224,8 @@ export class QishuiLogin {
       }
     });
 
-    // 创建隐藏窗口
-    this.window = new BrowserWindow({
-      show: false,
-      width: 980,
-      height: 760,
+    // 创建签名引擎视图：不挂到任何窗口（页面照常加载、执行脚本），二次验证时才经 present 显示
+    this.view = new WebContentsView({
       webPreferences: {
         partition: AUTH_PARTITION,
         contextIsolation: true,
@@ -223,22 +235,12 @@ export class QishuiLogin {
         backgroundThrottling: false,
       },
     });
-    this.window.setMenuBarVisibility(false);
-    this.window.webContents.setUserAgent(UA);
-
-    // 关闭时隐藏而非销毁
-    this.window.on('close', (event: any) => {
-      event.preventDefault();
-      this.window?.webContents.executeJavaScript(
-        'window.__qishuiCancelSecondVerify && window.__qishuiCancelSecondVerify()',
-      ).catch(() => {});
-      this.window?.hide();
-    });
+    this.view.webContents.setUserAgent(UA);
 
     // 加载签名引擎 HTML（从本地 HTTP server，确保 XHR cookie 写入 session）
     // 1. 加载 seed 页面设置 msToken
-    await this.window.loadURL(this.assetBase + 'security_seed.html');
-    let storedToken = await this.window.webContents.executeJavaScript(
+    await this.view.webContents.loadURL(this.assetBase + 'security_seed.html');
+    let storedToken = await this.view.webContents.executeJavaScript(
       `localStorage.getItem('xmsty') || localStorage.getItem('xmst') || ''`,
       true,
     );
@@ -246,18 +248,18 @@ export class QishuiLogin {
       storedToken = crypto.randomBytes(88).toString('base64url') + '==';
     }
     this.msToken = String(storedToken);
-    await this.window.webContents.executeJavaScript(
+    await this.view.webContents.executeJavaScript(
       `localStorage.setItem('xmst', ${JSON.stringify(this.msToken)});
        localStorage.setItem('xmsty', ${JSON.stringify(this.msToken)}); true`,
       true,
     );
 
     // 2. 加载 host 页面（BDMS SDK）
-    await this.window.loadURL(this.assetBase + 'security_host.html');
+    await this.view.webContents.loadURL(this.assetBase + 'security_host.html');
     await this.waitForBdms();
 
     // 3. 获取浏览器指纹
-    this.browserInfo = await this.window.webContents.executeJavaScript('window.__qishuiBrowserInfo()', true);
+    this.browserInfo = await this.view.webContents.executeJavaScript('window.__qishuiBrowserInfo()', true);
     this.initialized = true;
   }
 
@@ -265,7 +267,7 @@ export class QishuiLogin {
   private async waitForBdms(timeoutMs = 20000): Promise<void> {
     const deadline = Date.now() + timeoutMs;
     while (Date.now() < deadline) {
-      const status = await this.window!.webContents.executeJavaScript(`({
+      const status = await this.view!.webContents.executeJavaScript(`({
         glue: window._sdkGlueVersionMap && window._sdkGlueVersionMap.sdkGlueVersion,
         bdms: window._sdkGlueVersionMap && window._sdkGlueVersionMap.bdmsVersion,
         loaded: Boolean(window.bdms),
@@ -303,7 +305,7 @@ export class QishuiLogin {
       body,
       timeout: 30000,
     };
-    const response = await this.window!.webContents.executeJavaScript(
+    const response = await this.view!.webContents.executeJavaScript(
       `window.__qishuiRequest(${JSON.stringify(payload)})`,
       true,
     );
@@ -428,7 +430,7 @@ export class QishuiLogin {
         decision.verify_portrait_id = serverFlowId;
         // 同步 identity，让后续请求（pack_verify_ways_data 等）使用同一 portrait
         this.identity = { ...identity, verifyPortraitId: serverFlowId };
-        await this.window
+        await this.view
           ?.webContents.executeJavaScript(
             `localStorage.setItem('nebula_qishui_identity', ${JSON.stringify(JSON.stringify(this.identity))}); true`,
             true,
@@ -439,15 +441,24 @@ export class QishuiLogin {
       }
       console.log("[QishuiLogin] 2046 decision 关键字段:");
       
-      // 显示二次验证窗口
-      this.window?.setTitle('汽水音乐安全验证');
-      this.window?.setSize(980, 760);
-      this.window?.center();
-      this.window?.show();
-      this.window?.focus();
-      
+      // 在主窗口的内嵌弹窗里显示验证页：弹窗被关掉（用户关、被别的页面顶替、主窗口没了）就取消这次验证
+      const sheet = this.electronModules.present(this.view, '汽水音乐安全验证');
+      let dismissed = false;
+      void sheet.closed.then((reason) => {
+        if (reason === 'done') return;
+        dismissed = true;
+        this.view?.webContents
+          ?.executeJavaScript('window.__qishuiCancelSecondVerify && window.__qishuiCancelSecondVerify()')
+          .catch(() => {});
+      });
+      // 等页面真正挂到弹窗里再开始验证（和原来「先显示窗口再验证」的顺序一致）；渲染进程没响应时 5 秒后照常开始
+      let waitTimer: ReturnType<typeof setTimeout> | undefined;
+      await Promise.race([sheet.shown, new Promise<void>((r) => { waitTimer = setTimeout(r, 5000); })]);
+      clearTimeout(waitTimer);
+
       try {
-        const verified = await this.window?.webContents.executeJavaScript(
+        if (dismissed) throw new Error('二次验证未完成');
+        const verified = await this.view?.webContents.executeJavaScript(
           `window.__qishuiSecondVerify(${JSON.stringify(decision)}, ${JSON.stringify({ generalParams: {
             device_id: identity.deviceId,
             install_id: identity.installId,
@@ -467,17 +478,14 @@ export class QishuiLogin {
         console.log("[QishuiLogin] security trace(截断):");
         throw err;
       } finally {
-        this.window?.hide();
+        // 摘下验证页（页面本身留着，下次 2046 还要用）
+        sheet.close('done');
       }
-      try {
-        // 重新发送请求
-        envelope = await this.request('POST', '/passport/web/check_qrconnect/', { isResend: 'true' }, body);
-        data = envelope.data || {};
-        if (Number(data.error_code) === 2046) {
-          throw new Error('二次验证已通过，但服务端仍返回 2046；请重新刷新二维码');
-        }
-      } finally {
-        this.window?.hide();
+      // 重新发送请求
+      envelope = await this.request('POST', '/passport/web/check_qrconnect/', { isResend: 'true' }, body);
+      data = envelope.data || {};
+      if (Number(data.error_code) === 2046) {
+        throw new Error('二次验证已通过，但服务端仍返回 2046；请重新刷新二维码');
       }
     }
 
@@ -706,10 +714,10 @@ export class QishuiLogin {
         storages: ['cookies', 'localstorage', 'indexdb', 'cachestorage', 'serviceworkers'],
       });
     }
-    if (this.window && !this.window.isDestroyed()) {
-      this.window.destroy();
+    if (this.view && !this.view.webContents.isDestroyed()) {
+      this.view.webContents.close();
     }
-    this.window = null;
+    this.view = null;
     this.browserInfo = null;
     this.msToken = '';
     this.initialized = false;
@@ -730,8 +738,8 @@ export class QishuiLogin {
     if (this.identity) return this.identity;
     // 跨重启持久化（persist partition 的 localStorage）：身份必须稳定，否则服务端视为新设备并触发风控
     try {
-      if (this.window && !this.window.isDestroyed()) {
-        const stored = await this.window.webContents.executeJavaScript(
+      if (this.view && !this.view.webContents.isDestroyed()) {
+        const stored = await this.view.webContents.executeJavaScript(
           `localStorage.getItem('nebula_qishui_identity') || ''`,
           true,
         );
@@ -763,8 +771,8 @@ export class QishuiLogin {
       verifyPortraitId: crypto.randomUUID() + '.login',
     };
     try {
-      if (this.window && !this.window.isDestroyed()) {
-        await this.window.webContents.executeJavaScript(
+      if (this.view && !this.view.webContents.isDestroyed()) {
+        await this.view.webContents.executeJavaScript(
           `localStorage.setItem('nebula_qishui_identity', ${JSON.stringify(JSON.stringify(this.identity))}); true`,
           true,
         );

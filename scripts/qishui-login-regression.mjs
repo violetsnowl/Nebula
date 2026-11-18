@@ -1,7 +1,6 @@
-// 汽水扫码登录：二次验证（2046）期间轮询不得重入（#181，验证页一直闪的老问题）。全部离线。
+// 汽水扫码登录：二维码显示在账号面板里（kind 'qr'），二次验证（2046）期间轮询不得重入（#181，验证页一直闪的老问题），
+// 验证页经内嵌弹窗显示、弹窗被关就取消验证。全部离线。
 import assert from 'node:assert/strict';
-import fs from 'node:fs';
-import vm from 'node:vm';
 import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url), api = require('../dist-main/index.cjs');
 console.log = console.warn = () => {};
@@ -9,59 +8,101 @@ const print = (s) => process.stdout.write(s + '\n');
 let n = 0;
 const test = async (name, fn) => { await fn(); n++; print('通过 ' + name); };
 
-/** 从 electron/main.cjs 里截出 createQishuiLoginWindow，在沙箱里用假窗口和假定时器运行。 */
-function loadWindowFn() {
-  const source = fs.readFileSync('electron/main.cjs', 'utf8');
-  const start = source.indexOf('function createQishuiLoginWindow(');
-  const end = source.indexOf('\nfunction ', start + 10);
-  assert.ok(start > 0 && end > start, '找不到 createQishuiLoginWindow');
-  let tick = null;
-  class Win {
-    listeners = {}; webContents = { on() {}, executeJavaScript: async () => {} };
-    setTitle() {} loadURL() {} on(k, fn) { this.listeners[k] = fn; } isDestroyed() { return false; }
-    close() { this.listeners.closed?.(); }
-  }
-  const fn = vm.runInNewContext('(' + source.slice(start, end).trim() + ')', {
-    BrowserWindow: Win, require, console: { log() {}, warn() {} }, encodeURIComponent,
-    setInterval: (cb) => { tick = cb; return 1; }, clearInterval: () => {}, String,
-  });
-  return { fn, tick: () => tick };
+/** 假弹窗宿主句柄：closed 在 close(reason) 时 resolve；shown 由测试决定何时 resolve。 */
+function fakePresent({ shownImmediately = true } = {}) {
+  const presented = [];
+  let current = null;
+  const present = (view, title) => {
+    let resolveClosed, resolveShown;
+    const closed = new Promise((r) => { resolveClosed = r; });
+    const shown = shownImmediately ? Promise.resolve() : new Promise((r) => { resolveShown = r; });
+    current = { closed, shown, close: (reason = 'done') => { resolveClosed(reason); resolveShown?.(); } };
+    presented.push({ view, title });
+    return current;
+  };
+  return { present, presented, sheet: () => current };
 }
 
-await test('二次验证还没完成时，后面几轮轮询都跳过，不再发查询', async () => {
-  const { fn, tick } = loadWindowFn();
-  let calls = 0, release;
-  const pending = new Promise((r) => { release = r; });
-  const login = {
-    getQrCode: async () => ({ token: 't', scanUrl: 'https://example.invalid/qr' }),
-    checkQrConnect: async () => { calls++; await pending; return { _loginOk: true }; },
+/** 不碰网络和 Electron 的 QishuiLogin：签名引擎 / 请求 / 视图都用假的。 */
+function makeLogin(present) {
+  const login = new api.QishuiLogin({ get: () => null, set() {} }, { WebContentsView: class {}, session: {}, present });
+  login.initSignEngine = async () => {};
+  login.ensureIdentity = async () => ({ deviceId: '1', installId: '2', computerName: 'pc', verifyPortraitId: 'p' });
+  const scripts = [];
+  const hooks = { verify: async () => ({ status: true }) };
+  login.view = {
+    webContents: {
+      executeJavaScript: async (js) => {
+        scripts.push(js);
+        if (js.startsWith('window.__qishuiSecondVerify')) return hooks.verify();
+        return undefined;
+      },
+    },
   };
-  const result = fn(null, login);
+  return { login, scripts, hooks };
+}
+
+await test('适配器是扫码登录（kind qr）：createQr 返回二维码令牌和扫码地址', async () => {
+  const adapter = api.createQishuiLoginAdapter({
+    getQrCode: async () => ({ qrcode: 'u', token: 'tok', scanUrl: 'https://example.invalid/scan?token=tok' }),
+    checkQrConnect: async () => ({ status: 'new', error_code: 0 }),
+    getAccount: async () => null,
+  });
+  assert.equal(adapter.platform, 'qishui');
+  assert.equal(adapter.kind, 'qr');
+  assert.deepEqual(await adapter.createQr(), { unikey: 'tok', payload: 'https://example.invalid/scan?token=tok' });
+});
+
+await test('轮询结果映射：成功 / 已扫码 / 等待扫码；出错不抛异常，只回一句话', async () => {
+  const replies = [{ _loginOk: true }, { status: 'scanned' }, { status: 'new' }, new Error('网络断了')];
+  const adapter = api.createQishuiLoginAdapter({
+    getQrCode: async () => ({ qrcode: '', token: 't', scanUrl: '' }),
+    checkQrConnect: async () => { const r = replies.shift(); if (r instanceof Error) throw r; return r; },
+    getAccount: async () => null,
+  });
+  assert.deepEqual(await adapter.pollLogin('t'), { ok: true, message: '汽水音乐登录成功' });
+  assert.deepEqual(await adapter.pollLogin('t'), { ok: false, message: '已扫码，请在手机上确认' });
+  assert.equal((await adapter.pollLogin('t')).ok, false);
+  const failed = await adapter.pollLogin('t');
+  assert.equal(failed.ok, false);
+  assert.match(failed.message, /网络断了/);
+});
+
+await test('二次验证还没完成时，一连串轮询都共用同一次查询，不再重复发起、不再重复弹验证页', async () => {
+  const { present, presented } = fakePresent();
+  const { login, hooks } = makeLogin(present);
+  let requests = 0, release;
+  const gate = new Promise((r) => { release = r; });
+  login.request = async () => {
+    requests++;
+    return requests === 1 ? { data: { error_code: 2046, std_verify_flow_id: 'f' } } : { data: { error_code: 0, status: 'new' } };
+  };
+  hooks.verify = async () => { await gate; return { status: true }; };
+  const adapter = api.createQishuiLoginAdapter(login);
+  const polls = [adapter.pollLogin('t')];
   await new Promise((r) => setImmediate(r));
-  const first = tick()();
-  await tick()(); await tick()(); await tick()();
-  assert.equal(calls, 1);
+  for (let i = 0; i < 4; i++) polls.push(adapter.pollLogin('t'));
   release();
-  await first;
-  assert.equal((await result).ok, true);
+  const results = await Promise.all(polls);
+  assert.equal(requests, 2, '一次检查 + 验证后一次重发，仅此而已');
+  assert.equal(presented.length, 1, '验证页只弹一次');
+  assert.ok(results.every((r) => r.ok === false));
 });
 
 await test('上一轮结束后才发下一轮', async () => {
-  const { fn, tick } = loadWindowFn();
+  const { present } = fakePresent();
+  const { login } = makeLogin(present);
   let calls = 0;
-  const login = {
-    getQrCode: async () => ({ token: 't', scanUrl: 'https://example.invalid/qr' }),
-    checkQrConnect: async () => { calls++; return calls < 3 ? { status: 'new' } : { _loginOk: true }; },
-  };
-  const result = fn(null, login);
-  await new Promise((r) => setImmediate(r));
-  await tick()(); await tick()(); await tick()();
+  login.checkQrConnectOnce = async () => { calls++; return calls < 3 ? { status: 'new', error_code: 0 } : { status: '3', error_code: 0, _loginOk: true }; };
+  const adapter = api.createQishuiLoginAdapter(login);
+  assert.equal((await adapter.pollLogin('t')).ok, false);
+  assert.equal((await adapter.pollLogin('t')).ok, false);
+  assert.equal((await adapter.pollLogin('t')).ok, true);
   assert.equal(calls, 3);
-  assert.equal((await result).ok, true);
 });
 
 await test('QishuiLogin.checkQrConnect 并发调用共用同一次查询', async () => {
-  const login = new api.QishuiLogin({ get: () => null }, { BrowserWindow: class {}, session: {} });
+  const login = new api.QishuiLogin({ get: () => null }, { WebContentsView: class {}, session: {}, present: () => null });
   let runs = 0, release;
   const gate = new Promise((r) => { release = r; });
   login.checkQrConnectOnce = async () => { runs++; await gate; return { status: 'new', error_code: 0 }; };
@@ -72,6 +113,50 @@ await test('QishuiLogin.checkQrConnect 并发调用共用同一次查询', async
   assert.equal(ra, rb); assert.equal(rb, rc);
   await login.checkQrConnect('t');
   assert.equal(runs, 2);
+});
+
+await test('2046：验证页经内嵌弹窗显示，验证通过后收起弹窗（原因 done），页面本身不销毁', async () => {
+  const { present, presented, sheet } = fakePresent();
+  const { login, scripts } = makeLogin(present);
+  let requests = 0;
+  login.request = async () => (++requests === 1 ? { data: { error_code: 2046, std_verify_flow_id: 'f' } } : { data: { error_code: 0, status: 'new' } });
+  const view = login.view;
+  const data = await login.checkQrConnect('t');
+  assert.equal(data.status, 'new');
+  assert.equal(presented.length, 1);
+  assert.equal(presented[0].view, view);
+  assert.equal(presented[0].title, '汽水音乐安全验证');
+  assert.equal(await sheet().closed, 'done');
+  assert.ok(scripts.some((s) => s.startsWith('window.__qishuiSecondVerify')));
+  assert.ok(!scripts.some((s) => s.includes('__qishuiCancelSecondVerify')));
+  assert.equal(login.view, view);
+});
+
+await test('2046：验证页弹出前用户就关了弹窗 → 取消验证、不开始验证、本轮失败', async () => {
+  const { present, sheet } = fakePresent({ shownImmediately: false });
+  const { login, scripts } = makeLogin(present);
+  login.request = async () => ({ data: { error_code: 2046, std_verify_flow_id: 'f' } });
+  const pending = login.checkQrConnect('t');
+  await new Promise((r) => setImmediate(r));
+  sheet().close('user');
+  await assert.rejects(pending, /二次验证未完成/);
+  assert.ok(scripts.some((s) => s.includes('__qishuiCancelSecondVerify')));
+  assert.ok(!scripts.some((s) => s.startsWith('window.__qishuiSecondVerify')));
+});
+
+await test('2046：验证进行中用户关掉弹窗 → 跑取消脚本，验证页收尾，本轮失败', async () => {
+  const { present, sheet } = fakePresent();
+  const { login, scripts, hooks } = makeLogin(present);
+  login.request = async () => ({ data: { error_code: 2046, std_verify_flow_id: 'f' } });
+  let cancelVerify;
+  hooks.verify = () => new Promise((r) => { cancelVerify = () => r({ status: false, message: '已取消' }); });
+  const pending = login.checkQrConnect('t');
+  await new Promise((r) => setTimeout(r, 20));
+  sheet().close('user');
+  await new Promise((r) => setImmediate(r));
+  assert.ok(scripts.some((s) => s.includes('__qishuiCancelSecondVerify')));
+  cancelVerify();
+  await assert.rejects(pending, /已取消/);
 });
 
 print(`汽水扫码登录回归 ${n}/${n}`);

@@ -12,7 +12,7 @@ import { currentLyricIndex, type LyricLineUI } from '../lib/lyrics';
 import { SideDock } from './dock/SideDock';
 import { hslToRgb, rgbToHsl, sampleCover } from '../lib/coverColors';
 import weLogo from '../../docs/logo/wallpaper-engine.webp';
-import { DOCK_PLATFORM_ORDER, platformMeta } from './platforms';
+import { DOCK_PLATFORM_ORDER, LOGIN_HOW, platformMeta } from './platforms';
 import { IconCheck, IconChevronLeft, IconChevronRight, IconExternal, IconImage, IconRefresh } from './icons';
 import { setListenSettings as setListenSpaceSettings, useListenSettings as useListenSpaceSettings } from '../lib/listen/settings';
 import { ListenPreview } from './listen/ListenPreview';
@@ -441,9 +441,13 @@ function SpotifyLogin({ onSuccess }: { onSuccess: () => void }) {
   const [status, setStatus] = useState('');
   const start = useCallback(async () => {
     if (!window.nebulaAPI) return;
-    setStatus('正在打开 Spotify 授权窗口…');
+    setStatus('已在浏览器打开 Spotify 授权页，完成后会自动回到这里');
     const r = await window.nebulaAPI.spotifyLoginStart();
-    if (!r.ok || !r.data) {
+    if (!r.ok) {
+      setStatus(r.error || '授权未完成，请重试');
+      return;
+    }
+    if (!r.data) {
       setStatus('授权未完成，请重试');
       return;
     }
@@ -618,35 +622,87 @@ function BodianLogin({ onSuccess }: { onSuccess: () => void }) {
   );
 }
 
-/** 汽水音乐：签名引擎 + 扫码登录。 */
+/** 汽水音乐：手机端扫码登录（用汽水音乐 App 扫码）。二次验证的验证页会在主窗口里弹出。 */
 function QishuiLogin({ onSuccess }: { onSuccess: () => void }) {
-  const [busy, setBusy] = useState(false);
+  const [qr, setQr] = useState<string | null>(null);
   const [status, setStatus] = useState('');
+  const unikeyRef = useRef<string | null>(null);
+  const pollRef = useRef<number | null>(null);
+  const failRef = useRef(0);
+  const inflightRef = useRef(false);
 
-  const openWindow = useCallback(async () => {
-    if (!window.nebulaAPI) return;
-    setBusy(true);
-    setStatus('正在初始化签名引擎，请稍候…');
-    try {
-      const r = await window.nebulaAPI.qishuiLoginWindow();
-      const data = r.ok ? r.data : null;
-      if (data?.ok) {
-        setStatus(data.message ?? '登录成功');
-        onSuccess();
-      } else {
-        setStatus(data?.error ?? '登录窗口已关闭');
-      }
-    } finally {
-      setBusy(false);
+  const stopPoll = useCallback(() => {
+    if (pollRef.current !== null) {
+      window.clearInterval(pollRef.current);
+      pollRef.current = null;
     }
-  }, [onSuccess]);
+  }, []);
+
+  const start = useCallback(async () => {
+    if (!window.nebulaAPI) return;
+    stopPoll();
+    setQr(null);
+    setStatus('正在生成二维码…');
+    const res = await window.nebulaAPI.loginQrFor('qishui');
+    if (!res.ok) {
+      setStatus(`获取二维码失败：${res.error}`);
+      return;
+    }
+    unikeyRef.current = res.data.unikey;
+    if (res.data.imageDataUrl) {
+      setQr(res.data.imageDataUrl);
+    } else {
+      try {
+        setQr(await QRCode.toDataURL(res.data.payload, { width: 296, margin: 1 }));
+      } catch {
+        setStatus('二维码生成失败，请刷新重试');
+        return;
+      }
+    }
+    setStatus('用汽水音乐 App 扫码登录');
+    failRef.current = 0;
+    inflightRef.current = false;
+    pollRef.current = window.setInterval(async () => {
+      // 二次验证要等用户在验证页里操作，上一次查询还没回来就不再发下一次
+      if (!unikeyRef.current || inflightRef.current) return;
+      inflightRef.current = true;
+      try {
+        const r = await window.nebulaAPI!.loginPollFor('qishui', unikeyRef.current);
+        if (!r.ok) {
+          failRef.current++;
+          if (failRef.current >= 3) {
+            setStatus(`轮询失败：${r.error}，请刷新二维码`);
+            stopPoll();
+          } else {
+            setStatus(`连接波动，自动重试（${failRef.current}/3）`);
+          }
+          return;
+        }
+        failRef.current = 0;
+        if (r.data.ok) {
+          stopPoll();
+          setStatus(r.data.message);
+          onSuccess();
+        } else {
+          setStatus(r.data.message);
+        }
+      } catch {
+        /* ignore */
+      } finally {
+        inflightRef.current = false;
+      }
+    }, 2000);
+  }, [onSuccess, stopPoll]);
+
+  useEffect(() => stopPoll, [stopPoll]);
 
   return (
     <div className="rp-flow">
-      <button type="button" className="btn primary full" disabled={busy} onClick={openWindow}>
-        {busy ? '正在初始化…' : '打开汽水登录页'}
-      </button>
+      {qr ? <img className="rp-qr" src={qr} alt="汽水登录二维码" /> : <div className="rp-qr is-empty" />}
       <div className="rp-flow-status">{status || '未登录汽水音乐'}</div>
+      <button type="button" className="btn primary full" onClick={start}>
+        {qr ? '刷新二维码' : '开始扫码登录'}
+      </button>
     </div>
   );
 }
@@ -716,17 +772,6 @@ function PlatformLogin({
     </div>
   );
 }
-
-/** 各平台详情页顶部的一句话说明。 */
-const LOGIN_HOW: Record<string, string> = {
-  netease: '用网易云音乐 App 扫码登录',
-  qq: '在官方登录页用手机 QQ 扫码，登录后自动回到这里',
-  kugou: '用酷狗音乐 App 扫码登录',
-  qishui: '在官方登录页扫码，登录后自动回到这里',
-  spotify: '在浏览器里授权，授权完成后自动回到这里',
-  kuwo: '在酷我官网登录：账号密码、短信或 QQ / 微信',
-  bodian: '用波点音乐 App 扫码登录',
-};
 
 /** 账号详情：已登录 = 账号信息 + 刷新 / 退出；未登录 = 该平台既有的登录流程。 */
 function AccountDetail({

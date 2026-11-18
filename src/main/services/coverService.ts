@@ -12,7 +12,8 @@ export function coverCandidates(track:Pick<Track,'platform'|'cover'>):string[] {
     if(track.platform==='netease'){u.searchParams.delete('param');return [...new Set([u.href,raw])];}
     if(track.platform==='qq')return [...new Set([u.href.replace(/T002R\d+x\d+M000/,'T002M000'),u.href.replace(/T002R\d+x\d+M000/,'T002R800x800M000'),raw])];
     if(track.platform==='kugou')return [...new Set([u.href.replace(/\{size\}|%7Bsize%7D/gi,'0').replace(/\/stdmusic\/\d+\//,'/stdmusic/0/'),u.href.replace(/\{size\}|%7Bsize%7D/gi,'1000'),raw])];
-    if(track.platform==='qishui')return [...new Set([u.href.replace(/~[^?]+/,''),raw])];
+    // 汽水图床不认不带后缀的地址（400）；原图用 ~tplv-obj.image（#183 实测）。
+    if(track.platform==='qishui'){u.pathname=u.pathname.replace(/~[^/]*$/,'')+'~tplv-obj.image';return [...new Set([u.href,raw])];}
     return [u.href];
   }catch{return [];}
 }

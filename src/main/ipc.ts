@@ -27,7 +27,6 @@ export interface IpcDeps {
   spotifyOAuth?: { start: () => Promise<boolean>; status: () => boolean };
   qqLoginWindow?: () => Promise<{ ok: boolean; message?: string; error?: string }>;
   kugouLoginWindow?: () => Promise<{ ok: boolean; message?: string; error?: string }>;
-  qishuiLoginWindow?: () => Promise<{ ok: boolean; message?: string; error?: string }>;
   kuwoLoginWindow?: () => Promise<{ ok: boolean; message?: string; error?: string }>;
   /** Optional hook invoked after a platform cookie is cleared (e.g. purge Electron partition sessions). */
   onCookieClear?: (platform: Platform) => Promise<void> | void;
@@ -240,10 +239,6 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
   safe('nebula:login:kugou:window', async () => {
     if (!deps.kugouLoginWindow) throw new Error('酷狗登录窗口不可用');
     return deps.kugouLoginWindow();
-  });
-  safe('nebula:login:qishui:window', async () => {
-    if (!deps.qishuiLoginWindow) throw new Error('汽水登录窗口不可用');
-    return deps.qishuiLoginWindow();
   });
   safe('nebula:login:kuwo:window', async () => {
     if (!deps.kuwoLoginWindow) throw new Error('酷我登录窗口不可用');

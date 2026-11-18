@@ -1,9 +1,10 @@
-const { app, BrowserWindow, session, ipcMain, shell, dialog, protocol } = require('electron');
+const { app, BrowserWindow, WebContentsView, session, ipcMain, shell, dialog, protocol } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const http = require('http');
 const { pathToFileURL } = require('url');
+const { createSheetHost } = require('./embeddedSheet.cjs');
 
 // 后端统一出口（esbuild 打包产物，见 package.json build:main）
 const {
@@ -58,14 +59,23 @@ const UA =
 const DEV_URL = process.env.VITE_DEV_SERVER_URL;
 /** 主窗口引用（供子窗口回传背景设置）。 */
 let mainWindow = null;
+/** 内嵌页面宿主：第三方登录页 / 验证页都显示在主窗口自己的弹窗里，不另开带系统标题栏的窗口。 */
+const sheetHost = createSheetHost({ WebContentsView, ipcMain, getMainWindow: () => mainWindow });
 
-/** Spotify OAuth（PKCE）：本地回调端口收 code → 换 token 存 CookieStore。 */
+/** 用户在系统浏览器里完成授权的最长等待时间。 */
+const SPOTIFY_AUTH_TIMEOUT_MS = 10 * 60 * 1000;
+
+/**
+ * Spotify OAuth（PKCE）：本地回调端口收 code → 换 token 存 CookieStore。
+ * 授权页在用户的默认系统浏览器里打开（Google 等第三方登录拒绝在 Electron 窗口 / 视图里登录，
+ * 而且系统浏览器通常已经登录过 Spotify）；回调页在浏览器里显示结果，超时 10 分钟自动放弃。
+ */
 function createSpotifyOAuth(cookies) {
   let busy = false;
   return {
     status: () => !!cookies.get('spotify')?.cookies,
     start: () =>
-      new Promise((resolve) => {
+      new Promise((resolve, reject) => {
         if (busy) return resolve(false);
         busy = true;
         const verifier = crypto.randomBytes(32).toString('base64url');
@@ -73,17 +83,20 @@ function createSpotifyOAuth(cookies) {
         // 桌面客户端 ID 只接受登记过的回调：http://127.0.0.1:5588/login
         const port = SPOTIFY_REDIRECT_PORT;
         const redirectUri = `http://127.0.0.1:${port}/login`;
-        let win = null;
-        // 收到授权码后进入换令牌阶段：此时窗口被关掉（不论是用户关还是我们关）都不能当作失败。
         let exchanging = false;
         let settled = false;
-        const finish = (ok) => {
+        let timer = null;
+        const finish = (ok, err) => {
           if (settled) return;
           settled = true;
           busy = false;
+          clearTimeout(timer);
           server.close();
-          if (win && !win.isDestroyed()) win.close();
-          resolve(ok);
+          // 浏览器的保持连接不再占着：回结果页的响应发完后（1 秒）强制收掉剩余连接
+          server.closeIdleConnections?.();
+          setTimeout(() => server.closeAllConnections?.(), 1000).unref?.();
+          if (err) reject(err);
+          else resolve(ok);
         };
         const page = (text) =>
           `<!doctype html><meta charset="utf-8"><title>Spotify 登录</title><p style="font-family:sans-serif;padding:24px">${text}</p>`;
@@ -97,13 +110,12 @@ function createSpotifyOAuth(cookies) {
           const code = url.searchParams.get('code');
           res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
           if (!code || exchanging) {
-            res.end(page(code ? '正在完成 Spotify 登录…' : 'Spotify 授权未完成，可以关闭这个窗口'));
+            res.end(page(code ? '正在完成 Spotify 登录，请稍候…' : '授权未完成，请回到 Music Nebula 重试。'));
             if (!code) finish(false);
             return;
           }
           exchanging = true;
-          // 不在页面里 window.close()：窗口一关就会先报失败，令牌换回来时界面已经停在「未完成」。
-          res.end(page('正在完成 Spotify 登录…'));
+          // 令牌换回来以后才回结果页，浏览器里看到的和应用里的结果一致。
           try {
             const tokenRes = await fetch('https://accounts.spotify.com/api/token', {
               method: 'POST',
@@ -119,13 +131,16 @@ function createSpotifyOAuth(cookies) {
             const tok = await tokenRes.json();
             if (tok.access_token) {
               cookies.set('spotify', tok.access_token, tok.refresh_token ?? '', 'Spotify');
+              res.end(page('Spotify 已授权，可以回到 Music Nebula 了。'));
               finish(true);
             } else {
               console.warn('[Spotify] 换取令牌失败：', tok.error || tokenRes.status);
+              res.end(page('授权未完成，请回到 Music Nebula 重试。'));
               finish(false);
             }
           } catch (err) {
             console.warn('[Spotify] 换取令牌请求失败：', err instanceof Error ? err.message : '');
+            res.end(page('授权未完成，请回到 Music Nebula 重试。'));
             finish(false);
           }
         });
@@ -139,16 +154,10 @@ function createSpotifyOAuth(cookies) {
             `&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}` +
             `&scope=${encodeURIComponent(SPOTIFY_SCOPES)}` +
             `&code_challenge_method=S256&code_challenge=${challenge}`;
-          win = new BrowserWindow({
-            width: 520,
-            height: 720,
-            title: 'Spotify 登录',
-            webPreferences: { contextIsolation: true, nodeIntegration: false },
-          });
-          win.loadURL(authUrl);
-          win.on('closed', () => {
-            win = null;
-            if (!exchanging) finish(false);
+          timer = setTimeout(() => finish(false, new Error('授权超时，请重试')), SPOTIFY_AUTH_TIMEOUT_MS);
+          Promise.resolve(shell.openExternal(authUrl)).catch((err) => {
+            console.warn('[Spotify] 打开系统浏览器失败：', err instanceof Error ? err.message : '');
+            finish(false);
           });
         });
       }),
@@ -171,18 +180,12 @@ function createQqLoginWindow(cookies) {
     } catch (err) {
       console.warn("[QQ登录] 清理旧登录态失败:");
     }
-    const win = new BrowserWindow({
-      width: 1000,
-      height: 800,
-      backgroundColor: '#0b0c16',
-      webPreferences: {
-        partition,
-        contextIsolation: true,
-        nodeIntegration: false,
-      },
+    const sheet = sheetHost.open({
+      platform: 'qq',
+      title: '登录 QQ 音乐',
+      partition,
+      url: 'https://y.qq.com/',
     });
-    win.setTitle('QQ 音乐登录（官方页面扫码）');
-    win.loadURL('https://y.qq.com/');
 
     let settled = false;
     const finish = (result) => {
@@ -202,14 +205,15 @@ function createQqLoginWindow(cookies) {
         if (v.ok) {
           cookies.set('qq', normalized, undefined, 'QQ 音乐');
           finish({ ok: true, message: 'QQ 音乐登录成功' });
-          if (!win.isDestroyed()) win.close();
+          sheet.close('done');
         }
       } catch {
         /* keep polling */
       }
     }, 2000);
 
-    win.on('closed', () => finish({ ok: false, error: '登录窗口已关闭' }));
+    // 成功路径已先 finish，之后的关闭事件不会再把它改成取消
+    sheet.closed.then(() => finish({ ok: false, error: '登录窗口已关闭' }));
   });
 }
 
@@ -335,18 +339,12 @@ function createKuwoLoginWindow(cookies) {
     } catch (err) {
       console.warn('[酷我登录] 清理旧登录态失败:');
     }
-    const win = new BrowserWindow({
-      width: 1000,
-      height: 800,
-      backgroundColor: '#0b0c16',
-      webPreferences: {
-        partition,
-        contextIsolation: true,
-        nodeIntegration: false,
-      },
+    const sheet = sheetHost.open({
+      platform: 'kuwo',
+      title: '登录 酷我音乐',
+      partition,
+      url: 'https://www.kuwo.cn/?login=open',
     });
-    win.setTitle('酷我音乐登录（官方页面）');
-    win.loadURL('https://www.kuwo.cn/?login=open');
 
     let settled = false;
     const finish = (result) => {
@@ -366,119 +364,14 @@ function createKuwoLoginWindow(cookies) {
         if (v.ok) {
           cookies.set('kuwo', normalized, undefined, '酷我音乐');
           finish({ ok: true, message: '酷我音乐登录成功' });
-          if (!win.isDestroyed()) win.close();
+          sheet.close('done');
         }
       } catch {
         /* keep polling */
       }
     }, 2000);
 
-    win.on('closed', () => finish({ ok: false, error: '登录窗口已关闭' }));
-  });
-}
-
-function createQishuiLoginWindow(cookies, qishuiLogin) {
-  return new Promise(async (resolve) => {
-    try {
-      // 使用签名引擎生成二维码
-      const qrResult = await qishuiLogin.getQrCode();
-      const token = qrResult.token;
-      const scanUrl = qrResult.scanUrl;
-
-      // 创建显示二维码的窗口
-      const win = new BrowserWindow({
-        width: 500,
-        height: 600,
-        backgroundColor: '#ffffff',
-        webPreferences: {
-          contextIsolation: true,
-          nodeIntegration: false,
-        },
-      });
-      win.setTitle('汽水音乐登录（扫码）');
-
-      // 生成二维码 HTML
-      const qrHtml = `
-<!doctype html>
-<html>
-<head>
-  <meta charset="utf-8">
-  <style>
-    body { display: flex; flex-direction: column; align-items: center; justify-content: center; height: 100vh; margin: 0; font-family: sans-serif; background: #fff; }
-    img { width: 300px; height: 300px; }
-    p { margin-top: 20px; color: #666; font-size: 14px; }
-    .status { color: #333; font-size: 16px; margin-top: 10px; }
-  </style>
-</head>
-<body>
-  <img id="qr" src="" alt="二维码">
-  <p>请使用汽水音乐 App 扫码登录</p>
-  <div class="status" id="status">等待扫码...</div>
-</body>
-</html>`;
-      win.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(qrHtml)}`);
-
-      // 等待页面加载后设置二维码图片
-      win.webContents.on('did-finish-load', async () => {
-        try {
-          // 使用 qrcode 库生成二维码图片
-          const QRCode = require('qrcode');
-          const qrDataUrl = await QRCode.toDataURL(scanUrl, {
-            errorCorrectionLevel: 'M',
-            margin: 2,
-            width: 300,
-          });
-          win.webContents.executeJavaScript(`document.getElementById('qr').src = '${qrDataUrl}'`);
-        } catch (err) {
-          console.warn("[汽水登录] 二维码生成失败:");
-        }
-      });
-
-      let settled = false;
-      let pollTimer = null;
-      let pollErrors = 0;
-      const finish = (result) => {
-        if (settled) return;
-        settled = true;
-        if (pollTimer) clearInterval(pollTimer);
-        if (win && !win.isDestroyed()) win.close();
-        resolve(result);
-      };
-
-      // 轮询扫码状态。同一时间只跑一个：二次验证（2046）会在 checkQrConnect 里等用户操作，
-      // 以前每 2 秒照样发下一轮，下一轮再触发 2046、重新弹验证页，上一轮收尾又把窗口藏起来，验证页就一直闪（#181）。
-      let polling = false;
-      pollTimer = setInterval(async () => {
-        if (polling || settled) return;
-        polling = true;
-        try {
-          const data = await qishuiLogin.checkQrConnect(token);
-          console.log("[汽水登录] 轮询返回:");
-          // 成功判定以 qishuiLogin 内部单一真源为准（含凭证校验 + cookie 持久化）
-          if (data._loginOk === true) {
-            finish({ ok: true, message: '汽水音乐登录成功' });
-          } else if (data.status === 'scanned') {
-            win.webContents.executeJavaScript('document.getElementById("status").textContent = "已扫码，请在手机上确认"');
-          }
-        } catch (err) {
-          pollErrors += 1;
-          console.warn("[汽水登录] 轮询失败:");
-          win.webContents.executeJavaScript(
-            `document.getElementById("status").textContent = "验证异常：${String(err.message || err).replace(/[\\'"]/g, '')}（持续重试中…）"`,
-          ).catch(() => {});
-          // 连续失败超过 12 次（约 24 秒）仍无法完成，判定登录失败，避免无限闪窗
-          if (pollErrors >= 12) {
-            finish({ ok: false, error: `汽水登录验证失败：${String(err.message || err)}` });
-          }
-        } finally {
-          polling = false;
-        }
-      }, 2000);
-
-      win.on('closed', () => finish({ ok: false, error: '登录窗口已关闭' }));
-    } catch (err) {
-      resolve({ ok: false, error: err instanceof Error ? err.message : '汽水登录初始化失败' });
-    }
+    sheet.closed.then(() => finish({ ok: false, error: '登录窗口已关闭' }));
   });
 }
 
@@ -564,7 +457,7 @@ function setupRequestInterception() {
   });
 
   ses.webRequest.onHeadersReceived(
-    { urls: ['*://*.music.163.com/*', '*://*.music.126.net/*', '*://*.qq.com/*', '*://*.gtimg.cn/*', '*://*.kugou.com/*', '*://*.kugou.com.cn/*', '*://*.kuwo.cn/*'] },
+    { urls: ['*://*.music.163.com/*', '*://*.music.126.net/*', '*://*.qq.com/*', '*://*.gtimg.cn/*', '*://*.kugou.com/*', '*://*.kugou.com.cn/*', '*://*.kuwo.cn/*', '*://*.douyinpic.com/*'] },
     (details, callback) => {
       const responseHeaders = { ...details.responseHeaders };
       responseHeaders['Access-Control-Allow-Origin'] = ['*'];
@@ -677,7 +570,19 @@ app.whenReady().then(async () => {
   app.once('before-quit', qqRenew.start());
   const qqLogin = new QqLogin(http, cookies, qqRights, qqRenew);
   const kugouLogin = new KugouLogin(cookies, http);
-  const qishuiLogin = new QishuiLogin(cookies, { BrowserWindow, session });
+  // 汽水二次验证（2046）的验证页借主窗口的内嵌弹窗显示：签名引擎页面是个从不挂载的视图，需要时才交给宿主挂上去
+  const qishuiLogin = new QishuiLogin(cookies, {
+    WebContentsView,
+    session,
+    present: (view, title) =>
+      sheetHost.open({
+        platform: 'qishui',
+        title,
+        view,
+        hint: '完成安全验证后会自动继续登录',
+        placeholder: '正在加载安全验证…',
+      }),
+  });
   const kuwoLogin = new KuwoLogin(cookies);
   const bodianLogin = new BodianLogin(cookies);
 
@@ -711,7 +616,7 @@ app.whenReady().then(async () => {
       getAccount: () => kugouLogin.getAccount(),
       getMyPlaylists: () => adapters.kugou.fetchMyPlaylists(),
     },
-    qishui: createQishuiLoginAdapter({ getAccount: () => qishuiLogin.getAccount(), getMyPlaylists: () => adapters.qishui.fetchMyPlaylists() }),
+    qishui: createQishuiLoginAdapter(qishuiLogin, { getMyPlaylists: () => adapters.qishui.fetchMyPlaylists() }),
     kuwo: createKuwoLoginAdapter({ getAccount: () => kuwoLogin.getAccount(), getMyPlaylists: () => adapters.kuwo.fetchMyPlaylists() }),
     bodian: {
       platform: 'bodian',
@@ -753,7 +658,6 @@ app.whenReady().then(async () => {
     spotifyOAuth: createSpotifyOAuth(cookies),
     qqLoginWindow: () => createQqLoginWindow(cookies),
     kugouLoginWindow: () => createKugouLoginWindow(cookies, kugouLogin),
-    qishuiLoginWindow: () => createQishuiLoginWindow(cookies, qishuiLogin),
     kuwoLoginWindow: () => createKuwoLoginWindow(cookies),
     wallpaperLibrary,
     // 退出登录时同步清空 QQ / 酷我官方登录窗口独立分区的 Cookie，
@@ -777,33 +681,6 @@ app.whenReady().then(async () => {
       return shell.openExternal(url);
     }
     return false;
-  });
-  // 壁纸库原生子窗口：尺寸随主窗口比例，带系统边框
-  ipcMain.handle('nebula:wallpaper:open', async () => {
-    if (!mainWindow) return { ok: false, error: '主窗口不存在' };
-    const [mw, mh] = mainWindow.getSize();
-    const win = new BrowserWindow({
-      width: Math.max(720, Math.round(mw * 0.72)),
-      height: Math.max(520, Math.round(mh * 0.68)),
-      title: 'Wallpaper Engine 壁纸库',
-      backgroundColor: '#0b0c16',
-      parent: mainWindow,
-      webPreferences: {
-        preload: path.join(__dirname, 'preload.cjs'),
-        contextIsolation: true,
-        nodeIntegration: false,
-        sandbox: false,
-      },
-    });
-    const query = DEV_URL
-      ? `${DEV_URL}${DEV_URL.includes('?') ? '&' : '?'}view=wallpaper`
-      : path.join(__dirname, '../dist/index.html');
-    if (DEV_URL) win.loadURL(query);
-    else win.loadFile(query, { query: { view: 'wallpaper' } });
-    return { ok: true };
-  });
-  ipcMain.on('nebula:wallpaper:applied', (_event, data) => {
-    mainWindow?.webContents.send('nebula:wallpaper:applied', data);
   });
   setupRequestInterception();
   createWindow();

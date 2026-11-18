@@ -182,11 +182,22 @@ view blocks（同层互不依赖，组合只由 App 完成）
 
 - **类型与注册**：`src/main/types.ts` 的 `Platform`；`adapters/index.ts` 的 `createAdapters`（`Record<Platform,…>`，漏了编译报错）和 `resolveAdapterByUrl`（歌单链接识别）；`http.ts` 的 `PLATFORM_HEADERS`；`src/main/index.ts` 导出。
 - **播放**：`services/songResolver.ts` 的 `PLAYABLE`（不在里面的平台不会用本平台取链，也不会被当兜底）和 `LEVELS`；`services/platformRouter.ts` 的兜底候选（只有想让它给别的平台兜底时才加）；`audioProxy.ts` 的 `HOSTS`（音频域名不在里面会 403）；`electron/main.cjs` 的请求头注入和跨域放行。
-- **登录**：`login/<平台>Login.ts` 的 `getAccount`；`cookieStore.ts` 的 `validatePlatformCookie`；`login/index.ts` 的 `create<平台>LoginAdapter`（`kind`：qr / window / oauth）；`main.cjs` 的 `loginAdapters` 和登录窗口函数（独立 partition，退出登录时在 `onCookieClear` 里一并清空）；`ipc.ts` 的登录通道、`preload.cjs`、`lib/playlist/ipcClient.ts` 的类型。注意 `qq-session-regression` 会按源码文本截取 `createQqLoginWindow(` 到 `createKugouLoginWindow(` 之间执行，新函数不要插在这两者中间。
+- **登录**：`login/<平台>Login.ts` 的 `getAccount`；`cookieStore.ts` 的 `validatePlatformCookie`；`login/index.ts` 的 `create<平台>LoginAdapter`（`kind`：qr / window / oauth）；`main.cjs` 的 `loginAdapters` 和登录函数（官方网页登录用内嵌页面弹窗 `sheetHost`，独立 partition，退出登录时在 `onCookieClear` 里一并清空；需要 Google 账号的走默认浏览器）；`ipc.ts` 的登录通道、`preload.cjs`、`lib/playlist/ipcClient.ts` 的类型。注意 `qq-session-regression` 会按源码文本截取 `createQqLoginWindow(` 到 `createKugouLoginWindow(` 之间执行，新函数不要插在这两者中间。
 - **封面**：`services/coverService.ts` 的改写规则与允许的图片域名。
 - **前端**：`components/platforms.ts`（名称、logo、`DOCK_PLATFORM_ORDER`）；`AccountDock.tsx` 的 `<平台>Login` 组件、`PlatformLogin` 分支、`LOGIN_HOW`；`lib/quality.ts` 的 `PLATFORM_NAME`；`SearchBar.tsx` 的 `platformLabel`；`lib/shareLink.ts`；`PlaylistDock.tsx` 与 `EmptyNebula.tsx` 里列平台名的文字。
 - **测试**：`scripts/import-regression.mjs` 加该平台的样例；新增 `scripts/<平台>-regression.mjs` 接入 `qa:backend`；`router-regression` 要照常通过。
 - **文档**：`PLATFORM_MATRIX.md` 加一列。
+
+## 内嵌页面弹窗（#183，2026-11-18）
+
+- 用户要求：登录页和壁纸库不再开带系统标题栏的独立窗口，改成软件内、风格一致。
+- `electron/embeddedSheet.cjs`（`createSheetHost`）：同一时间最多一个内嵌页面。第三方页面是主窗口里的 `WebContentsView`（圆角 14），盖在渲染端外壳 `components/LoginSheet.tsx` 的正文区上。渲染端在进场动画结束后上报正文区位置（`nebula:sheet:bounds`），之后窗口缩放 / 滚动都重报；用户关闭走 `nebula:sheet:close`，程序关闭（登录成功）发 `nebula:sheet:closed` 让外壳退场。新开一个会把前一个以 `superseded` 收掉。外部传入的视图（汽水签名引擎）关闭时只摘下、不销毁。
+- 用它的：QQ（`persist:qq-music-login`）、酷我（`persist:kuwo-login`）的官方登录页；汽水二次验证页。各平台的 Cookie 轮询与成功判定没变。
+- 汽水改为扫码类登录（kind 'qr'，二维码显示在账号面板）；签名引擎从隐藏窗口改为从不挂载的 `WebContentsView`，2046 时经 `present` 显示在弹窗里，弹窗被关就取消验证。
+- **Spotify 不用内嵌**：Google 不允许在 Electron 的窗口 / 视图里登录（「此浏览器或应用不安全」）。改用 `shell.openExternal` 打开默认浏览器授权（PKCE + 本机回环 `127.0.0.1:5588`，10 分钟超时），能复用用户浏览器里的登录。YouTube Music 同理，见快照。
+- 壁纸库：桌面版也用应用内的 `WallpaperPicker`，外壳同信息弹窗；独立窗口 `view=wallpaper` 与相关 IPC 已删除。
+- 已知限制：焦点在第三方页面里时 Esc 由那个页面接收（点叉或遮罩可关）；第三方页面的 `window.open` 在同一视图里打开；位置按 CSS px 当 DIP，页面缩放不是 1 时会偏。
+- 加新平台时：需要官方网页登录的用 sheet host，不再新建 `BrowserWindow`；需要 Google 账号的走默认浏览器。
 
 ## QQ 登录自动续期（#178，2026-11-18）
 

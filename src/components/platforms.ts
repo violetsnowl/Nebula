@@ -31,3 +31,14 @@ export const DOCK_PLATFORM_ORDER = ['netease', 'qq', 'kugou', 'kuwo', 'bodian', 
 export function platformMeta(id: string): PlatformMeta {
   return PLATFORM_META[id] ?? { id, name: id, logo: '', brand: '#8b93b8' };
 }
+
+/** 各平台登录说明（一句话）：账号详情页顶部和内嵌登录弹窗的页头共用。 */
+export const LOGIN_HOW: Record<string, string> = {
+  netease: '用网易云音乐 App 扫码登录',
+  qq: '在官方登录页用手机 QQ 扫码，登录后自动回到这里',
+  kugou: '用酷狗音乐 App 扫码登录',
+  qishui: '用汽水音乐 App 扫码登录',
+  spotify: '在浏览器里授权，授权完成后自动回到这里',
+  kuwo: '在酷我官网登录：账号密码、短信或 QQ / 微信',
+  bodian: '用波点音乐 App 扫码登录',
+};

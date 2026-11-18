@@ -32,20 +32,24 @@ contextBridge.exposeInMainWorld('nebulaAPI', {
   spotifyLoginStatus: () => ipcRenderer.invoke('nebula:login:spotify:status'),
   qqLoginWindow: () => ipcRenderer.invoke('nebula:login:qq:window'),
   kugouLoginWindow: () => ipcRenderer.invoke('nebula:login:kugou:window'),
-  qishuiLoginWindow: () => ipcRenderer.invoke('nebula:login:qishui:window'),
   kuwoLoginWindow: () => ipcRenderer.invoke('nebula:login:kuwo:window'),
   openLocalDirectory: () => ipcRenderer.invoke('nebula:open-local-directory'),
   openExternal: (url) => ipcRenderer.invoke('nebula:open-external', { url }),
   wallpaperList: () => ipcRenderer.invoke('nebula:wallpaper:list'),
   wallpaperInfo: () => ipcRenderer.invoke('nebula:wallpaper:info'),
   wallpaperSet: (id) => ipcRenderer.invoke('nebula:wallpaper:set', { id }),
-  wallpaperOpen: () => ipcRenderer.invoke('nebula:wallpaper:open'),
-  wallpaperApplied: (data) => ipcRenderer.send('nebula:wallpaper:applied', data),
-  onWallpaperApplied: (callback) => {
+  onSheetOpen: (callback) => {
     const listener = (_event, data) => callback(data);
-    ipcRenderer.on('nebula:wallpaper:applied', listener);
-    return () => ipcRenderer.removeListener('nebula:wallpaper:applied', listener);
+    ipcRenderer.on('nebula:sheet:open', listener);
+    return () => ipcRenderer.removeListener('nebula:sheet:open', listener);
   },
+  onSheetClosed: (callback) => {
+    const listener = (_event, data) => callback(data);
+    ipcRenderer.on('nebula:sheet:closed', listener);
+    return () => ipcRenderer.removeListener('nebula:sheet:closed', listener);
+  },
+  sheetBounds: (payload) => ipcRenderer.send('nebula:sheet:bounds', payload),
+  sheetClose: (id) => ipcRenderer.send('nebula:sheet:close', { id }),
   setCookie: (platform, cookie, token, nickname) =>
     ipcRenderer.invoke('nebula:cookie:set', { platform, cookie, token, nickname }),
   getCookie: (platform) => ipcRenderer.invoke('nebula:cookie:get', { platform }),

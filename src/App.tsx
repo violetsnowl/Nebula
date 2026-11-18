@@ -9,7 +9,7 @@ import { StageCanvas } from './components/StageCanvas';
 import { TopBar } from './components/TopBar';
 import { AccountDock } from './components/AccountDock';
 import { PlaylistDock } from './components/PlaylistDock';
-import { WallpaperPicker } from './components/WallpaperPicker';
+import { LoginSheet } from './components/LoginSheet';
 import { OverlayStack } from './components/OverlayStack';
 import { TooltipLayer } from './components/TooltipLayer';
 import { LyricSourceProbe } from './components/LyricSourceProbe';
@@ -92,9 +92,6 @@ declare global {
 }
 
 export default function App() {
-  const isWallpaperView =
-    typeof window !== 'undefined' &&
-    new URLSearchParams(window.location.search).get('view') === 'wallpaper';
   // 曲库初始化：默认不预置任何歌曲（首次启动显示空状态，后续由导入 / 会话恢复接管）。
   // 演示星云只在 `?demo=1` 开发 / QA 开关打开时生成（舞台测试依赖它）。
   const [demoNebula] = useState(isDemoNebulaEnabled);
@@ -131,6 +128,8 @@ export default function App() {
   });
   const { complete: completeImport } = importer;
   const [wallpaperOpen, setWallpaperOpen] = useState(false);
+  // 内嵌登录 / 验证弹窗（第三方页面叠在弹窗里，见 LoginSheet）：打开时和其他全局弹窗一样不进入聆听
+  const [loginSheetOpen, setLoginSheetOpen] = useState(false);
   // ---------- 浮层领域（useOverlays） ----------
   const overlays = useOverlays();
   const {
@@ -159,10 +158,7 @@ export default function App() {
   const openNowPlaying = useCallback(() => setNowPlayingOpen(true), [setNowPlayingOpen]);
   const closeNowPlaying = useCallback(() => setNowPlayingOpen(false), [setNowPlayingOpen]);
   const closeListenPane = useCallback(() => setListenPane(null), [setListenPane]);
-  const openWallpapers = useCallback(() => {
-    if (hasDesktopAPI()) void window.nebulaAPI!.wallpaperOpen();
-    else setWallpaperOpen(true);
-  }, []);
+  const openWallpapers = useCallback(() => setWallpaperOpen(true), []);
   const closeWallpaper = useCallback(() => setWallpaperOpen(false), []);
   const closeInfo = useCallback(() => setInfoModal(null), [setInfoModal]);
   // ---------- 歌词领域（useLyrics） ----------
@@ -193,8 +189,6 @@ export default function App() {
 
   // ---------- 背景/界面设置领域（useBackground 产出 VisualAtmosphere；useInterfaceSettings） ----------
   const background = useBackground({
-    enabled: !isWallpaperView,
-    onApplied: closeWallpaper,
     coverKey: playerState.song?.cover ?? '',
   });
   const {
@@ -292,7 +286,7 @@ export default function App() {
   // 指针静止在卡片上也能进入聆听（2026-11-14 用户确认，NEBULA_UI_SYSTEM §7.1）：悬停不再阻断；
   // 聆听中悬停态由 CSS 压回普通态（.app[data-lk] .music-card.is-hovered），一动鼠标自然恢复。
   // 侧栏 / 设置 / 顶部搜索面板开着、鼠标不动也算静止（#125，用户确认）；在搜索框里打字由引擎的输入框判断挡住
-  const listenBlocked = !!contextMenu || !!infoModal || nowPlayingOpen || wallpaperOpen || importing;
+  const listenBlocked = !!contextMenu || !!infoModal || nowPlayingOpen || wallpaperOpen || loginSheetOpen || importing;
   useListenMode(appRef, listenConfig, listenBlocked);
 
   /** 全网搜索点播：仅播放该曲，不影响当前队列；播完自动接回歌单（playTransient）。 */
@@ -415,13 +409,10 @@ export default function App() {
     setModeToast(label); // 停留时长由 useOverlays 统一计时（2.4s）
   }, []);
 
-  /** 组合层接线：壁纸应用结果 → useBackground 设背景 + 关闭壁纸窗口。 */
+  /** 组合层接线：壁纸应用结果 → useBackground 设背景（壁纸库自己播完退出动画后关闭）。 */
   const handleWallpaperApply = useCallback(
-    (_item: DesktopWallpaperItem, result: DesktopWallpaperSetResult) => {
-      applyWallpaperResult(result);
-      closeWallpaper();
-    },
-    [applyWallpaperResult, closeWallpaper],
+    (_item: DesktopWallpaperItem, result: DesktopWallpaperSetResult) => applyWallpaperResult(result),
+    [applyWallpaperResult],
   );
 
   /** 组合层接线：账号域 requestLogin + 边缘面板 showPanel。 */
@@ -462,14 +453,6 @@ export default function App() {
       /* 单个平台刷新失败不影响其他平台 */
     });
   }, [accounts, refreshAccount]);
-
-  if (isWallpaperView) {
-    return (
-      <main className="app">
-        <WallpaperPicker standalone onClose={() => window.close()} onApply={() => {}} />
-      </main>
-    );
-  }
 
   const effectiveBgSetting: BackgroundSetting =
     bgSetting.type === 'cover'
@@ -705,6 +688,7 @@ export default function App() {
         onViewAlbum={viewTrackAlbum}
         onCopyLink={copyTrackLink}
       />
+      <LoginSheet onOpenChange={setLoginSheetOpen} />
       <TooltipLayer />
         </main>
       </VisualAtmosphereProvider>

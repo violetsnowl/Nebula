@@ -10,7 +10,6 @@ import {
   type CoverSample,
   type LyricPalette,
 } from '../../lib/coverColors';
-import { hasDesktopAPI } from '../../lib/playlist/ipcClient';
 import type { DesktopWallpaperSetResult } from '../../lib/playlist/ipcClient';
 import type { VisualAtmosphere } from '../../lib/atmosphere';
 import {
@@ -25,10 +24,6 @@ import {
 const COVER_MODE_KEY = 'music-nebula.bg-cover-mode.v2';
 
 interface UseBackgroundOptions {
-  /** 主窗口才订阅壁纸应用事件（wallpaper view 关闭）。 */
-  enabled: boolean;
-  /** 壁纸应用后回调（App 组合层关闭壁纸窗口）。 */
-  onApplied: () => void;
   /** 封面变化 key（由 App 传入播放器当前封面，仅用于重采样触发）。 */
   coverKey: string;
 }
@@ -38,7 +33,7 @@ interface UseBackgroundOptions {
  * 拥有 bgSetting / bgCoverMode，产出 VisualAtmosphere；
  * 只写自己的环境光 CSS 变量，**不直接修改歌词/玻璃**（歌词配色经中间层由消费端推导）。
  */
-export function useBackground({ enabled, onApplied, coverKey }: UseBackgroundOptions) {
+export function useBackground({ coverKey }: UseBackgroundOptions) {
   const [bgSetting, setBgSetting] = useState<BackgroundSetting>(() => loadBackground());
   const [bgCoverMode, setBgCoverMode] = useState<CoverBgMode>(() => {
     // v2：全局 UI 重构后默认「环境光」（NEBULA_UI_SYSTEM §4.3）。只剩环境光和雾中封面两种，已删除的旧模式迁移到环境光。
@@ -89,18 +84,6 @@ export function useBackground({ enabled, onApplied, coverKey }: UseBackgroundOpt
       setBgSetting({ type: 'image', url: URL.createObjectURL(file) });
     }
   }, []);
-
-  // 壁纸子窗口应用结果订阅
-  useEffect(() => {
-    if (!enabled || !hasDesktopAPI()) return;
-    const off = window.nebulaAPI!.onWallpaperApplied((data) => {
-      if ('url' in data) {
-        setBgSetting({ type: data.type, url: data.url });
-        onApplied();
-      }
-    });
-    return off;
-  }, [enabled, onApplied]);
 
   // 环境光和雾中封面都以环境光为底（雾中封面只是在环境光里多一层封面残影）
   const envMode = bgSetting.type === 'cover';

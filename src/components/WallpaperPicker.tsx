@@ -1,13 +1,13 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react';
+import { useOverlayScrollbar } from '../lib/overlayScrollbar';
 import { IconClose } from './icons';
+import './modals.css';
 import type { DesktopWallpaperItem, DesktopWallpaperSetResult } from '../lib/playlist/ipcClient';
 import { hasDesktopAPI } from '../lib/playlist/ipcClient';
 
 interface WallpaperPickerProps {
   onClose: () => void;
   onApply: (item: DesktopWallpaperItem, result: DesktopWallpaperSetResult) => void;
-  /** 独立子窗口模式：应用后通知主窗口并自关。 */
-  standalone?: boolean;
 }
 
 function kindLabel(item: DesktopWallpaperItem): string {
@@ -17,8 +17,14 @@ function kindLabel(item: DesktopWallpaperItem): string {
   return '网页/交互壁纸 · 暂不支持';
 }
 
-/** 本机 Wallpaper Engine 壁纸库（Steam 创意工坊 + 本地项目）。 */
-export function WallpaperPicker({ onClose, onApply, standalone }: WallpaperPickerProps) {
+const SHELL_STYLE = { '--mdl-w': '1100px' } as CSSProperties;
+
+/**
+ * 本机 Wallpaper Engine 壁纸库（Steam 创意工坊 + 本地项目）。
+ * 外壳与信息弹窗同一套（NEBULA_UI_SYSTEM §9.4）：遮罩是同级的独立一层，Esc / 点遮罩 / 右上角关闭，
+ * 进出 = 透明度 + 8px 位移；网格是唯一的滚动容器。
+ */
+export function WallpaperPicker({ onClose, onApply }: WallpaperPickerProps) {
   const [items, setItems] = useState<DesktopWallpaperItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -26,6 +32,30 @@ export function WallpaperPicker({ onClose, onApply, standalone }: WallpaperPicke
   const [weLaunchUrl, setWeLaunchUrl] = useState('');
   const [hint, setHint] = useState('');
   const gridRef = useRef<HTMLDivElement>(null);
+  const [leaving, setLeaving] = useState(false);
+  const leaveTimer = useRef(0);
+  useOverlayScrollbar(gridRef);
+
+  /** 收起：先播 0.28s 退出动画，再通知上层卸载。 */
+  const requestClose = useCallback(() => {
+    if (leaveTimer.current) return;
+    setLeaving(true);
+    leaveTimer.current = window.setTimeout(onClose, 280);
+  }, [onClose]);
+  useEffect(() => () => window.clearTimeout(leaveTimer.current), []);
+
+  // §9.4：Esc 关闭；关闭后焦点回到打开它的元素
+  useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') requestClose();
+    };
+    window.addEventListener('keydown', onKey);
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      if (opener && document.contains(opener)) opener.focus({ preventScroll: true });
+    };
+  }, [requestClose]);
 
   useEffect(() => {
     if (!hasDesktopAPI()) {
@@ -98,31 +128,28 @@ export function WallpaperPicker({ onClose, onApply, standalone }: WallpaperPicke
       }
       return;
     }
-    if (standalone) {
-      window.nebulaAPI?.wallpaperApplied(res.data);
-      window.close();
-      return;
-    }
     onApply(item, res.data);
+    requestClose();
   };
 
   return (
-    <div
-      className={`wallpaper-overlay${standalone ? ' is-standalone' : ''}`}
-      onPointerDown={(e) => {
-        if (e.target === e.currentTarget) onClose();
-      }}
-    >
-      <div className="wallpaper-panel glass" onPointerDown={(e) => e.stopPropagation()}>
-        <button className="np-close" aria-label="关闭" onClick={onClose}>
+    <div className={`info-overlay${leaving ? ' is-out' : ''}`}>
+      {/* 遮罩独立一层：点它关闭；面板不以它为祖先，G3 玻璃才能采到背后画面 */}
+      <div className="info-veil" onPointerDown={requestClose} />
+      <div className="info-modal glass-g3 wps-panel" style={SHELL_STYLE} role="dialog" aria-label="Wallpaper Engine 壁纸库">
+        <button type="button" className="mdl-x" aria-label="关闭" onClick={requestClose}>
           <IconClose size={18} />
         </button>
-        <div className="wallpaper-head">Wallpaper Engine 壁纸库</div>
-        {hint && <div className="wallpaper-hint is-hint">{hint}</div>}
-        {loading && <div className="wallpaper-hint">正在扫描本机壁纸…</div>}
-        {error && <div className="wallpaper-hint is-error">{error}</div>}
+        <div className="sht-head">
+          <div className="sht-text">
+            <h2 className="sht-title">Wallpaper Engine 壁纸库</h2>
+          </div>
+        </div>
+        {hint && <div className="wps-hint is-note">{hint}</div>}
+        {loading && <div className="wps-hint">正在扫描本机壁纸…</div>}
+        {error && <div className="wps-hint is-error">{error}</div>}
         {!loading && !error && items.length === 0 && (
-          <div className="wallpaper-hint">未发现壁纸（检查 Steam 创意工坊 431960 或本地项目目录）</div>
+          <div className="wps-hint">未发现壁纸（检查 Steam 创意工坊 431960 或本地项目目录）</div>
         )}
         <div className="wp-grid" ref={gridRef}>
           {items.map((item) => (
