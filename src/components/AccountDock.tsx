@@ -1528,10 +1528,25 @@ export const AccountDock = memo(function AccountDock({
         </div>
         <div className="row">
           <span className="lbl">
-            罗马音<small>日语、韩语等歌词的原文下面显示读音；在听音空间里也能随时开关</small>
+            读音<small>日语、韩语歌标出读音；在听音空间里也能随时开关</small>
           </span>
-          <Tg checked={lsSettings.roman} onChange={(b) => setListenSpaceSettings({ roman: b })} label="听音空间显示罗马音" />
+          <Tg checked={lsSettings.roman} onChange={(b) => setListenSpaceSettings({ roman: b })} label="听音空间显示读音" />
         </div>
+        <div className="row">
+          <span className="lbl">日语读音</span>
+          <Seg
+            label="日语读音"
+            value={lsSettings.jaReading}
+            options={[
+              { value: 'kana', label: '假名注音' },
+              { value: 'roman', label: '罗马音' },
+            ]}
+            onChange={(v) => setListenSpaceSettings({ jaReading: v })}
+          />
+        </div>
+        <span className="row-hint">
+          {lsSettings.jaReading === 'kana' ? '汉字上方标平假名；韩语歌显示罗马音。' : '原文下面一行罗马音。'}
+        </span>
       </div>
     </>
   );

@@ -152,7 +152,8 @@ export const ListenSpace = memo(function ListenSpace({
       : { key: `ph-${song?.hue1 ?? ''}-${song?.hue2 ?? ''}`, url: '', style: { background: placeholderBg(song?.hue1, song?.hue2) } },
   );
   const hasTranslation = lines.some((l) => !!l.translation);
-  const hasRoman = lines.some((l) => !!l.roman);
+  // 有读音（罗马音或假名注音，#172）才出现读音开关
+  const hasRoman = lines.some((l) => !!l.roman || !!l.ruby?.length);
 
   // 大封面逐帧插值：只改 transform / 圆角 / 阴影（都按真实尺寸换算），封面本身不做任何模糊或变暗
   const paint = useCallback((r: Rect, slot: Rect) => {
@@ -302,13 +303,13 @@ export const ListenSpace = memo(function ListenSpace({
         <div className="ls-col">
           <LyricColumn className="ls-lyrics" lines={lines} settings={settings} />
           {hasRoman && (
-            // 罗马音开关（#161）：在翻译按钮左边，规格与翻译按钮相同；图标是带长音符号的 ā
+            // 读音开关（#161 罗马音，#172 起含日语假名注音）：在翻译按钮左边，规格与翻译按钮相同；图标是带长音符号的 ā
             <button
               type="button"
               className={`ls-trb ls-rob${hasTranslation ? '' : ' is-solo'}`}
               aria-pressed={settings.roman}
-              aria-label="罗马音"
-              data-tip={settings.roman ? '罗马音：开' : '罗马音：关'}
+              aria-label="读音"
+              data-tip={settings.roman ? '读音：开' : '读音：关'}
               onClick={() => setListenSettings({ roman: !settings.roman })}
             >
               <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">

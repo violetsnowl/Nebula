@@ -1,3 +1,4 @@
+import { isKanji } from '../furigana';
 import type { EngineEntry } from './model';
 import type { ListenSettings } from './settings';
 import {
@@ -62,6 +63,8 @@ interface Row {
   /** 正文节点（整句条目的浮起也作用在它上面）。 */
   main: HTMLElement | null;
   rts: UnitRt[] | null;
+  /** 假名注音节点（#172），与正文里的汉字段一一对应。 */
+  rubies?: HTMLElement[];
   whole: Vars | null;
   dots: Vars[] | null;
   // 位置弹簧（y）、缩放弹簧（sc）、景深透明度（o）
@@ -83,6 +86,56 @@ interface Row {
   lastO: string;
 }
 
+interface RubyBox {
+  x: number;
+  y: number;
+  w: number;
+}
+
+/**
+ * 正文里每段汉字的位置（#172）：按 DOM 里文字的实际字形量（Range），相对正文节点、去掉整句缩放。
+ * 汉字段的个数和注音对不上（逐字词块和整句文字不一致时）返回 null，这句不标。
+ */
+function measureRuby(main: HTMLElement, count: number): RubyBox[] | null {
+  const walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT, {
+    acceptNode: (n) => ((n.parentElement?.closest('.ly-rb') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT)),
+  });
+  const runs: Array<{ sn: Text; so: number; en: Text; eo: number }> = [];
+  let open: { sn: Text; so: number; en: Text; eo: number } | null = null;
+  for (let n = walker.nextNode() as Text | null; n; n = walker.nextNode() as Text | null) {
+    const t = n.data;
+    let i = 0;
+    for (const ch of t) {
+      if (isKanji(ch)) {
+        if (open) {
+          open.en = n;
+          open.eo = i + ch.length;
+        } else open = { sn: n, so: i, en: n, eo: i + ch.length };
+      } else if (open) {
+        runs.push(open);
+        open = null;
+      }
+      i += ch.length;
+    }
+  }
+  if (open) runs.push(open);
+  if (runs.length !== count) return null;
+  const mr = main.getBoundingClientRect();
+  const k = main.offsetWidth ? mr.width / main.offsetWidth : 1;
+  return runs.map((r) => {
+    const range = document.createRange();
+    range.setStart(r.sn, r.so);
+    range.setEnd(r.en, r.eo);
+    const rects = [...range.getClientRects()].filter((q) => q.width > 0);
+    const first = rects[0];
+    if (!first) return { x: 0, y: 0, w: 0 };
+    const line = rects.filter((q) => Math.abs(q.top - first.top) < 2);
+    const left = Math.min(...line.map((q) => q.left));
+    const right = Math.max(...line.map((q) => q.right));
+    return { x: (left - mr.left) / k, y: (first.top - mr.top) / k, w: (right - left) / k };
+  });
+}
+
 export class LyricEngine {
   private host: HTMLElement;
   private opts: LyricEngineOptions;
@@ -92,7 +145,7 @@ export class LyricEngine {
   private rows: Row[] = [];
   private tails = new Set<Row>();
   private script: LyricScript = 'zh';
-  private settings: ListenSettings = { scheme: 'accent', font: 'serif', translation: true, roman: false };
+  private settings: ListenSettings = { scheme: 'accent', font: 'serif', translation: true, roman: false, jaReading: 'kana' };
   // 尺寸
   private H = REF_H;
   private W = 800;
@@ -124,6 +177,7 @@ export class LyricEngine {
     host.dataset.scheme = this.settings.scheme;
     host.dataset.tr = this.settings.translation ? 'on' : 'off';
     host.dataset.ro = this.settings.roman ? 'on' : 'off';
+    host.dataset.rd = this.settings.jaReading;
 
     this.box = document.createElement('div');
     this.box.className = 'lc-lines';
@@ -168,11 +222,13 @@ export class LyricEngine {
   setSettings(s: ListenSettings): void {
     if (this.destroyed) return;
     const fontChanged = s.font !== this.settings.font;
-    const trChanged = s.translation !== this.settings.translation || s.roman !== this.settings.roman;
+    const trChanged =
+      s.translation !== this.settings.translation || s.roman !== this.settings.roman || s.jaReading !== this.settings.jaReading;
     this.settings = { ...s };
     this.host.dataset.scheme = s.scheme;
     this.host.dataset.tr = s.translation ? 'on' : 'off';
     this.host.dataset.ro = s.roman ? 'on' : 'off';
+    this.host.dataset.rd = s.jaReading;
     if (!this.rows.length) {
       this.applyTypography();
       return;
@@ -260,6 +316,7 @@ export class LyricEngine {
     delete this.host.dataset.scheme;
     delete this.host.dataset.tr;
     delete this.host.dataset.ro;
+    delete this.host.dataset.rd;
     delete this.host.dataset.browsing;
     delete this.host.dataset.playing;
   }
@@ -310,6 +367,20 @@ export class LyricEngine {
       row.whole = new Vars(main);
     }
     el.appendChild(main);
+    // 假名注音（#172）：汉字正上方一层独立的小字（不放进逐字单元，免得跟着扫光和波浪），位置在 measure 里按实际字形算
+    if (e.ja) el.classList.add('is-ja');
+    if (e.rb) {
+      el.classList.add('has-rb');
+      row.rubies = e.rb.map((kana) => {
+        const rb = document.createElement('span');
+        rb.className = 'ly-rb';
+        const k = document.createElement('span');
+        k.textContent = kana;
+        rb.appendChild(k);
+        main.appendChild(rb);
+        return rb;
+      });
+    }
     // 罗马音读的是原文，紧贴在原文下面；翻译排在它后面（#161）
     if (e.ro) {
       const ro = document.createElement('div');
@@ -376,11 +447,25 @@ export class LyricEngine {
     const ty = TYPO[this.settings.font][this.script];
     const gap = ty.size * this.k * 0.62;
     let top = 0;
+    const rubyAt: Array<[HTMLElement[], RubyBox[] | null]> = [];
     for (const r of this.rows) {
       r.h = r.el.offsetHeight;
       r.top = top;
       top += r.h + gap;
       if (r.rts) measureUnits(r.rts);
+      if (r.rubies && r.main) rubyAt.push([r.rubies, measureRuby(r.main, r.rubies.length)]);
+    }
+    // 读完再写（#172）
+    for (const [els, boxes] of rubyAt) {
+      els.forEach((el, i) => {
+        const b = boxes?.[i];
+        el.hidden = !b;
+        if (b) {
+          el.style.left = `${b.x.toFixed(1)}px`;
+          el.style.top = `${b.y.toFixed(1)}px`;
+          el.style.width = `${b.w.toFixed(1)}px`;
+        }
+      });
     }
   }
 

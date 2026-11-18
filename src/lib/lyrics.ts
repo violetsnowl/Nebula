@@ -1,3 +1,5 @@
+import { alignFurigana, hasKana, isKanji } from './furigana';
+
 export interface LyricWordUI {
   /** Single word / char text. */
   text: string;
@@ -18,6 +20,10 @@ export interface LyricLineUI {
   translation?: string;
   /** 罗马音（#161，网易云 romalrc / QQ roma）；与原文相同（如英文歌）时不挂。 */
   roman?: string;
+  /** 假名注音（#172）：每段汉字的平假名读音，按汉字段在句中出现的顺序；只有日语句、且能和罗马音对上时才有。 */
+  ruby?: string[];
+  /** 日语句（#172）：日语读音选「假名注音」时，这类句子不显示罗马音。 */
+  ja?: boolean;
   /** Line duration ms (from YRC/QRC or inferred from the next line). */
   duration?: number;
   /** Word-level timings; absent → whole-line highlight fallback. */
@@ -220,6 +226,9 @@ export function attachRoman(lines: LyricLineUI[], raw: string): LyricLineUI[] {
   }
   if (!rows.length) return lines;
   const norm = (s: string) => s.toLowerCase().replace(/[\s\p{P}\p{S}]/gu, '');
+  // 日语歌（#172）：两成以上的句子有假名。这样的歌里，没有假名的纯汉字句也按日语标注
+  const japanese = lines.filter((l) => hasKana(l.text)).length >= Math.max(2, lines.length * 0.2);
+  const hangul = /[\uac00-\ud7af]/;
   return lines.map((l) => {
     if (!l.text.trim()) return l;
     let best: { t: number; text: string } | undefined;
@@ -232,10 +241,13 @@ export function attachRoman(lines: LyricLineUI[], raw: string): LyricLineUI[] {
       }
     }
     if (!best) return l;
+    const ja = japanese && !hangul.test(l.text) && (hasKana(l.text) || [...l.text].some(isKanji));
+    const ruby = ja ? alignFurigana(l.text, best.text) : null;
     // 双空格拼词只认韩语行（#169）：QQ 日语罗马音在英文词前后也空两格（`Baby  wa ta shi`），拼了会把日语音节连成一串
     const roman = regroupByHangul(best.text, l.text) ?? tidyRoman(best.text, joinSyllables && /[\uac00-\ud7af]/.test(l.text));
-    if (!roman || norm(roman) === norm(l.text)) return l;
-    return { ...l, roman };
+    const withRoman = !!roman && norm(roman) !== norm(l.text);
+    if (!withRoman && !ruby) return l;
+    return { ...l, ...(withRoman ? { roman } : {}), ...(ruby ? { ruby } : {}), ...(ja ? { ja } : {}) };
   });
 }
 

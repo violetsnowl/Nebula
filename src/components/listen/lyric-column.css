@@ -114,6 +114,37 @@
   margin-top: 0.22em;
 }
 
+/* 假名注音（#172）：汉字正上方一层小字，居中，不扫色；跟着整句亮暗。
+   有注音的句子上面让出一点空；日语读音选「假名注音」时，日语句不再显示罗马音行 */
+.lc-root .ly-line.has-rb .ly-main {
+  position: relative;
+}
+.lc-root .ly-rb {
+  position: absolute;
+  display: none;
+  justify-content: center;
+  transform: translateY(-100%);
+  white-space: nowrap;
+  pointer-events: none;
+  font-size: 0.4em;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: 0.04em;
+  color: var(--lc-ro, rgba(255, 255, 255, 0.56));
+}
+.lc-root .ly-rb[hidden] {
+  display: none !important;
+}
+.lc-root[data-ro='on'][data-rd='kana'] .ly-rb {
+  display: flex;
+}
+.lc-root[data-ro='on'][data-rd='kana'] .ly-line.has-rb .ly-main {
+  padding-top: 0.42em;
+}
+.lc-root[data-rd='kana'] .ly-line.is-ja .ly-ro {
+  display: none;
+}
+
 /* 视觉模式 · 封面色：唱过的（含已退到上面的句子）带封面色，没唱的是白 */
 .lc-root[data-scheme='accent'] .ly-line.is-past:not(.is-grad) .u,
 .lc-root[data-scheme='accent'] .ly-line.is-past .ly-whole {

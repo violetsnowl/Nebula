@@ -1185,7 +1185,8 @@ async function main() {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(1000);
 
-  // 10g+++. 罗马音（#161）：有罗马音的歌，听音空间默认不显示、翻译按钮左边多一个罗马音按钮；
+  // 10g+++. 读音（#161 罗马音，#172 假名注音）：有读音的歌，听音空间默认不显示、翻译按钮左边多一个读音按钮；
+  // 打开后日语句在汉字上方标平假名（默认「假名注音」），韩语句显示罗马音；
   // 点开后罗马音在原文正下方、翻译之前；和原文一样的（英文行）不挂
   const roman = await page.evaluate(async (audio) => {
     const api = window.nebulaAPI;
@@ -1224,14 +1225,43 @@ async function main() {
       pressed: btn?.getAttribute('aria-pressed'),
       hidden: !!roEl && getComputedStyle(roEl).display === 'none',
     };
+    const rbBefore = root?.querySelector('.ly-rb');
+    before.rubyHidden = !!rbBefore && getComputedStyle(rbBefore).display === 'none';
     btn?.click();
     await new Promise((r) => setTimeout(r, 400));
-    const line = roEl?.closest('.ly-line');
+    // 韩语句：罗马音照常在原文下面、翻译之前
+    const koEl = [...(root?.querySelectorAll('.ly-ro') || [])].find((e) => e.textContent === 'geuddae ggumman gatatdeon');
+    const line = koEl?.closest('.ly-line');
     const kids = line ? [...line.children].map((c) => c.className.split(' ')[0]) : [];
+    // 日语句（#172）：默认「假名注音」——汉字上方标平假名，罗马音行不显示；注音落在对应汉字的正上方
+    const jaLine = roEl?.closest('.ly-line');
+    const rbs = jaLine ? [...jaLine.querySelectorAll('.ly-rb')] : [];
+    let rubyCentered = false;
+    if (rbs[0] && jaLine) {
+      const main = jaLine.querySelector('.ly-main');
+      const walker = document.createTreeWalker(main, NodeFilter.SHOW_TEXT);
+      let n;
+      while ((n = walker.nextNode())) {
+        const at = n.data.indexOf('君');
+        if (at >= 0 && !n.parentElement.closest('.ly-rb')) {
+          const rg = document.createRange();
+          rg.setStart(n, at);
+          rg.setEnd(n, at + 1);
+          const kr = rg.getBoundingClientRect();
+          const rr = rbs[0].getBoundingClientRect();
+          rubyCentered = Math.abs(kr.left + kr.width / 2 - (rr.left + rr.width / 2)) < 4 && rr.bottom <= kr.top + 4;
+          break;
+        }
+      }
+    }
     const after = {
       pressed: btn?.getAttribute('aria-pressed'),
-      shown: !!roEl && getComputedStyle(roEl).display !== 'none',
+      shown: !!koEl && getComputedStyle(koEl).display !== 'none',
       text: roEl?.textContent || '',
+      jaRomanHidden: !!roEl && getComputedStyle(roEl).display === 'none',
+      ruby: rbs.map((e) => e.textContent).join('/'),
+      rubyShown: !!rbs[0] && getComputedStyle(rbs[0]).display !== 'none',
+      rubyCentered,
       order: kids.join(','),
       // 英文行（Hello world）的罗马音和原文一样：不挂
       latinDup: [...(root?.querySelectorAll('.ly-ro') || [])].some((e) => e.textContent === 'Hello world'),
@@ -1244,10 +1274,11 @@ async function main() {
     return { before, after };
   }, lyricAudio);
   const romanOk =
-    roman.before.btn && roman.before.pressed === 'false' && roman.before.hidden &&
+    roman.before.btn && roman.before.pressed === 'false' && roman.before.hidden && roman.before.rubyHidden &&
     roman.after.pressed === 'true' && roman.after.shown && /kimi|hoshi/.test(roman.after.text) &&
+    roman.after.jaRomanHidden && roman.after.ruby === 'きみ/なまえ/よ' && roman.after.rubyShown && roman.after.rubyCentered &&
     /^ly-main,ly-ro,ly-tr/.test(roman.after.order) && !roman.after.latinDup && roman.after.korean && roman.after.japaneseKept;
-  log('听音空间罗马音', JSON.stringify(roman));
+  log('听音空间读音（罗马音 / 假名注音）', JSON.stringify(roman));
   await page.keyboard.press('Escape');
   await page.waitForTimeout(1000);
 

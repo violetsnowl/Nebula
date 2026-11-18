@@ -11,13 +11,15 @@ export interface ListenSettings {
   font: 'serif' | 'sans';
   /** 外文歌词下方显示翻译（默认开）。 */
   translation: boolean;
-  /** 原文下方显示罗马音（#161，默认关；只在有罗马音的歌出现开关）。 */
+  /** 读音（#161 罗马音，#172 起含假名注音；默认关；只在有读音的歌出现开关）。 */
   roman: boolean;
+  /** 日语读音的形式（#172）：kana = 汉字上方标平假名（默认）；roman = 原文下面一行罗马音。韩语始终是罗马音。 */
+  jaReading: 'kana' | 'roman';
 }
 
 const KEY = 'music-nebula.listen-lyrics';
 
-const DEFAULTS: ListenSettings = { scheme: 'accent', font: 'serif', translation: true, roman: false };
+const DEFAULTS: ListenSettings = { scheme: 'accent', font: 'serif', translation: true, roman: false, jaReading: 'kana' };
 
 function load(): ListenSettings {
   try {
@@ -29,6 +31,7 @@ function load(): ListenSettings {
       font: o?.font === 'sans' ? 'sans' : 'serif',
       translation: typeof o?.translation === 'boolean' ? o.translation : DEFAULTS.translation,
       roman: typeof o?.roman === 'boolean' ? o.roman : DEFAULTS.roman,
+      jaReading: o?.jaReading === 'roman' ? 'roman' : 'kana',
     };
   } catch {
     return { ...DEFAULTS };
@@ -49,7 +52,8 @@ export function setListenSettings(patch: Partial<ListenSettings>): void {
     next.scheme === current.scheme &&
     next.font === current.font &&
     next.translation === current.translation &&
-    next.roman === current.roman
+    next.roman === current.roman &&
+    next.jaReading === current.jaReading
   )
     return;
   current = next;
