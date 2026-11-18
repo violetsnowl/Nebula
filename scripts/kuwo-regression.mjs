@@ -1,0 +1,141 @@
+import assert from 'node:assert/strict';
+import {createRequire} from 'node:module';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+// 酷我适配器回归：假 http，不联网。依赖 pnpm build:main 产物。
+const require=createRequire(import.meta.url);
+const api=require('../dist-main/index.cjs');
+const {CookieStore,KuwoAdapter,KuwoLogin,parseKuwoSession,mapKuwoMyPlaylists,kuwoCoverUrl,validatePlatformCookie,normalizeCookieHeader,resolveAdapterByUrl,coverCandidates,audioPlatform}=api;
+const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'kuwo-regression-'));
+let seq=0;
+const newStore=cookie=>{const s=new CookieStore(path.join(tmp,`c${++seq}.json`));if(cookie)s.set('kuwo',cookie);return s;};
+const LOGGED='userid=424242; sid=abc123; websid=web456; username=%E6%B5%8B%E8%AF%95%E7%94%A8%E6%88%B7; pic3=http%3A%2F%2Fimg1.kuwo.cn%2Fstar%2Fuserhead%2F1.jpg';
+const row=i=>({id:String(1000+i),name:`歌${i}`,artist:'歌手甲&歌手乙',album:'专辑',albumid:'77',albumpic:'http://img2.kuwo.cn/star/albumcover/120/6/48/1.jpg',duration:'200'});
+let passed=0;
+async function test(name,fn){await fn();passed++;console.log('通过 '+name);}
+
+await test('歌单多页导入：按 total 翻页拼全，字段映射正确',async()=>{
+ const seen=[];
+ const http={requestJson:async(url,opts)=>{
+  seen.push(url);assert.equal(opts.platform,'kuwo');
+  const q=new URL(url).searchParams,pn=Number(q.get('pn'));
+  assert.equal(q.get('op'),'getlistinfo');assert.equal(q.get('pid'),'555');
+  const rows=pn===0?Array.from({length:100},(_,i)=>row(i)):pn===1?[...Array.from({length:49},(_,i)=>row(100+i)),{id:'',name:'无 id'}]:[];
+  return {title:'公开 &amp; 测试',pic:'http://img1.kuwo.cn/star/userpl2015/1/2/3_150.jpg',info:'第一行<br>第二行',total:150,musiclist:rows};
+ }};
+ const pl=await new KuwoAdapter(http,newStore()).fetchPlaylist('555');
+ assert.equal(seen.length,2);
+ assert.equal(pl.tracks.length,149);assert.equal(pl.platform,'kuwo');assert.equal(pl.id,'555');
+ assert.equal(pl.name,'公开 & 测试');assert.equal(pl.cover,'http://img1.kuwo.cn/star/userpl2015/1/2/3_500.jpg');
+ assert.equal(pl.description,'第一行\n第二行');
+ const t=pl.tracks[0];
+ assert.deepEqual([t.id,t.sourceId,t.platform,t.title,t.artist,t.album,t.duration,t.originalUrl],['kuwo:1000','1000','kuwo','歌0','歌手甲 / 歌手乙','专辑',200,'']);
+ assert.deepEqual(t.artists,['歌手甲','歌手乙']);
+ assert.equal(t.cover,'http://img2.kuwo.cn/star/albumcover/500/6/48/1.jpg');
+ assert.equal(t.extra.albumId,'77');assert.equal(t.extra.durationSec,200);
+});
+await test('歌单为空 / ID 非法 / 接口异常都明确失败，不伪装成功',async()=>{
+ const empty=new KuwoAdapter({requestJson:async()=>({total:0,musiclist:[]})},newStore());
+ await assert.rejects(empty.fetchPlaylist('9'),/不存在|为空/);
+ await assert.rejects(empty.fetchPlaylist('abc'),/无效/);
+ await assert.rejects(new KuwoAdapter({requestJson:async()=>{throw new Error('HTTP 500');}},newStore()).fetchPlaylist('9'),/HTTP 500/);
+});
+await test('我的歌单：uid / sid 来自已存 cookie，系统占位列表被过滤',async()=>{
+ let url='';
+ const http={requestJson:async u=>{url=u;return {total:4,plist:[
+  {id:1,title:'',type:'PC_DEFAULT',musicnum:0,pic:''},
+  {id:2,title:'我喜欢听',type:'MYFAVORITE',musicnum:0,pic:''},
+  {id:3,title:'跑步 &amp; 通勤',type:'GENERAL',musicnum:31,pic:'http://img1.kuwo.cn/star/userpl2015/1/2/3_150.jpg'},
+  {id:4,title:'',type:'RADIO',musicnum:0},
+ ]};}};
+ const list=await new KuwoAdapter(http,newStore(LOGGED)).fetchMyPlaylists();
+ const q=new URL(url).searchParams;
+ assert.equal(q.get('op'),'getuserlist');assert.equal(q.get('uid'),'424242');assert.equal(q.get('sid'),'abc123');
+ assert.deepEqual(list,[
+  {id:'2',name:'我喜欢听',cover:'',trackCount:0},
+  {id:'3',name:'跑步 & 通勤',cover:'http://img1.kuwo.cn/star/userpl2015/1/2/3_500.jpg',trackCount:31},
+ ]);
+ // 只有 websid 也能取
+ await new KuwoAdapter(http,newStore('userid=7; websid=w9')).fetchMyPlaylists();
+ assert.equal(new URL(url).searchParams.get('sid'),'w9');
+});
+await test('我的歌单：未登录 / cookie 不完整不发请求；网络失败返回 []',async()=>{
+ let calls=0;const http={requestJson:async()=>{calls++;throw new Error('网络断了');}};
+ assert.deepEqual(await new KuwoAdapter(http,newStore()).fetchMyPlaylists(),[]);
+ assert.deepEqual(await new KuwoAdapter(http,newStore('userid=0; sid=x')).fetchMyPlaylists(),[]);
+ assert.deepEqual(await new KuwoAdapter(http,newStore('userid=5')).fetchMyPlaylists(),[]);
+ assert.equal(calls,0);
+ assert.deepEqual(await new KuwoAdapter(http,newStore(LOGGED)).fetchMyPlaylists(),[]);assert.equal(calls,1);
+});
+await test('取链：成功解析 url，只请求 128kmp3',async()=>{
+ let url='';
+ const http={requestJson:async u=>{url=u;return {code:200,msg:'success',url:'https://kw-er.kuwo.cn/sig/ts/resource/30106/trackmedia/real.mp3'};},
+  requestRaw:async()=>({ok:true,status:206,headers:new Headers({'content-range':'bytes 0-0/3830799'}),text:''})};
+ const a=new KuwoAdapter(http,newStore());
+ const r=await a.fetchSongUrl('6304356',undefined,'320',{durationSec:239});
+ assert.deepEqual(r,{url:'https://kw-er.kuwo.cn/sig/ts/resource/30106/trackmedia/real.mp3',quality:'128'});
+ const q=new URL(url).searchParams;assert.equal(q.get('rid'),'6304356');assert.equal(q.get('br'),'128kmp3');assert.equal(q.get('type'),'convert_url3');
+ assert.deepEqual((await a.listQualities()).map(x=>x.level),['128']);
+});
+await test('取链：失败一律返回 null（接口拒绝 / 提示音 / 时长不符 / 异常 / 非法 rid）',async()=>{
+ const ok='https://kw-bj.kuwo.cn/sig/ts/nf/resource/n1/1/2/12345.mp3';
+ const mk=(json,range)=>new KuwoAdapter({requestJson:async()=>{if(json instanceof Error)throw json;return json;},
+  requestRaw:async()=>{if(range instanceof Error)throw range;return {ok:true,status:206,headers:new Headers(range?{'content-range':range}:{}),text:''};}},newStore());
+ assert.equal(await mk({code:-1,msg:'refuse request!',url:''}).fetchSongUrl('1'),null);
+ assert.equal(await mk({code:200,url:''}).fetchSongUrl('1'),null);
+ assert.equal(await mk({code:200,url:'https://kw-bj.kuwo.cn/s/t/nf/resource/n1/69/32/588957081.mp3'}).fetchSongUrl('1'),null);
+ assert.equal(await mk({code:200,url:ok},'bytes 0-0/181521').fetchSongUrl('1',undefined,undefined,{durationSec:212}),null);
+ assert.equal(await mk(new Error('timeout')).fetchSongUrl('1'),null);
+ assert.equal(await mk({code:200,url:ok}).fetchSongUrl('abc'),null);
+ // 时长缺失或总长探测失败时不拦截
+ assert.equal((await mk({code:200,url:ok},'bytes 0-0/181521').fetchSongUrl('1'))?.url,ok);
+ assert.equal((await mk({code:200,url:ok},new Error('探测失败')).fetchSongUrl('1',undefined,undefined,{durationSec:212}))?.url,ok);
+ assert.equal((await mk({code:200,url:ok},'bytes 0-0/3400000').fetchSongUrl('1',undefined,undefined,{durationSec:212}))?.url,ok);
+ assert.equal(await mk({code:200,url:ok}).fetchLyric('1'),null);
+});
+await test('cookie 校验：userid 非零数字 + sid / websid',()=>{
+ const v=c=>validatePlatformCookie('kuwo',normalizeCookieHeader(c));
+ assert.equal(v(LOGGED).ok,true);
+ assert.equal(v('userid=1; sid=a').ok,true);
+ assert.equal(v('userid=1; websid=a').ok,true);
+ assert.equal(v('userid=0; sid=a').ok,false);
+ assert.equal(v('userid=abc; sid=a').ok,false);
+ assert.equal(v('sid=a; websid=b').ok,false);
+ assert.equal(v('userid=1').ok,false);
+ assert.equal(v('').ok,false);
+ assert.match(v('userid=1').error,/INVALID_KUWO_COOKIE/);
+ assert.deepEqual(parseKuwoSession('userid=9; websid=w'),{uid:'9',sid:'w'});
+ assert.equal(parseKuwoSession('userid=00; sid=a'),null);
+});
+await test('链接识别：电脑 / 手机 / 分享各形式',()=>{
+ const want={platform:'kuwo',id:'3678617986'};
+ for(const u of [
+  'https://www.kuwo.cn/playlist_detail/3678617986',
+  'http://kuwo.cn/playlist_detail/3678617986?from=share',
+  ' https://m.kuwo.cn/newh5app/playlist_detail/3678617986 ',
+  'https://m.kuwo.cn/h5app/playlist?pid=3678617986&from=app',
+  'http://h5app.kuwo.cn/m/x/index.html#/?pid=3678617986',
+ ]) assert.deepEqual(resolveAdapterByUrl(u),want,u);
+ assert.equal(resolveAdapterByUrl('https://www.kuwo.cn/singer_detail/123'),null);
+ assert.equal(resolveAdapterByUrl('https://notkuwo.cn/playlist_detail/1'),null);
+ assert.equal(resolveAdapterByUrl('https://example.com/?u=kuwo.cn&pid=1'),null);
+ assert.deepEqual(resolveAdapterByUrl('https://music.163.com/#/playlist?id=1'),{platform:'netease',id:'1'});
+});
+await test('账号信息：无 cookie → null；残缺 → missing；完整 → 解码昵称与头像',async()=>{
+ assert.equal(await new KuwoLogin(newStore()).getAccount(),null);
+ assert.deepEqual(await new KuwoLogin(newStore('sid=x')).getAccount(),{loggedIn:false,authStatus:'missing',error:'酷我登录信息不完整，请重新登录'});
+ const acc=await new KuwoLogin(newStore(LOGGED)).getAccount();
+ assert.deepEqual(acc,{loggedIn:true,authStatus:'unknown',userId:'424242',nickname:'测试用户',avatarUrl:'http://img1.kuwo.cn/star/userhead/1.jpg'});
+ assert.equal((await new KuwoLogin(newStore('userid=5; sid=a')).getAccount()).nickname,'酷我用户');
+});
+await test('封面 / 音频域名：酷我保持 http，音频走 kuwo 代理白名单',()=>{
+ assert.equal(kuwoCoverUrl('http://img2.kuwo.cn/star/albumcover/120/6/48/1.jpg'),'http://img2.kuwo.cn/star/albumcover/500/6/48/1.jpg');
+ assert.equal(kuwoCoverUrl(''),'');
+ assert.deepEqual(coverCandidates({platform:'kuwo',cover:'http://img2.kuwo.cn/star/albumcover/500/6/48/1.jpg'}),['http://img2.kuwo.cn/star/albumcover/500/6/48/1.jpg']);
+ assert.equal(audioPlatform(new URL('https://kw-er.kuwo.cn/a/b/c.mp3')),'kuwo');
+ assert.equal(audioPlatform(new URL('http://kw-bj.kuwo.cn/a.mp3')),'kuwo');
+ assert.equal(audioPlatform(new URL('https://evilkuwo.cn/a.mp3')),null);
+ assert.equal(mapKuwoMyPlaylists([{id:1,title:''}]).length,0);
+});
+console.log(`酷我回归 ${passed}/${passed}`);

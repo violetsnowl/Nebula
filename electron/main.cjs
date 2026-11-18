@@ -18,10 +18,12 @@ const {
   QqLogin,
   KugouLogin,
   QishuiLogin,
+  KuwoLogin,
   QqRightsService,
   QqRenewService,
   qqSession,
   createQishuiLoginAdapter,
+  createKuwoLoginAdapter,
   AudioProxy,
   LyricCache,
   WallpaperLibrary,
@@ -318,6 +320,62 @@ function createKugouLoginWindow(cookies, kugouLogin) {
   });
 }
 
+/**
+ * 酷我官方登录：打开官网并自动弹出登录框（账号密码 / 短信 / QQ / 微信均可），
+ * 轮询独立 partition 的 Cookie，userid + sid/websid 齐全即落库并关闭窗口。
+ */
+function createKuwoLoginWindow(cookies) {
+  return new Promise(async (resolve) => {
+    const partition = 'persist:kuwo-login';
+    const ses = session.fromPartition(partition);
+    // 每次打开前清空该分区的登录态，避免残留旧账号导致自动登回旧号。
+    try {
+      await ses.clearStorageData({ storages: ['cookies', 'localstorage'] });
+    } catch (err) {
+      console.warn('[酷我登录] 清理旧登录态失败:');
+    }
+    const win = new BrowserWindow({
+      width: 1000,
+      height: 800,
+      backgroundColor: '#0b0c16',
+      webPreferences: {
+        partition,
+        contextIsolation: true,
+        nodeIntegration: false,
+      },
+    });
+    win.setTitle('酷我音乐登录（官方页面）');
+    win.loadURL('https://www.kuwo.cn/?login=open');
+
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      clearInterval(timer);
+      resolve(result);
+    };
+
+    // 每 2s 读取一次 partition Cookie，userid + sid/websid 齐全即视为登录成功
+    const timer = setInterval(async () => {
+      try {
+        const list = await ses.cookies.get({});
+        const raw = list.map((c) => `${c.name}=${c.value}`).join('; ');
+        const normalized = normalizeCookieHeader(raw);
+        const v = validatePlatformCookie('kuwo', normalized);
+        if (v.ok) {
+          cookies.set('kuwo', normalized, undefined, '酷我音乐');
+          finish({ ok: true, message: '酷我音乐登录成功' });
+          if (!win.isDestroyed()) win.close();
+        }
+      } catch {
+        /* keep polling */
+      }
+    }, 2000);
+
+    win.on('closed', () => finish({ ok: false, error: '登录窗口已关闭' }));
+  });
+}
+
 function createQishuiLoginWindow(cookies, qishuiLogin) {
   return new Promise(async (resolve) => {
     try {
@@ -493,8 +551,13 @@ function setupRequestInterception() {
     'User-Agent': UA,
   });
 
+  inject(['*://*.kuwo.cn/*', '*://kuwo.cn/*'], {
+    Referer: 'https://www.kuwo.cn/',
+    'User-Agent': UA,
+  });
+
   ses.webRequest.onHeadersReceived(
-    { urls: ['*://*.music.163.com/*', '*://*.music.126.net/*', '*://*.qq.com/*', '*://*.gtimg.cn/*', '*://*.kugou.com/*', '*://*.kugou.com.cn/*'] },
+    { urls: ['*://*.music.163.com/*', '*://*.music.126.net/*', '*://*.qq.com/*', '*://*.gtimg.cn/*', '*://*.kugou.com/*', '*://*.kugou.com.cn/*', '*://*.kuwo.cn/*'] },
     (details, callback) => {
       const responseHeaders = { ...details.responseHeaders };
       responseHeaders['Access-Control-Allow-Origin'] = ['*'];
@@ -608,6 +671,7 @@ app.whenReady().then(async () => {
   const qqLogin = new QqLogin(http, cookies, qqRights, qqRenew);
   const kugouLogin = new KugouLogin(cookies, http);
   const qishuiLogin = new QishuiLogin(cookies, { BrowserWindow, session });
+  const kuwoLogin = new KuwoLogin(cookies);
 
   // 启动探活：已存 cookie 自动校验登录态，失败仅标记未登录，不抛异常
   login.probeLogin();
@@ -640,6 +704,7 @@ app.whenReady().then(async () => {
       getMyPlaylists: () => adapters.kugou.fetchMyPlaylists(),
     },
     qishui: createQishuiLoginAdapter({ getAccount: () => qishuiLogin.getAccount(), getMyPlaylists: () => adapters.qishui.fetchMyPlaylists() }),
+    kuwo: createKuwoLoginAdapter({ getAccount: () => kuwoLogin.getAccount(), getMyPlaylists: () => adapters.kuwo.fetchMyPlaylists() }),
     spotify: {
       platform: 'spotify',
       name: 'Spotify',
@@ -672,17 +737,19 @@ app.whenReady().then(async () => {
     qqLoginWindow: () => createQqLoginWindow(cookies),
     kugouLoginWindow: () => createKugouLoginWindow(cookies, kugouLogin),
     qishuiLoginWindow: () => createQishuiLoginWindow(cookies, qishuiLogin),
+    kuwoLoginWindow: () => createKuwoLoginWindow(cookies),
     wallpaperLibrary,
-    // 退出登录时同步清空 QQ 官方登录窗口独立分区的 Cookie，
+    // 退出登录时同步清空 QQ / 酷我官方登录窗口独立分区的 Cookie，
     // 确保 CookieStore 与浏览器会话一并干净退出。
     onCookieClear: async (platform) => {
-      if (platform !== 'qq') return;
+      const partitions = { qq: 'persist:qq-music-login', kuwo: 'persist:kuwo-login' };
+      if (!partitions[platform]) return;
       try {
-        await session.fromPartition('persist:qq-music-login').clearStorageData({
+        await session.fromPartition(partitions[platform]).clearStorageData({
           storages: ['cookies', 'localstorage'],
         });
       } catch (err) {
-        console.warn("[QQ登录] 退出时清理分区 Cookie 失败:");
+        console.warn(`[${platform}登录] 退出时清理分区 Cookie 失败:`);
       }
     },
   });

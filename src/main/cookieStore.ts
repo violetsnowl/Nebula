@@ -79,6 +79,17 @@ export function validatePlatformCookie(platform: Platform, normalized: string): 
     }
     return { ok: true };
   }
+  if (platform === 'kuwo') {
+    // 酷我网页登录：userid 为非零数字，且 sid 或 websid 至少有一个。
+    const userid = pairs.get('userid') ?? '';
+    if (!/^\d+$/.test(userid) || /^0+$/.test(userid)) {
+      return { ok: false, error: 'INVALID_KUWO_COOKIE: cookie 缺少有效的 userid' };
+    }
+    if (!pairs.get('sid') && !pairs.get('websid')) {
+      return { ok: false, error: 'INVALID_KUWO_COOKIE: cookie 缺少 sid / websid' };
+    }
+    return { ok: true };
+  }
   return { ok: true };
 }
 

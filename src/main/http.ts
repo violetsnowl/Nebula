@@ -38,6 +38,11 @@ export const PLATFORM_HEADERS: Record<Platform, Record<string, string>> = {
     'User-Agent':
       'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
   },
+  kuwo: {
+    Referer: 'https://www.kuwo.cn/',
+    'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+  },
   qishui: {
     Referer: 'https://www.qishui.com/',
     Origin: 'https://www.qishui.com',

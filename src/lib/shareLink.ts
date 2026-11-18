@@ -17,6 +17,8 @@ export function trackShareLink(track: Track): string | null {
     case 'kugou':
       // 酷狗的 sourceId 是文件 hash（32 位十六进制）
       return /^[0-9a-fA-F]{32}$/.test(id) ? `https://www.kugou.com/song/#hash=${id}` : null;
+    case 'kuwo':
+      return /^\d+$/.test(id) ? `https://www.kuwo.cn/play_detail/${id}` : null;
     default:
       return null;
   }

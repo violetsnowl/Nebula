@@ -40,6 +40,7 @@ const PLATFORM_NAME: Record<string, string> = {
   qq: 'QQ 音乐',
   kugou: '酷狗音乐',
   qishui: '汽水音乐',
+  kuwo: '酷我音乐',
   spotify: 'Spotify',
 };
 

@@ -5,7 +5,10 @@ import {withRequestScope,requestScope} from '../requestScope';
 export function coverCandidates(track:Pick<Track,'platform'|'cover'>):string[] {
   const raw=track.cover;if(!/^https?:\/\//i.test(raw))return [];
   try{
-    const u=new URL(raw);u.protocol='https:';
+    const u=new URL(raw);
+    // 酷我多级 CDN 的 https 证书与域名不匹配：保持原协议，不升级。
+    if(track.platform==='kuwo')return [u.href];
+    u.protocol='https:';
     if(track.platform==='netease'){u.searchParams.delete('param');return [...new Set([u.href,raw])];}
     if(track.platform==='qq')return [...new Set([u.href.replace(/T002R\d+x\d+M000/,'T002M000'),u.href.replace(/T002R\d+x\d+M000/,'T002R800x800M000'),raw])];
     if(track.platform==='kugou')return [...new Set([u.href.replace(/\{size\}|%7Bsize%7D/gi,'0').replace(/\/stdmusic\/\d+\//,'/stdmusic/0/'),u.href.replace(/\{size\}|%7Bsize%7D/gi,'1000'),raw])];
@@ -35,7 +38,7 @@ export function imageDimensions(b:Buffer):{width:number;height:number}|null {
   return width>0 && height>0 && width<=32768 && height<=32768?{width,height}:null;
 }
 function allowed(u:URL):boolean {
-  return ['https:','http:'].includes(u.protocol) && !u.username && !u.password && ['music.126.net','music.163.com','gtimg.cn','gtimg.com','qq.com','kugou.com','kugou.net','scdn.co','byteimg.com','douyinpic.com','bytedance.net'].some(h=>u.hostname===h || u.hostname.endsWith('.'+h));
+  return ['https:','http:'].includes(u.protocol) && !u.username && !u.password && ['music.126.net','music.163.com','gtimg.cn','gtimg.com','qq.com','kugou.com','kugou.net','kuwo.cn','scdn.co','byteimg.com','douyinpic.com','bytedance.net'].some(h=>u.hostname===h || u.hostname.endsWith('.'+h));
 }
 export class CoverService {
   private cache=new Map<string,{at:number;info:CoverInfo}>();

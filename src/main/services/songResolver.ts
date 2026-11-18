@@ -8,9 +8,10 @@ import { requestScope, RequestCancelled, throwIfCancelled, withRequestScope } fr
 import { sourceTiming } from '../../lib/audio/sourceLifetime';
 import { QQ_AUTH_EXPIRED } from './qqSession';
 
-const PLAYABLE: Platform[] = ['netease', 'qq', 'kugou'];
+const PLAYABLE: Platform[] = ['netease', 'qq', 'kugou', 'kuwo'];
 const LEVELS: Record<string, string[]> = {
   netease: ['jymaster','hires','lossless','exhigh','standard'], qq: ['flac','320k','128k'], kugou: ['hires','flac','320','128'],
+  kuwo: ['128'], // 实测匿名只有 128k；高档位待真实账号核验后再加
 };
 export type UrlProbe = (url: string, platform: Platform, signal?: AbortSignal) => Promise<boolean>;
 export interface ResolveOptions { signal?: AbortSignal; forceRefresh?: boolean }

@@ -33,6 +33,7 @@ contextBridge.exposeInMainWorld('nebulaAPI', {
   qqLoginWindow: () => ipcRenderer.invoke('nebula:login:qq:window'),
   kugouLoginWindow: () => ipcRenderer.invoke('nebula:login:kugou:window'),
   qishuiLoginWindow: () => ipcRenderer.invoke('nebula:login:qishui:window'),
+  kuwoLoginWindow: () => ipcRenderer.invoke('nebula:login:kuwo:window'),
   openLocalDirectory: () => ipcRenderer.invoke('nebula:open-local-directory'),
   openExternal: (url) => ipcRenderer.invoke('nebula:open-external', { url }),
   wallpaperList: () => ipcRenderer.invoke('nebula:wallpaper:list'),

@@ -143,7 +143,7 @@ function ManualImport({
           ref={inputRef}
           className="input"
           type="text"
-          placeholder="网易云 / QQ / 酷狗 / 汽水 / Spotify 的歌单链接"
+          placeholder="网易云 / QQ / 酷狗 / 酷我 / 汽水 / Spotify 的歌单链接"
           aria-label="歌单链接"
           value={value}
           onChange={(e) => setValue(e.target.value)}
@@ -311,7 +311,7 @@ export const PlaylistDock = memo(function PlaylistDock({
                 aria-label={meta.name}
                 onClick={() => setFilter(p)}
               >
-                <img alt="" src={meta.logo} />
+                {meta.logo ? <img alt="" src={meta.logo} /> : curFilter === p ? null : meta.name.slice(0, 1)}
                 {curFilter === p ? meta.name : ''}
               </button>
             );
@@ -348,7 +348,7 @@ export const PlaylistDock = memo(function PlaylistDock({
                     <span className="lbl">
                       <span className="nm">{pl.name}</span>
                       <small>
-                        <img alt="" src={meta.logo} />
+                        {meta.logo ? <img alt="" src={meta.logo} /> : null}
                         {pl.trackCount.toLocaleString('en-US')} 首
                       </small>
                     </span>
@@ -484,7 +484,7 @@ export const PlaylistDock = memo(function PlaylistDock({
             <div className="pl-info">
               <h3 title={sel.name}>{sel.name}</h3>
               <div className="meta">
-                <img alt="" src={selMeta.logo} />
+                {selMeta.logo ? <img alt="" src={selMeta.logo} /> : null}
                 {selMeta.name} · {(ready ? songs.length : sel.trackCount).toLocaleString('en-US')} 首
               </div>
             </div>

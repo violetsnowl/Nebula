@@ -418,6 +418,8 @@ function platformLabel(platform: string): string {
       return 'QQ 音乐';
     case 'kugou':
       return '酷狗音乐';
+    case 'kuwo':
+      return '酷我音乐';
     default:
       return platform;
   }

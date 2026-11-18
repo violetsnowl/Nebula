@@ -6,6 +6,7 @@ import { QqAdapter } from './qqAdapter';
 import { KugouAdapter } from './kugouAdapter';
 import { SpotifyAdapter } from './spotifyAdapter';
 import { QishuiAdapter } from './qishuiAdapter';
+import { KuwoAdapter } from './kuwoAdapter';
 
 export type AdapterMap = Record<Platform, PlatformAdapter>;
 
@@ -16,6 +17,7 @@ export function createAdapters(http: HttpClient, cookies: CookieStore): AdapterM
     kugou: new KugouAdapter(http, cookies),
     spotify: new SpotifyAdapter(http, cookies),
     qishui: new QishuiAdapter(http, cookies),
+    kuwo: new KuwoAdapter(http, cookies),
   };
 }
 
@@ -48,6 +50,10 @@ export function resolveAdapterByUrl(input: string): UrlTarget | null {
   if (/qishui\.com/.test(url) || /douyin\.com/.test(url)) {
     const id = url.match(/id=([\d]+)/i)?.[1] ?? url.match(/playlist\/([\d]+)/i)?.[1];
     if (id) return { platform: 'qishui', id };
+  }
+  if (/(?:^|[/.@])kuwo\.cn(?:[:/?#]|$)/i.test(url)) {
+    const id = url.match(/playlist_detail\/(\d+)/i)?.[1] ?? url.match(/[?&#]pid=(\d+)/i)?.[1];
+    if (id) return { platform: 'kuwo', id };
   }
   return null;
 }

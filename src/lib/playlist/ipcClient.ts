@@ -212,6 +212,7 @@ export interface DesktopApi {
   qqLoginWindow: () => IpcResult<{ ok: boolean; message?: string; error?: string }>;
   kugouLoginWindow: () => IpcResult<{ ok: boolean; message?: string; error?: string }>;
   qishuiLoginWindow: () => IpcResult<{ ok: boolean; message?: string; error?: string }>;
+  kuwoLoginWindow: () => IpcResult<{ ok: boolean; message?: string; error?: string }>;
   openLocalDirectory: () => IpcResult<{ tracks: DesktopTrack[]; canceled?: boolean }>;
   openExternal: (url: string) => IpcResult<boolean>;
   wallpaperList: () => IpcResult<DesktopWallpaperItem[]>;

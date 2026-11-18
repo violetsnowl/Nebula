@@ -8,6 +8,7 @@ const HOSTS: Array<[string, Platform]> = [
   ['music.163.com','netease'], ['music.126.net','netease'],
   ['qq.com','qq'], ['gtimg.cn','qq'], ['gtimg.com','qq'], ['qpic.cn','qq'],
   ['kugou.com','kugou'], ['kugou.com.cn','kugou'], ['kugou.net','kugou'],
+  ['kuwo.cn','kuwo'],
 ];
 export function audioPlatform(url: URL): Platform | null {
   if (!['https:','http:'].includes(url.protocol) || url.username || url.password) return null;

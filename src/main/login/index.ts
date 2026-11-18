@@ -15,6 +15,7 @@ export { NeteaseLogin } from './neteaseLogin';
 export { KugouLogin } from './kugouLogin';
 export { QishuiLogin } from './qishuiLogin';
 export { QqLogin, hash33 } from './qqLogin';
+export { KuwoLogin } from './kuwoLogin';
 
 export function createKugouLoginAdapter(kugouLogin: {
   getAccount: () => Promise<AccountInfo | null>;
@@ -26,6 +27,20 @@ export function createKugouLoginAdapter(kugouLogin: {
     kind: 'window',
     getAccount: () => kugouLogin.getAccount(),
     getMyPlaylists: kugouLogin.getMyPlaylists,
+    unavailableReason: undefined,
+  };
+}
+
+export function createKuwoLoginAdapter(kuwoLogin: {
+  getAccount: () => Promise<AccountInfo | null>;
+  getMyPlaylists?: () => Promise<PlaylistSummary[]>;
+}): LoginAdapter {
+  return {
+    platform: 'kuwo',
+    name: '酷我音乐',
+    kind: 'window',
+    getAccount: () => kuwoLogin.getAccount(),
+    getMyPlaylists: kuwoLogin.getMyPlaylists,
     unavailableReason: undefined,
   };
 }

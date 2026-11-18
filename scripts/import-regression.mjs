@@ -6,12 +6,13 @@ const responses={
  qq:{cdlist:[{disstid:1,dissname:'公开测试',songlist:[{songmid:'mid',songname:'测试曲',singer:[singer],albummid:'album',albumname:'测试专辑',interval:180}]}]},
  kugou:{data:{info:[{hash:'hash',songname:'测试曲',singername:'测试歌手',album_name:'测试专辑',imgurl:'https://imgessl.kugou.com/stdmusic/{size}/test.jpg',duration:180}]}},
  spotify:{id:'test',name:'公开测试',tracks:{items:[{track:{id:'song',name:'测试曲',artists:[singer],album:{name:'测试专辑',images:[{url:'https://i.scdn.co/image/small',width:64,height:64},{url:'https://i.scdn.co/image/big',width:640,height:640}]},duration_ms:180000}}]}},
+ kuwo:{id:1,title:'公开测试',pic:'http://img1.kuwo.cn/star/userpl2015/1/2/3_150.jpg',total:1,musiclist:[{id:'123',name:'测试曲',artist:'测试歌手',album:'测试专辑',albumid:'9',albumpic:'http://img2.kuwo.cn/star/albumcover/120/6/48/1.jpg',duration:'180'}]},
  qishui:{playlist:{id:'1',title:'公开测试'},media_resources:[{entity:{track_wrapper:{track:{id:'1',title:'测试曲',artists:[singer],album:{name:'测试专辑',cover:'https://p3-luna.byteimg.com/test.jpg'},duration:180000}}}}]},
 };
 const cookies={getHeader:p=>p==='qishui'?'SYNTHETIC=1':'',get:()=>null,onChange:()=>{}},http={requestJson:async(_url,opts)=>responses[opts.platform]};
 const adapters=b.createAdapters(http,cookies),handlers=new Map();
 b.registerIpcHandlers({handle:(k,f)=>handlers.set(k,f)},{adapters,cookies,resolver:{},lyricService:{},login:{},audioProxy:{urlFor:u=>u}});
-const urls={netease:'https://music.163.com/#/playlist?id=1',qq:'https://y.qq.com/n/ryqq/playlist/1',kugou:'https://www.kugou.com/yy/special/single/3756318.html',spotify:'https://open.spotify.com/playlist/test',qishui:'https://www.qishui.com/playlist/1'};
+const urls={netease:'https://music.163.com/#/playlist?id=1',qq:'https://y.qq.com/n/ryqq/playlist/1',kugou:'https://www.kugou.com/yy/special/single/3756318.html',spotify:'https://open.spotify.com/playlist/test',qishui:'https://www.qishui.com/playlist/1',kuwo:'https://www.kuwo.cn/playlist_detail/1'};
 let n=0;
 for(const platform of Object.keys(urls)){
  const r=await handlers.get('nebula:import-playlist')(null,{url:urls[platform]});assert.equal(r.ok,true,r.error);assert.equal(r.data.tracks.length,1);
@@ -33,4 +34,4 @@ const denied=new b.SpotifyAdapter({requestJson:async(url)=>url.includes('pathfin
   assert.equal(pl.tracks.length,3);assert.equal(pl.name,'查询服务歌单');assert.equal(pl.tracks[2].duration,180);
   assert.ok(seen.every(u=>u.includes('pathfinder')));n++;console.log('通过 Spotify 查询服务分页导入');
 }
-console.log(`五平台导入契约 ${n}/${n}`);
+console.log(`六平台导入契约 ${n}/${n}`);

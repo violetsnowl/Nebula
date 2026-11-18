@@ -28,6 +28,7 @@ export interface IpcDeps {
   qqLoginWindow?: () => Promise<{ ok: boolean; message?: string; error?: string }>;
   kugouLoginWindow?: () => Promise<{ ok: boolean; message?: string; error?: string }>;
   qishuiLoginWindow?: () => Promise<{ ok: boolean; message?: string; error?: string }>;
+  kuwoLoginWindow?: () => Promise<{ ok: boolean; message?: string; error?: string }>;
   /** Optional hook invoked after a platform cookie is cleared (e.g. purge Electron partition sessions). */
   onCookieClear?: (platform: Platform) => Promise<void> | void;
   wallpaperLibrary?: WallpaperLibrary;
@@ -62,7 +63,7 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
   safe('nebula:import-playlist', async ({ url }: { url?: string }) => {
     if (!url) throw new Error('缺少歌单链接');
     const target: UrlTarget | null = resolveAdapterByUrl(url);
-    if (!target) throw new Error('无法识别的歌单链接（支持网易云 / QQ音乐 / 酷狗 / Spotify / 汽水）');
+    if (!target) throw new Error('无法识别的歌单链接（支持网易云 / QQ音乐 / 酷狗 / 酷我 / Spotify / 汽水）');
     const playlist = await deps.adapters[target.platform].fetchPlaylist(target.id);
     return {
       platformName: target.platform,
@@ -243,5 +244,9 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
   safe('nebula:login:qishui:window', async () => {
     if (!deps.qishuiLoginWindow) throw new Error('汽水登录窗口不可用');
     return deps.qishuiLoginWindow();
+  });
+  safe('nebula:login:kuwo:window', async () => {
+    if (!deps.kuwoLoginWindow) throw new Error('酷我登录窗口不可用');
+    return deps.kuwoLoginWindow();
   });
 }

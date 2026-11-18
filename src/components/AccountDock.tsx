@@ -572,6 +572,39 @@ function QishuiLogin({ onSuccess }: { onSuccess: () => void }) {
   );
 }
 
+/** 酷我音乐：打开官网登录窗口（账号密码 / 短信 / QQ / 微信）。 */
+function KuwoLogin({ onSuccess }: { onSuccess: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState('');
+
+  const openWindow = useCallback(async () => {
+    if (!window.nebulaAPI) return;
+    setBusy(true);
+    setStatus('正在打开酷我登录页…');
+    try {
+      const r = await window.nebulaAPI.kuwoLoginWindow();
+      const data = r.ok ? r.data : null;
+      if (data?.ok) {
+        setStatus(data.message ?? '登录成功');
+        onSuccess();
+      } else {
+        setStatus(data?.error ?? '登录窗口已关闭');
+      }
+    } finally {
+      setBusy(false);
+    }
+  }, [onSuccess]);
+
+  return (
+    <div className="rp-flow">
+      <button type="button" className="btn primary full" disabled={busy} onClick={openWindow}>
+        {busy ? '等待登录…' : '打开酷我登录页'}
+      </button>
+      <div className="rp-flow-status">{status || '未登录酷我音乐'}</div>
+    </div>
+  );
+}
+
 function PlatformLogin({
   platform,
   info,
@@ -595,6 +628,7 @@ function PlatformLogin({
   if (platform === 'qq') return <QqLogin lapsed={lapsed} onSuccess={() => onRefresh('qq')} />;
   if (platform === 'kugou') return <KugouLogin onSuccess={() => onRefresh('kugou')} />;
   if (platform === 'qishui') return <QishuiLogin onSuccess={() => onRefresh('qishui')} />;
+  if (platform === 'kuwo') return <KuwoLogin onSuccess={() => onRefresh('kuwo')} />;
   if (platform === 'spotify') return <SpotifyLogin onSuccess={() => onRefresh('spotify')} />;
   return (
     <div className="rp-flow">
@@ -610,6 +644,7 @@ const LOGIN_HOW: Record<string, string> = {
   kugou: '用酷狗音乐 App 扫码登录',
   qishui: '在官方登录页扫码，登录后自动回到这里',
   spotify: '在浏览器里授权，授权完成后自动回到这里',
+  kuwo: '在酷我官网登录：账号密码、短信或 QQ / 微信',
 };
 
 /** 账号详情：已登录 = 账号信息 + 刷新 / 退出；未登录 = 该平台既有的登录流程。 */
@@ -652,7 +687,7 @@ function AccountDetail({
   return (
     <div className="rp-detail">
       <span className="rp-big-logo">
-        <img src={meta.logo} alt="" draggable={false} />
+        {meta.logo ? <img src={meta.logo} alt="" draggable={false} /> : meta.name.slice(0, 1)}
       </span>
       <h3>{meta.name}</h3>
       {account?.auth && (
@@ -1331,7 +1366,7 @@ export const AccountDock = memo(function AccountDock({
                 }}
               >
                 <span className="rp-logo">
-                  <img src={meta.logo} alt="" draggable={false} />
+                  {meta.logo ? <img src={meta.logo} alt="" draggable={false} /> : meta.name.slice(0, 1)}
                 </span>
                 <span className="lbl">
                   {meta.name}
