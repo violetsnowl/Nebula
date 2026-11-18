@@ -580,8 +580,8 @@ export class LyricEngine {
     C.el.classList.remove('is-settle');
     this.tails.delete(C);
     if (C.rts) C.el.classList.add('is-grad');
-    // 上场轻弹：96% → 100%（快歌 98% 起）
-    C.sc = Math.min(C.sc, 0.955 + 0.025 * this.dOf(C));
+    // 上场轻弹：96% → 100%（快歌 98% 起）。起点不低于其他句的 96%（#175：原来先压到 95.5%，开唱瞬间会往回缩一下）
+    C.sc = Math.min(C.sc, 0.96 + 0.02 * this.dOf(C));
     this.rows.forEach((r, i) => {
       if (i > this.cur) r.pre = false;
       r.el.classList.toggle('is-past', i < this.cur);
@@ -690,13 +690,17 @@ export class LyricEngine {
     }
   }
 
-  /** 每句一根弹簧（刚度 150、阻尼比 0.94、不回弹；快歌刚度到 230）；缩放弹簧刚度 300、阻尼 15（约 1% 回弹）。 */
+  /**
+   * 每句一根弹簧（刚度 150、阻尼比 0.94、不回弹；快歌刚度到 230）；缩放弹簧刚度 300、临界阻尼（#175，不回弹）。
+   * 原来阻尼 15（阻尼比 0.43）会冲到 100.9% 再回落；缩放以句首为原点，回弹全变成右侧文字的横向往返，看着像整句左右抖一下。
+   */
   private physics(dt: number, now: number): void {
     const dn = this.dOf(this.rows[this.cur]);
     const ky = 150 + 80 * dn;
     const cy = 2 * 0.94 * Math.sqrt(ky);
-    const ks = 300;
-    const cs = 15;
+    // 临界阻尼的精确解：任何帧间隔下都不越过目标（逐帧近似在掉帧时会冲过头）
+    const ws = Math.sqrt(300);
+    const es = Math.exp(-ws * dt);
     // 景深透明度逐帧插值：时间常数约 0.17s（快歌更快）
     const ko = 1 - Math.exp(-dt / Math.max(0.05, (0.5 - 0.22 * dn) / 3));
     for (const r of this.rows) {
@@ -706,9 +710,10 @@ export class LyricEngine {
         r.vy += a * dt;
         r.y += r.vy * dt;
       }
-      const as = ks * (r.ts - r.sc) - cs * r.vs;
-      r.vs += as * dt;
-      r.sc += r.vs * dt;
+      const e0 = r.sc - r.ts;
+      const q = r.vs + ws * e0;
+      r.sc = r.ts + (e0 + q * dt) * es;
+      r.vs = (r.vs - ws * q * dt) * es;
       this.apply(r);
     }
   }
