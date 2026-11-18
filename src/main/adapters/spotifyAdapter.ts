@@ -1,7 +1,7 @@
 import type { CookieStore } from '../cookieStore';
 import type { HttpClient } from '../http';
 import type { AlbumDetail, Lyric, Playlist, PlatformAdapter, SongUrl, Track } from '../types';
-import { requestScope, withRequestScope } from '../requestScope';
+import { withRequestScope } from '../requestScope';
 
 const API = 'https://api.spotify.com/v1';
 /**
@@ -11,6 +11,8 @@ const API = 'https://api.spotify.com/v1';
  */
 export const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID || '65b708073fc0480ea92a077233ca87bd';
 export const SPOTIFY_REDIRECT_PORT = 5588;
+/** 访问令牌有效期 1 小时；写入超过 55 分钟就在请求前先续，少走一次 401。 */
+export const SPOTIFY_RENEW_AFTER_MS = 55 * 60_000;
 export const SPOTIFY_SCOPES = 'playlist-read-private playlist-read-collaborative user-library-read user-read-private user-read-email';
 type PlaylistPage={items?:Array<{track?:Record<string,any>;item?:Record<string,any>}>;next?:string|null;total?:number};
 
@@ -312,22 +314,38 @@ export class SpotifyAdapter implements PlatformAdapter {
     }
   }
 
-  /** 自动附带 Bearer；401 时用 refresh_token 换新后重试一次。 */
+  /**
+   * 自动附带 Bearer。令牌快到期时先续；401 时：别的请求已经续过（令牌变了）就直接重试，否则续一次再重试。
+   * Spotify 的 refresh_token 用一次就换新、旧的作废，所以续期必须全局只有一个在进行（见 refreshToken）。
+   */
   private async authedRequest<T>(
     url: string,
     extra: { method?: 'GET' | 'POST'; headers?: Record<string, string>; body?: unknown } = {},
   ): Promise<T> {
     const opts = { platform: 'spotify' as const, ...extra } as Parameters<HttpClient['requestJson']>[1];
+    const rec = this.cookies.get('spotify');
+    if (rec?.token && Date.now() - rec.updatedAt > SPOTIFY_RENEW_AFTER_MS) await this.refreshToken();
+    const used = this.cookies.get('spotify')?.cookies;
     try {
       return await this.http.requestJson<T>(url, opts);
     } catch (err) {
       const status = err instanceof Error && /HTTP 401/.test(err.message) ? 401 : 0;
-      if (status !== 401 || !(await this.refreshToken())) throw err;
+      if (status !== 401) throw err;
+      const now = this.cookies.get('spotify')?.cookies;
+      if (!(now && now !== used) && !(await this.refreshToken())) throw err;
       return await this.http.requestJson<T>(url, opts);
     }
   }
 
-  private async refreshToken(): Promise<boolean> {
+  private refreshing?: Promise<boolean>;
+
+  /** 同一时间只续一次：并发的调用共用同一个结果，免得拿已作废的旧 refresh_token 再续一次把登录整组吊销。 */
+  private refreshToken(): Promise<boolean> {
+    if (!this.refreshing) this.refreshing = this.renewOnce().finally(() => { this.refreshing = undefined; });
+    return this.refreshing;
+  }
+
+  private async renewOnce(): Promise<boolean> {
     const rec = this.cookies.get('spotify');
     const refresh = rec?.token;
     const clientId = SPOTIFY_CLIENT_ID;
@@ -335,7 +353,8 @@ export class SpotifyAdapter implements PlatformAdapter {
     try {
       const res = await fetch('https://accounts.spotify.com/api/token', {
         method: 'POST',
-        signal: requestScope()?.signal || AbortSignal.timeout(10000),
+        // 续期是共用的：不跟某一个调用方的取消走，免得它被取消时连带别人一起失败。
+        signal: AbortSignal.timeout(10000),
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: new URLSearchParams({
           grant_type: 'refresh_token',
@@ -343,8 +362,12 @@ export class SpotifyAdapter implements PlatformAdapter {
           client_id: clientId,
         }).toString(),
       });
-      const tok = (await res.json()) as { access_token?: string; refresh_token?: string };
-      if (!tok.access_token) return false;
+      const tok = (await res.json()) as { access_token?: string; refresh_token?: string; error?: string };
+      if (!tok.access_token) {
+        // invalid_grant = 续期令牌已被吊销或作废，只能重新授权；只记错误码，不记令牌。
+        console.warn('[Spotify] 续期失败:', res.status, tok.error ?? '');
+        return false;
+      }
       this.cookies.set('spotify', tok.access_token, tok.refresh_token ?? refresh, 'Spotify');
       return true;
     } catch {

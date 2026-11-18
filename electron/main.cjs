@@ -444,8 +444,12 @@ function createQishuiLoginWindow(cookies, qishuiLogin) {
         resolve(result);
       };
 
-      // 轮询扫码状态
+      // 轮询扫码状态。同一时间只跑一个：二次验证（2046）会在 checkQrConnect 里等用户操作，
+      // 以前每 2 秒照样发下一轮，下一轮再触发 2046、重新弹验证页，上一轮收尾又把窗口藏起来，验证页就一直闪（#181）。
+      let polling = false;
       pollTimer = setInterval(async () => {
+        if (polling || settled) return;
+        polling = true;
         try {
           const data = await qishuiLogin.checkQrConnect(token);
           console.log("[汽水登录] 轮询返回:");
@@ -465,6 +469,8 @@ function createQishuiLoginWindow(cookies, qishuiLogin) {
           if (pollErrors >= 12) {
             finish({ ok: false, error: `汽水登录验证失败：${String(err.message || err)}` });
           }
+        } finally {
+          polling = false;
         }
       }, 2000);
 

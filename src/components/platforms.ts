@@ -3,6 +3,7 @@ import qqLogo from '../../docs/logo/QQ_Music2023.svg.webp';
 import kugouLogo from '../../docs/logo/kugou.webp';
 import qishuiLogo from '../../docs/logo/qishui.png';
 import spotifyLogo from '../../docs/logo/spotify-logo.webp';
+import kuwoLogo from '../../docs/logo/kuwo.png';
 
 export interface PlatformMeta {
   id: string;
@@ -19,8 +20,7 @@ export const PLATFORM_META: Record<string, PlatformMeta> = {
   kugou: { id: 'kugou', name: '酷狗音乐', logo: kugouLogo, brand: '#2a9df4' },
   qishui: { id: 'qishui', name: '汽水音乐', logo: qishuiLogo, brand: '#ff5a79' },
   spotify: { id: 'spotify', name: 'Spotify', logo: spotifyLogo, brand: '#1db954' },
-  // logo 素材待补（docs/logo 下放入文件后在这里 import）；空串时界面退化为首字或不显示图标。
-  kuwo: { id: 'kuwo', name: '酷我音乐', logo: '', brand: '#ffb400' },
+  kuwo: { id: 'kuwo', name: '酷我音乐', logo: kuwoLogo, brand: '#ffb400' },
 };
 
 /** 左右 Dock 统一的平台顺序（与后端 platform id 一致）。 */

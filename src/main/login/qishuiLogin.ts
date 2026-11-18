@@ -384,8 +384,20 @@ export class QishuiLogin {
     return { qrcode: scanUrl, token, scanUrl };
   }
 
-  /** 轮询扫码状态 */
-  async checkQrConnect(
+  private checking: Promise<{ status: string; error_code: number; session_cookie?: string; _loginOk?: boolean }> | null = null;
+
+  /**
+   * 轮询扫码状态。同一时间只有一次在进行，并发的调用共用同一个结果：
+   * 二次验证（2046）要等用户在验证页操作，期间再发查询会重新触发验证、把正在用的验证页关掉再弹出（#181）。
+   */
+  checkQrConnect(
+    token: string,
+  ): Promise<{ status: string; error_code: number; session_cookie?: string; _loginOk?: boolean }> {
+    if (!this.checking) this.checking = this.checkQrConnectOnce(token).finally(() => { this.checking = null; });
+    return this.checking;
+  }
+
+  private async checkQrConnectOnce(
     token: string,
   ): Promise<{ status: string; error_code: number; session_cookie?: string; _loginOk?: boolean }> {
     await this.initSignEngine();
