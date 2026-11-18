@@ -47,7 +47,8 @@ export function LyricColumn({ lines, settings, compact, demo, className }: Lyric
       a.settings.font !== cur.settings.font ||
       a.settings.translation !== cur.settings.translation ||
       a.settings.roman !== cur.settings.roman ||
-      a.settings.jaReading !== cur.settings.jaReading
+      a.settings.jaRoman !== cur.settings.jaRoman ||
+      a.settings.jaKana !== cur.settings.jaKana
     ) {
       eng.setSettings(cur.settings);
       a.settings = cur.settings;
@@ -134,7 +135,7 @@ export function LyricColumn({ lines, settings, compact, demo, className }: Lyric
   // 歌词 / 设置变化
   useEffect(() => {
     sync();
-  }, [lines, settings.scheme, settings.font, settings.translation, settings.roman, settings.jaReading]);
+  }, [lines, settings.scheme, settings.font, settings.translation, settings.roman, settings.jaRoman, settings.jaKana]);
 
   return <div ref={hostRef} className={className ? `lc-root ${className}` : 'lc-root'} />;
 }

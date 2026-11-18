@@ -13,13 +13,14 @@ export interface ListenSettings {
   translation: boolean;
   /** 读音（#161 罗马音，#172 起含假名注音；默认关；只在有读音的歌出现开关）。 */
   roman: boolean;
-  /** 日语读音的形式（#172）：kana = 汉字上方标平假名（默认）；roman = 原文下面一行罗马音。韩语始终是罗马音。 */
-  jaReading: 'kana' | 'roman';
+  /** 日语读音（#173）：原文下面一行罗马音、汉字上方标平假名，可单独开也可一起开（至少留一个）。韩语始终是罗马音。 */
+  jaRoman: boolean;
+  jaKana: boolean;
 }
 
 const KEY = 'music-nebula.listen-lyrics';
 
-const DEFAULTS: ListenSettings = { scheme: 'accent', font: 'serif', translation: true, roman: false, jaReading: 'kana' };
+const DEFAULTS: ListenSettings = { scheme: 'accent', font: 'serif', translation: true, roman: false, jaRoman: true, jaKana: true };
 
 function load(): ListenSettings {
   try {
@@ -31,7 +32,8 @@ function load(): ListenSettings {
       font: o?.font === 'sans' ? 'sans' : 'serif',
       translation: typeof o?.translation === 'boolean' ? o.translation : DEFAULTS.translation,
       roman: typeof o?.roman === 'boolean' ? o.roman : DEFAULTS.roman,
-      jaReading: o?.jaReading === 'roman' ? 'roman' : 'kana',
+      jaRoman: typeof o?.jaRoman === 'boolean' ? o.jaRoman : DEFAULTS.jaRoman,
+      jaKana: typeof o?.jaKana === 'boolean' ? o.jaKana : DEFAULTS.jaKana,
     };
   } catch {
     return { ...DEFAULTS };
@@ -48,12 +50,15 @@ export function getListenSettings(): ListenSettings {
 /** 合并修改并持久化；值没变化时不通知（保持快照引用稳定，useSyncExternalStore 不会多渲染）。 */
 export function setListenSettings(patch: Partial<ListenSettings>): void {
   const next: ListenSettings = { ...current, ...patch };
+  // 日语读音至少留一种（#173）：两种都关等于读音开关没意义
+  if (!next.jaRoman && !next.jaKana) return;
   if (
     next.scheme === current.scheme &&
     next.font === current.font &&
     next.translation === current.translation &&
     next.roman === current.roman &&
-    next.jaReading === current.jaReading
+    next.jaRoman === current.jaRoman &&
+    next.jaKana === current.jaKana
   )
     return;
   current = next;

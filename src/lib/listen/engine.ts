@@ -145,7 +145,7 @@ export class LyricEngine {
   private rows: Row[] = [];
   private tails = new Set<Row>();
   private script: LyricScript = 'zh';
-  private settings: ListenSettings = { scheme: 'accent', font: 'serif', translation: true, roman: false, jaReading: 'kana' };
+  private settings: ListenSettings = { scheme: 'accent', font: 'serif', translation: true, roman: false, jaRoman: true, jaKana: true };
   // 尺寸
   private H = REF_H;
   private W = 800;
@@ -177,7 +177,8 @@ export class LyricEngine {
     host.dataset.scheme = this.settings.scheme;
     host.dataset.tr = this.settings.translation ? 'on' : 'off';
     host.dataset.ro = this.settings.roman ? 'on' : 'off';
-    host.dataset.rd = this.settings.jaReading;
+    host.dataset.jr = this.settings.jaRoman ? 'on' : 'off';
+    host.dataset.jk = this.settings.jaKana ? 'on' : 'off';
 
     this.box = document.createElement('div');
     this.box.className = 'lc-lines';
@@ -223,12 +224,15 @@ export class LyricEngine {
     if (this.destroyed) return;
     const fontChanged = s.font !== this.settings.font;
     const trChanged =
-      s.translation !== this.settings.translation || s.roman !== this.settings.roman || s.jaReading !== this.settings.jaReading;
+      s.translation !== this.settings.translation || s.roman !== this.settings.roman ||
+      s.jaRoman !== this.settings.jaRoman ||
+      s.jaKana !== this.settings.jaKana;
     this.settings = { ...s };
     this.host.dataset.scheme = s.scheme;
     this.host.dataset.tr = s.translation ? 'on' : 'off';
     this.host.dataset.ro = s.roman ? 'on' : 'off';
-    this.host.dataset.rd = s.jaReading;
+    this.host.dataset.jr = s.jaRoman ? 'on' : 'off';
+    this.host.dataset.jk = s.jaKana ? 'on' : 'off';
     if (!this.rows.length) {
       this.applyTypography();
       return;
@@ -316,7 +320,8 @@ export class LyricEngine {
     delete this.host.dataset.scheme;
     delete this.host.dataset.tr;
     delete this.host.dataset.ro;
-    delete this.host.dataset.rd;
+    delete this.host.dataset.jr;
+    delete this.host.dataset.jk;
     delete this.host.dataset.browsing;
     delete this.host.dataset.playing;
   }

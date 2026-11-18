@@ -1186,7 +1186,7 @@ async function main() {
   await page.waitForTimeout(1000);
 
   // 10g+++. 读音（#161 罗马音，#172 假名注音）：有读音的歌，听音空间默认不显示、翻译按钮左边多一个读音按钮；
-  // 打开后日语句在汉字上方标平假名（默认「假名注音」），韩语句显示罗马音；
+  // 打开后日语句默认同时显示汉字注音和罗马音（#173 可在面板里分别开关），韩语句显示罗马音；
   // 点开后罗马音在原文正下方、翻译之前；和原文一样的（英文行）不挂
   const roman = await page.evaluate(async (audio) => {
     const api = window.nebulaAPI;
@@ -1258,7 +1258,7 @@ async function main() {
       pressed: btn?.getAttribute('aria-pressed'),
       shown: !!koEl && getComputedStyle(koEl).display !== 'none',
       text: roEl?.textContent || '',
-      jaRomanHidden: !!roEl && getComputedStyle(roEl).display === 'none',
+      jaRomanShown: !!roEl && getComputedStyle(roEl).display !== 'none',
       ruby: rbs.map((e) => e.textContent).join('/'),
       rubyShown: !!rbs[0] && getComputedStyle(rbs[0]).display !== 'none',
       rubyCentered,
@@ -1268,15 +1268,58 @@ async function main() {
       korean: [...(root?.querySelectorAll('.ly-ro') || [])].some((e) => e.textContent === 'geuddae ggumman gatatdeon'),
       japaneseKept: [...(root?.querySelectorAll('.ly-ro') || [])].some((e) => e.textContent === "Baby wa ta shi cho 't to"),
     };
-    btn?.click();
-    await new Promise((r) => setTimeout(r, 200));
-    api.fetchLyric = keep;
+    window.__qaKeepLyric = keep;
     return { before, after };
   }, lyricAudio);
+  // 日语读音面板（#173）：悬停读音按钮弹出，「罗马音」「汉字注音」各自勾选，最后一项勾不掉；
+  // 右键弹出的移开鼠标不收，Esc 只收面板、不退出听音空间
+  const jaRomanVisible = () =>
+    page.evaluate(() => {
+      const e = [...document.querySelectorAll('.ls-lyrics .ly-line.is-ja .ly-ro')][0];
+      return !!e && getComputedStyle(e).display !== 'none';
+    });
+  const rubyVisible = () =>
+    page.evaluate(() => {
+      const e = document.querySelector('.ls-lyrics .ly-rb');
+      return !!e && getComputedStyle(e).display !== 'none';
+    });
+  await page.hover('.ls-rob');
+  await page.waitForTimeout(500);
+  const panel = { items: await page.locator('.ls-rdpop .ls-rdpop-item').count() };
+  if (panel.items === 2) {
+    await page.locator('.ls-rdpop .ls-rdpop-item', { hasText: '罗马音' }).click();
+    await page.waitForTimeout(300);
+    panel.romanOff = !(await jaRomanVisible()) && (await rubyVisible());
+    // 只剩汉字注音：勾不掉
+    await page.locator('.ls-rdpop .ls-rdpop-item', { hasText: '汉字注音' }).click();
+    await page.waitForTimeout(300);
+    panel.lastKept = await rubyVisible();
+    await page.locator('.ls-rdpop .ls-rdpop-item', { hasText: '罗马音' }).click();
+    await page.waitForTimeout(300);
+    panel.bothBack = (await jaRomanVisible()) && (await rubyVisible());
+  }
+  await page.mouse.move(400, 300);
+  await page.waitForTimeout(600);
+  panel.hoverClosed = !(await page.$('.ls-rdpop'));
+  await page.click('.ls-rob', { button: 'right' });
+  await page.mouse.move(400, 300);
+  await page.waitForTimeout(600);
+  panel.pinnedStays = !!(await page.$('.ls-rdpop'));
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(400);
+  panel.escClosed = !(await page.$('.ls-rdpop')) && !!(await page.$('.ls-root'));
+  roman.panel = panel;
+  await page.evaluate(() => {
+    document.querySelector('.ls-rob')?.click();
+    window.nebulaAPI.fetchLyric = window.__qaKeepLyric;
+  });
+  await page.waitForTimeout(200);
   const romanOk =
     roman.before.btn && roman.before.pressed === 'false' && roman.before.hidden && roman.before.rubyHidden &&
     roman.after.pressed === 'true' && roman.after.shown && /kimi|hoshi/.test(roman.after.text) &&
-    roman.after.jaRomanHidden && roman.after.ruby === 'きみ/なまえ/よ' && roman.after.rubyShown && roman.after.rubyCentered &&
+    roman.after.jaRomanShown && roman.after.ruby === 'きみ/なまえ/よ' && roman.after.rubyShown && roman.after.rubyCentered &&
+    roman.panel.items === 2 && roman.panel.romanOff && roman.panel.lastKept && roman.panel.bothBack &&
+    roman.panel.hoverClosed && roman.panel.pinnedStays && roman.panel.escClosed &&
     /^ly-main,ly-ro,ly-tr/.test(roman.after.order) && !roman.after.latinDup && roman.after.korean && roman.after.japaneseKept;
   log('听音空间读音（罗马音 / 假名注音）', JSON.stringify(roman));
   await page.keyboard.press('Escape');

@@ -1533,20 +1533,22 @@ export const AccountDock = memo(function AccountDock({
           <Tg checked={lsSettings.roman} onChange={(b) => setListenSpaceSettings({ roman: b })} label="听音空间显示读音" />
         </div>
         <div className="row">
-          <span className="lbl">日语读音</span>
-          <Seg
-            label="日语读音"
-            value={lsSettings.jaReading}
-            options={[
-              { value: 'kana', label: '假名注音' },
-              { value: 'roman', label: '罗马音' },
-            ]}
-            onChange={(v) => setListenSpaceSettings({ jaReading: v })}
+          <span className="lbl">
+            日语罗马音<small>原文下面一行</small>
+          </span>
+          <Tg
+            checked={lsSettings.jaRoman}
+            onChange={(b) => setListenSpaceSettings({ jaRoman: b })}
+            label="日语歌显示罗马音"
           />
         </div>
-        <span className="row-hint">
-          {lsSettings.jaReading === 'kana' ? '汉字上方标平假名；韩语歌显示罗马音。' : '原文下面一行罗马音。'}
-        </span>
+        <div className="row">
+          <span className="lbl">
+            日语汉字注音<small>汉字上方标平假名</small>
+          </span>
+          <Tg checked={lsSettings.jaKana} onChange={(b) => setListenSpaceSettings({ jaKana: b })} label="日语歌显示汉字注音" />
+        </div>
+        <span className="row-hint">两种可以一起开，至少留一种；韩语歌始终显示罗马音。听音空间里悬停或右键读音按钮也能改。</span>
       </div>
     </>
   );

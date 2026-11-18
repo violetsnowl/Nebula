@@ -3,7 +3,7 @@ import { useAudioPlayer } from '../../lib/audio/useAudioPlayer';
 import type { Track } from '../../lib/catalog';
 import type { LyricLineUI } from '../../lib/lyrics';
 import type { DesktopTrack } from '../../lib/playlist/ipcClient';
-import { setListenSettings, useListenSettings } from '../../lib/listen/settings';
+import { setListenSettings, useListenSettings, type ListenSettings } from '../../lib/listen/settings';
 import { useBigCover } from '../../lib/listen/bigCover';
 import { applyListenLayout } from '../../lib/listen/layout';
 import { placeholderBg } from '../../lib/coverPlaceholder';
@@ -106,6 +106,108 @@ function useArtCrossfade(art: Art): { cur: Art; prev: Art | null } {
   return { cur, prev };
 }
 
+/**
+ * 读音开关（#161 罗马音，#172 日语假名注音，#173 面板）：歌词栏右下角、翻译按钮左边，图标是带长音符号的 ā。
+ * 点 = 开关读音。日语歌悬停 0.25 秒或右键弹出小面板：「罗马音」「汉字注音」各自勾选，可以一起开，至少留一个；
+ * 在面板里勾选时顺便打开读音。悬停打开的移开就收；右键打开的点别处或 Esc 才收。
+ */
+function ReadingButton({ settings, japanese, solo }: { settings: ListenSettings; japanese: boolean; solo: boolean }) {
+  const [pop, setPop] = useState<'hover' | 'pinned' | null>(null);
+  const timer = useRef(0);
+  const wrapRef = useRef<HTMLDivElement>(null);
+  const later = (fn: () => void, ms: number) => {
+    window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(fn, ms);
+  };
+  useEffect(() => () => window.clearTimeout(timer.current), []);
+  useEffect(() => {
+    if (pop !== 'pinned') return;
+    const away = (e: PointerEvent) => {
+      if (!wrapRef.current?.contains(e.target as Node)) setPop(null);
+    };
+    const esc = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      e.stopImmediatePropagation();
+      setPop(null);
+    };
+    window.addEventListener('pointerdown', away, true);
+    window.addEventListener('keydown', esc, true);
+    return () => {
+      window.removeEventListener('pointerdown', away, true);
+      window.removeEventListener('keydown', esc, true);
+    };
+  }, [pop]);
+  const enter = () => {
+    if (japanese && pop !== 'pinned') later(() => setPop((p) => p ?? 'hover'), 250);
+  };
+  const leave = () => {
+    if (pop !== 'pinned') later(() => setPop((p) => (p === 'hover' ? null : p)), 250);
+    else window.clearTimeout(timer.current);
+  };
+  const pick = (key: 'jaRoman' | 'jaKana') => {
+    const next = !settings[key];
+    // 至少留一种：最后一个勾不掉
+    if (!next && !(key === 'jaRoman' ? settings.jaKana : settings.jaRoman)) return;
+    setListenSettings(next && !settings.roman ? { [key]: next, roman: true } : { [key]: next });
+  };
+  const rows: Array<{ key: 'jaRoman' | 'jaKana'; label: string; hint: string }> = [
+    { key: 'jaKana', label: '汉字注音', hint: '汉字上方标平假名' },
+    { key: 'jaRoman', label: '罗马音', hint: '原文下面一行' },
+  ];
+  return (
+    <div className={`ls-rdwrap${solo ? ' is-solo' : ''}`} ref={wrapRef} onMouseEnter={enter} onMouseLeave={leave}>
+      {pop && (
+        <div className="ls-rdpop glass-g3" role="menu" aria-label="日语读音">
+          <div className="ls-rdpop-title">日语读音</div>
+          {rows.map((r) => {
+            const on = settings[r.key];
+            const last = on && !(r.key === 'jaRoman' ? settings.jaKana : settings.jaRoman);
+            return (
+              <button
+                key={r.key}
+                type="button"
+                role="menuitemcheckbox"
+                aria-checked={on}
+                className={`ls-rdpop-item${on ? ' is-on' : ''}${last ? ' is-last' : ''}`}
+                data-tip={last ? '至少留一种' : undefined}
+                onClick={() => pick(r.key)}
+              >
+                <span className="ls-rdpop-lbl">
+                  {r.label}
+                  <small>{r.hint}</small>
+                </span>
+                <svg className="ls-rdpop-ck" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <path d="M5 12.5l4.5 4.5L19 7.5" />
+                </svg>
+              </button>
+            );
+          })}
+        </div>
+      )}
+      <button
+        type="button"
+        className="ls-trb ls-rob"
+        aria-pressed={settings.roman}
+        aria-label="读音"
+        aria-haspopup={japanese ? 'menu' : undefined}
+        data-tip={pop ? undefined : settings.roman ? '读音：开' : '读音：关'}
+        onClick={() => setListenSettings({ roman: !settings.roman })}
+        onContextMenu={(e) => {
+          if (!japanese) return;
+          e.preventDefault();
+          window.clearTimeout(timer.current);
+          setPop((p) => (p === 'pinned' ? null : 'pinned'));
+        }}
+      >
+        <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M8.2 5.5h7.6" />
+          <path d="M15.6 14.6a3.6 3.6 0 1 1-7.2 0a3.6 3.6 0 1 1 7.2 0M15.6 10.6v7.9" />
+        </svg>
+      </button>
+    </div>
+  );
+}
+
 interface ListenSpaceProps {
   open: boolean;
   onClose: () => void;
@@ -154,6 +256,8 @@ export const ListenSpace = memo(function ListenSpace({
   const hasTranslation = lines.some((l) => !!l.translation);
   // 有读音（罗马音或假名注音，#172）才出现读音开关
   const hasRoman = lines.some((l) => !!l.roman || !!l.ruby?.length);
+  // 日语歌（#173）：读音按钮带一个悬停 / 右键小面板，选罗马音、汉字注音
+  const hasJa = lines.some((l) => !!l.ja);
 
   // 大封面逐帧插值：只改 transform / 圆角 / 阴影（都按真实尺寸换算），封面本身不做任何模糊或变暗
   const paint = useCallback((r: Rect, slot: Rect) => {
@@ -248,7 +352,7 @@ export const ListenSpace = memo(function ListenSpace({
     if (!open) return;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return;
-      if (document.querySelector('.queue-pop, .quality-pop, .vol-pop, .ctx-menu, .sd-panel.is-open, .info-overlay')) return;
+      if (document.querySelector('.queue-pop, .quality-pop, .vol-pop, .ctx-menu, .sd-panel.is-open, .info-overlay, .ls-rdpop')) return;
       if (pane) onPaneBack();
       else onClose();
     };
@@ -302,22 +406,7 @@ export const ListenSpace = memo(function ListenSpace({
         </div>
         <div className="ls-col">
           <LyricColumn className="ls-lyrics" lines={lines} settings={settings} />
-          {hasRoman && (
-            // 读音开关（#161 罗马音，#172 起含日语假名注音）：在翻译按钮左边，规格与翻译按钮相同；图标是带长音符号的 ā
-            <button
-              type="button"
-              className={`ls-trb ls-rob${hasTranslation ? '' : ' is-solo'}`}
-              aria-pressed={settings.roman}
-              aria-label="读音"
-              data-tip={settings.roman ? '读音：开' : '读音：关'}
-              onClick={() => setListenSettings({ roman: !settings.roman })}
-            >
-              <svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-                <path d="M8.2 5.5h7.6" />
-                <path d="M15.6 14.6a3.6 3.6 0 1 1-7.2 0a3.6 3.6 0 1 1 7.2 0M15.6 10.6v7.9" />
-              </svg>
-            </button>
-          )}
+          {hasRoman && <ReadingButton settings={settings} japanese={hasJa} solo={!hasTranslation} />}
           {hasTranslation && (
             <button
               type="button"

@@ -355,12 +355,110 @@
   border-radius: 50%;
   background: currentColor;
 }
-/* 罗马音开关（#161）：在翻译按钮左边；没有翻译时自己占右下角 */
-.ls-rob {
+/* 读音开关（#161）：在翻译按钮左边；没有翻译时自己占右下角。
+   外面包一层（#173）放悬停 / 右键面板，按钮在包层里照旧是 36px 的图标按钮 */
+.ls-rdwrap {
+  position: absolute;
   right: 40px;
+  bottom: 8px;
+  width: 36px;
+  height: 36px;
 }
-.ls-rob.is-solo {
+.ls-rdwrap.is-solo {
   right: 2px;
+}
+.ls-rdwrap .ls-rob {
+  right: 0;
+  bottom: 0;
+}
+
+/* 日语读音面板（#173）：材质同音质面板（.glass-g3），在按钮正上方、右边对齐；
+   行 = 名称 + 小字说明 + 右侧勾；悬停字自身提亮，勾选 = 亮字 + 勾 */
+.ls-rdpop {
+  position: absolute;
+  right: -6px;
+  bottom: calc(100% + 8px);
+  min-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px;
+  border-radius: 18px;
+  z-index: 2;
+  animation: lsRdPop 0.16s var(--ease-std);
+}
+/* 悬停在面板和按钮之间的缝里不收起 */
+.ls-rdpop::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  height: 10px;
+}
+.ls-rdpop-title {
+  padding: 4px 10px 6px;
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.1em;
+  color: var(--fg-3s);
+}
+.ls-rdpop-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--fg-2);
+  text-align: left;
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  transition: color 0.12s ease;
+}
+.ls-rdpop-item:hover {
+  color: var(--fg);
+}
+.ls-rdpop-item.is-on {
+  color: var(--fg);
+}
+.ls-rdpop-item.is-last {
+  cursor: default;
+}
+.ls-rdpop-lbl {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.35;
+}
+.ls-rdpop-lbl small {
+  font-size: 11px;
+  color: var(--fg-3s);
+}
+.ls-rdpop-ck {
+  flex: none;
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.ls-rdpop-item.is-on .ls-rdpop-ck {
+  opacity: 1;
+}
+.ls-rdpop-item:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.55);
+  outline-offset: 2px;
+}
+@keyframes lsRdPop {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
 }
 .ls-trb:focus-visible {
   outline: 2px solid rgba(255, 255, 255, 0.55);
