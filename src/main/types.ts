@@ -59,7 +59,7 @@ export interface Lyric {
   /** 实际取歌词的身份及跨源增强证据；UI 可用于来源探针。 */
   identity?: { platform: string; sourceId: string };
   provenance?: Array<{ platform:string; sourceId:string; kind:'primary'|'fallback'|'enrichment'; offsetMs?:number; anchors?:number }>;
-  coverage?: { wordLines:number; textLines:number; translatedLines:number };
+  coverage?: { wordLines:number; textLines:number; translatedLines:number; romanLines?:number };
   incomplete?: boolean;
 }
 

@@ -173,7 +173,7 @@ test('fromTtml(Word)：yrc 能被现有 timedLines 读回，lyricCoverage 逐字
   const back = timedLines(l.yrc);
   assert.equal(back.length, 2);
   assert.deepEqual(back[0].words.map((w) => w.text), ['Hello ', 'world']);
-  assert.deepEqual(lyricCoverage(l), { textLines: 2, wordLines: 2, translatedLines: 2 });
+  assert.deepEqual(lyricCoverage(l), { textLines: 2, wordLines: 2, translatedLines: 2, romanLines: 1 });
   assert.match(l.lrc, /^\[00:01\.000\]Hello world\n\[00:06\.000\]Second line$/);
   assert.match(l.romalrc, /^\[00:06\.000\]roma ji$/);
   assert.equal(l.romanRaw, l.romalrc);
@@ -183,7 +183,7 @@ test('fromTtml(Word)：yrc 能被现有 timedLines 读回，lyricCoverage 逐字
 test('fromTtml(AMLL)：含零时长末字的歌词，逐字覆盖仍是满的', () => {
   const l = fromTtml(amll, 'amll');
   assert.equal(l.source, 'amll');
-  assert.deepEqual(lyricCoverage(l), { textLines: 3, wordLines: 3, translatedLines: 1 });
+  assert.deepEqual(lyricCoverage(l), { textLines: 3, wordLines: 3, translatedLines: 1, romanLines: 1 });
 });
 
 test('fromTtml：没有正文返回 null；Line 不给 yrc', () => {

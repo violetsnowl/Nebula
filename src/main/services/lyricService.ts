@@ -18,7 +18,7 @@ import { recordingMatch, searchKeyword } from './recordingMatch';
 import { normalizeQuery, titleSimilarity } from '../adapters/mappers';
 import { LyricCache } from './lyricCache';
 import { withRequestScope, throwIfCancelled, requestScope } from '../requestScope';
-import { enrichAligned, lyricCoverage, snapLinesToWords } from './lyricAlignment';
+import { enrichAligned, lyricComplete, lyricCoverage, snapLinesToWords } from './lyricAlignment';
 import type { AmllSource } from './amllLyrics';
 import type { AppleLyricsSource } from './appleMusicLyrics';
 import { LYRIC_ID_ORDER, lyricIdsOf, mergeLyricIds, type LyricIdKey, type LyricIds } from './lyricSourceIds';
@@ -136,8 +136,8 @@ export class LyricService {
         return lyric?.lines?.length?snapLinesToWords({...lyric,identity:{platform:t.platform,sourceId:t.sourceId},provenance:[{platform:t.platform,sourceId:t.sourceId,kind}]}):null;
       };
       best=await fetch(track,'primary');
-      const good=(l:Lyric|null):boolean=>{if(!l)return false;const c=lyricCoverage(l);return c.textLines>0 && c.wordLines/c.textLines>=.8 && c.translatedLines/c.textLines>=.8};
-      if(good(best))return best;
+      // 够好就不去别家补：判定按语种（中文不要求翻译，日语要罗马音，见 lyricComplete）
+      if(best && lyricComplete(best))return best;
       const sources=(['netease','qq','kugou'] as Platform[]).filter(p=>p!==track.platform && this.adapters[p]?.searchSongs);
       // AMLL / Apple 和网易云 / QQ / 酷狗的搜索并行；新来源失败或超时只当没有，不影响其余。
       const ids=mergeLyricIds(lyricIdsOf(track),lyricIdsOf(origin));
@@ -180,18 +180,24 @@ export class LyricService {
       // 依次合并有时会被前面的来源「占住」：先合并的只补上一部分行、挪了行时间，后面本来能补全的来源就对不上了（#196 实测）。
       // 所以有主歌词时，再算一遍「主歌词只配一个来源」各自的结果，逐字行比依次合并的多才换（同样按固定顺序比，结果不随网络先后变）。
       if(primary && best){
-        let words=lyricCoverage(best).wordLines;
-        for(const hit of hits){
-          if(!hit)continue;
+        let words=lyricCoverage(best).wordLines,pick=-1;
+        hits.forEach((hit,i)=>{
+          if(!hit)return;
           const single=enrichAligned(primary,hit.lyric),w=lyricCoverage(single).wordLines;
-          if(w>words){best=single;words=w;}
-        }
+          if(w>words){best=single;words=w;pick=i;}
+        });
+        // 换成了单一来源：其余来源再按顺序补一遍（只补缺的翻译 / 罗马音 / 逐字），不让换来源把它们丢掉（#197）
+        if(pick>=0)hits.forEach((hit,i)=>{
+          if(!hit || i===pick)return;
+          const next=enrichAligned(best!,hit.lyric);
+          if(lyricCoverage(next).wordLines>=words)best=next;
+        });
       }
       return best;
     },{detached:true,signal:job.control.signal}).catch(()=>best).then(lyric=>{
       if(!lyric || job.control.signal.aborted)return null;
       const coverage=lyricCoverage(lyric);
-      const incomplete=lyric.incomplete || !coverage.textLines || coverage.wordLines/coverage.textLines<.8 || coverage.translatedLines/coverage.textLines<.8;
+      const incomplete=!!lyric.incomplete || !lyricComplete(lyric);
       const result=withKoreanRoman({...lyric,coverage,incomplete});this.cache?.set(track.platform,track.sourceId,result);return result;
     }).finally(()=>{job.done=true;if(this.lyricJobs.get(key)===job)this.lyricJobs.delete(key);});
     job.promise=task;this.lyricJobs.set(key,job);return this.consumeLyric(job,signal);

@@ -5,10 +5,49 @@ import {identityText} from './recordingMatch';
 // 正文行：去掉「短标签 + 冒号」的署名行（作词: / 制作人: / 音乐设计/监制: / Lyrics by： …），两平台写法各异，不算正文。
 const creditRow=(text:string):boolean=>/^[^:：]{1,24}[:：]/.test(text.trim());
 const textRows=(l:Lyric):LyricLine[]=>l.lines.filter(x=>x.text.trim() && !creditRow(x.text));
-export function lyricCoverage(l:Lyric):{wordLines:number;textLines:number;translatedLines:number} {
-  const rows=textRows(l),words=timedLines(l.yrc || '');
+/** 罗马音行挂到正文行的时间窗，和前端 attachRoman 一致（300ms）。 */
+const ROMAN_WINDOW_MS=300;
+const romanRows=(l:Lyric):LyricLine[]=>parseLrc(l.romalrc || l.romanRaw || '').filter(r=>r.text.trim());
+export function lyricCoverage(l:Lyric):{wordLines:number;textLines:number;translatedLines:number;romanLines:number} {
+  const rows=textRows(l),words=timedLines(l.yrc || ''),roman=romanRows(l);
   return {textLines:rows.length,translatedLines:rows.filter(x=>x.translation?.trim()).length,
-    wordLines:rows.filter(x=>words.some(w=>Math.abs(w.timeMs-x.timeMs)<=250 && identityText(w.text)===identityText(x.text))).length};
+    wordLines:rows.filter(x=>words.some(w=>Math.abs(w.timeMs-x.timeMs)<=250 && identityText(w.text)===identityText(x.text))).length,
+    romanLines:rows.filter(x=>roman.some(r=>Math.abs(r.timeMs-x.timeMs)<=ROMAN_WINDOW_MS)).length};
+}
+
+const KANA=/[぀-ヿ]/,HANGUL=/[가-힯ᄀ-ᇿ㄰-㆏]/,HAN=/[㐀-鿿豈-﫿]/;
+/**
+ * 歌词语种（和前端 detectScript 同一套规则：假名占汉字一成以上算日语，谚文占多数算韩语，有汉字算中文，否则按拉丁）。
+ * 只看正文行，署名行不算。
+ */
+export function lyricScript(l:Lyric):'zh'|'ja'|'ko'|'en' {
+  let kana=0,hangul=0,han=0,latin=0;
+  for(const row of textRows(l)){
+    for(const ch of row.text){if(KANA.test(ch))kana++;else if(HANGUL.test(ch))hangul++;else if(HAN.test(ch))han++;}
+    latin+=(row.text.match(/[A-Za-z]+/g) ?? []).length;
+  }
+  const cjk=kana+hangul+han;
+  if(!cjk || latin>cjk)return 'en';
+  if(hangul>0 && hangul>=kana && hangul>=han)return 'ko';
+  if(kana>0 && kana>=han*.1)return 'ja';
+  return han>0?'zh':'en';
+}
+
+/**
+ * 这份歌词够不够好、还要不要去别家补（#197）：逐字 ≥80%；不是中文的要翻译 ≥80%（中文歌本来没有翻译，以前也按缺翻译处理，每首都白搜一遍）；
+ * 日语歌还要罗马音 ≥80%（以前逐字、翻译齐了就不再找罗马音）。韩语罗马音本地生成，不要求。
+ */
+export function lyricComplete(l:Lyric):boolean {
+  const c=lyricCoverage(l);if(!c.textLines)return false;
+  const script=lyricScript(l);
+  if(c.wordLines/c.textLines<.8)return false;
+  if(script!=='zh' && c.translatedLines/c.textLines<.8)return false;
+  if(script==='ja'){
+    // 只算要注音的行（含假名 / 汉字）：日语歌里夹的英文句本来就没有罗马音，按全部行算会把这类歌永远判成不够好
+    const roman=romanRows(l),need=textRows(l).filter(x=>KANA.test(x.text) || HAN.test(x.text));
+    if(need.length && need.filter(x=>roman.some(r=>Math.abs(r.timeMs-x.timeMs)<=ROMAN_WINDOW_MS)).length/need.length<.8)return false;
+  }
+  return true;
 }
 /** 至少三个唯一正文锚点，覆盖歌曲大半时间；只允许稳定的常数偏移。 */
 export function alignTimelines(base:Lyric,supplement:Lyric):{offsetMs:number;anchors:number}|null {
@@ -64,8 +103,8 @@ export const PAIR_WINDOW_MS=1200;
  * 普通歌词行 ↔ 逐字行逐行配对：正文相同（identityText）、时间差 ≤ windowMs、顺序一致（配上一对后只往后找）。
  * rows / words 都要按时间排好。返回配上的对。
  */
-export function pairRowsToWords(rows:LyricLine[],words:TimedLine[],windowMs=PAIR_WINDOW_MS):Array<[LyricLine,TimedLine]> {
-  const out:Array<[LyricLine,TimedLine]>=[];
+export function pairRowsToWords<T extends {timeMs:number;text:string}=TimedLine>(rows:LyricLine[],words:T[],windowMs=PAIR_WINDOW_MS):Array<[LyricLine,T]> {
+  const out:Array<[LyricLine,T]>=[];
   let j=0;
   for(const row of rows){
     const key=identityText(row.text);if(!key)continue;
@@ -153,18 +192,51 @@ export function mergeWordsByLine(base:Lyric,other:Lyric):{lyric:Lyric;pairs:numb
   return {lyric:next,pairs:pairs.length,added:addWords.length};
 }
 
+/**
+ * 逐行补翻译 / 罗马音（#197）：不要求对方有逐字。本平台的正文行和对方的正文行按 pairRowsToWords 同样的规则配对
+ * （正文相同、时间差 ≤1.2 秒、顺序一致；至少 3 对、中位差 ≤0.6 秒），本行缺、对方那行有的翻译 / 罗马音挂上来，行时间不动。
+ * 以前罗马音只在「本平台一行都没有」时整份照搬，缺一部分的（QQ 日语歌约两成行没有）补不上。没有增益返回 null。
+ */
+export function fillTextLayers(base:Lyric,other:Lyric):{lyric:Lyric;pairs:number}|null {
+  const rows=textRows(base).sort((a,b)=>a.timeMs-b.timeMs),theirs=textRows(other).sort((a,b)=>a.timeMs-b.timeMs);
+  if(rows.length<3 || theirs.length<3)return null;
+  const pairs=pairRowsToWords(rows,theirs);
+  if(pairs.length<3)return null;
+  const deltas=pairs.map(([r,o])=>Math.abs(o.timeMs-r.timeMs)).sort((a,b)=>a-b);
+  if(deltas[Math.floor(deltas.length/2)]!>600)return null;
+  const ownRoman=romanRows(base),theirRoman=romanRows(other);
+  const translation=new Map<LyricLine,string>(),addRoman:LyricLine[]=[];
+  for(const [row,o] of pairs){
+    if(!row.translation?.trim() && o.translation?.trim())translation.set(row,o.translation);
+    if(ownRoman.some(r=>Math.abs(r.timeMs-row.timeMs)<=ROMAN_WINDOW_MS))continue;
+    const roman=theirRoman.filter(r=>Math.abs(r.timeMs-o.timeMs)<=ROMAN_WINDOW_MS).sort((a,b)=>Math.abs(a.timeMs-o.timeMs)-Math.abs(b.timeMs-o.timeMs))[0];
+    if(roman)addRoman.push({timeMs:row.timeMs,text:roman.text});
+  }
+  if(!translation.size && !addRoman.length)return null;
+  const next:Lyric={...base,lines:base.lines.map(x=>translation.has(x)?{...x,translation:translation.get(x)}:x)};
+  if(translation.size)next.tlyric=next.translationRaw=next.lines.filter(x=>x.text && x.translation).map(x=>lrcAt(x.timeMs,x.translation!)).join('\n');
+  if(addRoman.length){
+    const merged=[...ownRoman,...addRoman].sort((a,b)=>a.timeMs-b.timeMs).map(r=>lrcAt(r.timeMs,r.text)).join('\n');
+    next.romalrc=next.romanRaw=merged;
+  }
+  return {lyric:next,pairs:pairs.length};
+}
+
 export function enrichAligned(base:Lyric,other0:Lyric):Lyric {
   // 补丁自己的普通行和逐字行也可能差几百毫秒：先校准，否则固定偏移那条路同样会被 250ms 规则卡掉（正式流程里取回时已校准，这里兜底）
   const other=snapLinesToWords(other0);
+  const before=lyricCoverage(base);
+  // 补上了逐字 / 翻译 / 罗马音其中任何一样才算有增益
+  const gained=(l:Lyric)=>{const c=lyricCoverage(l);return c.wordLines>before.wordLines || c.translatedLines>before.translatedLines || c.romanLines>before.romanLines;};
+  const from={platform:other.identity?.platform || other.source || 'unknown',sourceId:other.identity?.sourceId || ''};
   const alignment=alignTimelines(base,other);
   if(!alignment){
-    // 固定偏移对不上：逐行补（#196）。只有确实补上了逐字 / 翻译 / 罗马音才采用。
+    // 固定偏移对不上：逐行补逐字（#196），再逐行补翻译 / 罗马音（#197）。
     const merged=mergeWordsByLine(base,other);
-    if(!merged)return base;
-    const before=lyricCoverage(base),after=lyricCoverage(merged.lyric);
-    const gainedRoman=!(base.romalrc || base.romanRaw) && !!(merged.lyric.romalrc || merged.lyric.romanRaw);
-    if(after.wordLines<=before.wordLines && after.translatedLines<=before.translatedLines && !gainedRoman)return base;
-    return {...merged.lyric,provenance:[...(base.provenance || []),{platform:other.identity?.platform || other.source || 'unknown',sourceId:other.identity?.sourceId || '',kind:'enrichment',anchors:merged.pairs}]};
+    const layers=fillTextLayers(merged?.lyric ?? base,other);
+    const next=layers?.lyric ?? merged?.lyric;
+    if(!next || !gained(next))return base;
+    return {...next,provenance:[...(base.provenance || []),{...from,kind:'enrichment',anchors:Math.max(merged?.pairs ?? 0,layers?.pairs ?? 0)}]};
   }
   const offset=alignment.offsetMs,lines=base.lines.map(l=>({...l}));
   const translations=parseLrc(other.translationRaw || other.tlyric || '');
@@ -174,17 +246,19 @@ export function enrichAligned(base:Lyric,other0:Lyric):Lyric {
   }
   let next:Lyric={...base,lines};
   const shifted=toYrc(timedLines(other.yrc || ''),offset);
+  // 按固定偏移挪好的对方（罗马音一起挪），逐行补逐字、补罗马音都用它
+  const shiftRoman=parseLrc(other.romalrc || other.romanRaw || '').filter(l=>l.timeMs+offset>=0).map(l=>lrcAt(l.timeMs+offset,l.text)).join('\n');
+  const moved={...other,lines:other.lines.map(l=>({...l,timeMs:l.timeMs+offset})),yrc:shifted,romalrc:shiftRoman || undefined,romanRaw:shiftRoman || undefined};
   if(lyricCoverage({...next,yrc:shifted}).wordLines>lyricCoverage(next).wordLines)next.yrc=shifted;
   else if(shifted){
     // 整份换成对方逐字没有更多（本平台已有一部分逐字）：按固定偏移挪好对方，再逐行补本平台缺的那些行（#196）
-    const moved={...other,lines:other.lines.map(l=>({...l,timeMs:l.timeMs+offset})),yrc:shifted,romalrc:undefined,romanRaw:undefined};
-    const byLine=mergeWordsByLine(next,moved);
+    const byLine=mergeWordsByLine(next,{...moved,romalrc:undefined,romanRaw:undefined});
     if(byLine && lyricCoverage(byLine.lyric).wordLines>lyricCoverage(next).wordLines)next=byLine.lyric;
   }
-  const cov=lyricCoverage(next),previous=lyricCoverage(base);
-  if(cov.wordLines===previous.wordLines && cov.translatedLines===previous.translatedLines && (base.romanRaw || !other.romanRaw))return base;
   next.tlyric=next.translationRaw=next.lines.filter(l=>l.text && l.translation).map(l=>lrcAt(l.timeMs,l.translation!)).join('\n');
-  if(!next.romanRaw && other.romanRaw)next.romanRaw=next.romalrc=parseLrc(other.romanRaw).filter(l=>l.timeMs+offset>=0).map(l=>lrcAt(l.timeMs+offset,l.text)).join('\n');
-  next.provenance=[...(base.provenance || []),{platform:other.identity?.platform || other.source || 'unknown',sourceId:other.identity?.sourceId || '',kind:'enrichment',...alignment}];
+  if(!(next.romanRaw || next.romalrc) && shiftRoman)next.romanRaw=next.romalrc=shiftRoman;
+  else next=fillTextLayers(next,moved)?.lyric ?? next; // 本平台有一部分罗马音：缺的行逐行补（#197）
+  if(!gained(next))return base;
+  next.provenance=[...(base.provenance || []),{...from,kind:'enrichment',...alignment}];
   return next;
 }

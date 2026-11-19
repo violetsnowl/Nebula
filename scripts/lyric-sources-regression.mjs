@@ -7,7 +7,7 @@ import { createRequire } from 'node:module';
 const require = createRequire(import.meta.url);
 const api = require('../dist-main/index.cjs');
 const {
-  AmllLyrics, AppleMusicLyrics, AppleMusicClient, LyricService, HttpClient, CookieStore, fromTtml, lyricCoverage, timedLines,
+  AmllLyrics, AppleMusicLyrics, AppleMusicClient, LyricService, HttpClient, CookieStore, fromTtml, lyricCoverage, timedLines, lrcAt,
   lyricIdsOf, mergeLyricIds,
 } = api;
 
@@ -262,7 +262,7 @@ await test('Apple 歌词：origin 是 Apple 曲目时按目录 id 直接取，�
   assert.equal(hit.via, 'id');
   assert.equal(hit.catalogId, '111');
   assert.equal(hit.lyric.source, 'applemusic');
-  assert.deepEqual(lyricCoverage(hit.lyric), { textLines: 4, wordLines: 4, translatedLines: 4 });
+  assert.deepEqual(lyricCoverage(hit.lyric), { textLines: 4, wordLines: 4, translatedLines: 4, romanLines: 0 });
   assert.deepEqual(a.bridge.calls.map((c) => c.path), ['/v1/me/storefront', '/v1/catalog/cn/songs/111/syllable-lyrics']);
   // 第二首：地区不再读
   const hit2 = await lyrics.lookup(song({ id: 'x' }), song({ platform: 'applemusic', sourceId: 'i.LIB', extra: { catalogId: '222', libraryId: 'i.LIB' } }));
@@ -371,7 +371,7 @@ await test('LyricService：主歌词只有行级时，AMLL 补上逐字（proven
   assert.deepEqual(amll.calls, [{ qq: '97773' }]);
   assert.equal(lyricCoverage(r).wordLines, 4);
   assert.deepEqual(r.provenance.map((p) => [p.platform, p.kind]), [['qq', 'primary'], ['amll', 'enrichment']]);
-  assert.equal(r.incomplete, true, '还没有翻译，仍标不完整');
+  assert.equal(r.incomplete, false, '中文歌逐字齐了就算完整，不要求翻译（#197）');
   const plain = await new LyricService(adapters().map).fetchLyric(song());
   assert.equal(lyricCoverage(plain).wordLines, 0);
 });
@@ -394,6 +394,25 @@ await test('LyricService：合并顺序固定 AMLL → Apple → 网易云，与
   assert.equal(a.yrc, fromTtml(ttmlDoc({ split: 1 }), 'amll').yrc, '逐字时间轴取最先合并的 AMLL，后面的只补缺口');
   assert.equal(lyricCoverage(a).translatedLines, 4, 'Apple 补上了翻译');
   assert.ok(a.romalrc, '网易云补上了罗马音');
+});
+
+await test('LyricService（#197）：日语歌逐字、翻译都齐，只缺罗马音也去别家补；中文歌逐字齐了不再搜也不查新来源', async () => {
+  const JA = ['てすとのいち', 'てすとのに', 'てすとのさん', 'てすとのよん'];
+  const mk = (roman) => {
+    const ls = JA.map((text, i) => ({ timeMs: TIMES[i], text, translation: '译文' + i }));
+    return { raw: '', lines: ls, yrc: ls.map((l) => `[${l.timeMs},3000](${l.timeMs},3000,0)${l.text}`).join('\n'), ...(roman ? { romalrc: ls.map((l, i) => lrcAt(l.timeMs, 'roma' + i)).join('\n') } : {}) };
+  };
+  const ja = adapters({ primary: mk(false), neteaseLyric: { ...mk(true), source: 'netease' } });
+  const r = await new LyricService(ja.map).fetchLyric(song());
+  assert.equal(ja.calls.search, 1);
+  assert.equal(lyricCoverage(r).romanLines, 4);
+  assert.equal(r.incomplete, false);
+  const zh = adapters({ primary: fromTtml(ttmlDoc(), 'amll'), neteaseLyric: { ...mk(true), source: 'netease' } });
+  const amll = fakeAmll(() => null);
+  const rz = await new LyricService(zh.map, undefined, { amll }).fetchLyric(song({ extra: { songId: 1 } }));
+  assert.equal(zh.calls.search, 0);
+  assert.equal(amll.calls.length, 0);
+  assert.equal(rz.incomplete, false);
 });
 
 await test('LyricService：origin 的 Spotify / Apple / isrc id 用于查询，缓存键和歌词身份仍按实际供流那首', async () => {

@@ -9,7 +9,7 @@ const valid=(v:unknown):v is Lyric=>{
   return typeof l.raw==='string' && Array.isArray(l.lines) && l.lines.every(x=>x && Number.isFinite(x.timeMs) && typeof x.text==='string' && (x.translation===undefined || typeof x.translation==='string')) &&
     ['yrc','qrc','krc','translationRaw','romanRaw','lrc','tlyric','ytlrc','romalrc'].every(k=>(l as any)[k]===undefined || typeof (l as any)[k]==='string');
 };
-/** v2 缓存拒绝旧逻辑生成的数据；不完整项 6 小时，完整项 30 天，最多 500 项。 */
+/** v3 缓存拒绝旧逻辑生成的数据（v3：#197 判定按语种、补罗马音，旧结果作废）；不完整项 6 小时，完整项 30 天，最多 500 项。 */
 export class LyricCache {
   private data:Record<string,RecordEntry>=Object.create(null);
   private cacheFile:string;
@@ -32,7 +32,7 @@ export class LyricCache {
     try{
       if(fs.statSync(this.cacheFile).size>32*1024*1024)return;
       const value=JSON.parse(fs.readFileSync(this.cacheFile,'utf8'));
-      if(value?.schema!==2 || !value.entries || typeof value.entries!=='object')return;
+      if(value?.schema!==3 || !value.entries || typeof value.entries!=='object')return;
       for(const [key,v] of Object.entries(value.entries).slice(-500)){
         const row=v as RecordEntry;if(row && Number.isFinite(row.at) && valid(row.lyric))this.data[key]=row;
       }
@@ -41,7 +41,7 @@ export class LyricCache {
   private schedule():void {if(this.timer)return;this.timer=setTimeout(()=>{this.timer=null;void this.flush();},400);this.timer.unref?.();}
   async flush():Promise<void> {
     if(this.timer)clearTimeout(this.timer);this.timer=null;
-    const snapshot=JSON.stringify({schema:2,entries:this.data});
+    const snapshot=JSON.stringify({schema:3,entries:this.data});
     this.saving=this.saving.catch(()=>{}).then(async()=>{
       try{await fs.promises.mkdir(path.dirname(this.cacheFile),{recursive:true});const tmp=`${this.cacheFile}.${process.pid}.tmp`;await fs.promises.writeFile(tmp,snapshot,'utf8');await fs.promises.rename(tmp,this.cacheFile);}
       catch{console.warn('[LyricCache] 保存失败');}

@@ -90,6 +90,43 @@ await test('#196 跨源逐行补逐字：只配上部分行也补这些行，其
  assert.equal(b.alignTimelines(b0,slow),null);
  assert.equal(b.enrichAligned(b0,slow),b0,'中位差 0.8 秒以上');
 });
+await test('#197 按语种判定够不够好：中文不要求翻译，日语要罗马音，韩语罗马音本地生成不要求，英文要翻译',()=>{
+ const mk=(texts,{words=true,trans=false,roman=false}={})=>{
+  const lines=texts.map((text,i)=>({timeMs:1000+i*5000,text,...(trans?{translation:'译'+i}:{})}));
+  return {raw:'',lines,yrc:words?lines.map(l=>`[${l.timeMs},1000](${l.timeMs},1000,0)${l.text}`).join('\n'):undefined,romalrc:roman?lines.map(l=>b.lrcAt(l.timeMs,'roma'+l.timeMs)).join('\n'):undefined};
+ };
+ const zh=['编的第一句','编的第二句','编的第三句'],ja=['てすとのいち','てすとのに','かきくけこ'],ko=['테스트 하나','테스트 둘','테스트 셋'],en=['made up line one','made up line two','made up line three'];
+ assert.deepEqual([zh,ja,ko,en].map(t=>b.lyricScript(mk(t))),['zh','ja','ko','en']);
+ assert.equal(b.lyricComplete(mk(zh)),true,'中文：逐字齐了就够');
+ assert.equal(b.lyricComplete(mk(zh,{words:false})),false);
+ assert.equal(b.lyricComplete(mk(ja,{trans:true})),false,'日语缺罗马音');
+ assert.equal(b.lyricComplete(mk(ja,{trans:true,roman:true})),true);
+ assert.equal(b.lyricComplete(mk(ko,{trans:true})),true,'韩语罗马音本地生成');
+ assert.equal(b.lyricComplete(mk(en)),false,'英文缺翻译');
+ assert.equal(b.lyricComplete(mk(en,{trans:true})),true);
+ assert.equal(b.lyricCoverage(mk(ja,{roman:true})).romanLines,3);
+ // 日语歌夹英文句：英文句没有罗马音不算缺
+ const mixed=mk([...ja,'made up english one','made up english two'],{trans:true});
+ mixed.romalrc=mixed.lines.slice(0,3).map(l=>b.lrcAt(l.timeMs,'roma')).join(String.fromCharCode(10));
+ assert.equal(b.lyricComplete(mixed),true,'只按含假名 / 汉字的行算');
+});
+await test('#197 逐行补罗马音：本平台只有一部分行有，对方没有逐字也能按正文逐行补；行时间不动；固定偏移那条路同样补',()=>{
+ const rows=[1000,8000,16000,24000,32000].map((timeMs,i)=>({timeMs,text:'てすと'+'あいうえお'[i]}));
+ const ownRoman=rows.slice(0,2).map(r=>b.lrcAt(r.timeMs,'own'+r.timeMs)).join('\n');
+ const own={raw:'',lines:rows.map(r=>({...r,translation:'译'})),yrc:rows.map(r=>`[${r.timeMs},900](${r.timeMs},900,0)${r.text}`).join('\n'),romalrc:ownRoman,romanRaw:ownRoman};
+ const jit=[350,-200,500,-300,100];// 偏移不固定：固定偏移对齐不过
+ const sup={raw:'',identity:{platform:'netease',sourceId:'n'},lines:rows.map((r,i)=>({...r,timeMs:r.timeMs+jit[i]})),romalrc:rows.map((r,i)=>b.lrcAt(r.timeMs+jit[i],'sup'+i)).join('\n')};
+ assert.equal(b.alignTimelines(own,sup),null);
+ const r=b.enrichAligned(own,sup);
+ assert.equal(b.lyricCoverage(r).romanLines,5);
+ assert.deepEqual(r.lines.map(x=>x.timeMs),rows.map(x=>x.timeMs));
+ assert.deepEqual(b.parseLrc(r.romalrc).map(x=>x.text),['own1000','own8000','sup2','sup3','sup4'],'本平台已有的保留，缺的用对方的');
+ assert.equal(r.provenance.at(-1).platform,'netease');
+ assert.equal(b.enrichAligned(own,{...sup,lines:sup.lines.map(l=>({...l,text:'べつ'+l.timeMs}))}),own,'正文不同不补');
+ const late={...sup,lines:rows.map(r=>({...r,timeMs:r.timeMs+400})),romalrc:rows.map((r,i)=>b.lrcAt(r.timeMs+400,'sup'+i)).join('\n')};
+ assert.ok(b.alignTimelines(own,late));
+ assert.equal(b.lyricCoverage(b.enrichAligned(own,late)).romanLines,5);
+});
 await test('普通整句与无词时间的 JSON 不伪造逐字',()=>{assert.equal(ui.parseYrcText('[00:10.00]普通歌词').length,0);assert.equal(ui.parseYrcText('{"t":10,"c":[{"tx":"正文"}]}').length,0)});
 await test('英文空格补齐保持原始长音时长',()=>{
  const lines=[{timeMs:1000,text:'Hello world',words:[{text:'Hello',startMs:1000,duration:100},{text:'world',startMs:1100,duration:1900}]}];
@@ -97,7 +134,8 @@ await test('英文空格补齐保持原始长音时长',()=>{
 });
 await test('相近时间但不同正文不能挂接逐字',()=>{const r=ui.mergeWordLyrics([{timeMs:1000,text:'甲'}],'[1000,1000](1000,1000,0)乙');assert.equal(r[0].words,undefined)});
 await test('只有逐字时仍能显示原始正文',()=>{const r=ui.mergeWordLyrics([],'[1000,1000](1000,1000,0)甲');assert.equal(r[0].text,'甲')});
-await test('旧版/损坏缓存失效，v2 不完整六小时与完整三十天',async()=>{
+await test('旧版/损坏缓存失效（v2 也作废，#197），v3 不完整六小时与完整三十天',async()=>{
+ fs.writeFileSync(path.join(temp,'lyric-cache.json'),JSON.stringify({schema:2,entries:{'qq:x':{at:Date.now(),lyric:base}}}));assert.equal(new b.LyricCache(temp).get('qq','x'),null);
  fs.writeFileSync(path.join(temp,'lyric-cache.json'),JSON.stringify({'qq:x':{at:Date.now(),lyric:base}}));assert.equal(new b.LyricCache(temp).get('qq','x'),null);
  const cache=new b.LyricCache(temp);cache.set('qq','x',{...base,incomplete:true});cache.set('qq','full',{...base,incomplete:false});await cache.flush();
  const fresh=new b.LyricCache(temp);assert.ok(fresh.get('qq','x'));const now=Date.now;Date.now=()=>now()+7*3600000;
