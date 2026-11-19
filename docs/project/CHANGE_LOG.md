@@ -6,6 +6,21 @@
 
 ---
 
+## #194 — 2026-11-19 — 平台 logo：恢复彩色；QQ / Spotify / Apple Music 换新图；清理不用的 logo
+
+**背景**（用户 2026-11-19）：各家平台图标全是黑白，看着奇怪，要恢复彩色；用户在 `docs/logo/` 放了 QQ、Spotify、Apple Music 的新 logo，要换上看效果。桌面验收两轮后满意。
+
+**改动**
+- `components/dock/left-panel.css`（歌单筛选小图标）、`right-panel.css`（账号列表图标）：去掉 `grayscale(1) brightness(1.2)`，显示品牌原色；选中 / 未选的透明度区分不变。这个单色处理来自设计审查记录第 14 条，冻结的 `NEBULA_UI_SYSTEM.md` 里没写；本次在 §9 两侧 Dock 表格下补一条「平台图标用品牌原色」，记为用户确认的规范。
+- `components/platforms.ts`：QQ → `QQmusic logo.png`、Spotify → `spotify logo.png`、Apple Music → `apple music.jpg`。
+- 素材处理（原图已备份在草稿目录）：Spotify 原图四周有约 8px 白边，裁掉并往绿色圆内多收 3px，圆形显示时没有浅色描边；文件名 `soptify` 笔误改正。Apple Music 原图是 576×432 横图、图标在中间带浅灰底，裁成只含红色方块的 266×266 方图（圆形裁切只切掉方块圆角，看不到灰底，图标也放大了）。
+- 删除不再引用的 logo：`QQ_Music2023.svg.webp`、`spotify-logo.webp`、`bodian.png`、`Apple_Music_icon.svg.webp`（Apple 交接文档里的路径同步改）。`docs/logo/` 现在只剩九家在用的 logo 和壁纸库用的 `wallpaper-engine.webp`。
+- 补记：`QQmusic logo.png` 的第一版在 #192 被误带进了提交（当时用了「全部加入」），本条是它的正式接入。
+
+**验证**：`pnpm build`、`pnpm qa`（控制台错误 0）、`pnpm build:desktop`；用户桌面看过两轮效果后确认。
+
+---
+
 ## #193 — 2026-11-19 — QA 播放用例不再依赖外网；记下用真实账号副本测试的做法
 
 **背景**（用户 2026-11-19）

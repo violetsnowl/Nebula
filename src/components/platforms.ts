@@ -1,12 +1,12 @@
 import neteaseLogo from '../../docs/logo/网易云.webp';
-import qqLogo from '../../docs/logo/QQ_Music2023.svg.webp';
+import qqLogo from '../../docs/logo/QQmusic logo.png';
 import kugouLogo from '../../docs/logo/kugou.webp';
 import qishuiLogo from '../../docs/logo/qishui.png';
-import spotifyLogo from '../../docs/logo/spotify-logo.webp';
+import spotifyLogo from '../../docs/logo/spotify logo.png';
 import kuwoLogo from '../../docs/logo/kuwo.png';
 import bodianLogo from '../../docs/logo/bodian.webp';
 import ytmusicLogo from '../../docs/logo/Youtube_Music_icon.svg.webp';
-import applemusicLogo from '../../docs/logo/Apple_Music_icon.svg.webp';
+import applemusicLogo from '../../docs/logo/apple music.jpg';
 
 export interface PlatformMeta {
   id: string;

@@ -22,9 +22,8 @@
   height: 100%;
   object-fit: cover;
   display: block;
-  /* 账号列表的平台图标改单色（审查第 14 条）：品牌色只留给详情页的大图标；
-     「已连接」由名字下面那颗 6px 状态点（--success）表示 */
-  filter: grayscale(1) brightness(1.2);
+  /* 账号列表的平台图标用品牌原色（2026-11-19 用户要求，撤销审查第 14 条的单色处理）；
+     「已连接」仍由名字下面那颗 6px 状态点（--success）表示 */
   opacity: 0.85;
 }
 

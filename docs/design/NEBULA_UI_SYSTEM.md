@@ -505,6 +505,8 @@ UI 字号档：11 / 12 / 13 / 14 / 17 / 22（px），字重只用 400 / 500 / 60
 | 滚动 | 面板内不用系统滚动条，用悬浮细条（§9.7）：切换「有滚动」和「没滚动」的页时内容不会左右跳 |
 | 实现 | `components/dock/SideDock.tsx` 负责机制与外壳（量出内容高度写入 `--sd-h`）；`PlaylistDock` 的 `openRequest`、`AccountDock` 的 `accountListNonce` 供外部打开某一页（首次启动空状态用）；`PlaylistDock` / `AccountDock` 只提供面板内容；`useEdgePanels` 提供 `near`（光痕）与 `pinLeft / pinRight`（面板打开时钉住） |
 
+> **平台图标用品牌原色**（2026-11-19 用户确认，#194）：左侧歌单筛选、右侧账号列表的平台小图标都显示官方彩色 logo，不再做单色 / 灰度处理（审查记录第 14 条的单色方案作废）；选中 / 未选仍只用透明度区分。logo 素材在 `docs/logo/`，由 `components/platforms.ts` 统一引用。
+
 ### 9.3 顶部搜索
 
 - 胶囊：G1，pill；输入文字 14 `--fg`，占位 `--fg-3`；不放大，不发光。
