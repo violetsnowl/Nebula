@@ -6,6 +6,23 @@
 
 ---
 
+## #187 — 2026-11-18 — 修 YouTube Music 重启后显示未登录
+
+**背景**（用户 2026-11-18）
+- YouTube Music 登录成功、资料正常，但关掉软件再打开，登录状态就没了。
+
+**原因**
+- 令牌其实已经存下（配置里有 ytmusic 记录，后端启动核验也是 valid）。问题在前端：启动时 `useAccounts` 只对登录方式是 qr / oauth / window 的平台探活，#185 新加的 device 不在白名单里，所以启动后从没查过 YouTube Music。
+
+**改动**
+- `hooks/accounts/useAccounts.ts`：启动探活改为「除了暂不可用（unavailable）都查」，以后新增登录方式不会再漏。
+
+**验证**
+- 用户配置副本（已去掉 Spotify 令牌）：后端 `getAccount` 启动即 valid；Electron 启动后不做任何操作，页面里已有 YouTube Music 的「赞过的视频」歌单，未登录平台只剩副本里本来就没有的 Spotify、酷我。
+- `pnpm build`、`pnpm qa`。
+
+---
+
 ## #186 — 2026-11-18 — YouTube Music 设备码登录界面：可点击链接、点击复制代码、步骤说明
 
 **背景**（用户 2026-11-18）

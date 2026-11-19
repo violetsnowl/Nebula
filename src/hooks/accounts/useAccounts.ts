@@ -63,7 +63,8 @@ export function useAccounts() {
         if (!res.ok) return;
         setPlatforms(res.data);
         if (cancelled) return;
-        const targets = res.data.filter((p) => p.kind === 'qr' || p.kind === 'oauth' || p.kind === 'window');
+        // 除了暂不可用的都要探活。以前按登录方式白名单（qr / oauth / window）列，新加的 device（YouTube Music）漏了，重启后像是掉了登录（#187）。
+        const targets = res.data.filter((p) => p.kind !== 'unavailable');
         return Promise.all(targets.map((p) => refreshAccount(p.platform)));
       })
       .catch(() => {
