@@ -60,11 +60,12 @@ async function main() {
     fs.writeFileSync(testPng, PNG.sync.write(p));
   }
 
-  // 本地静音音频（20 秒，8kHz 8 位单声道 WAV 的 data URL）：空域歌词逐字层那一项用它播放，
-  // 不再依赖外网 soundhelix.com（网慢时 10 秒内播不到第一句歌词，偶发失败，#139）
-  const lyricAudio = (() => {
+  // 本地静音音频（8kHz 8 位单声道 WAV）。
+  // 空域歌词逐字层那一项直接用 20 秒的 data URL（#139）；其余播放用例的演示曲目地址还是 soundhelix.com，
+  // 由下面的 page.route 就地拦下、返回 4 分钟的静音 WAV——不再走外网（网慢时「置灰恢复」等用例 15 秒内播不起来，#193）。
+  const makeWav = (seconds) => {
     const rate = 8000;
-    const n = rate * 20;
+    const n = rate * seconds;
     const b = Buffer.alloc(44 + n, 128);
     b.write('RIFF', 0);
     b.writeUInt32LE(36 + n, 4);
@@ -78,8 +79,11 @@ async function main() {
     b.writeUInt16LE(8, 34);
     b.write('data', 36);
     b.writeUInt32LE(n, 40);
-    return `data:audio/wav;base64,${b.toString('base64')}`;
-  })();
+    return b;
+  };
+  const lyricAudio = `data:audio/wav;base64,${makeWav(20).toString('base64')}`;
+  const demoAudio = makeWav(240);
+  let demoAudioServed = 0;
 
   const browser = await chromium.launch({
     executablePath: CHROME,
@@ -94,6 +98,16 @@ async function main() {
     }
   });
   page.on('pageerror', (err) => errors.push(`pageerror: ${String(err)}`));
+  // 演示曲目的音频（soundhelix.com）一律由本地静音 WAV 代替，QA 不依赖外网
+  await page.route(/^https?:\/\/(?:www\.)?soundhelix\.com\//i, (route) => {
+    demoAudioServed++;
+    return route.fulfill({
+      status: 200,
+      contentType: 'audio/wav',
+      headers: { 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' },
+      body: demoAudio,
+    });
+  });
 
   // 舞台测试依赖演示星云（1000 首）：首次启动默认是空状态，这里用 ?demo=1 显式打开演示曲库
   const APP_URL = `file:///${HTML_PATH.replace(/\\/g, '/')}`;
@@ -1444,6 +1458,7 @@ async function main() {
   const idleOk = idleStart.panel && idleInPanel.listening && idleInPanel.panelStill;
   log('设置面板里静止也进入聆听', JSON.stringify({ idleStart, idleInPanel }));
 
+  log('演示音频由本地 WAV 代替的次数(应≥1)', demoAudioServed);
   log('控制台错误数', errors.length);
   if (errors.length) console.log(errors.join('\n'));
 
@@ -1511,6 +1526,7 @@ async function main() {
     !localOk.title ||
     !localOk.source ||
     !localOk.audio ||
+    demoAudioServed < 1 ||
     errors.length > 0;
 
   const diagnostics = {
@@ -1563,6 +1579,7 @@ async function main() {
     barLayout: !barLayoutOk,
     barSpec: !barNewOk,
     localImport: !localOk.title || !localOk.source || !localOk.audio,
+    localDemoAudio: demoAudioServed < 1,
     consoleErrors: errors.length > 0,
   };
   const bad = Object.entries(diagnostics).filter(([, v]) => v);

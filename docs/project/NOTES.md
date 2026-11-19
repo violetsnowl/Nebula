@@ -156,6 +156,7 @@
 ### 真实数据测试的做法（2026-11-17）
 
 - **副本里必须去掉 Spotify 的令牌**（2026-11-18 教训，#181）：Spotify 的 refresh_token 用一次就换新、旧的立即作废。副本里的软件一续期，用户真实配置里的那张就被吊销，用户那边显示「登录已过期」、只能重新授权。除非专门测 Spotify 且已告知用户，复制配置后先删掉 `cookies.json` 里的 `spotify` 一项。QQ 续期实测过旧票据仍有效，不受此限。
+- **Apple Music 的登录不在 `cookies.json` 里**（2026-11-19，#191）：`cookies.json` 只有一条不含凭据的标记，真正的登录在官方页面的分区 `Partitions\applemusic-login`。测 Apple 时要连这个分区一起复制（可跳过其中的 Cache / Code Cache / GPUCache）；只复制 `cookies.json` 的话，软件会认为已登录但页面里没登录，读资料库会报过期。用户 2026-11-19 定：以后开发直接用他当前登录着的账号（真实配置的副本）测试，不再单独开实验配置登录。
 - 只用账号配置的副本（`%APPDATA%\music-nebula` 复制到草稿目录），绝不碰真实目录。脚本 `require('dist-main/index.cjs')` 后先 `setCookieDataDir(副本)`，并把 console 全部屏蔽，只输出统计数字，不打印 Cookie、票据或带签名的地址。
 - 全库统计跑得很快：1442 首歌词约 3.4 分钟（并发 3），没有遇到限流。这类脚本交给便宜的子代理就能完成。
 - 临时目录（`%TEMP%`）里的工作树或 node_modules 可能被系统清理掉一部分（缺 rollup、react 开发版文件）。构建报「找不到模块」时，先删 node_modules 重装。

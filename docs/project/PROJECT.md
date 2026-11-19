@@ -73,7 +73,7 @@ pnpm qa:playback-live # 默认 108 条公开跨平台挑战样本联网统计
 
 播放回归：`node scripts/player-regression.mjs`（已纳入 `qa:backend`）。联网统计：`pnpm qa:playback-live` 默认读取已提交的 108 条公开挑战样本，统计写到仓库同级 `benchmark-result.json`。需要重新采集搜索样本时，先 `pnpm build:main`，再 `node scripts/playback-benchmark.mjs --prepare`，然后用 `--samples=../benchmark-samples.json` 显式选择新数据集。也可用 `--samples=... --out=... --backend=... --profile=...` 指定同一测试集、冻结后端或只含测试凭据副本的目录；脚本不打印直链或歌词原文。
 
-换机器运行浏览器 QA 时，可设置 `NEBULA_QA_MODULES` 为包含 `playwright-core` 与 `pngjs` 的依赖目录，`NEBULA_CHROME` 为 Chromium/Chrome 可执行文件；不设置时保留原机器路径。也可在项目本地安装这两个测试依赖。原有 QA 使用 SoundHelix 公开演示音频，需要联网。
+换机器运行浏览器 QA 时，可设置 `NEBULA_QA_MODULES` 为包含 `playwright-core` 与 `pngjs` 的依赖目录，`NEBULA_CHROME` 为 Chromium/Chrome 可执行文件；不设置时保留原机器路径。也可在项目本地安装这两个测试依赖。演示曲目的音频地址仍是 SoundHelix，但 QA 里由本地静音 WAV 代替（#193），不需要联网。
 
 > Node 运行时：`C:\Users\LIU\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe`
 >
