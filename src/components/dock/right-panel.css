@@ -197,16 +197,88 @@
   background: rgba(255, 255, 255, 0.06);
 }
 
-/* 设备码登录（YouTube Music）：大号等宽登录代码 */
+/* 设备码登录（YouTube Music）：大号等宽登录代码，整块可点击复制；hover 只让文字变亮 */
 .sd-panel .rp-code {
   align-self: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
   font: 600 28px/1.3 ui-monospace, Consolas, monospace;
   letter-spacing: 0.18em;
-  /* 抵消末位字距，让代码视觉居中 */
-  padding-left: 0.18em;
-  color: var(--fg);
+  color: var(--fg-2);
   text-align: center;
   user-select: all;
+  transition: color 0.2s var(--ease-std);
+}
+
+.sd-panel .rp-code:hover,
+.sd-panel .rp-code:focus-visible {
+  color: var(--fg);
+  outline: none;
+}
+
+.sd-panel .rp-code small {
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.4;
+  letter-spacing: 0.04em;
+  color: var(--fg-3s);
+  user-select: none;
+}
+
+/* 设备码登录步骤：编号列表，左对齐 */
+.sd-panel .rp-steps {
+  margin: 0;
+  padding-left: 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+  line-height: 1.55;
+  color: var(--fg-2);
+}
+
+.sd-panel .rp-link-row {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-top: 2px;
+}
+
+/* 授权页链接：可点击打开、可选中复制；hover 文字变亮加下划线，不加背景 */
+.sd-panel .rp-link {
+  color: var(--fg);
+  text-decoration: none;
+  user-select: text;
+  word-break: break-all;
+}
+
+.sd-panel .rp-link:hover,
+.sd-panel .rp-link:focus-visible {
+  text-decoration: underline;
+  outline: none;
+}
+
+.sd-panel .rp-link-copy {
+  flex: none;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  font-size: 11px;
+  color: var(--fg-3s);
+  transition: color 0.2s var(--ease-std);
+}
+
+.sd-panel .rp-link-copy:hover,
+.sd-panel .rp-link-copy:focus-visible {
+  color: var(--fg);
+  outline: none;
 }
 
 .sd-panel .rp-cookie-input {

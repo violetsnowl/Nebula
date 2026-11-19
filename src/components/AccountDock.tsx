@@ -694,40 +694,89 @@ function YtmusicLogin({ onSuccess }: { onSuccess: () => void }) {
     }, seconds * 1000);
   }, [busy, onSuccess, stopPoll]);
 
+  /** 刚复制的是哪一项（代码 / 链接），1.6 秒后恢复提示文字。 */
+  const [copied, setCopied] = useState<'code' | 'link' | null>(null);
+  const copiedTimer = useRef<number | null>(null);
+  const copy = useCallback(async (text: string, what: 'code' | 'link') => {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      return false; // 剪贴板不可用：代码和链接都能手动选中复制
+    }
+    setCopied(what);
+    if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
+    copiedTimer.current = window.setTimeout(() => setCopied(null), 1600);
+    return true;
+  }, []);
+  useEffect(() => () => {
+    if (copiedTimer.current !== null) window.clearTimeout(copiedTimer.current);
+  }, []);
+
+  /** 打开授权页时顺手复制代码：到了浏览器直接粘贴。 */
   const openBrowser = useCallback(async () => {
     if (!code || !window.nebulaAPI) return;
-    let copied = false;
-    try {
-      await navigator.clipboard.writeText(code.userCode);
-      copied = true;
-    } catch {
-      /* 剪贴板不可用时用户照着屏幕上的代码输入 */
-    }
+    const ok = await copy(code.userCode, 'code');
     await window.nebulaAPI.openExternal(code.verificationUrl);
-    setStatus(copied ? '代码已复制，在浏览器里粘贴后完成授权' : '已在浏览器打开，请输入上面的代码');
-  }, [code]);
+    setStatus(ok ? '代码已复制，到浏览器里粘贴就行' : '已在浏览器打开，请照着上面的代码输入');
+  }, [code, copy]);
 
   useEffect(() => stopPoll, [stopPoll]);
+
+  const linkText = code ? code.verificationUrl.replace(/^https:\/\//, '') : 'google.com/device';
 
   return (
     <div className="rp-flow">
       {code ? (
         <>
-          <div className="rp-code" aria-label="登录代码">
+          <button
+            type="button"
+            className="rp-code"
+            aria-label={`登录代码 ${code.userCode}，点击复制`}
+            onClick={() => void copy(code.userCode, 'code')}
+          >
             {code.userCode}
-          </div>
-          <p className="rp-flow-status">在浏览器打开 google.com/device，输入上面的代码</p>
-          <button type="button" className="btn primary full" onClick={openBrowser}>
-            在浏览器中打开
+            <small>{copied === 'code' ? '已复制' : '点击复制代码'}</small>
+          </button>
+          <ol className="rp-steps">
+            <li>
+              点下面的按钮，在默认浏览器打开 Google 授权页（也可以点链接或复制链接自己打开）：
+              <span className="rp-link-row">
+                <a
+                  href={code.verificationUrl}
+                  className="rp-link"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    void openBrowser();
+                  }}
+                >
+                  {linkText}
+                </a>
+                <button type="button" className="rp-link-copy" onClick={() => void copy(code.verificationUrl, 'link')}>
+                  {copied === 'link' ? '已复制' : '复制链接'}
+                </button>
+              </span>
+            </li>
+            <li>在网页的输入框里粘贴代码（打开时已自动复制，也可以点上面的代码再复制一次），按页面提示继续。</li>
+            <li>选择你的 Google 账号，点「允许」。浏览器里显示完成后回到这里，几秒内会自动登录。</li>
+          </ol>
+          <button type="button" className="btn primary full" onClick={() => void openBrowser()}>
+            复制代码并打开授权页
           </button>
           <button type="button" className="btn sec full" disabled={busy} onClick={start}>
-            重新获取
+            代码过期了？重新获取
           </button>
         </>
       ) : (
-        <button type="button" className="btn primary full" disabled={busy} onClick={start}>
-          获取登录代码
-        </button>
+        <>
+          <ol className="rp-steps">
+            <li>点「获取登录代码」，这里会显示一串代码。</li>
+            <li>在默认浏览器打开 Google 授权页，粘贴代码，选择账号并允许。</li>
+            <li>回到这里，几秒内自动登录。用的是你浏览器里已经登录的 Google 账号，不用在软件里输密码。</li>
+          </ol>
+          <button type="button" className="btn primary full" disabled={busy} onClick={start}>
+            获取登录代码
+          </button>
+        </>
       )}
       <div className="rp-flow-status">{status || '未登录 YouTube Music'}</div>
     </div>
