@@ -108,7 +108,7 @@
 - **Electron 里能用**：官方 Electron 不带 Widevine，但 music.apple.com 照样加载、MusicKit 照样初始化（版本 `playback/AppleMusic-2646.4.0-external`），只是不能出声；只有 `mk.api.music`，没有 `mk.api.v3`。Apple ID 在页面里直接登录（不弹新窗口，Apple 没拦），分区持久化后重启仍登录。UA 要去掉 Electron 片段。
 - **没有订阅读不了资料库**：`/v1/me/library/*` 一律 400 + `40015`（`privilege: CloudLibrary`），最近播放是 `ListeningHistory`；`/v1/me/account?meta=subscription` 的 `meta.subscription.active` 能直接看订阅状态。这不是掉登录。用户第一个测试号就是这种情况。
 - **资料库曲目没有 isrc**：要在 tracks 请求上加 `include=catalog`，从 `relationships.catalog.data[0].attributes.isrc` 拿。资料库曲目 id 有 `i.`、`a.` 两种开头；`catalogId` 在 `playParams` 里，自己上传、匹配不上目录的歌没有，而且歌手、专辑、封面基本是空的（只有歌名），跨平台很难找到。
-- **歌单列表不给曲目数**（attributes 里没有 trackCount），要数量只能逐张查，所以列表里不显示数量。
+- **歌单列表不给曲目数**（attributes 里没有 trackCount）。逐张读 `tracks?limit=1` 的 `meta.total` 能拿到（实测 12 张全对，单个约 1–1.5 秒），在页面里并行读 12 张只多约 0.4 秒（#192）。`meta.total` 把歌单里重复的歌也算进去（如 646），导入后去重是 644。
 - **分页**：`next` 是相对地址（如 `/v1/me/library/playlists/{id}/tracks?offset=100`），每页 100 首约 1 秒；644 首歌单约 10 秒。
 - **社交资料常为空**：`/v1/me/social-profile` 200 但 data 为空数组，昵称只能回退「Apple Music 用户」。
 - **测试**：真实账号测试用实验时的空配置（独立 userData），登录只在那份配置的分区里，不碰用户的真实配置。

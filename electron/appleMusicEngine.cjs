@@ -170,6 +170,23 @@ function buildRequestCode(path, query) {
   return `(${readInPage.toString()})(${JSON.stringify({ path, query })})`;
 }
 
+/** 一次批量最多几个请求、页面里同时跑几个（Apple 的接口并发几个没问题，再多怕被限流）。 */
+const BATCH_MAX = 60;
+const BATCH_CONCURRENCY = 6;
+
+/** 批量：在页面里用同一个读取函数并行跑多个请求（限并发），结果按顺序返回。 */
+function buildBatchCode(reqs) {
+  return `(async () => {
+    const read = ${readInPage.toString()};
+    const reqs = ${JSON.stringify(reqs)};
+    const out = new Array(reqs.length);
+    let next = 0;
+    const worker = async () => { while (next < reqs.length) { const i = next++; out[i] = await read(reqs[i]); } };
+    await Promise.all(Array.from({ length: Math.min(${BATCH_CONCURRENCY}, reqs.length) }, worker));
+    return out;
+  })()`;
+}
+
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** 带超时的等待；超时抛错，计时器一定清掉。 */
@@ -314,16 +331,54 @@ function createAppleMusicEngine({ WebContentsView, session, sheetHost, userAgent
     return out;
   }
 
-  /** 读一个接口。页面没准备好返回 { notReady: true }；路径不合法、超时直接抛错。 */
-  function call({ path, query } = {}) {
-    if (!validPath(path)) return Promise.reject(new Error('Apple Music 请求路径不合法'));
+  /** 校验并复制一个请求；不合法抛错。 */
+  function checkRequest({ path, query } = {}) {
+    if (!validPath(path)) throw new Error('Apple Music 请求路径不合法');
     const q = {};
     for (const [k, v] of Object.entries(query || {})) {
       if (!QUERY_KEY_RE.test(k) || (typeof v !== 'string' && typeof v !== 'number')) {
-        return Promise.reject(new Error('Apple Music 请求参数不合法'));
+        throw new Error('Apple Music 请求参数不合法');
       }
       q[k] = v;
     }
+    return { path, query: q };
+  }
+
+  /**
+   * 批量读（例如每张歌单的曲目总数）：占队列里一个位置，页面里限并发并行跑，结果按顺序返回。
+   * 页面没准备好返回 { notReady: true }；单个请求被页面拒绝的那一项是 null。
+   */
+  function callMany(reqs) {
+    let list;
+    try {
+      if (!Array.isArray(reqs) || reqs.length > BATCH_MAX) throw new Error('Apple Music 批量请求数量不合法');
+      list = reqs.map(checkRequest);
+    } catch (err) {
+      return Promise.reject(err);
+    }
+    if (!list.length) return Promise.resolve([]);
+    return enqueue(async () => {
+      ensureView();
+      if (!(await waitReady())) return { notReady: true };
+      const raws = await withTimeout(view.webContents.executeJavaScript(buildBatchCode(list), true), requestTimeoutMs, 'Apple Music 请求超时');
+      if ((raws && raws.notReady) || (Array.isArray(raws) && raws.some((r) => r && r.notReady))) {
+        readyFlag = false;
+        return { notReady: true };
+      }
+      if (!Array.isArray(raws) || raws.length !== list.length) throw new Error('Apple Music 批量请求结果不完整');
+      return raws.map((raw) => (!raw || raw.invalid ? null : sanitize(raw)));
+    });
+  }
+
+  /** 读一个接口。页面没准备好返回 { notReady: true }；路径不合法、超时直接抛错。 */
+  function call(req = {}) {
+    let checked;
+    try {
+      checked = checkRequest(req);
+    } catch (err) {
+      return Promise.reject(err);
+    }
+    const { path, query: q } = checked;
     return enqueue(async () => {
       ensureView();
       if (!(await waitReady())) return { notReady: true };
@@ -444,7 +499,7 @@ function createAppleMusicEngine({ WebContentsView, session, sheetHost, userAgent
     view = null;
   }
 
-  return { call, isAuthorized, login, logout, dispose };
+  return { call, callMany, isAuthorized, login, logout, dispose };
 }
 
 module.exports = {
@@ -453,6 +508,8 @@ module.exports = {
   cleanUserAgent,
   readInPage,
   buildRequestCode,
+  buildBatchCode,
+  BATCH_MAX,
   HOME_URL,
   PARTITION,
   PATH_RE,

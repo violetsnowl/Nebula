@@ -101,7 +101,16 @@ export interface AppleMusicRequest {
 export type AppleMusicBridgeResult = AppleMusicResponse | { notReady: true };
 export interface AppleMusicBridge {
   call(req: AppleMusicRequest): Promise<AppleMusicBridgeResult>;
+  /** 批量并行读（页面里限并发）；单项被拒为 null。没实现的桥就不补曲目数。 */
+  callMany?(reqs: AppleMusicRequest[]): Promise<Array<AppleMusicResponse | null> | { notReady: true }>;
 }
+
+/** 一次批量最多几张歌单（与 appleMusicEngine.cjs 的 BATCH_MAX 一致）。 */
+const COUNT_BATCH = 60;
+/** 歌单曲目数缓存多久（用户可能在手机上改歌单，不能一直用旧数）。 */
+const COUNT_TTL_MS = 5 * 60 * 1000;
+/** 拉曲目数最多等多久；超时就不显示数量，不拖慢歌单列表。 */
+const COUNT_BUDGET_MS = 8000;
 
 /** 路径里的 ID 段：字母数字和 . _ -，且不能含 ..（防止拼出上级路径）。 */
 const SEGMENT_RE = /^[A-Za-z0-9._-]+$/;
@@ -248,6 +257,26 @@ export class AppleMusicClient {
     return this.paged(`/v1/catalog/${catalogStorefront(storefront)}/playlists/${segment(id, '歌单 ID')}/tracks`, {}, APPLEMUSIC_TRACK_MAX_PAGES);
   }
 
+  /**
+   * 资料库歌单的曲目总数：歌单列表接口不给数量，每张歌单读一次 `tracks?limit=1` 的 `meta.total`，
+   * 用批量请求在页面里并行跑。桥不支持批量、页面没就绪或单张失败的，结果里就没有那张。
+   */
+  async libraryPlaylistTrackCounts(ids: string[]): Promise<Map<string, number>> {
+    const out = new Map<string, number>();
+    const valid = ids.filter((id) => LIBRARY_ID_RE.test(id));
+    if (!this.bridge?.callMany || !valid.length) return out;
+    for (let i = 0; i < valid.length; i += COUNT_BATCH) {
+      const chunk = valid.slice(i, i + COUNT_BATCH);
+      const res = await this.bridge.callMany(chunk.map((id) => ({ path: `/v1/me/library/playlists/${segment(id, '歌单 ID')}/tracks`, query: { limit: 1 } })));
+      if (!Array.isArray(res)) break; // 页面没就绪
+      res.forEach((r, k) => {
+        const total = r && Number(r.status) < 400 && !r.errors?.length ? Number(r.total) : NaN;
+        if (Number.isFinite(total) && total >= 0) out.set(chunk[k]!, total);
+      });
+    }
+    return out;
+  }
+
   /** 资料库歌单的第一页第一首（补封面用）。 */
   async libraryPlaylistFirstTrack(id: string): Promise<AppleMusicResource | undefined> {
     return (await this.request(`/v1/me/library/playlists/${segment(id, '歌单 ID')}/tracks`, { limit: 1 })).data?.[0];
@@ -271,6 +300,8 @@ export class AppleMusicAdapter implements PlatformAdapter {
   readonly client = new AppleMusicClient();
   /** 账号地区缓存（读到过一次就不再读）；只用于曲目里记下地区，给分享链接用。 */
   private storefrontCache = '';
+  /** 资料库歌单曲目数缓存：id → { 数量, 读到的时间 }。 */
+  private trackCounts = new Map<string, { count: number; at: number }>();
 
   constructor(_http?: HttpClient, _cookies?: CookieStore) {}
 
@@ -287,7 +318,9 @@ export class AppleMusicAdapter implements PlatformAdapter {
           return this.toPlaylist(id, info, rows, sf);
         }
         const [info, rows] = await Promise.all([this.client.libraryPlaylist(id), this.client.libraryPlaylistTracks(id)]);
-        return this.toPlaylist(id, info, rows, await this.accountStorefront());
+        const playlist = this.toPlaylist(id, info, rows, await this.accountStorefront());
+        this.trackCounts.set(id, { count: rows.length, at: Date.now() }); // 导入过的歌单顺手记下实际数量
+        return playlist;
       } catch (err) {
         if (err instanceof AppleMusicHttpError && err.status === 404) throw new Error('Apple Music 歌单不存在或未公开');
         throw err;
@@ -359,12 +392,45 @@ export class AppleMusicAdapter implements PlatformAdapter {
         id,
         name: row.attributes?.name || '未命名歌单',
         cover: appleArtworkUrl(row.attributes?.artwork?.url, 600),
-        // 资料库歌单列表不带曲目数；先给 0，进入歌单后以实际曲目为准
+        // 资料库歌单列表不带曲目数；下面另外批量读，读不到保持 0（界面对 Apple Music 的 0 不显示数量）
         trackCount: Number(row.attributes?.trackCount) || 0,
         favorited: !!row.attributes?.tags?.includes('favorited'),
       });
     }
+    await this.fillTrackCounts(list);
     return [...list.filter((p) => p.favorited), ...list.filter((p) => !p.favorited)].map(({ favorited: _f, ...p }) => p);
+  }
+
+  /** 补曲目数：缓存里 5 分钟内的直接用，其余批量读；最多等 8 秒，失败不影响歌单列表。 */
+  private async fillTrackCounts(list: PlaylistSummary[]): Promise<void> {
+    const fresh = (id: string) => {
+      const c = this.trackCounts.get(id);
+      return c && Date.now() - c.at < COUNT_TTL_MS ? c.count : undefined;
+    };
+    const missing = list.filter((p) => !p.trackCount && fresh(p.id) === undefined).map((p) => p.id);
+    if (missing.length) {
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      // 结果一到就写缓存：超时没赶上这一次的，下次刷新歌单时就有了
+      const job = this.client.libraryPlaylistTrackCounts(missing).then((counts) => {
+        const at = Date.now();
+        counts.forEach((count, id) => this.trackCounts.set(id, { count, at }));
+      });
+      try {
+        await Promise.race([
+          job,
+          new Promise<void>((resolve) => {
+            timer = setTimeout(resolve, COUNT_BUDGET_MS);
+          }),
+        ]);
+      } catch {
+        /* 读不到就不显示数量 */
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
+    }
+    for (const p of list) {
+      if (!p.trackCount) p.trackCount = fresh(p.id) ?? 0;
+    }
   }
 }
 

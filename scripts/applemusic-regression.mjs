@@ -354,5 +354,66 @@ await test('IPC：applemusic 登录通道存在；歌单链接导入走目录歌
   assert.match(bad.error, /Apple Music/);
 });
 
+/* ---------- 歌单曲目数（#192：列表接口不给数量，另外批量读 tracks?limit=1 的 meta.total） ---------- */
+function makeCountingAdapter(totals, { failIds = [] } = {}) {
+  const adapter = new AppleMusicAdapter();
+  const batches = [];
+  const bridge = {
+    calls: [],
+    call: async (req) => {
+      bridge.calls.push(structuredClone(req));
+      if (req.path === '/v1/me/library/playlists') return ok([libPl('p.A', '普通'), libPl('p.FAV', '喜爱', { tags: ['favorited'] }), libPl('p.EMPTY', '空歌单'), libPl('p.BAD', '读不到')]);
+      if (req.path === '/v1/me/storefront') return ok([{ id: 'cn', type: 'storefronts' }]);
+      if (req.path === '/v1/me/library/playlists/p.A') return ok([libPl('p.A', '普通')]);
+      if (req.path === '/v1/me/library/playlists/p.A/tracks') return ok([libSong('i.1', { catalogId: '1' }), libSong('i.2', { catalogId: '2' }), libSong('i.3', { catalogId: '3' })]);
+      throw new Error('意外请求 ' + req.path);
+    },
+    callMany: async (reqs) => {
+      batches.push(structuredClone(reqs));
+      return reqs.map((r) => {
+        const id = r.path.split('/')[5];
+        if (failIds.includes(id)) return { status: 500, errors: [{ code: '50000', status: '500' }] };
+        return { status: 200, data: [], total: totals[id] };
+      });
+    },
+  };
+  adapter.client.setBridge(bridge);
+  return { adapter, bridge, batches };
+}
+
+await test('曲目数：一次批量读出每张歌单的 meta.total；喜爱仍排第一；空歌单是 0；单张失败保持 0', async () => {
+  const { adapter, batches } = makeCountingAdapter({ 'p.A': 646, 'p.FAV': 286, 'p.EMPTY': 0, 'p.BAD': 9 }, { failIds: ['p.BAD'] });
+  const list = await adapter.fetchMyPlaylists();
+  assert.deepEqual(list.map((p) => [p.id, p.trackCount]), [['p.FAV', 286], ['p.A', 646], ['p.EMPTY', 0], ['p.BAD', 0]]);
+  assert.equal(batches.length, 1, '所有歌单合成一次批量');
+  assert.deepEqual(batches[0][0], { path: '/v1/me/library/playlists/p.A/tracks', query: { limit: 1 } });
+  assert.equal(batches[0].length, 4);
+});
+
+await test('曲目数：5 分钟内再拉歌单不重复读已知的；失败的下次重试；导入过的歌单用实际数量', async () => {
+  const { adapter, batches } = makeCountingAdapter({ 'p.A': 646, 'p.FAV': 286, 'p.EMPTY': 0, 'p.BAD': 9 }, { failIds: ['p.BAD'] });
+  await adapter.fetchMyPlaylists();
+  const again = await adapter.fetchMyPlaylists();
+  assert.equal(batches.length, 2);
+  assert.deepEqual(batches[1].map((r) => r.path.split('/')[5]), ['p.BAD'], '只重试读不到的那张');
+  assert.equal(again.find((p) => p.id === 'p.A').trackCount, 646);
+  const fresh = makeCountingAdapter({ 'p.FAV': 1, 'p.EMPTY': 0, 'p.BAD': 2 });
+  await fresh.adapter.fetchPlaylist('p.A');
+  const list = await fresh.adapter.fetchMyPlaylists();
+  assert.equal(list.find((p) => p.id === 'p.A').trackCount, 3, '导入时记下的实际数量');
+  assert.ok(!fresh.batches[0].some((r) => r.path.includes('/p.A/')), '导入过的不再问');
+});
+
+await test('曲目数：桥不支持批量 / 页面没就绪 / 批量抛错时，歌单列表照常返回、数量为 0', async () => {
+  const noBatch = makeAdapter(() => ok([libPl('p.A', '普通')]));
+  assert.equal((await noBatch.adapter.fetchMyPlaylists())[0].trackCount, 0);
+  const nr = makeCountingAdapter({});
+  nr.bridge.callMany = async () => ({ notReady: true });
+  assert.ok((await nr.adapter.fetchMyPlaylists()).every((p) => p.trackCount === 0));
+  const boom = makeCountingAdapter({});
+  boom.bridge.callMany = async () => { throw new Error('Apple Music 请求超时'); };
+  assert.equal((await boom.adapter.fetchMyPlaylists()).length, 4);
+});
+
 assert.ok(!logs.some((l) => /developerToken|musicUserToken|Bearer/i.test(l)), '日志里不应出现令牌字样');
 say(`Apple Music 适配器回归 ${passed}/${passed}`);

@@ -404,4 +404,49 @@ await test('dispose：销毁视图、收掉自己正在显示的弹窗；之后�
   engine.dispose();
 });
 
+/* ---------- 批量读（#192：歌单曲目数） ---------- */
+await test('callMany：一次页面执行、页面里并发不超过 6、结果按顺序，令牌不出页面', async () => {
+  const { engine, state } = makeEnv();
+  state.music = async (path) => {
+    await sleep(5);
+    const n = Number(path.split('/')[5].slice(2));
+    return { status: 200, data: { data: [dirtyTrack()], meta: { total: n * 10 } }, musicUserToken: 'USER-TOKEN-SECRET' };
+  };
+  const reqs = Array.from({ length: 14 }, (_, i) => ({ path: `/v1/me/library/playlists/p.${i}/tracks`, query: { limit: 1 } }));
+  const before = state.requestCodes;
+  const res = await engine.callMany(reqs);
+  assert.equal(state.requestCodes - before, 1, '14 个请求只执行一次页面脚本');
+  assert.deepEqual(res.map((r) => r.total), reqs.map((_, i) => i * 10));
+  assert.ok(state.maxRunning > 1 && state.maxRunning <= 6, `并发 ${state.maxRunning}`);
+  assert.ok(!/SECRET|developerToken|musicUserToken/i.test(JSON.stringify(res)));
+});
+
+await test('callMany：非法路径 / 参数、超过上限都在主进程拒绝且不执行；空数组直接返回；页面没就绪返回 notReady', async () => {
+  const { engine, state } = makeEnv();
+  const before = state.requestCodes;
+  await assert.rejects(engine.callMany([{ path: '/v1/me/storefront' }, { path: '/v1/me/../x' }]), /不合法/);
+  await assert.rejects(engine.callMany([{ path: '/v1/me/storefront', query: { 'a b': 1 } }]), /不合法/);
+  await assert.rejects(engine.callMany(Array.from({ length: engineModule.BATCH_MAX + 1 }, () => ({ path: '/v1/me/storefront' }))), /数量不合法/);
+  assert.deepEqual(await engine.callMany([]), []);
+  assert.equal(state.requestCodes, before);
+  const nr = makeEnv({ ready: false });
+  assert.deepEqual(await nr.engine.callMany([{ path: '/v1/me/storefront' }]), { notReady: true });
+});
+
+await test('callMany：和单个请求共用队列（串行，不会和别的读取同时跑）', async () => {
+  const { engine, state } = makeEnv();
+  const order = [];
+  state.music = async (path) => { order.push('start ' + path); await sleep(10); order.push('end ' + path); return { status: 200, data: { data: [] } }; };
+  await Promise.all([
+    engine.call({ path: '/v1/me/storefront' }),
+    engine.callMany([{ path: '/v1/me/library/playlists/p.1/tracks' }]),
+    engine.call({ path: '/v1/me/social-profile' }),
+  ]);
+  assert.deepEqual(order, [
+    'start /v1/me/storefront', 'end /v1/me/storefront',
+    'start /v1/me/library/playlists/p.1/tracks', 'end /v1/me/library/playlists/p.1/tracks',
+    'start /v1/me/social-profile', 'end /v1/me/social-profile',
+  ]);
+});
+
 say(`Apple Music 页面引擎回归 ${passed}/${passed}`);
