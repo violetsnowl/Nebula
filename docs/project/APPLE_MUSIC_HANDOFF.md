@@ -44,7 +44,7 @@
 
 ## 四、路线 A 的落地方案（沿用现有结构）
 
-- 平台 ID 建议 `applemusic`，名称「Apple Music」，logo `docs/logo/Apple_Music_icon.svg.webp`，品牌色 `#fa243c`。改动点按 ARCHITECTURE「加一个平台要改的地方」逐项过；模板看波点 `git show 297339f` 和 YouTube Music `git show cd39338`。
+- 平台 ID 建议 `applemusic`，名称「Apple Music」，logo `docs/logo/Apple_Music_icon.svg.webp`，品牌色 `#fa243c`。改动点按 ARCHITECTURE「加一个平台要改的地方」逐项过；模板看前几家的接入提交：`git log --grep '#182'`（波点）、`git log --grep '#185'`（YouTube Music），再 `git show <提交>`。
 - **页面引擎**：仿汽水签名引擎（`src/main/login/qishuiLogin.ts`、`electron/main.cjs` 里的汽水部分）——一个**从不挂到窗口上**的 `WebContentsView`，分区 `persist:applemusic-login`，加载 `https://music.apple.com/`；需要登录时把同一个视图交给 `sheetHost.open({ view })` 显示在内嵌弹窗里（`embeddedSheet.cjs` 支持接管外部视图，关闭时只摘下不销毁），登录完收起。
 - **登录类型**：`kind: 'window'`（官方页面登录，和 QQ、酷我同类），成功判定 = 在页面里调 `v1/me/storefront` 拿到两位地区码。导航只放行 `music.apple.com`、`account.apple.com`、`appleid.apple.com`、`idmsa.apple.com`（folia 的白名单）。
 - **读数据**：主进程用 `webContents.executeJavaScript` 在页面里执行一个受限的读取函数（只接受白名单里的操作和校验过的参数），返回精简后的 JSON；请求串行、带超时；页面还没准备好（`MusicKit` 不存在）时返回「未就绪」并重试。**任何时候都不把 musicUserToken 或开发者令牌带出页面、写日志或落盘**。

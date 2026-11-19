@@ -31,7 +31,7 @@
 5. **git 每步提交 + 推送**。远程 `origin/main`（`github.com/violetsnowl/Nebula.git`，2026-11-14 改名；旧地址 `violetsnowl/nebula`、`a161858970-ux/nebula` 会自动重定向）；文档与代码一起提交。
 6. **文档同步**：每次改动追加 `docs/project/CHANGE_LOG.md`；踩坑更新 `docs/project/NOTES.md`；架构变化更新 `docs/project/ARCHITECTURE.md`；全局 UI 规范变化更新 `docs/design/NEBULA_UI_SYSTEM.md`（已冻结，改动须经用户确认）。
 7. **搜索优先 `rg`**；本项目 Windows PowerShell 下不可用时改用 `Select-String`。
-8. **沟通语言**：中文；结论先行，给可执行步骤。用户自述 git / 工程操作为新手，但产品与审美判断力强——技术细节按新手水平解释，方向性判断尊重用户。
+8. **沟通语言**：回复和过程说明一律简体中文（上下文变长、上文出现英文时也不切换，2026-11-18 用户提醒过）；结论先行，给可执行步骤。用户是本产品的开发者，产品与审美判断力强：不要讲得太浅（2026-11-18 用户纠正），git 操作可以多说一句做了什么；方向性判断尊重用户。
 9. **多个会话并行时**（2026-11-17 起常见：主对话做界面，分叉会话做后端，同一目录、同一条 main）：
    - **提交前一刻**重读 `CHANGE_LOG.md` 顶部最新编号再取号，日志和提交信息同时用这个号。提前想好的号会因对方先提交而过期，11-17 就撞过 #159 / #160。
    - 只提交自己的文件（`git commit --only <路径>`），对方可能有没提交的改动。推送后告诉对方下一个空号。
@@ -70,6 +70,8 @@
 - **Z1 歌词系统是项目特殊难点**："歌词播放沿时间推进，但视觉是多句并行；设计逻辑时不能只按传统垂直滚播考虑当前句，必须同时计算前后 1–2 句与已发生状态来调整整个匹配系统。"这是 Z1 的底层法则（详见 `docs/design/LYRICS_SYSTEM.md`）。
 - **高级感 = 克制**：不滥用发光 / 跳动；玻璃是"载体"不是"装饰"；一切材质、颜色、动效参数走 CSS 变量，为未来「液态玻璃」第二套主题留路。
 - **前瞻可读性优先**：当前句 + 下一句 + 下下句三句结构已锁定，不要退回纯随机穿梭。
+- **全平台开发者视角**（2026-11-18）：软件面向各平台的所有用户，后端排优先级看「全平台 × 全功能」，不看开发者自己登录了哪些账号；每次后端变更在同一次提交里更新 `PLATFORM_MATRIX.md`，表的写法不变。
+- **登录体验**（2026-11-18）：官方网页登录放在软件内的弹窗里（`electron/embeddedSheet.cjs`），风格与其他弹窗一致，不另开带系统标题栏的窗口；Google 这类不允许内嵌登录的，用用户的默认浏览器（复用浏览器里已有的登录），不开空白浏览器实例；陌生的登录方式要把步骤写清楚、能一键的做成一键。
 
 ---
 
@@ -88,6 +90,7 @@
 - 改动 `src/main`（后端）后必须 `pnpm build:main` 才能让 Electron 与冒烟测试生效。
 - `pnpm build` 产物在**仓库外**的同级目录 `../nebula-outputs/`（本机 `E:\CUFE\vibecoding\nebula-outputs`）；`pnpm qa` 读取该产物，所以**先 build 再 qa**。
 - **换机器的坑**：`scripts/qa.cjs` 经 `scripts/qa-env.cjs` 找依赖，可用 `NEBULA_QA_MODULES` / `NEBULA_CHROME` 两个环境变量覆盖（默认仍指本机的 Codex runtime 和 Chrome）；`scripts/desktop-play-smoke.mjs` 可能仍是硬编码，换机先核对。outputs 目录是相对仓库的 `../nebula-outputs`（与 `vite.config.ts` 的 `outDir` 一致）。
-- `pnpm qa:backend` 现在跑十几套后端回归（取链、路由、录音匹配、地址寿命、QQ 会话、歌词、韩语罗马音、酷狗登录、导入契约等），全部离线，不需要账号。
+- `pnpm qa:backend` 现在跑十几套后端回归（取链、路由、录音匹配、地址寿命、QQ 会话与续期、歌词、韩语罗马音、八平台导入契约、酷我、波点、YouTube Music、汽水扫码、内嵌页面宿主、Spotify 令牌等），全部离线，不需要账号。
+- `pnpm qa` 里「重新播放成功后置灰恢复」偶尔失败：它播的是 soundhelix.com 的外网测试音频，加载慢时判不过，重跑一次就过（2026-11-18 出现过几次），与代码无关。
 - **Windows 工作树坑**：删除含 `node_modules` 的工作树可能报 `Filename too long`——先 `git config core.longpaths true`，仍失败则用 robocopy 镜像空目录清空后再删；目录被改名导致注册失效时用 `git worktree repair <新路径>` 修复。
 - 凭证：`qq-cookie.txt` / `.env` 均被 `.gitignore` 排除，切勿提交；仓库内现无任何真实凭证（旧的已过期 `qq-cookie.txt` 已于 2026-10-14 删除，重新做实账号验证需重新导出）。
