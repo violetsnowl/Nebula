@@ -19,6 +19,8 @@ export function trackShareLink(track: Track): string | null {
       return /^[0-9a-fA-F]{32}$/.test(id) ? `https://www.kugou.com/song/#hash=${id}` : null;
     case 'kuwo':
       return /^\d+$/.test(id) ? `https://www.kuwo.cn/play_detail/${id}` : null;
+    case 'ytmusic':
+      return /^[A-Za-z0-9_-]{11}$/.test(id) ? `https://music.youtube.com/watch?v=${id}` : null;
     default:
       return null;
   }

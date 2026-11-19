@@ -46,6 +46,10 @@ export const PLATFORM_HEADERS: Record<Platform, Record<string, string>> = {
   bodian: {
     'User-Agent': 'Dart/3.3 (dart:io)',
   },
+  // YouTube Music 走自己的传输层（电视端协议，见 ytmusicAdapter）；这里只给统一的 UA，且不附 Cookie / 令牌。
+  ytmusic: {
+    'User-Agent': 'Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version',
+  },
   qishui: {
     Referer: 'https://www.qishui.com/',
     Origin: 'https://www.qishui.com',
@@ -83,7 +87,7 @@ export class HttpClient {
       ...opts.headers,
     };
     const cookie = opts.cookie ?? this.cookies.getHeader(opts.platform);
-    if (cookie && opts.platform !== 'spotify') headers.Cookie = cookie;
+    if (cookie && opts.platform !== 'spotify' && opts.platform !== 'ytmusic') headers.Cookie = cookie;
     if (opts.platform === 'spotify') {
       const token = this.cookies.get('spotify')?.cookies;
       if (token) headers.Authorization = `Bearer ${token}`;

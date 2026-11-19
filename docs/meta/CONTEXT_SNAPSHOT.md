@@ -60,11 +60,11 @@
 - 进度：
   - 酷我 #180 用户验收通过；#184 修头像 / 昵称，「我喜欢听」用首歌封面补；
   - 波点 #182 用户验收通过（登录 → 我的歌单 → 分享链接导入 → 整曲播放）；#184 头像改从自建歌单作者字段读；
-  - YouTube Music：Google 不允许在 Electron 窗口登录，参照 folia 用系统 Chrome / Edge 独立配置目录登录，再无窗口读取 Cookie；接口用 youtubei.js（MIT）；播放先走跨平台；
+  - YouTube Music #185 已接入，待用户验收：设备码登录（用户 2026-11-18 选定，默认浏览器输入代码）、我的歌单（「赞过的视频」+ 歌单）、链接导入、跨平台播放；「赞过的音乐」电视端读不出，以后要补就加 folia 式独立浏览器窗口登录作为第二种方式；
   - Apple Music：参照 folia 在官方 music.apple.com 页面里登录和读资料库，不提取令牌；放最后。
 - 素材已到：四个平台的 logo 在 `docs/logo/`；波点分享链接格式 `h5app.kuwo.cn/m/bodian/collection.html?uid=…&playlistId=…&source=…`。
 - 内嵌窗口（用户 2026-11-18 提）：#183 已做并验收通过（弹窗样式、汽水、壁纸库、Spotify 默认浏览器授权）。用户反馈登录页只露左上角要拖横向滚动条，#184 弹窗放宽到 1100 并按页面宽度自动缩放，待用户验收。
-- YouTube Music 登录（用户希望复用默认浏览器里的登录，不开空白浏览器）：唯一可行的是 Google 设备码登录（默认浏览器打开 google.com/device 输入代码），需要 Google OAuth 客户端——自建 Google Cloud 项目（未审核前上限 100 名测试用户）或借 YouTube 电视端身份（据报 2025-09 后范围有变，能否读 YouTube Music 资料库待实测）。读用户浏览器里的 Cookie 不做（Chrome 应用绑定加密，且属读取凭据）。做 YouTube Music 时先实测再给用户选。
+- YouTube Music 登录结论（#185 实测）：Google 只认 YouTube 电视端身份签的令牌，YouTube Music 网页端接口带它一律 400；电视端能读资料库、赞过的视频、歌单，读不出「赞过的音乐」（LM，连播放队列也是空的）。客户端身份运行时从 youtube.com/tv 的脚本取，不进仓库。读用户浏览器里的 Cookie 不做。
 
 ### 已落地、待用户确认（#177 之后）
 

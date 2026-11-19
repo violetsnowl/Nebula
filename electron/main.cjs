@@ -21,6 +21,8 @@ const {
   QishuiLogin,
   KuwoLogin,
   BodianLogin,
+  YtmusicLogin,
+  revokeYtmusicToken,
   QqRightsService,
   QqRenewService,
   qqSession,
@@ -585,6 +587,8 @@ app.whenReady().then(async () => {
   });
   const kuwoLogin = new KuwoLogin(cookies);
   const bodianLogin = new BodianLogin(cookies);
+  // YouTube Music：设备码登录；与适配器共用同一个协议客户端，令牌续期全局只有一个在进行
+  const ytmusicLogin = new YtmusicLogin(cookies, adapters.ytmusic.client);
 
   // 启动探活：已存 cookie 自动校验登录态，失败仅标记未登录，不抛异常
   login.probeLogin();
@@ -627,6 +631,15 @@ app.whenReady().then(async () => {
       getAccount: () => bodianLogin.getAccount(),
       getMyPlaylists: () => adapters.bodian.fetchMyPlaylists(),
     },
+    ytmusic: {
+      platform: 'ytmusic',
+      name: 'YouTube Music',
+      kind: 'device',
+      createQr: () => ytmusicLogin.createQr(),
+      pollLogin: (unikey) => ytmusicLogin.pollLogin(unikey),
+      getAccount: () => ytmusicLogin.getAccount(),
+      getMyPlaylists: () => adapters.ytmusic.fetchMyPlaylists(),
+    },
     spotify: {
       platform: 'spotify',
       name: 'Spotify',
@@ -662,7 +675,9 @@ app.whenReady().then(async () => {
     wallpaperLibrary,
     // 退出登录时同步清空 QQ / 酷我官方登录窗口独立分区的 Cookie，
     // 确保 CookieStore 与浏览器会话一并干净退出。
-    onCookieClear: async (platform) => {
+    onCookieClear: async (platform, previous) => {
+      // YouTube Music：尽力撤销续期令牌（失败忽略、不记日志——令牌在请求地址里）
+      if (platform === 'ytmusic' && previous?.token) void revokeYtmusicToken(previous.token);
       const partitions = { qq: 'persist:qq-music-login', kuwo: 'persist:kuwo-login' };
       if (!partitions[platform]) return;
       try {

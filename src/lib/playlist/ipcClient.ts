@@ -67,7 +67,7 @@ export interface DesktopPlaylistSummary {
 export interface DesktopLoginPlatform {
   platform: string;
   name: string;
-  kind: 'qr' | 'oauth' | 'window' | 'unavailable';
+  kind: 'qr' | 'oauth' | 'window' | 'device' | 'unavailable';
   unavailableReason: string | null;
 }
 
@@ -222,8 +222,8 @@ export interface DesktopApi {
   loginQr: () => IpcResult<{ unikey: string; payload: string }>;
   loginPoll: (unikey: string) => IpcResult<{ ok: boolean; message: string }>;
   loginPlatforms: () => IpcResult<DesktopLoginPlatform[]>;
-  loginQrFor: (platform: string) => IpcResult<{ unikey: string; payload: string; imageDataUrl?: string }>;
-  loginPollFor: (platform: string, unikey: string) => IpcResult<{ ok: boolean; message: string }>;
+  loginQrFor: (platform: string) => IpcResult<{ unikey: string; payload: string; imageDataUrl?: string; userCode?: string; verificationUrl?: string; expiresIn?: number; interval?: number }>;
+  loginPollFor: (platform: string, unikey: string) => IpcResult<{ ok: boolean; message: string; final?: boolean }>;
   loginAccount: (platform: string) => IpcResult<DesktopAccountInfo | null>;
   loginPlaylists: (platform: string) => IpcResult<DesktopPlaylistSummary[]>;
   importPlaylistId: (platform: string, id: string) => IpcResult<DesktopPlaylistResult>;

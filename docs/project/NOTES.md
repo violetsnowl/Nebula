@@ -94,6 +94,15 @@
 - 酷狗登录（#164 起）：改为手机端扫码。网页登录窗口拿到的是网页票据，「我的歌单」接口（`v7/get_all_list`，云歌单服务）只认手机端票据，网页票据一律返回 20017。旧代码把错误吞掉返回空列表，登录状态又只看本地有没有 Cookie，所以长期「已登录但歌单是空的」。签名排查口诀：签名错误返回 20006，签名对了但票据不认返回 20017。手机端签名是参数按 key 排序后直接拼接，**不加 &**；取链第四路 `fetchGateway` 的旧 `androidSign` 用了 &，大概率一直失败，没改。扫码成功后的路径要用户扫一次才能验证。
 - 汽水登录：已完成（签名引擎 + 扫码 + 凭证捕获；曾遇 2046 二次验证，现正常）。汽水取链曾因服务端按出口 IP 风控放弃，歌单播放走网易云 / QQ 兜底。新的可行路线（2026-11-17 调研，未做）：folia 用的 `qishui-music-api`（MIT）走车机协议，只给未加密的标准音质，需要单独抖音扫码授权。
 
+### YouTube Music（2026-11-18，#185）
+
+- **OAuth 只认电视端身份**：自建 Google Cloud 客户端、YouTube Music 网页端身份带 OAuth 令牌一律 400（ytmusicapi、yt-dlp 都因此放弃了 OAuth）。电视端身份 + 设备码能用，用户在默认浏览器的 google.com/device 输入代码，复用浏览器里的 Google 登录。
+- **电视端读得到 / 读不到**：资料库（`FEplaylist_aggregation`）、YouTube Music 资料库（`FEmusic_liked_playlists`，返回的是二级导航里的「播放列表」页签）、赞过的视频 `VLLL`、普通歌单 `VLPL…` 都能读；「赞过的音乐」`VLLM` 只有头部，正文是「此播放列表中尚无视频」，换播放队列（`next` + playlistId LM）也是空的。自动合辑 `RD…` 打开报错。资料库的 continuation 返回同一批，不用翻页。
+- **赞过的视频混着普通视频**：用户实测里有播客、几个小时的游戏实况，既不是歌也找不到音源，所以 LL 丢掉超过 15 分钟的视频。
+- **跨平台兜底的边界**：副本抽查里真正的歌都命中了 QQ；找不到的是翻唱合唱、现场版、YouTube 上用罗马音写的日文歌名（如「Ame Wo Matsu」= 「雨を待つ」）。
+- **令牌**：访问令牌实测约 23 小时有效（expires_in 约 83000 秒），仍按 50 分钟提前续；续期响应不带新 refresh_token。无效 access_token → youtubei HTTP 401；无效 refresh_token → HTTP 400 `invalid_grant`；轮询等待中是 HTTP 200 + `authorization_pending`。
+- **封面**：`i.ytimg.com`、`yt3.ggpht.com`、`yt3.googleusercontent.com` 都带 `Access-Control-Allow-Origin: *`，不用补跨域头；视频缩略图是 16:9。
+
 ### 酷我 / 波点头像、空封面歌单、登录页宽度（2026-11-18，#184）
 
 - **酷我 Cookie 值带双引号**：官网写的 `pic3`（头像）是 URL 编码后再包一层 `"…"`，以前按「以 http 开头」判断，整条被丢掉。昵称在 `uname3`，不是 `username`。第三方登录（`t3=weixin` / qq）时头像是 `thirdwx.qlogo.cn` / `thirdqq.qlogo.cn`，末段 `/132` 是缩略图，换 `/0` 取原图，可升 https；酷我自己的图床仍保持 http。

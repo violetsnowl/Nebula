@@ -125,7 +125,7 @@ export const EmptyNebula = memo(function EmptyNebula({ phase, onLogin, onPasteLi
             本地文件夹…
           </button>
         </div>
-        <div className="en-supports">网易云音乐 · QQ 音乐 · 酷狗音乐 · 酷我音乐 · 波点音乐 · 汽水音乐 · Spotify</div>
+        <div className="en-supports">网易云音乐 · QQ 音乐 · 酷狗音乐 · 酷我音乐 · 波点音乐 · 汽水音乐 · Spotify · YouTube Music</div>
       </div>
     </section>
   );

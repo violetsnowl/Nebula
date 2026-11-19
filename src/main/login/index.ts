@@ -4,9 +4,10 @@ import type { QishuiLogin } from './qishuiLogin';
 export interface LoginAdapter {
   platform: string;
   name: string;
-  kind: 'qr' | 'oauth' | 'window' | 'unavailable';
-  createQr?: () => Promise<{ unikey: string; payload: string; imageDataUrl?: string }>;
-  pollLogin?: (unikey: string) => Promise<{ ok: boolean; message: string }>;
+  kind: 'qr' | 'oauth' | 'window' | 'device' | 'unavailable';
+  /** device（设备码）类登录另带 userCode / verificationUrl / expiresIn / interval，设备码本身不下发。 */
+  createQr?: () => Promise<{ unikey: string; payload: string; imageDataUrl?: string; userCode?: string; verificationUrl?: string; expiresIn?: number; interval?: number }>;
+  pollLogin?: (unikey: string) => Promise<{ ok: boolean; message: string; final?: boolean }>;
   getAccount?: () => Promise<AccountInfo | null>;
   getMyPlaylists?: () => Promise<PlaylistSummary[]>;
   unavailableReason?: string;
@@ -18,6 +19,7 @@ export { QishuiLogin } from './qishuiLogin';
 export { QqLogin, hash33 } from './qqLogin';
 export { KuwoLogin, kuwoAvatarUrl } from './kuwoLogin';
 export { BodianLogin, bodianSelfFromPlaylists } from './bodianLogin';
+export { YtmusicLogin, revokeYtmusicToken } from './ytmusicLogin';
 
 export function createKugouLoginAdapter(kugouLogin: {
   getAccount: () => Promise<AccountInfo | null>;

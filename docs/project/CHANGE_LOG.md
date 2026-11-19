@@ -6,6 +6,33 @@
 
 ---
 
+## #185 — 2026-11-18 — 接入 YouTube Music：设备码登录、我的歌单、歌单导入、跨平台播放
+
+**背景**（用户 2026-11-18）
+- 平台扩展第三家。用户希望拉起浏览器的登录用默认浏览器、复用浏览器里已有的登录，不开空白浏览器实例。
+- 调研与实测：Google 现在只认 YouTube 电视端身份签的 OAuth 令牌，YouTube Music 网页端接口带它一律 400。用户授权一次实测：电视端能读资料库、赞过的视频（175 个，12 页）、歌单；读不出「赞过的音乐」。给出两条路线（设备码 / folia 式独立浏览器窗口），用户选设备码。
+
+**改动**（适配器、登录、前端、测试由 implementer 子代理写，主对话审查、真实账号实测并补 LL 过滤）
+- 新增 `src/main/adapters/ytmusicAdapter.ts`：`YtmusicClient`（客户端身份运行时从 youtube.com/tv 脚本抓取、设备码、换令牌、续期单飞、youtubei 调用、未登录匿名读）与 `YtmusicAdapter`（我的歌单合并两处资料库、LL 第一并叫「赞过的视频」、跳过 WL / LM / RD；歌单翻页；曲目映射：Topic 频道去尾、「歌手 - 歌名」拆分、去掉 (Official Video) 之类括注、时长、缩略图）。「赞过的视频」丢掉超过 15 分钟的视频（实测混着播客和几小时的游戏实况）；同页重复的 videoId 只收一次。
+- 新增 `src/main/login/ytmusicLogin.ts`：`kind: 'device'`，沿用 createQr / pollLogin 通道；device_code 不下发前端；轮询频率按 Google 的 interval 控制；成功后先读昵称再存令牌；账号信息读 accounts_list（昵称、头像、Premium 标记）。
+- 接入：`types.ts`（Platform 加 ytmusic）、`adapters/index.ts`（注册、链接识别 music.youtube.com / youtube.com / youtu.be 带 list）、`cookieStore.ts`、`http.ts`、`ipc.ts`（`onCookieClear` 多传清除前的记录，用于退出时撤销令牌）、`electron/main.cjs`、`coverService.ts`（ytimg / ggpht / googleusercontent，候选 maxresdefault → hqdefault）。
+- 前端：logo、平台顺序（Spotify 之后）、登录说明；`AccountDock` 新增设备码登录（大号代码、「在浏览器中打开」并复制代码、「重新获取」）；各处平台名列表。
+- 测试：新增 `scripts/ytmusic-regression.mjs`（23 项）并接入 `qa:backend`；`import-regression` 加 ytmusic 样例（八平台）。
+- 文档：完成度表加 YouTube Music 列；ARCHITECTURE、NOTES、快照、README。
+
+**验证**
+- `pnpm build`、`pnpm qa:backend`（ytmusic 23/23、import 12/12 等全绿）、`pnpm qa`（控制台错误 0）。
+- 用户配置副本（已去掉 Spotify 令牌）注入实测授权：过期令牌自动续一次；账号 valid、昵称和头像取到；我的歌单 4 张，四张都能拉全，曲目都有歌手、时长、封面；封面原图 1280×720；公开歌单匿名导入 182 首；合辑链接报中文错误；日志不含令牌。
+- 跨平台播放抽查 22 首命中 8 首（都走 QQ）：没命中的除了翻唱、现场、罗马音歌名的歌，其余是播客和游戏实况——因此加了 LL 的 15 分钟过滤。
+- Electron 冒烟（隔离空配置，不截图）：账号页 YouTube Music 详情能拿到代码，显示「在浏览器中打开」「重新获取」，控制台错误 0。
+
+**遗留**
+- 「赞过的音乐」（LM）读不出，用「赞过的视频」代替；要补需加独立浏览器窗口登录作为第二种方式。
+- 没接 YouTube 本平台音频与歌词；罗马音标题的日文歌跨平台找不到。
+- 依赖 YouTube 电视端身份这条未公开的路，Google 再改规则可能失效。
+
+---
+
 ## #184 — 2026-11-18 — 酷我 / 波点头像；空封面歌单用首歌封面补；内嵌登录页按宽度自动缩放
 
 **背景**（用户 2026-11-18 验收反馈）

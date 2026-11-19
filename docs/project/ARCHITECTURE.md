@@ -188,6 +188,14 @@ view blocks（同层互不依赖，组合只由 App 完成）
 - **测试**：`scripts/import-regression.mjs` 加该平台的样例；新增 `scripts/<平台>-regression.mjs` 接入 `qa:backend`；`router-regression` 要照常通过。
 - **文档**：`PLATFORM_MATRIX.md` 加一列。
 
+## YouTube Music（#185，2026-11-18）
+
+- 只能走 YouTube 电视端（TVHTML5）身份：Google 现在只认它签的 OAuth 令牌，带去 YouTube Music 网页端（WEB_REMIX）接口一律 400。客户端身份（client_id / secret）运行时从 `youtube.com/tv` 的 base-js 脚本里抓，进程内缓存，不硬编码、不写日志、不落盘。
+- `adapters/ytmusicAdapter.ts`：`YtmusicClient` 负责客户端身份、设备码、换令牌、续期（单飞，写入超过 50 分钟或遇 401 先续；refresh_token 不轮换；invalid_grant 记下该令牌判过期）和 youtubei 调用（`/youtubei/v1/browse`、`account/accounts_list`，未登录按匿名读公开歌单）；`YtmusicAdapter` 负责我的歌单（`FEplaylist_aggregation` + `FEmusic_liked_playlists` 合并去重，LL 排第一叫「赞过的视频」，跳过 WL / LM / RD）和歌单内容（`VL<id>` + continuation 翻页，到 60 页或整页没新 ID 停；LL 丢掉超过 15 分钟的视频）。不实现 `getAuthStatus`：曲目靠跨平台兜底播放，登录过期不该拒播。
+- `login/ytmusicLogin.ts`：登录类型 `kind: 'device'`，沿用扫码的 createQr / pollLogin 两条通道；device_code 只留在主进程，前端只拿 userCode 和验证地址；主进程按 Google 给的 interval 控制轮询频率，slow_down 加 5 秒。令牌存 CookieStore 的 `ytmusic`（cookies = access_token，token = refresh_token）。退出登录时 `onCookieClear` 拿到清除前的记录，尽力撤销 refresh_token。
+- 前端 `AccountDock.tsx` 的 `YtmusicLogin`：大号显示代码，「在浏览器中打开」用默认浏览器打开 google.com/device 并复制代码。
+- 回归：`scripts/ytmusic-regression.mjs`（23 项，离线）。
+
 ## 内嵌页面弹窗（#183，2026-11-18）
 
 - 用户要求：登录页和壁纸库不再开带系统标题栏的独立窗口，改成软件内、风格一致。

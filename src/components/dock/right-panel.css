@@ -197,6 +197,18 @@
   background: rgba(255, 255, 255, 0.06);
 }
 
+/* 设备码登录（YouTube Music）：大号等宽登录代码 */
+.sd-panel .rp-code {
+  align-self: center;
+  font: 600 28px/1.3 ui-monospace, Consolas, monospace;
+  letter-spacing: 0.18em;
+  /* 抵消末位字距，让代码视觉居中 */
+  padding-left: 0.18em;
+  color: var(--fg);
+  text-align: center;
+  user-select: all;
+}
+
 .sd-panel .rp-cookie-input {
   width: 100%;
   min-height: 72px;

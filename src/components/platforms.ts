@@ -5,6 +5,7 @@ import qishuiLogo from '../../docs/logo/qishui.png';
 import spotifyLogo from '../../docs/logo/spotify-logo.webp';
 import kuwoLogo from '../../docs/logo/kuwo.png';
 import bodianLogo from '../../docs/logo/bodian.webp';
+import ytmusicLogo from '../../docs/logo/Youtube_Music_icon.svg.webp';
 
 export interface PlatformMeta {
   id: string;
@@ -23,10 +24,11 @@ export const PLATFORM_META: Record<string, PlatformMeta> = {
   spotify: { id: 'spotify', name: 'Spotify', logo: spotifyLogo, brand: '#1db954' },
   kuwo: { id: 'kuwo', name: '酷我音乐', logo: kuwoLogo, brand: '#ffb400' },
   bodian: { id: 'bodian', name: '波点音乐', logo: bodianLogo, brand: '#00e0b8' },
+  ytmusic: { id: 'ytmusic', name: 'YouTube Music', logo: ytmusicLogo, brand: '#ff0033' },
 };
 
 /** 左右 Dock 统一的平台顺序（与后端 platform id 一致）。 */
-export const DOCK_PLATFORM_ORDER = ['netease', 'qq', 'kugou', 'kuwo', 'bodian', 'qishui', 'spotify'] as const;
+export const DOCK_PLATFORM_ORDER = ['netease', 'qq', 'kugou', 'kuwo', 'bodian', 'qishui', 'spotify', 'ytmusic'] as const;
 
 export function platformMeta(id: string): PlatformMeta {
   return PLATFORM_META[id] ?? { id, name: id, logo: '', brand: '#8b93b8' };
@@ -41,4 +43,5 @@ export const LOGIN_HOW: Record<string, string> = {
   spotify: '在浏览器里授权，授权完成后自动回到这里',
   kuwo: '在酷我官网登录：账号密码、短信或 QQ / 微信',
   bodian: '用波点音乐 App 扫码登录',
+  ytmusic: '在默认浏览器输入代码登录 Google 账号',
 };

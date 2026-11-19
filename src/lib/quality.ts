@@ -43,6 +43,7 @@ const PLATFORM_NAME: Record<string, string> = {
   kuwo: '酷我音乐',
   bodian: '波点音乐',
   spotify: 'Spotify',
+  ytmusic: 'YouTube Music',
 };
 
 export function platformName(platform: string | undefined): string {

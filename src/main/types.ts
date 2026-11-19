@@ -1,6 +1,6 @@
 /** Unified data model shared by every platform adapter. */
 
-export type Platform = 'netease' | 'qq' | 'kugou' | 'spotify' | 'qishui' | 'kuwo' | 'bodian';
+export type Platform = 'netease' | 'qq' | 'kugou' | 'spotify' | 'qishui' | 'kuwo' | 'bodian' | 'ytmusic';
 
 export interface CoverInfo { url:string; width?:number; height?:number; verified:boolean }
 

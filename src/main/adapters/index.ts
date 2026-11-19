@@ -8,6 +8,7 @@ import { SpotifyAdapter } from './spotifyAdapter';
 import { QishuiAdapter } from './qishuiAdapter';
 import { KuwoAdapter } from './kuwoAdapter';
 import { BodianAdapter } from './bodianAdapter';
+import { YtmusicAdapter } from './ytmusicAdapter';
 
 export type AdapterMap = Record<Platform, PlatformAdapter>;
 
@@ -20,6 +21,7 @@ export function createAdapters(http: HttpClient, cookies: CookieStore): AdapterM
     qishui: new QishuiAdapter(http, cookies),
     kuwo: new KuwoAdapter(http, cookies),
     bodian: new BodianAdapter(http, cookies),
+    ytmusic: new YtmusicAdapter(http, cookies),
   };
 }
 
@@ -61,6 +63,12 @@ export function resolveAdapterByUrl(input: string): UrlTarget | null {
   if (/(?:^|[/.@])kuwo\.cn(?:[:/?#]|$)/i.test(url)) {
     const id = url.match(/playlist_detail\/(\d+)/i)?.[1] ?? url.match(/[?&#]pid=(\d+)/i)?.[1];
     if (id) return { platform: 'kuwo', id };
+  }
+  // YouTube / YouTube Music 歌单：只认带 list 参数的链接（music.youtube.com/playlist?list=…、www / m.youtube.com、youtu.be）。
+  // LL / WL / LM / RD 开头的合辑也会解析出来，由 YtmusicAdapter.fetchPlaylist 给出明确的中文错误。
+  if (/^(?:https?:\/\/)?(?:(?:music|www|m)\.)?(?:youtube\.com|youtu\.be)(?:[:/?#]|$)/i.test(url)) {
+    const id = url.match(/[?&]list=([A-Za-z0-9_-]+)/i)?.[1];
+    if (id) return { platform: 'ytmusic', id };
   }
   return null;
 }

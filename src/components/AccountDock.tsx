@@ -622,6 +622,118 @@ function BodianLogin({ onSuccess }: { onSuccess: () => void }) {
   );
 }
 
+/** YouTube Music：设备码登录。在默认浏览器打开 google.com/device 输入代码（Google 不允许在内嵌窗口里登录）。 */
+function YtmusicLogin({ onSuccess }: { onSuccess: () => void }) {
+  const [code, setCode] = useState<{ userCode: string; verificationUrl: string } | null>(null);
+  const [status, setStatus] = useState('');
+  const [busy, setBusy] = useState(false);
+  const unikeyRef = useRef<string | null>(null);
+  const pollRef = useRef<number | null>(null);
+  const failRef = useRef(0);
+  const polling = useRef(false);
+
+  const stopPoll = useCallback(() => {
+    if (pollRef.current !== null) {
+      window.clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+
+  const start = useCallback(async () => {
+    if (!window.nebulaAPI || busy) return;
+    stopPoll();
+    unikeyRef.current = null;
+    setCode(null);
+    setBusy(true);
+    setStatus('正在获取登录代码…');
+    const res = await window.nebulaAPI.loginQrFor('ytmusic');
+    setBusy(false);
+    if (!res.ok) {
+      setStatus(`获取登录代码失败：${res.error}`);
+      return;
+    }
+    const { unikey, userCode, verificationUrl } = res.data;
+    if (!userCode) {
+      setStatus('获取登录代码失败，请重试');
+      return;
+    }
+    unikeyRef.current = unikey;
+    setCode({ userCode, verificationUrl: verificationUrl || res.data.payload });
+    setStatus('等待你在浏览器里完成授权…');
+    failRef.current = 0;
+    const seconds = Math.max(5, res.data.interval ?? 5);
+    pollRef.current = window.setInterval(async () => {
+      if (!unikeyRef.current || polling.current) return;
+      polling.current = true;
+      try {
+        const r = await window.nebulaAPI!.loginPollFor('ytmusic', unikeyRef.current);
+        if (!r.ok) {
+          failRef.current++;
+          if (failRef.current >= 3) {
+            setStatus(`轮询失败：${r.error}，请重新获取代码`);
+            stopPoll();
+          } else {
+            setStatus(`连接波动，自动重试（${failRef.current}/3）`);
+          }
+          return;
+        }
+        failRef.current = 0;
+        setStatus(r.data.message);
+        if (r.data.ok) {
+          stopPoll();
+          onSuccess();
+        } else if (r.data.final) {
+          stopPoll();
+          unikeyRef.current = null;
+        }
+      } catch {
+        /* ignore */
+      } finally {
+        polling.current = false;
+      }
+    }, seconds * 1000);
+  }, [busy, onSuccess, stopPoll]);
+
+  const openBrowser = useCallback(async () => {
+    if (!code || !window.nebulaAPI) return;
+    let copied = false;
+    try {
+      await navigator.clipboard.writeText(code.userCode);
+      copied = true;
+    } catch {
+      /* 剪贴板不可用时用户照着屏幕上的代码输入 */
+    }
+    await window.nebulaAPI.openExternal(code.verificationUrl);
+    setStatus(copied ? '代码已复制，在浏览器里粘贴后完成授权' : '已在浏览器打开，请输入上面的代码');
+  }, [code]);
+
+  useEffect(() => stopPoll, [stopPoll]);
+
+  return (
+    <div className="rp-flow">
+      {code ? (
+        <>
+          <div className="rp-code" aria-label="登录代码">
+            {code.userCode}
+          </div>
+          <p className="rp-flow-status">在浏览器打开 google.com/device，输入上面的代码</p>
+          <button type="button" className="btn primary full" onClick={openBrowser}>
+            在浏览器中打开
+          </button>
+          <button type="button" className="btn sec full" disabled={busy} onClick={start}>
+            重新获取
+          </button>
+        </>
+      ) : (
+        <button type="button" className="btn primary full" disabled={busy} onClick={start}>
+          获取登录代码
+        </button>
+      )}
+      <div className="rp-flow-status">{status || '未登录 YouTube Music'}</div>
+    </div>
+  );
+}
+
 /** 汽水音乐：手机端扫码登录（用汽水音乐 App 扫码）。二次验证的验证页会在主窗口里弹出。 */
 function QishuiLogin({ onSuccess }: { onSuccess: () => void }) {
   const [qr, setQr] = useState<string | null>(null);
@@ -766,6 +878,7 @@ function PlatformLogin({
   if (platform === 'kuwo') return <KuwoLogin onSuccess={() => onRefresh('kuwo')} />;
   if (platform === 'bodian') return <BodianLogin onSuccess={() => onRefresh('bodian')} />;
   if (platform === 'spotify') return <SpotifyLogin onSuccess={() => onRefresh('spotify')} />;
+  if (platform === 'ytmusic') return <YtmusicLogin onSuccess={() => onRefresh('ytmusic')} />;
   return (
     <div className="rp-flow">
       <div className="rp-flow-status">暂不支持该平台登录</div>
