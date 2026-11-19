@@ -71,6 +71,7 @@ export const LyricSourceProbe = memo(function LyricSourceProbe({ info }: { info:
       {info ? (
         <>
           <div>来源：{sourceLabel(info.source)}</div>
+          {info.provenance?.[0]?.kind === 'manual' && <div>手动选择：{sourceLabel(info.provenance[0].platform)}</div>}
           {info.provenance && info.provenance.length > 0 && (
             <div>合并：{info.provenance.map((p) => sourceLabel(p.platform)).join(' → ')}</div>
           )}

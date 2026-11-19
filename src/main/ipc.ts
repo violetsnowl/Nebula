@@ -156,6 +156,27 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
     try{return await deps.lyricService.fetchLyric(track,control.signal,from);}
     finally{if(key && requests.get(key)===control)requests.delete(key);}
   });
+  // 歌词版本列表（手动换歌词）：requestId 可取消，写法同 nebula:lyric
+  safe('nebula:lyric-versions', async ({track,requestId,origin}:{track:Track;requestId?:string;origin?:Track},event)=>{
+    const requests=requestsFor(event),control=new AbortController();
+    const key=typeof requestId==='string'?requestId.slice(0,96):'';
+    if(key){requests.get(key)?.abort();if(requests.size>=16){const first=requests.keys().next().value!;requests.get(first)?.abort();requests.delete(first);}requests.set(key,control);}
+    const from=origin && typeof origin==='object' && typeof origin.platform==='string' && typeof origin.sourceId==='string'?origin:undefined;
+    try{return await deps.lyricService.listLyricVersions(track,control.signal,from);}
+    finally{if(key && requests.get(key)===control)requests.delete(key);}
+  });
+  safe('nebula:lyric-choose', async ({track,pick,offsetMs}:{track:Track;pick?:{platform?:unknown;sourceId?:unknown}|null;offsetMs?:unknown})=>{
+    if(!track || typeof track!=='object' || typeof track.platform!=='string' || typeof track.sourceId!=='string')throw new Error('缺少歌曲');
+    let chosen:{platform:string;sourceId:string}|null=null;
+    if(pick!==null && pick!==undefined){
+      if(typeof pick!=='object' || typeof pick.platform!=='string' || typeof pick.sourceId!=='string' || !pick.platform || !pick.sourceId)throw new Error('歌词来源不合法');
+      chosen={platform:pick.platform,sourceId:pick.sourceId};
+    }
+    // offsetMs 缺省 = 保持原来的微调；给了就必须是有限数字（服务里夹到 ±5 秒、取整到 0.1 秒）
+    if(offsetMs!==undefined && (typeof offsetMs!=='number' || !Number.isFinite(offsetMs)))throw new Error('时间微调不合法');
+    deps.lyricService.chooseLyric(track,{pick:chosen,offsetMs});
+    return true;
+  });
   safe('nebula:comments', async ({ track, page }: { track: Track; page?: number }) =>
     deps.lyricService.fetchComments(track, Number(page) || 0),
   );

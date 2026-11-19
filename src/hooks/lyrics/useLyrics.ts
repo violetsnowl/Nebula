@@ -4,6 +4,7 @@ import { hasDesktopAPI, streamTrack, toBackendTrack } from '../../lib/playlist/i
 import { normalizeLyricLines, type LyricLineUI } from '../../lib/lyrics';
 import type { ListenSettingsPatch, LyricVisualSettings } from '../../lib/lyricSettings';
 import type { Track } from '../../lib/catalog';
+import { LYRIC_RELOAD_EVENT, type LyricProvenanceItem } from '../../lib/lyricVersions';
 
 /** 开发调试：当前歌曲歌词来源信息。 */
 export interface LyricDebugInfo {
@@ -12,8 +13,10 @@ export interface LyricDebugInfo {
   hasQrc: boolean;
   totalLines: number;
   wordLines: number;
-  /** 合并来源链（后端 provenance，按合并顺序）：正文来源之外补全过的平台。 */
-  provenance?: Array<{ platform: string; kind: string }>;
+  /** 合并来源链（后端 provenance，按合并顺序）：第一项是正文，其余是补全过的平台（gain = 补了什么）；手动选的正文 kind 是 manual。 */
+  provenance?: LyricProvenanceItem[];
+  /** 用户设的时间微调（毫秒，正数 = 推后）；没设为 0。 */
+  offsetMs: number;
 }
 
 /** 歌曲身份（含兜底供流那首）：同一首换了供流平台要重新取歌词。 */
@@ -110,11 +113,12 @@ export function useLyrics() {
       warmed.add(key);if(warmed.size>64)warmed.delete(warmed.values().next().value!);
       void window.nebulaAPI!.fetchLyric(streamTrack(next),next.via?{origin:toBackendTrack(next)}:{}).catch(()=>{});
     };
-    const load = async (song: Track | null) => {
+    // keepOld：手动换歌词后重载当前这首——旧歌词留着直到新的到，不先清成空白闪一下
+    const load = async (song: Track | null, keepOld = false) => {
       cancel();
       clearTimeout(warmTimer);
       const seq = ++loadSeqRef.current;
-      setLyricLines([]);setLyricDebugInfo(null);
+      if (!keepOld) { setLyricLines([]);setLyricDebugInfo(null); }
       if (!song) {
         setLyricLines([]);
         setLyricDebugInfo(null);
@@ -135,11 +139,11 @@ export function useLyrics() {
         setLyricLines(lines);
         warmTimer=setTimeout(()=>{const next=audioPlayer.peekUpcoming();if(next && (next.via || NATIVE_STREAM.has(next.source)))warmUp(next);},8000);
         if (data && typeof data === 'object') {
-          const src = data as { source?: unknown; yrc?: unknown; qrc?: unknown; provenance?: unknown };
+          const src = data as { source?: unknown; yrc?: unknown; qrc?: unknown; provenance?: unknown; lyricOffsetMs?: unknown };
           const provenance = Array.isArray(src.provenance)
             ? src.provenance
-                .filter((p): p is { platform: string; kind: string } => !!p && typeof p.platform === 'string' && typeof p.kind === 'string')
-                .map((p) => ({ platform: p.platform, kind: p.kind }))
+                .filter((p): p is { platform: string; kind: string; gain?: unknown } => !!p && typeof p.platform === 'string' && typeof p.kind === 'string')
+                .map((p) => ({ platform: p.platform, kind: p.kind, ...(Array.isArray(p.gain) ? { gain: p.gain.filter((g): g is string => typeof g === 'string') } : {}) }))
             : undefined;
           setLyricDebugInfo({
             source: typeof src.source === 'string' ? src.source : 'unknown',
@@ -148,6 +152,7 @@ export function useLyrics() {
             totalLines: lines.length,
             wordLines: lines.filter((l) => !!l.words?.length).length,
             provenance,
+            offsetMs: typeof src.lyricOffsetMs === 'number' && Number.isFinite(src.lyricOffsetMs) ? src.lyricOffsetMs : 0,
           });
         } else {
           setLyricDebugInfo(null);
@@ -167,9 +172,15 @@ export function useLyrics() {
       }
     };
     check();
+    // 手动换歌词 / 改时间微调后（歌词版本页）：立即重载当前这首
+    const reload = () => {
+      const s = audioPlayer.getState().song;
+      if (s) void load(s, true);
+    };
+    window.addEventListener(LYRIC_RELOAD_EVENT, reload);
     const unsubscribe=audioPlayer.subscribe(check);
     const unsubscribeUpcoming=audioPlayer.onUpcomingResolved(warmUp);
-    return ()=>{loadSeqRef.current++;songRef.current='';cancel();clearTimeout(warmTimer);unsubscribe();unsubscribeUpcoming();};
+    return ()=>{window.removeEventListener(LYRIC_RELOAD_EVENT, reload);loadSeqRef.current++;songRef.current='';cancel();clearTimeout(warmTimer);unsubscribe();unsubscribeUpcoming();};
   }, []);
 
   const persistLyricSettings = useCallback((next: LyricVisualSettings) => {

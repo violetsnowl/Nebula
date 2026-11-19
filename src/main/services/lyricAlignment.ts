@@ -240,7 +240,9 @@ export function enrichAligned(base:Lyric,other0:Lyric):Lyric {
   const other=snapLinesToWords(other0);
   const before=lyricCoverage(base);
   // 补上了逐字 / 翻译 / 罗马音 / 和声 / 对唱归属其中任何一样才算有增益
-  const gained=(l:Lyric)=>{const c=lyricCoverage(l);return c.wordLines>before.wordLines || c.translatedLines>before.translatedLines || c.romanLines>before.romanLines || c.bgLines>before.bgLines || c.agentLines>before.agentLines;};
+  // gain 记在 provenance 里，界面据此写「X 补了逐字 / 翻译 …」
+  const gainOf=(l:Lyric)=>{const c=lyricCoverage(l),g:NonNullable<NonNullable<Lyric['provenance']>[number]['gain']>=[];if(c.wordLines>before.wordLines)g.push('words');if(c.translatedLines>before.translatedLines)g.push('translation');if(c.romanLines>before.romanLines)g.push('roman');if(c.bgLines>before.bgLines || c.agentLines>before.agentLines)g.push('bg');return g;};
+  const gained=(l:Lyric)=>gainOf(l).length>0;
   const from={platform:other.identity?.platform || other.source || 'unknown',sourceId:other.identity?.sourceId || ''};
   const alignment=alignTimelines(base,other);
   if(!alignment){
@@ -249,7 +251,7 @@ export function enrichAligned(base:Lyric,other0:Lyric):Lyric {
     const layers=fillTextLayers(merged?.lyric ?? base,other);
     const next=layers?.lyric ?? merged?.lyric;
     if(!next || !gained(next))return base;
-    return {...next,provenance:[...(base.provenance || []),{...from,kind:'enrichment',anchors:Math.max(merged?.pairs ?? 0,layers?.pairs ?? 0)}]};
+    return {...next,provenance:[...(base.provenance || []),{...from,kind:'enrichment',anchors:Math.max(merged?.pairs ?? 0,layers?.pairs ?? 0),gain:gainOf(next)}]};
   }
   const offset=alignment.offsetMs,lines=base.lines.map(l=>({...l}));
   const translations=parseLrc(other.translationRaw || other.tlyric || '');
@@ -273,6 +275,6 @@ export function enrichAligned(base:Lyric,other0:Lyric):Lyric {
   if(!(next.romanRaw || next.romalrc) && shiftRoman)next.romanRaw=next.romalrc=shiftRoman;
   next=fillTextLayers(next,moved)?.lyric ?? next; // 本平台有一部分罗马音：缺的行逐行补（#197）；和声、对唱归属也在这里补（#199）
   if(!gained(next))return base;
-  next.provenance=[...(base.provenance || []),{...from,kind:'enrichment',...alignment}];
+  next.provenance=[...(base.provenance || []),{...from,kind:'enrichment',...alignment,gain:gainOf(next)}];
   return next;
 }

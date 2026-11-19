@@ -146,6 +146,7 @@ export default function App() {
     openCommentsModal,
     openCommentsFor,
     openSongDetailModal,
+    openLyricVersions,
     openArtistByName,
     openArtistFromChip,
     openAlbum,
@@ -668,6 +669,8 @@ export default function App() {
         listenPane={listenPane}
         onListenPaneBack={closeListenPane}
         onOpenSongDetail={openSongDetailModal}
+        onOpenLyricVersions={openLyricVersions}
+        lyricInfo={lyricDebugInfo}
         onOpenArtistByName={openArtistByName}
         wallpaperOpen={wallpaperOpen}
         infoModal={infoModal}

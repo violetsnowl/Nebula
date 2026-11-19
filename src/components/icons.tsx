@@ -146,3 +146,20 @@ export function IconExternal(p: IconProps) {
     </Svg>
   );
 }
+
+/** 减号 / 加号（歌词时间微调的 − / +）。 */
+export function IconMinus(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M6 12h12" />
+    </Svg>
+  );
+}
+
+export function IconPlus(p: IconProps) {
+  return (
+    <Svg {...p}>
+      <path d="M6 12h12M12 6v12" />
+    </Svg>
+  );
+}

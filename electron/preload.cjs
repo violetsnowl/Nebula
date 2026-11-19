@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld('nebulaAPI', {
   songQualities: (track) => ipcRenderer.invoke('nebula:song-qualities', { track }),
   fallbackSong: (track) => ipcRenderer.invoke('nebula:fallback-song', { track }),
   fetchLyric: (track, options) => ipcRenderer.invoke('nebula:lyric', { track, ...options }),
+  lyricVersions: (track, options) => ipcRenderer.invoke('nebula:lyric-versions', { track, ...options }),
+  chooseLyric: (track, choice) => ipcRenderer.invoke('nebula:lyric-choose', { track, ...choice }),
   fetchComments: (track, page) => ipcRenderer.invoke('nebula:comments', { track, page }),
   coverInfo: (track) => ipcRenderer.invoke('nebula:cover-info', { track }),
   songDetail: (track, opts) => ipcRenderer.invoke('nebula:song-detail', { track, withCredits: !!opts?.withCredits }),

@@ -272,6 +272,14 @@
   background: rgba(255, 255, 255, 0.05);
 }
 
+/* 行尾的说明文字（如「歌词」行的来源）：放不下时截断 */
+.mdl-end-t {
+  max-width: 300px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .mdl-end {
   display: inline-flex;
   align-items: center;

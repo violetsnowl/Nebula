@@ -3,6 +3,7 @@ import { useAudioPlayer } from '../../lib/audio/useAudioPlayer';
 import type { Track } from '../../lib/catalog';
 import type { LyricLineUI } from '../../lib/lyrics';
 import type { DesktopTrack } from '../../lib/playlist/ipcClient';
+import type { LyricSourceSummary } from '../../lib/lyricVersions';
 import { setListenSettings, useListenSettings, type ListenSettings } from '../../lib/listen/settings';
 import { useBigCover } from '../../lib/listen/bigCover';
 import { applyListenLayout } from '../../lib/listen/layout';
@@ -216,6 +217,10 @@ interface ListenSpaceProps {
   pane: InfoPaneState | null;
   onPaneBack: () => void;
   onOpenSongDetail: () => void;
+  /** 歌词栏上右键 / 「关于这首歌」里的「歌词」行：右栏换到「歌词版本」。 */
+  onOpenLyricVersions: () => void;
+  /** 当前歌词的来源摘要（来自 useLyrics 的 lyricDebugInfo）。 */
+  lyricInfo: LyricSourceSummary | null;
   onOpenArtistByName: (name: string, track?: Track) => void;
   onOpenArtist: (platform: string, artistId: string, name: string) => void;
   onOpenAlbum: (platform: string, albumId: string, albumName: string, artistName?: string) => void;
@@ -230,6 +235,8 @@ export const ListenSpace = memo(function ListenSpace({
   pane,
   onPaneBack,
   onOpenSongDetail,
+  onOpenLyricVersions,
+  lyricInfo,
   onOpenArtistByName,
   onOpenArtist,
   onOpenAlbum,
@@ -404,7 +411,15 @@ export const ListenSpace = memo(function ListenSpace({
             </button>
           )}
         </div>
-        <div className="ls-col">
+        {/* 歌词栏上右键 = 歌词版本（阻止系统菜单）；读音 / 翻译按钮上不触发，读音按钮自己的右键面板不受影响 */}
+        <div
+          className="ls-col"
+          onContextMenu={(e) => {
+            if ((e.target as Element).closest('.ls-rdwrap, .ls-trb')) return;
+            e.preventDefault();
+            onOpenLyricVersions();
+          }}
+        >
           <LyricColumn className="ls-lyrics" lines={lines} settings={settings} />
           {hasRoman && <ReadingButton settings={settings} japanese={hasJa} solo={!hasTranslation} />}
           {hasTranslation && (
@@ -432,6 +447,8 @@ export const ListenSpace = memo(function ListenSpace({
               onOpenArtist={onOpenArtist}
               onOpenAlbum={onOpenAlbum}
               onOpenComments={onOpenComments}
+              onOpenLyrics={onOpenLyricVersions}
+              lyricInfo={lyricInfo}
               onPlayArtistTrack={onPlayArtistTrack}
             />
           )}

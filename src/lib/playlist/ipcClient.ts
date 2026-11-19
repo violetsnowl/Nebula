@@ -178,6 +178,23 @@ export interface DesktopCommentResult {
   source?: DesktopContentSource;
 }
 
+/** 手动选定的歌词来源（AMLL 的 sourceId 是 `matchedBy:id`）。 */
+export interface DesktopLyricPick {
+  platform: string;
+  sourceId: string;
+}
+/** 「歌词版本」列表里的一份（后端 listLyricVersions）。 */
+export interface DesktopLyricVersion extends DesktopLyricPick {
+  coverage: { textLines: number; wordLines: number; translatedLines: number; romanLines: number; bgLines: number; agentLines: number };
+  /** 时长和当前这首差几秒；按 id 确认同一录音的、没有时长的为 null。 */
+  durationDiffSec: number | null;
+}
+export interface DesktopLyricVersions {
+  pick: DesktopLyricPick | null;
+  offsetMs: number;
+  versions: DesktopLyricVersion[];
+}
+
 type IpcResult<T> = Promise<{ ok: true; data: T } | { ok: false; error: string }>;
 
 /** 主进程要求显示的内嵌页面弹窗。 */
@@ -208,6 +225,10 @@ export interface DesktopApi {
   fallbackSong: (track: DesktopTrack) => IpcResult<DesktopTrack | null>;
   /** origin：兜底播放时用户点的原曲，只给 AMLL / Apple 歌词来源提供查询 id（缓存键和身份仍按 track）。 */
   fetchLyric: (track: DesktopTrack, options?: {requestId?:string; origin?: DesktopTrack}) => IpcResult<unknown>;
+  /** 歌词版本列表（手动换歌词）：requestId 可取消；origin 同 fetchLyric。 */
+  lyricVersions: (track: DesktopTrack, options?: {requestId?:string; origin?: DesktopTrack}) => IpcResult<DesktopLyricVersions>;
+  /** 手动换歌词：pick = null 恢复自动合并；offsetMs 缺省 = 保持原来的微调（范围 ±5000，0.1 秒一档）。 */
+  chooseLyric: (track: DesktopTrack, choice: {pick: DesktopLyricPick | null; offsetMs?: number}) => IpcResult<boolean>;
   coverInfo?: (track:DesktopTrack) => IpcResult<DesktopCoverInfo|null>;
   fetchComments: (track: DesktopTrack, page?: number) => IpcResult<DesktopCommentResult | null>;
   songDetail: (track: DesktopTrack, opts?: { withCredits?: boolean }) => IpcResult<DesktopSongDetail | null>;

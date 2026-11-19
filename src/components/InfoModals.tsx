@@ -10,7 +10,9 @@ import type {
   DesktopSongDetail,
   DesktopTrack,
 } from '../lib/playlist/ipcClient';
+import { describeLyricEntry, type LyricSourceSummary } from '../lib/lyricVersions';
 import { IconChevronLeft, IconChevronRight, IconClose, IconHeart } from './icons';
+import { LyricVersionsPanel } from './listen/LyricVersionsPanel';
 import { platformMeta } from './platforms';
 import './modals.css';
 
@@ -417,14 +419,21 @@ function SongDetailPanel({
   onOpenArtist,
   onOpenAlbum,
   onOpenComments,
+  onOpenLyrics,
+  lyricInfo,
   onClose,
 }: {
   track: Track;
   onOpenArtist: (platform: string, artistId: string, name: string) => void;
   onOpenAlbum: (platform: string, albumId: string, albumName: string, artistName?: string) => void;
   onOpenComments?: (track: Track) => void;
+  /** 「歌词」行（换歌词版本）：只在右栏呈现时给；弹窗呈现不显示这一行。 */
+  onOpenLyrics?: () => void;
+  /** 当前歌词的来源摘要（行尾的说明用）。 */
+  lyricInfo?: LyricSourceSummary | null;
   onClose: () => void;
 }) {
+  const mode = useContext(PresentCtx);
   const [detail, setDetail] = useState<DesktopSongDetail | null>(null);
   const [missing, setMissing] = useState(false);
   const [error, setError] = useState('');
@@ -513,6 +522,15 @@ function SongDetailPanel({
         <>
           <div className="mdl-gtitle">更多</div>
           <div className="mdl-group">
+            {mode === 'pane' && onOpenLyrics && (
+              <button type="button" className="mdl-row is-btn" onClick={onOpenLyrics}>
+                <span className="mdl-v">歌词</span>
+                <span className="mdl-end">
+                  <span className="mdl-end-t">{describeLyricEntry(lyricInfo?.provenance, lyricInfo?.offsetMs)}</span>
+                  <IconChevronRight size={14} />
+                </span>
+              </button>
+            )}
             {/* 评论数没有现成数据（不为它额外发请求），行尾只放箭头 */}
             {onOpenComments && (
               <button type="button" className="mdl-row is-btn" onClick={() => onOpenComments(track)}>
@@ -777,7 +795,7 @@ function AlbumPanel({
 }
 
 export interface InfoPaneState {
-  kind: 'comments' | 'song' | 'artist' | 'album';
+  kind: 'comments' | 'song' | 'artist' | 'album' | 'lyrics';
   track?: Track;
   platform?: string;
   artistId?: string;
@@ -796,6 +814,8 @@ export function InfoPane({
   onOpenArtist,
   onOpenAlbum,
   onOpenComments,
+  onOpenLyrics,
+  lyricInfo,
   onPlayArtistTrack,
 }: {
   pane: InfoPaneState;
@@ -803,12 +823,26 @@ export function InfoPane({
   onOpenArtist: (platform: string, artistId: string, name: string) => void;
   onOpenAlbum: (platform: string, albumId: string, albumName: string, artistName?: string) => void;
   onOpenComments: (track: Track) => void;
+  /** 「关于这首歌」里「歌词」行：右栏原地换到「歌词版本」。 */
+  onOpenLyrics: () => void;
+  lyricInfo: LyricSourceSummary | null;
   onPlayArtistTrack: (track: DesktopTrack) => void;
 }) {
   let body: ReactNode = null;
   if (pane.kind === 'comments' && pane.track) body = <CommentsPanel track={pane.track} onClose={onBack} />;
   else if (pane.kind === 'song' && pane.track)
-    body = <SongDetailPanel track={pane.track} onOpenArtist={onOpenArtist} onOpenAlbum={onOpenAlbum} onOpenComments={onOpenComments} onClose={onBack} />;
+    body = (
+      <SongDetailPanel
+        track={pane.track}
+        onOpenArtist={onOpenArtist}
+        onOpenAlbum={onOpenAlbum}
+        onOpenComments={onOpenComments}
+        onOpenLyrics={onOpenLyrics}
+        lyricInfo={lyricInfo}
+        onClose={onBack}
+      />
+    );
+  else if (pane.kind === 'lyrics') body = <LyricVersionsPanel lyricInfo={lyricInfo} onClose={onBack} />;
   else if (pane.kind === 'artist' && pane.platform && pane.artistId)
     body = <ArtistPanel platform={pane.platform} artistId={pane.artistId} artistName={pane.artistName ?? ''} onOpenAlbum={onOpenAlbum} onPlayTrack={onPlayArtistTrack} onClose={onBack} />;
   else if (pane.kind === 'album' && pane.platform && pane.albumId)
@@ -824,15 +858,7 @@ export function InfoModals({
   onOpenComments,
   onPlayArtistTrack,
 }: {
-  modal: {
-    kind: 'comments' | 'song' | 'artist' | 'album';
-    track?: Track;
-    platform?: string;
-    artistId?: string;
-    artistName?: string;
-    albumId?: string;
-    albumName?: string;
-  } | null;
+  modal: InfoPaneState | null;
   onClose: () => void;
   onOpenArtist: (platform: string, artistId: string, name: string) => void;
   onOpenAlbum: (platform: string, albumId: string, albumName: string) => void;

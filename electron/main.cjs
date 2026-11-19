@@ -35,6 +35,7 @@ const {
   createAppleMusicLoginAdapter,
   AudioProxy,
   LyricCache,
+  LyricOverrides,
   WallpaperLibrary,
   createFallbackPriorityProvider,
   probeAudioUrl,
@@ -571,7 +572,7 @@ app.whenReady().then(async () => {
   const lyricService = new LyricService(adapters, lyricCache, {
     amll: new AmllLyrics(http),
     appleMusic: new AppleMusicLyrics(adapters.applemusic.client, cookies),
-  });
+  }, new LyricOverrides(app.getPath('userData')));
   const wallpaperLibrary = new WallpaperLibrary();
   protocol.handle('wallpaper', (request) => wallpaperLibrary.handle(request));
   const login = new NeteaseLogin(http, cookies);

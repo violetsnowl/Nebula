@@ -8,7 +8,7 @@ const require = createRequire(import.meta.url);
 const api = require('../dist-main/index.cjs');
 const {
   AmllLyrics, AppleMusicLyrics, AppleMusicClient, LyricService, HttpClient, CookieStore, fromTtml, lyricCoverage, timedLines, lrcAt,
-  lyricIdsOf, mergeLyricIds,
+  lyricIdsOf, mergeLyricIds, registerIpcHandlers,
 } = api;
 
 for (const k of ['warn']) console[k] = () => {};
@@ -567,6 +567,343 @@ await test('LyricService：旧调用方式（两个参数 / 无新来源）不�
   const r2 = await new LyricService(adapters().map, undefined, {}).fetchLyric(song(), undefined, undefined);
   assert.equal(r2.lines.length, 4);
   assert.ok(timedLines(fromTtml(ttmlDoc(), 'amll').yrc).length === 4);
+});
+
+/* ---------- 手动换歌词（歌词版本 / 选择 / 时间微调） ---------- */
+const MARK = { qq: 'QQ自带', netease: '网易云自带' };
+/** 只有前 n 行有逐字的歌词，lrc 带来源标记（用来看「正文来自谁」）。 */
+const partialWords = (n, mark, extra = {}) => ({
+  raw: '', lrc: `${lrcAt(0, mark)}\n` + TEXTS.map((t, i) => lrcAt(TIMES[i], t)).join('\n'),
+  lines: TEXTS.map((text, i) => ({ timeMs: TIMES[i], text })),
+  yrc: TEXTS.slice(0, n).map((t, i) => `[${TIMES[i]},3000](${TIMES[i]},3000,0)${t}`).join('\n'), ...extra,
+});
+/** qq 自己（只有整句）+ netease 搜到一首（前 2 行逐字）+ AMLL（第一轮 id 命中，带逐字和翻译）+ Apple（按 id，带逐字和罗马音）。 */
+function manualSetup({ neteaseDuration = 21, appleImpl, amllImpl } = {}) {
+  const stats = { neteaseFetch: [], qqFetch: 0 };
+  const map = {
+    qq: { fetchLyric: async () => { stats.qqFetch++; return partialWords(0, MARK.qq); } },
+    netease: {
+      searchSongs: async () => [song({ id: 'netease:900', platform: 'netease', sourceId: '900', duration: neteaseDuration })],
+      fetchLyric: async (id) => { stats.neteaseFetch.push(id); if (id !== '900') return null; return partialWords(2, MARK.netease, { source: 'netease' }); },
+    },
+    kugou: {},
+  };
+  const amll = fakeAmll(amllImpl ?? (() => amllHit(ttmlDoc({ trans: true }), { matchedBy: 'qq', id: '5', record: { ncm: [], qq: ['5'], apple: [], spotify: [], isrc: [] } })));
+  const apple = fakeApple(appleImpl ?? (() => appleHit(ttmlDoc({ split: 2, roman: true }), { catalogId: '111', via: 'id' })));
+  return { map, stats, amll, apple };
+}
+const mtrack = () => song({ extra: { songId: 5 } });
+const newOverrides = (name) => new api.LyricOverrides(path.join(tmp, name));
+
+await test('listLyricVersions：本平台 / AMLL / Apple / 搜索来源各一份，带覆盖率与时长差（按 id 确认的为 null）', async () => {
+  const { map, amll, apple } = manualSetup();
+  const svc = new LyricService(map, undefined, { amll, appleMusic: apple }, newOverrides('o1'));
+  const r = await svc.listLyricVersions(mtrack());
+  assert.equal(r.pick, null);
+  assert.equal(r.offsetMs, 0);
+  assert.deepEqual(r.versions.map((v) => [v.platform, v.sourceId]), [['qq', 'mid1'], ['amll', 'qq:5'], ['applemusic', '111'], ['netease', '900']]);
+  assert.deepEqual(r.versions.map((v) => v.coverage.wordLines), [0, 4, 4, 2]);
+  assert.deepEqual(r.versions.map((v) => v.coverage.translatedLines), [0, 4, 0, 0]);
+  assert.equal(r.versions[2].coverage.romanLines, 4);
+  assert.deepEqual(r.versions.map((v) => v.durationDiffSec), [null, null, null, 1], '搜到的那首时长 21 秒、这首 20 秒');
+  assert.equal(amll.calls.length, 1, '第一轮就命中，只查一次');
+  // 没有 overrides 时也能列（pick 为 null、微调 0）
+  const bare = await new LyricService(manualSetup().map).listLyricVersions(mtrack());
+  assert.deepEqual(bare.versions.map((v) => v.platform), ['qq', 'netease']);
+  assert.equal(bare.pick, null);
+});
+
+await test('listLyricVersions：一个来源抛错 / 卡住不影响其余；没有正文的候选不列；第一轮没命中时按搜到的网易云 id 再查 AMLL（与 fetchLyric 同一段收集）', async () => {
+  const bad = manualSetup({ amllImpl: () => { throw new Error('boom'); }, appleImpl: () => { throw new Error('boom'); } });
+  const r = await new LyricService(bad.map, undefined, { amll: bad.amll, appleMusic: bad.apple }).listLyricVersions(mtrack());
+  assert.deepEqual(r.versions.map((v) => v.platform), ['qq', 'netease']);
+  const hung = manualSetup({ appleImpl: () => new Promise(() => {}) });
+  const t0 = Date.now();
+  const r2 = await new LyricService(hung.map, undefined, { amll: hung.amll, appleMusic: hung.apple }).listLyricVersions(mtrack());
+  assert.deepEqual(r2.versions.map((v) => v.platform), ['qq', 'amll', 'netease']);
+  assert.ok(Date.now() - t0 < 8000, `Apple 卡住只拖到它自己的预算 ${Date.now() - t0}ms`);
+  // 本平台抛错；AMLL 返回没有正文的歌词
+  const m = manualSetup({ amllImpl: () => ({ lyric: { raw: '', lines: [{ timeMs: 1, text: '' }] }, matchedBy: 'ncm', id: '1', record: {} }) });
+  m.map.qq.fetchLyric = async () => { throw new Error('boom'); };
+  const r3 = await new LyricService(m.map, undefined, { amll: m.amll, appleMusic: m.apple }).listLyricVersions(mtrack());
+  assert.deepEqual(r3.versions.map((v) => v.platform), ['applemusic', 'netease']);
+  // 第一轮（只有 songId）没命中，搜到的网易云带来 ncm id 后再查一次
+  const two = manualSetup({ amllImpl: (ids) => (ids.ncm === '900' ? amllHit(ttmlDoc()) : null) });
+  const r4 = await new LyricService(two.map, undefined, { amll: two.amll }).listLyricVersions(mtrack());
+  assert.deepEqual(two.amll.calls, [{ qq: '5' }, { qq: '5', ncm: '900' }]);
+  assert.deepEqual(r4.versions.map((v) => v.platform), ['qq', 'amll', 'netease']);
+  assert.equal(r4.versions[1].durationDiffSec, 1, '用搜到的那首的时长核对，不算严格确认的同一录音');
+  // 已经取消就不再等
+  const c = new AbortController(); c.abort();
+  const r5 = await new LyricService(manualSetup().map).listLyricVersions(mtrack(), c.signal);
+  assert.deepEqual(r5.versions, []);
+});
+
+await test('chooseLyric：选了某一份后正文来自它（provenance 第一项 manual），别家仍补它缺的；改回 null 恢复自动', async () => {
+  const dir = path.join(tmp, 'c2');
+  const { map, amll, apple } = manualSetup();
+  const cache = new api.LyricCache(dir), ov = new api.LyricOverrides(dir);
+  const svc = new LyricService(map, cache, { amll, appleMusic: apple }, ov);
+  const auto = await svc.fetchLyric(mtrack());
+  assert.deepEqual(auto.provenance[0], { platform: 'qq', sourceId: 'mid1', kind: 'primary' });
+  assert.match(auto.lrc, /QQ自带/);
+  assert.ok(cache.get('qq', 'mid1'), '自动结果进了缓存');
+  svc.chooseLyric(mtrack(), { pick: { platform: 'netease', sourceId: '900' } });
+  assert.equal(cache.get('qq', 'mid1'), null, '来源变了：缓存作废');
+  const manual = await svc.fetchLyric(mtrack());
+  assert.deepEqual(manual.provenance[0], { platform: 'netease', sourceId: '900', kind: 'manual' });
+  assert.match(manual.lrc, /网易云自带/, '正文来自选中的那份');
+  assert.ok(!/QQ自带/.test(manual.lrc));
+  assert.equal(lyricCoverage(manual).wordLines, 4, '它只有 2 行逐字，别家补上其余');
+  assert.equal(lyricCoverage(manual).translatedLines, 4, '别家补它缺的翻译');
+  assert.ok(manual.provenance.length > 1);
+  assert.ok(manual.provenance.slice(1).every((p) => p.kind === 'enrichment' && p.platform !== 'netease'), '补丁里跳过选中的那份');
+  assert.ok(manual.provenance.slice(1).every((p) => Array.isArray(p.gain) && p.gain.length), '每家补了什么记在 gain 里');
+  assert.ok(manual.provenance.some((p) => p.gain?.includes('translation')) && manual.provenance.some((p) => p.gain?.includes('words')));
+  // 选择写进了文件，重启后还在
+  await ov.flush();
+  assert.deepEqual(new api.LyricOverrides(dir).get('qq:mid1'), { pick: { platform: 'netease', sourceId: '900' } });
+  const listed = await svc.listLyricVersions(mtrack());
+  assert.deepEqual(listed.pick, { platform: 'netease', sourceId: '900' });
+  // 改回自动
+  svc.chooseLyric(mtrack(), { pick: null });
+  const back = await svc.fetchLyric(mtrack());
+  assert.deepEqual(back.provenance[0], { platform: 'qq', sourceId: 'mid1', kind: 'primary' });
+  assert.match(back.lrc, /QQ自带/);
+  assert.equal(ov.get('qq:mid1'), null, 'pick 为空且微调为 0：这一条删掉');
+  // 选 AMLL / Apple（没列过版本、内存里没有：按来源重取）：正文来自它们
+  const f = manualSetup();
+  const svc2 = new LyricService(f.map, undefined, { amll: f.amll, appleMusic: f.apple }, newOverrides('o2b'));
+  svc2.chooseLyric(mtrack(), { pick: { platform: 'amll', sourceId: 'qq:5' } });
+  const a = await svc2.fetchLyric(mtrack());
+  assert.deepEqual(a.provenance[0], { platform: 'amll', sourceId: 'qq:5', kind: 'manual' });
+  assert.deepEqual(f.amll.calls[0], { qq: '5' }, 'AMLL 的 sourceId 是 matchedBy:id，按它重取');
+  assert.equal(lyricCoverage(a).translatedLines, 4);
+  svc2.chooseLyric(mtrack(), { pick: { platform: 'applemusic', sourceId: '111' } });
+  const p = await svc2.fetchLyric(mtrack());
+  assert.deepEqual(p.provenance[0], { platform: 'applemusic', sourceId: '111', kind: 'manual' });
+  const origin = f.apple.calls.find((c) => c.origin?.platform === 'applemusic').origin;
+  assert.equal(origin.extra.catalogId, '111', 'Apple 按目录 id 重取（把它当 origin 传给 lookup）');
+  assert.equal(lyricCoverage(p).romanLines, 4);
+});
+
+await test('chooseLyric：选中的那份取不到（下架 / 网络失败 / 来源不存在）退回自动，这首歌不会没歌词', async () => {
+  const { map, amll, apple } = manualSetup();
+  const svc = new LyricService(map, undefined, { amll, appleMusic: apple }, newOverrides('o3'));
+  for (const pick of [{ platform: 'netease', sourceId: 'gone' }, { platform: 'kuwo', sourceId: '1' }, { platform: 'amll', sourceId: 'bad' }, { platform: 'amll', sourceId: 'nope:1' }]) {
+    svc.chooseLyric(mtrack(), { pick });
+    const r = await svc.fetchLyric(mtrack());
+    assert.deepEqual(r.provenance[0], { platform: 'qq', sourceId: 'mid1', kind: 'primary' }, JSON.stringify(pick));
+    assert.equal(r.lines.length, 4);
+  }
+  const down = manualSetup({ amllImpl: () => { throw new Error('boom'); } });
+  const s2 = new LyricService(down.map, undefined, { amll: down.amll, appleMusic: down.apple }, newOverrides('o3b'));
+  s2.chooseLyric(mtrack(), { pick: { platform: 'amll', sourceId: 'qq:5' } });
+  assert.equal((await s2.fetchLyric(mtrack())).provenance[0].kind, 'primary');
+  // 退回自动的结果不写缓存：来源恢复后下一次就按选择取（否则自动结果会盖住选择最长 30 天）
+  const flaky = manualSetup({ amllImpl: () => { throw new Error('boom'); } });
+  const fc = new api.LyricCache(path.join(tmp, 'c3c'));
+  const s3 = new LyricService(flaky.map, fc, { amll: flaky.amll, appleMusic: flaky.apple }, newOverrides('o3c'));
+  s3.chooseLyric(mtrack(), { pick: { platform: 'amll', sourceId: 'qq:5' } });
+  assert.equal((await s3.fetchLyric(mtrack())).provenance[0].kind, 'primary');
+  assert.equal(fc.get('qq', 'mid1'), null, '退回自动时不写缓存');
+});
+
+await test('chooseLyric：列过版本后选中不用重取（内存缓存）；别的歌不串；只改微调不删歌词缓存、不重取', async () => {
+  const m = manualSetup();
+  const cache = new api.LyricCache(path.join(tmp, 'c4'));
+  const svc = new LyricService(m.map, cache, { amll: m.amll, appleMusic: m.apple }, newOverrides('o4'));
+  await svc.listLyricVersions(mtrack());
+  m.map.netease.fetchLyric = async () => null; // 之后网易云取不到：选中的只能来自内存缓存
+  svc.chooseLyric(mtrack(), { pick: { platform: 'netease', sourceId: '900' } });
+  const r = await svc.fetchLyric(mtrack());
+  assert.deepEqual(r.provenance[0], { platform: 'netease', sourceId: '900', kind: 'manual' });
+  assert.match(r.lrc, /网易云自带/);
+  // 另一首歌没列过：同一来源不会用到这首的缓存，取不到就退回自动
+  const other = song({ id: 'qq:mid2', sourceId: 'mid2', extra: { songId: 6 } });
+  svc.chooseLyric(other, { pick: { platform: 'netease', sourceId: '900' } });
+  assert.equal((await svc.fetchLyric(other)).provenance[0].kind, 'primary');
+  // 只改微调：缓存还在，不重取
+  assert.ok(cache.get('qq', 'mid1'));
+  const before = m.stats.qqFetch;
+  svc.chooseLyric(mtrack(), { pick: { platform: 'netease', sourceId: '900' }, offsetMs: 400 });
+  assert.ok(cache.get('qq', 'mid1'), '只改微调不删缓存');
+  await svc.fetchLyric(mtrack());
+  assert.equal(m.stats.qqFetch, before);
+});
+
+await test('chooseLyric：来源变了会作废进行中的任务（迟到的旧结果不入缓存）', async () => {
+  const cache = new api.LyricCache(path.join(tmp, 'c5'));
+  let release;
+  const gate = new Promise((r) => { release = r; });
+  const map = { qq: { fetchLyric: async () => { await gate; return partialWords(0, MARK.qq); } }, netease: {}, kugou: {} };
+  const svc = new LyricService(map, cache, {}, newOverrides('o5'));
+  const pending = svc.fetchLyric(mtrack());
+  await sleep(20);
+  svc.chooseLyric(mtrack(), { pick: { platform: 'netease', sourceId: '900' } });
+  release();
+  assert.equal(await pending, null);
+  assert.equal(cache.get('qq', 'mid1'), null);
+});
+
+/** 完整的合成歌词：行 / 逐字 / 翻译 / 罗马音 / 和声都有，lrc 类文本带时间。 */
+const richLyric = () => {
+  const lines = TEXTS.map((text, i) => ({ timeMs: TIMES[i], text, translation: '译文' + i, ...(i === 0 ? { agent: 'v1', bg: { text: '哦耶', words: [{ text: '哦', startMs: 2000, duration: 300 }, { text: '耶', startMs: 2300, duration: 200 }] } } : {}) }));
+  const lrc = (f) => lines.map((l, i) => lrcAt(l.timeMs, f(l, i))).join('\n');
+  return { raw: '', lines, lrc: lrc((l) => l.text), tlyric: lrc((l) => l.translation), translationRaw: lrc((l) => l.translation), romalrc: lrc((l, i) => 'roma' + i), romanRaw: lrc((l, i) => 'roma' + i), yrc: lines.map((l) => `[${l.timeMs},3000](${l.timeMs},1500,0)${l.text.slice(0, 3)}(${l.timeMs + 1500},1500,0)${l.text.slice(3)}`).join('\n') };
+};
+
+await test('时间微调：行 / 逐字 / lrc 类文本 / 和声词时间都平移，缓存里没平移，只改微调不重取', async () => {
+  const dir = path.join(tmp, 'c6');
+  let fetched = 0;
+  const map = { qq: { fetchLyric: async () => { fetched++; return richLyric(); } }, netease: {}, kugou: {} };
+  const cache = new api.LyricCache(dir), ov = new api.LyricOverrides(dir);
+  const svc = new LyricService(map, cache, {}, ov);
+  const plain = await svc.fetchLyric(mtrack());
+  assert.deepEqual(plain.lines.map((l) => l.timeMs), TIMES);
+  assert.equal(plain.lyricOffsetMs, undefined);
+  svc.chooseLyric(mtrack(), { pick: null, offsetMs: 300 });
+  const r = await svc.fetchLyric(mtrack());
+  assert.equal(r.lyricOffsetMs, 300, '带出当前微调，前端据此写「推后 0.3 秒」');
+  assert.deepEqual(r.lines.map((l) => l.timeMs), TIMES.map((t) => t + 300));
+  assert.deepEqual(r.lines[0].bg.words.map((w) => w.startMs), [2300, 2600]);
+  assert.equal(r.lines[0].agent, 'v1');
+  assert.equal(r.yrc.split('\n')[0], '[1300,3000](1300,1500,0)编的第(2800,1500,0)一句话');
+  for (const k of ['lrc', 'tlyric', 'translationRaw', 'romalrc', 'romanRaw']) {
+    assert.deepEqual(r[k].split('\n').map((s) => s.slice(0, 10)), TIMES.map((t) => lrcAt(t + 300, '').slice(0, 10)), k);
+    assert.equal(r[k].split('\n')[0].slice(10), richLyric()[k].split('\n')[0].slice(10), k + ' 内容不变');
+  }
+  assert.deepEqual(timedLines(r.yrc).map((l) => l.timeMs), TIMES.map((t) => t + 300));
+  assert.equal(r.coverage.wordLines, 4, '覆盖率不因平移改变');
+  // 缓存里是没平移的
+  const stored = cache.get('qq', 'mid1');
+  assert.deepEqual(stored.lines.map((l) => l.timeMs), TIMES);
+  assert.equal(stored.yrc, richLyric().yrc);
+  assert.equal(stored.lrc, richLyric().lrc);
+  // 缓存命中的返回同样平移；改微调不重取、不删缓存；负数 = 提前
+  svc.chooseLyric(mtrack(), { pick: null, offsetMs: -500 });
+  const early = await svc.fetchLyric(mtrack());
+  assert.deepEqual(early.lines.map((l) => l.timeMs), TIMES.map((t) => t - 500));
+  assert.equal(early.lines[0].bg.words[0].startMs, 1500);
+  assert.equal(fetched, 1);
+  // 只传 pick 不传 offsetMs：微调保持
+  svc.chooseLyric(mtrack(), { pick: null });
+  assert.equal(ov.get('qq:mid1').offsetMs, -500);
+  // 夹到 ±5 秒、取整到 0.1 秒；0 = 删掉这条；平移后小于 0 的行时间夹到 0
+  svc.chooseLyric(mtrack(), { pick: null, offsetMs: 99999 });
+  assert.equal(ov.get('qq:mid1').offsetMs, 5000);
+  svc.chooseLyric(mtrack(), { pick: null, offsetMs: -5000 });
+  const edge = await svc.fetchLyric(mtrack());
+  assert.deepEqual(edge.lines.map((l) => l.timeMs), TIMES.map((t) => Math.max(0, t - 5000)));
+  assert.equal(edge.lrc.split('\n')[0].slice(0, 10), '[00:00.000');
+  svc.chooseLyric(mtrack(), { pick: null, offsetMs: 0 });
+  assert.equal(ov.get('qq:mid1'), null);
+  assert.deepEqual((await svc.fetchLyric(mtrack())).lines.map((l) => l.timeMs), TIMES);
+  assert.equal(fetched, 1, '全程只取过一次');
+  // 只有 qrc（没有 yrc）的歌词：平移后转成 yrc 带出
+  const qrcOnly = { ...richLyric(), yrc: undefined, qrc: TEXTS.map((t, i) => `[${TIMES[i]},3000]${t}(${TIMES[i]},3000)`).join('\n') };
+  const svc2 = new LyricService({ qq: { fetchLyric: async () => qrcOnly }, netease: {}, kugou: {} }, undefined, {}, newOverrides('o6b'));
+  svc2.chooseLyric(mtrack(), { pick: null, offsetMs: 200 });
+  const q = await svc2.fetchLyric(mtrack());
+  assert.deepEqual(timedLines(q.yrc).map((l) => l.timeMs), TIMES.map((t) => t + 200));
+  assert.equal(q.qrc, undefined);
+});
+
+await test('LyricOverrides：存取、重启保留、损坏文件当空、条数上限 2000 按时间淘汰、删除规则；LyricCache.delete', async () => {
+  const dir = path.join(tmp, 'ov7');
+  const ov = new api.LyricOverrides(dir);
+  assert.equal(ov.get('qq:a'), null);
+  ov.set('qq:a', { pick: { platform: 'netease', sourceId: '1' }, offsetMs: 300 });
+  ov.set('qq:b', { offsetMs: -1234 });
+  ov.set('qq:c', { pick: { platform: 'amll', sourceId: 'ncm:9' } });
+  assert.deepEqual(ov.get('qq:a'), { pick: { platform: 'netease', sourceId: '1' }, offsetMs: 300 });
+  assert.deepEqual(ov.get('qq:b'), { offsetMs: -1200 }, '取整到 0.1 秒');
+  assert.deepEqual(ov.get('qq:c'), { pick: { platform: 'amll', sourceId: 'ncm:9' } });
+  await ov.flush();
+  const disk = JSON.parse(fs.readFileSync(path.join(dir, 'lyric-overrides.json'), 'utf8'));
+  assert.equal(disk.schema, 1);
+  assert.equal(Object.keys(disk.entries).length, 3);
+  assert.ok(Number.isFinite(disk.entries['qq:a'].at));
+  assert.deepEqual(new api.LyricOverrides(dir).get('qq:a'), ov.get('qq:a'), '重启保留');
+  // 删除规则：null、或 pick 为空且 offset 为 0
+  ov.set('qq:a', null);
+  assert.equal(ov.get('qq:a'), null);
+  ov.set('qq:b', { offsetMs: 0 });
+  assert.equal(ov.get('qq:b'), null);
+  ov.set('qq:c', { pick: { platform: 'amll', sourceId: 'ncm:9' }, offsetMs: 0 });
+  assert.deepEqual(ov.get('qq:c'), { pick: { platform: 'amll', sourceId: 'ncm:9' } }, '还有 pick 就保留');
+  ov.set('qq:c', { pick: undefined, offsetMs: 0 });
+  assert.equal(ov.get('qq:c'), null);
+  ov.set('qq:x', { offsetMs: 99999 });
+  assert.equal(ov.get('qq:x').offsetMs, 5000);
+  assert.equal(api.clampLyricOffset(7000), 5000);
+  assert.equal(api.clampLyricOffset(-7000), -5000);
+  assert.equal(api.clampLyricOffset(149), 100);
+  assert.equal(api.clampLyricOffset(NaN), 0);
+  assert.equal(api.clampLyricOffset('abc'), 0);
+  // 条数上限
+  const big = new api.LyricOverrides(path.join(tmp, 'ov7big'));
+  for (let i = 0; i < 2005; i++) big.set(`k${i}`, { offsetMs: 100 });
+  assert.equal(big.get('k0'), null);
+  assert.equal(big.get('k4'), null);
+  assert.ok(big.get('k5'));
+  assert.ok(big.get('k2004'));
+  await big.flush();
+  assert.equal(Object.keys(JSON.parse(fs.readFileSync(path.join(tmp, 'ov7big', 'lyric-overrides.json'), 'utf8')).entries).length, 2000);
+  // 损坏 / 旧版 / 类型不对的文件当空；坏条目跳过
+  for (const [name, text] of [['junk', '{not json'], ['schema', JSON.stringify({ schema: 2, entries: { a: { at: 1, offsetMs: 100 } } })], ['entries', JSON.stringify({ schema: 1, entries: [] })]]) {
+    const d = path.join(tmp, 'ov7-' + name);
+    fs.mkdirSync(d, { recursive: true });
+    fs.writeFileSync(path.join(d, 'lyric-overrides.json'), text);
+    assert.equal(new api.LyricOverrides(d).get('a'), null, name);
+  }
+  const d2 = path.join(tmp, 'ov7-mixed');
+  fs.mkdirSync(d2, { recursive: true });
+  fs.writeFileSync(path.join(d2, 'lyric-overrides.json'), JSON.stringify({ schema: 1, entries: { good: { at: 1, offsetMs: 200 }, bad1: { at: 'x' }, bad2: { at: 1, pick: { platform: 1 } }, bad3: null } }));
+  const mixed = new api.LyricOverrides(d2);
+  assert.deepEqual(mixed.get('good'), { offsetMs: 200 });
+  assert.equal(mixed.get('bad1'), null);
+  assert.equal(mixed.get('bad2'), null);
+  // LyricCache.delete
+  const c = new api.LyricCache(path.join(tmp, 'ov7cache'));
+  c.set('qq', 'z', { raw: '', lines: [] });
+  assert.ok(c.get('qq', 'z'));
+  c.delete('qq', 'z');
+  assert.equal(c.get('qq', 'z'), null);
+});
+
+await test('IPC：nebula:lyric-versions / nebula:lyric-choose 参数校验，offset 缺省 = 保持，requestId 可取消', async () => {
+  const handlers = new Map();
+  const seen = [];
+  const lyricService = {
+    chooseLyric: (t, c) => seen.push([t.sourceId, c]),
+    listLyricVersions: (t, signal, origin) => new Promise((resolve) => {
+      seen.push(['list', t.sourceId, origin?.sourceId]);
+      signal.addEventListener('abort', () => resolve({ pick: null, offsetMs: 0, versions: [] }), { once: true });
+      if (t.sourceId === 'now') resolve({ pick: null, offsetMs: 0, versions: [{ platform: 'qq' }] });
+    }),
+  };
+  registerIpcHandlers({ handle: (k, f) => handlers.set(k, f) }, { adapters: {}, cookies: {}, resolver: {}, lyricService, login: {}, audioProxy: {} });
+  const choose = (p) => handlers.get('nebula:lyric-choose')(null, p);
+  const t = { platform: 'qq', sourceId: 'mid1' };
+  assert.deepEqual(await choose({ track: t, pick: { platform: 'netease', sourceId: '9' }, offsetMs: 300 }), { ok: true, data: true });
+  assert.deepEqual(seen.at(-1), ['mid1', { pick: { platform: 'netease', sourceId: '9' }, offsetMs: 300 }]);
+  assert.equal((await choose({ track: t, pick: null, offsetMs: 0 })).ok, true);
+  assert.equal(seen.at(-1)[1].pick, null);
+  assert.equal((await choose({ track: t, pick: null })).ok, true, 'offsetMs 缺省 = 保持');
+  assert.equal(seen.at(-1)[1].offsetMs, undefined);
+  for (const bad of [{ track: t, pick: { platform: 1, sourceId: 'x' } }, { track: t, pick: { platform: 'qq' } }, { track: t, pick: 'x' }, { track: t, pick: null, offsetMs: 'abc' }, { track: t, pick: null, offsetMs: NaN }, { track: t, pick: null, offsetMs: Infinity }, { pick: null }, { track: { platform: 1 }, pick: null }]) {
+    assert.equal((await choose(bad)).ok, false, JSON.stringify(bad));
+  }
+  // 版本列表：origin 透传，requestId 取消
+  const ev = {};
+  const quick = await handlers.get('nebula:lyric-versions')(ev, { track: { ...t, sourceId: 'now' }, origin: { platform: 'spotify', sourceId: 'S' } });
+  assert.equal(quick.data.versions.length, 1);
+  assert.deepEqual(seen.at(-1), ['list', 'now', 'S']);
+  const slow = handlers.get('nebula:lyric-versions')(ev, { track: t, requestId: 'req-1' });
+  await sleep(10);
+  await handlers.get('nebula:cancel-resolve')(ev, { requestId: 'req-1' });
+  assert.deepEqual((await slow).data.versions, []);
 });
 
 fs.rmSync(tmp, { recursive: true, force: true });

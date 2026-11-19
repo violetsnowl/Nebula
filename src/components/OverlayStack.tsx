@@ -1,6 +1,7 @@
 import { memo, useLayoutEffect, useRef, useState } from 'react';
 import type { Track } from '../lib/catalog';
 import type { LyricLineUI } from '../lib/lyrics';
+import type { LyricSourceSummary } from '../lib/lyricVersions';
 import type { DesktopTrack, DesktopWallpaperItem, DesktopWallpaperSetResult } from '../lib/playlist/ipcClient';
 import type { ContextMenuState, InfoModalState } from '../hooks/overlays/useOverlays';
 import { hasDesktopAPI } from '../lib/playlist/ipcClient';
@@ -16,6 +17,9 @@ interface OverlayStackProps {
   listenPane: InfoPaneState | null;
   onListenPaneBack: () => void;
   onOpenSongDetail: () => void;
+  onOpenLyricVersions: () => void;
+  /** 当前歌词的来源摘要（「关于这首歌」的「歌词」行 / 歌词版本页用）。 */
+  lyricInfo: LyricSourceSummary | null;
   onOpenArtistByName: (name: string, track?: Track) => void;
   wallpaperOpen: boolean;
   infoModal: InfoModalState | null;
@@ -128,6 +132,8 @@ export const OverlayStack = memo(function OverlayStack({
   onCloseNowPlaying,
   onListenPaneBack,
   onOpenSongDetail,
+  onOpenLyricVersions,
+  lyricInfo,
   onOpenArtistByName,
   onCloseWallpaper,
   onApplyWallpaper,
@@ -153,6 +159,8 @@ export const OverlayStack = memo(function OverlayStack({
         pane={listenPane}
         onPaneBack={onListenPaneBack}
         onOpenSongDetail={onOpenSongDetail}
+        onOpenLyricVersions={onOpenLyricVersions}
+        lyricInfo={lyricInfo}
         onOpenArtistByName={onOpenArtistByName}
         onOpenArtist={onOpenArtist}
         onOpenAlbum={onOpenAlbum}

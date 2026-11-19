@@ -1336,6 +1336,61 @@ async function main() {
     roman.panel.hoverClosed && roman.panel.pinnedStays && roman.panel.escClosed &&
     /^ly-main,ly-ro,ly-tr/.test(roman.after.order) && !roman.after.latinDup && roman.after.korean && roman.after.japaneseKept;
   log('听音空间读音（罗马音 / 假名注音）', JSON.stringify(roman));
+
+  // 10g++++. 歌词版本（手动换歌词，方案 A）：右键歌词栏 → 右栏「歌词版本」页（不弹系统菜单）；点一行 / 点 + 都会写给后端；
+  // Esc 回到歌词（听音空间不收起）；控制台无错由全局 errors 检查
+  await page.evaluate(() => {
+    const calls = [];
+    window.__qaChoose = calls;
+    window.nebulaAPI.lyricVersions = async () => ({
+      ok: true,
+      data: {
+        pick: null,
+        offsetMs: 0,
+        versions: [
+          { platform: 'qq', sourceId: 'qa-x', coverage: { textLines: 10, wordLines: 6, translatedLines: 0, romanLines: 0, bgLines: 0, agentLines: 0 }, durationDiffSec: null },
+          { platform: 'amll', sourceId: 'ncm:1', coverage: { textLines: 10, wordLines: 10, translatedLines: 8, romanLines: 0, bgLines: 3, agentLines: 0 }, durationDiffSec: 2.6 },
+        ],
+      },
+    });
+    window.nebulaAPI.chooseLyric = async (track, choice) => {
+      calls.push(choice);
+      return { ok: true, data: true };
+    };
+  });
+  const colBox = await page.locator('.ls-col').boundingBox();
+  await page.mouse.click(colBox.x + colBox.width * 0.4, colBox.y + colBox.height * 0.4, { button: 'right' });
+  await page.waitForSelector('.lv-pane', { timeout: 4000 }).catch(() => {});
+  await page.waitForTimeout(600);
+  const lyricVer = await page.evaluate(() => ({
+    pane: !!document.querySelector('.ls-root.has-pane .lv-pane'),
+    title: document.querySelector('.lv-title')?.textContent,
+    rows: document.querySelectorAll('.lv-row').length,
+    autoChecked: document.querySelector('.lv-row')?.getAttribute('aria-checked') === 'true',
+    descs: [...document.querySelectorAll('.lv-row .lv-desc')].map((e) => e.textContent),
+    offset: document.querySelector('.lv-val')?.textContent,
+    stepBtns: document.querySelectorAll('.lv-stepbtn[aria-label]').length,
+    noText: !document.querySelector('.lv-stepbtn')?.textContent, // 按钮里没有文字字符，用 SVG 图标
+  }));
+  await page.locator('.lv-row').nth(2).click();
+  await page.waitForTimeout(300);
+  await page.locator('.lv-stepbtn[aria-label="歌词推后 0.1 秒"]').click();
+  await page.locator('.lv-stepbtn[aria-label="歌词推后 0.1 秒"]').click();
+  await page.waitForTimeout(700);
+  lyricVer.calls = await page.evaluate(() => window.__qaChoose);
+  lyricVer.checkedAfter = await page.evaluate(() => [...document.querySelectorAll('.lv-row')].map((e) => e.getAttribute('aria-checked')).join(','));
+  lyricVer.offsetAfter = await page.evaluate(() => document.querySelector('.lv-val')?.textContent);
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(500);
+  lyricVer.escBack = await page.evaluate(() => !document.querySelector('.lv-pane') && !document.querySelector('.ls-root.has-pane') && !!document.querySelector('.ls-root.is-shown'));
+  const lyricVerOk =
+    lyricVer.pane && lyricVer.title === '歌词版本' && lyricVer.rows === 3 && lyricVer.autoChecked &&
+    /逐字 60%/.test(lyricVer.descs[1]) && /逐字 100% · 翻译 · 和声 · 时长差 2.6 秒，可能不是同一版本/.test(lyricVer.descs[2]) &&
+    lyricVer.offset === '0.0 秒' && lyricVer.stepBtns === 2 && lyricVer.noText &&
+    lyricVer.calls.length >= 2 && lyricVer.calls[0].pick?.platform === 'amll' && lyricVer.calls[0].pick.sourceId === 'ncm:1' && lyricVer.calls[0].offsetMs === 0 &&
+    lyricVer.calls.at(-1).offsetMs === 200 && lyricVer.calls.at(-1).pick?.platform === 'amll' &&
+    lyricVer.checkedAfter === 'false,false,true' && lyricVer.offsetAfter === '+0.2 秒' && lyricVer.escBack;
+  log('歌词版本（右键歌词栏 → 右栏页 → 选择 / 微调 → Esc 返回）', JSON.stringify(lyricVer));
   await page.keyboard.press('Escape');
   await page.waitForTimeout(1000);
 
@@ -1466,6 +1521,7 @@ async function main() {
 
   const failed =
     !romanOk ||
+    !lyricVerOk ||
     !lapseOk ||
     !bigCoverOk ||
     !listenOk ||
@@ -1562,6 +1618,7 @@ async function main() {
     authLapse: !lapseOk,
     bigCover: !bigCoverOk,
     roman: !romanOk,
+    lyricVersions: !lyricVerOk,
     firstRunEmpty: !emptyOk,
     edgeHide: !edgeHideOk,
     panelStays: !panelStays,

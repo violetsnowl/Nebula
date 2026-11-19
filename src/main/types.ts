@@ -62,7 +62,9 @@ export interface Lyric {
   krc?: string;
   /** 实际取歌词的身份及跨源增强证据；UI 可用于来源探针。 */
   identity?: { platform: string; sourceId: string };
-  provenance?: Array<{ platform:string; sourceId:string; kind:'primary'|'fallback'|'enrichment'; offsetMs?:number; anchors?:number }>;
+  provenance?: Array<{ platform:string; sourceId:string; kind:'primary'|'fallback'|'enrichment'|'manual'; offsetMs?:number; anchors?:number; gain?:Array<'words'|'translation'|'roman'|'bg'> }>;
+  /** 用户设了时间微调（毫秒，正数 = 推后）时，输出的歌词已经整体平移过；没设不带这个字段。 */
+  lyricOffsetMs?: number;
   coverage?: { wordLines:number; textLines:number; translatedLines:number; romanLines?:number; bgLines?:number; agentLines?:number };
   incomplete?: boolean;
 }

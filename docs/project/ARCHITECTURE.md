@@ -157,6 +157,7 @@ flowchart TD
 - **够好的判定**（#197，`lyricComplete`）：按正文语种（和前端 `detectScript` 同一套规则）。中文只要逐字过八成（中文歌本来没有翻译，以前每首都白搜一遍）；英文等外语还要翻译过八成；日语还要罗马音过八成，只算含假名 / 汉字的行；韩语罗马音本地补，不要求。缓存「完整 30 天 / 不完整 6 小时」用同一判定。
 - **逐行补翻译、罗马音**（#197，`fillTextLayers`）：不要求对方有逐字，按正文配对（同 `pairRowsToWords`），本行缺而对方那行有的才挂上，行时间不动；固定偏移那条路也用它补「本平台只有一部分行」的罗马音（以前只在一行都没有时整份照搬）。「只配一个来源」换掉依次合并的结果后，其余来源再按顺序补一遍缺的翻译 / 罗马音。
 - **和声、对唱**（#199）：只有 AMLL / Apple 的 TTML 带（`x-bg` → `LyricLine.bg`，词时间是绝对毫秒；`ttm:agent` → `LyricLine.agent` = v1 / v2 / both，整首至少两位歌手才标）。`fillTextLayers` 把它们按正文配对补到主歌词上（和声词时间随配上的行平移；对方整首至少两种归属才补 agent），算增益。主歌词已经够好时，原来直接返回、拿不到这两样，现在再按 id 查一次 AMLL（1.2 秒预算，不查 Apple、不搜别的平台）补层。缓存 schema 4。
+- **手动换歌词、时间微调**（#200）：`LyricOverrides`（userData `lyric-overrides.json`，键 = 实际供流那首）记「选中的来源 + 微调毫秒」。`fetchLyric` 有选择时先取选中那份当正文（内存里列过版本的直接用；否则按来源重取：普通平台用适配器，AMLL 按 `matchedBy:id`，Apple 把目录 id 当原曲走按 id 直取），再照常补全，补丁里跳过它；取不到就退回自动且这次不写缓存。微调在输出时整体平移（`lyricOffset.applyLyricOffset`：行、逐字、翻译 / 罗马音文本、和声词），缓存里存的是没平移的，所以改微调不重取；换来源才删这首的缓存。`listLyricVersions` 和补全共用 `gatherHits`（AMLL 两轮 / Apple / 网易云·QQ·酷狗搜索，固定顺序）。`provenance` 的补全项记 `gain`（补了逐字 / 翻译 / 罗马音 / 和声），界面据此写「QQ 补逐字」。IPC：`nebula:lyric-versions`、`nebula:lyric-choose`；前端改完派发 `nebula:lyric-reload`，`useLyrics` 保留旧歌词直到新的到。
 - **预取下一首**（#198，前端 `useLyrics`）：当前这首歌词出来 8 秒后，下一首如果通常在本平台出声（网易云、QQ、酷狗、酷我、波点）或已经知道供流那首，就先取；临近结尾播放器解析好下一首音源（`AudioPlayer.onUpcomingResolved`）时，按实际供流那首再取。不带 requestId、切歌不取消，取完进缓存，切过去直接命中。
 - 歌词来源细节见下面「歌词新来源（#195）」。
 

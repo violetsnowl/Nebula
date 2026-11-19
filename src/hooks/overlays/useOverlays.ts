@@ -7,7 +7,8 @@ import type { Track } from '../../lib/catalog';
 import { trackShareLink } from '../../lib/shareLink';
 
 export interface InfoModalState {
-  kind: 'comments' | 'song' | 'artist' | 'album';
+  /** lyrics = 歌词版本页，只在听音空间右栏里出现，没有弹窗呈现。 */
+  kind: 'comments' | 'song' | 'artist' | 'album' | 'lyrics';
   track?: Track;
   platform?: string;
   artistId?: string;
@@ -96,6 +97,13 @@ export function useOverlays() {
   const openCommentsFor = useCallback((track: Track) => {
     showInfo({ kind: 'comments', track });
   }, [showInfo]);
+
+  /** 听音空间右栏「歌词版本」（手动换歌词）：只在听音空间里有，星云主界面没有入口。 */
+  const openLyricVersions = useCallback(() => {
+    const song = audioPlayer.getState().song;
+    if (!song || !listenOpenRef.current) return;
+    setListenPane({ kind: 'lyrics', track: song });
+  }, []);
 
   const openSongDetailModal = useCallback(() => {
     const song = audioPlayer.getState().song;
@@ -223,6 +231,7 @@ export function useOverlays() {
     openCommentsModal,
     openCommentsFor,
     openSongDetailModal,
+    openLyricVersions,
     openArtistByName,
     openArtistFromChip,
     openAlbum,

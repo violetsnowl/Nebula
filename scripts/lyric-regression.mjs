@@ -12,6 +12,8 @@ buildSync({entryPoints:['src/lib/lyrics.ts'],bundle:true,platform:'node',format:
 const ui=require(path.join(temp,'lyrics.cjs'));
 buildSync({entryPoints:['src/lib/listen/model.ts'],bundle:true,platform:'node',format:'cjs',outfile:path.join(temp,'model.cjs')});
 const model=require(path.join(temp,'model.cjs'));
+buildSync({entryPoints:['src/lib/lyricVersions.ts'],bundle:true,platform:'node',format:'cjs',outfile:path.join(temp,'versions.cjs')});
+const lv=require(path.join(temp,'versions.cjs'));
 let count=0;const test=async(name,fn)=>{await fn();count++;console.log('通过 '+name)};
 try{
 await test('混合 JSON 与普通 LRC 不丢正文',()=>{const s=b.normalizeJsonLrc('{"t":0,"c":[{"tx":"制作信息"}]}\n[00:10.000]测试正文');assert.equal(b.parseLrc(s).length,2)});
@@ -255,6 +257,39 @@ await test('切歌取消歌词底层请求，迟到数据不入缓存',async()=>
 await test('网易云一条歌词接口挂起不丢另一条已取得的正文和翻译',async()=>{
  const a=new b.NeteaseAdapter({}, {getHeader:()=>''},async name=>name==='lyric_new'?new Promise(()=>{}):{status:200,body:{lrc:{lyric:'[00:01.000]正文一\n[00:02.000]正文二'},tlyric:{lyric:'[00:01.000]译文一\n[00:02.000]译文二'}}});
  const l=await b.withRequestScope(3200,()=>a.fetchLyric('synthetic'));assert.equal(l.lines.length,2);assert.equal(l.lines[1].translation,'译文二');
+});
+await test('歌词版本文案：自动来源说明按 provenance 拼，能区分补了什么就写具体的，区分不了写「补全」',()=>{
+ const prov=[{platform:'netease',kind:'primary'},{platform:'qq',kind:'enrichment',gain:['words']},{platform:'amll',kind:'enrichment',gain:['roman','bg']},{platform:'kugou',kind:'enrichment'}];
+ assert.equal(lv.describeAutoSource(prov),'网易云正文 · QQ 补逐字 · AMLL 补罗马音、和声 · 酷狗 补全');
+ assert.equal(lv.describeAutoSource(prov.slice(0,2),true),'网易云 · QQ 补逐字');
+ assert.equal(lv.describeAutoSource([{platform:'kuwo',kind:'primary'}]),'酷我正文');
+ assert.equal(lv.describeAutoSource([]),'');assert.equal(lv.describeAutoSource(undefined),'');
+ assert.equal(lv.describeAutoSource([{platform:'applemusic',kind:'fallback'}],true),'Apple');
+ assert.equal(lv.lyricSourceName('qq'),'QQ 音乐');assert.equal(lv.lyricSourceName('amll'),'AMLL 社区库');assert.equal(lv.lyricSourceName('applemusic'),'Apple Music');assert.equal(lv.lyricSourceName('netease'),'网易云音乐');
+});
+await test('歌词版本文案：「关于这首歌」里歌词行——自动 / 手动 / 微调',()=>{
+ const auto=[{platform:'netease',kind:'primary'},{platform:'qq',kind:'enrichment',gain:['words']}];
+ assert.equal(lv.describeLyricEntry(auto,0),'网易云 · QQ 补逐字');
+ assert.equal(lv.describeLyricEntry([{platform:'qq',kind:'manual'},{platform:'amll',kind:'enrichment',gain:['bg']}],0),'手动：QQ 音乐');
+ assert.equal(lv.describeLyricEntry(auto,300),'网易云 · QQ 补逐字 · 推后 0.3 秒');
+ assert.equal(lv.describeLyricEntry([{platform:'qq',kind:'manual'}],-1500),'手动：QQ 音乐 · 提前 1.5 秒');
+ assert.equal(lv.describeLyricEntry(undefined,200),'推后 0.2 秒');assert.equal(lv.describeLyricEntry(undefined,0),'');
+});
+await test('歌词版本文案：版本行说明（逐字百分比 / 只有整句 / 翻译与罗马音 ≥50% / 和声 / 对唱 / 时长差）',()=>{
+ const cov=(o)=>({textLines:100,wordLines:0,translatedLines:0,romanLines:0,bgLines:0,agentLines:0,...o});
+ assert.equal(lv.describeVersion({coverage:cov({wordLines:62}),durationDiffSec:null}),'逐字 62%');
+ assert.equal(lv.describeVersion({coverage:cov(),durationDiffSec:null}),'只有整句');
+ assert.equal(lv.describeVersion({coverage:cov({wordLines:100,translatedLines:50,romanLines:49}),durationDiffSec:0.4}),'逐字 100% · 翻译 · 时长差 0.4 秒');
+ assert.equal(lv.describeVersion({coverage:cov({wordLines:80,translatedLines:49,romanLines:50,bgLines:3,agentLines:20}),durationDiffSec:0}),'逐字 80% · 罗马音 · 和声 · 对唱 · 时长差 0 秒');
+ assert.equal(lv.describeVersion({coverage:cov({wordLines:10}),durationDiffSec:3.2}),'逐字 10% · 时长差 3.2 秒，可能不是同一版本');
+ assert.equal(lv.describeVersion({coverage:cov({wordLines:10}),durationDiffSec:2}),'逐字 10% · 时长差 2 秒，可能不是同一版本');
+ assert.equal(lv.describeVersion({coverage:{textLines:0,wordLines:0,translatedLines:0,romanLines:0,bgLines:0,agentLines:0},durationDiffSec:null}),'只有整句');
+});
+await test('歌词版本文案：时间微调数值与档位（0.1 秒一档、±5 秒封顶）',()=>{
+ assert.equal(lv.formatLyricOffset(300),'+0.3 秒');assert.equal(lv.formatLyricOffset(-500),'−0.5 秒');assert.equal(lv.formatLyricOffset(0),'0.0 秒');assert.equal(lv.formatLyricOffset(5000),'+5.0 秒');
+ assert.equal(lv.stepLyricOffset(0,1),100);assert.equal(lv.stepLyricOffset(0,-1),-100);assert.equal(lv.stepLyricOffset(4950,1),5000);
+ assert.equal(lv.stepLyricOffset(5000,1),5000);assert.equal(lv.stepLyricOffset(-5000,-1),-5000);assert.equal(lv.stepLyricOffset(100,-1),0);
+ let v=0;for(let i=0;i<30;i++)v=lv.stepLyricOffset(v,1);assert.equal(v,3000,'连点 30 次正好 +3.0 秒，无浮点误差');
 });
 console.log(`歌词回归 ${count}/${count}`);
 }finally{fs.rmSync(temp,{recursive:true,force:true})}

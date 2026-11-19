@@ -37,6 +37,10 @@ export class LyricCache {
     const keys=Object.keys(this.data).sort((a,b)=>this.data[a]!.at-this.data[b]!.at);
     keys.slice(0,Math.max(0,keys.length-500)).forEach(k=>delete this.data[k]);this.schedule();
   }
+  /** 手动换歌词后作废这一首的缓存。 */
+  delete(platform:string,id:string):void {
+    if(delete this.data[`${platform}:${id}`])this.schedule();
+  }
   private load():void {
     try{
       if(fs.statSync(this.cacheFile).size>32*1024*1024)return;

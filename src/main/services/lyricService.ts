@@ -17,6 +17,8 @@ import { matchScore } from './songResolver';
 import { recordingMatch, searchKeyword } from './recordingMatch';
 import { normalizeQuery, titleSimilarity } from '../adapters/mappers';
 import { LyricCache } from './lyricCache';
+import { LyricOverrides, clampLyricOffset } from './lyricOverrides';
+import { applyLyricOffset } from './lyricOffset';
 import { withRequestScope, throwIfCancelled, requestScope } from '../requestScope';
 import { enrichAligned, lyricComplete, lyricCoverage, snapLinesToWords } from './lyricAlignment';
 import type { AmllSource } from './amllLyrics';
@@ -74,11 +76,24 @@ const AMLL_RICH_BUDGET_MS = 1200;
 /** 待合并的一份歌词：trusted = 按 id 确认是同一录音（AMLL、Apple 目录 id），不再要求时长差 ≤2 秒。 */
 interface LyricHit { lyric: Lyric; duration: number; trusted: boolean }
 
+/** 手动选定的歌词来源（platform + 该来源里的 id；AMLL 的 id 是 `matchedBy:id`）。 */
+export interface LyricPick { platform: string; sourceId: string }
+/** 「歌词版本」列表里的一份：来源、覆盖率，以及时长和当前这首差多少秒（按 id 确认同一录音的、或没有时长的为 null）。 */
+export interface LyricVersion { platform: string; sourceId: string; coverage: ReturnType<typeof lyricCoverage>; durationDiffSec: number | null }
+export interface LyricVersions { pick: LyricPick | null; offsetMs: number; versions: LyricVersion[] }
+
+/** 列版本的整体时限。 */
+const VERSIONS_BUDGET_MS = 9000;
+/** 列出过的候选歌词在内存里留多久（选中时不用重取）、最多几份。 */
+const VERSION_TTL_MS = 30 * 60_000;
+const VERSION_CACHE_MAX = 64;
+
 export class LyricService {
   constructor(
     private adapters: AdapterMap,
     private cache?: LyricCache,
     private extra: LyricExtraSources = {},
+    private overrides?: LyricOverrides,
   ) {}
 
   /** AMLL 查一次；任何失败都当没有。failed=true 表示来源出错 / 超时（不同于「没收录」），调用方不要再试第二轮。 */
@@ -120,31 +135,23 @@ export class LyricService {
   }
 
   private lyricJobs=new Map<string,{control:AbortController;users:number;done:boolean;promise:Promise<Lyric|null>}>();
+  /** 一首歌的键：缓存、覆盖、进行中的任务都按实际供流那首（platform:sourceId）。 */
+  private keyOf(t: Pick<Track, 'platform' | 'sourceId'>): string { return t.platform+':'+t.sourceId; }
+
+  /** 按平台取一份歌词（带身份与来源记录，行时间校准到逐字）；kind 写进 provenance。取不到返回 null，不抛错（只在整体被取消 / 超时时抛）。 */
+  private async fetchOne(t: Track, kind: 'primary'|'fallback'|'manual'): Promise<Lyric|null> {
+    const lyric=await withRequestScope(3200,()=>this.adapters[t.platform].fetchLyric(t.sourceId,t.duration? t.duration*1000:undefined)).catch(()=>null);
+    throwIfCancelled();
+    // 同一份歌词里普通行和逐字行开头差几百毫秒的，先把行时间校准到逐字（#196），否则自带的逐字会被当成没有
+    return lyric?.lines?.length?snapLinesToWords({...lyric,identity:{platform:t.platform,sourceId:t.sourceId},provenance:[{platform:t.platform,sourceId:t.sourceId,kind}]}):null;
+  }
+
   /**
-   * origin：兜底播放时用户点的原曲（只用来提供 AMLL / Apple 查询用的 id）；缓存键和歌词身份仍按 track（实际供流那首）。
+   * 收集别家的候选歌词（fetchLyric 的补全与 listLyricVersions 共用同一段）：AMLL / Apple 和网易云 / QQ / 酷狗（排除本平台）的搜索并行；
+   * 新来源失败或超时只当没有，不影响其余。固定顺序 [AMLL, Apple, 网易云, QQ, 酷狗]，网络完成顺序不改变结果；没有的位置是 null。
+   * 必须在 withRequestScope 里调用（取消 / 整体截止由外层负责）。
    */
-  async fetchLyric(track: Track, signal?:AbortSignal, origin?: Track): Promise<Lyric | null> {
-    if(signal?.aborted)return null;
-    const cached=this.cache?.get(track.platform,track.sourceId);if(cached)return withKoreanRoman(cached);
-    const key=track.platform+':'+track.sourceId;
-    const pending=this.lyricJobs.get(key);if(pending && !pending.control.signal.aborted)return this.consumeLyric(pending,signal);
-    const job={control:new AbortController(),users:0,done:false,promise:Promise.resolve(null) as Promise<Lyric|null>};
-    let best:Lyric|null=null;
-    const task=withRequestScope(8500,async()=>{
-      const fetch=async(t:Track,kind:'primary'|'fallback'):Promise<Lyric|null>=>{
-        const lyric=await withRequestScope(3200,()=>this.adapters[t.platform].fetchLyric(t.sourceId,t.duration? t.duration*1000:undefined)).catch(()=>null);
-        throwIfCancelled();
-        // 同一份歌词里普通行和逐字行开头差几百毫秒的，先把行时间校准到逐字（#196），否则自带的逐字会被当成没有
-        return lyric?.lines?.length?snapLinesToWords({...lyric,identity:{platform:t.platform,sourceId:t.sourceId},provenance:[{platform:t.platform,sourceId:t.sourceId,kind}]}):null;
-      };
-      best=await fetch(track,'primary');
-      // 够好就不去别家补：判定按语种（中文不要求翻译，日语要罗马音，见 lyricComplete）
-      if(best && lyricComplete(best)){
-        // 只按已知 id 查一次 AMLL（不查 Apple、不搜别的平台）：它带和声 / 对唱归属，主歌词没有这两样；只补缺的层，不动已有的。没命中 / 失败照旧返回
-        const {hit}=await this.amllHit(mergeLyricIds(lyricIdsOf(track),lyricIdsOf(origin)),AMLL_RICH_BUDGET_MS);
-        throwIfCancelled();
-        return hit?enrichAligned(best,hit.lyric):best;
-      }
+  private async gatherHits(track: Track, origin?: Track): Promise<Array<LyricHit|null>> {
       const sources=(['netease','qq','kugou'] as Platform[]).filter(p=>p!==track.platform && this.adapters[p]?.searchSongs);
       // AMLL / Apple 和网易云 / QQ / 酷狗的搜索并行；新来源失败或超时只当没有，不影响其余。
       const ids=mergeLyricIds(lyricIdsOf(track),lyricIdsOf(origin));
@@ -153,7 +160,7 @@ export class LyricService {
         try{
           const rows=await withRequestScope(1800,()=>this.adapters[platform].searchSongs!(searchKeyword(track),10));
           const match=rows.map(t=>({t,score:matchScore(t,track)})).filter(x=>x.score>=.9).sort((a,b)=>b.score-a.score)[0];
-          const lyric=match?await fetch(match.t,'fallback'):null;
+          const lyric=match?await this.fetchOne(match.t,'fallback'):null;
           return match?{lyric,from:match.t}:null;
         }catch{return null;}
       }));
@@ -172,7 +179,37 @@ export class LyricService {
       const appleResult=await apple;
       throwIfCancelled();
       // 固定顺序合并：AMLL → Apple → 网易云 → QQ → 酷狗，网络完成顺序不改变结果。
-      const hits:Array<LyricHit|null>=[amll,appleResult,...candidates.map(c=>c?.lyric?{lyric:c.lyric,duration:Number(c.from.duration),trusted:false}:null)];
+      return [amll,appleResult,...candidates.map(c=>c?.lyric?{lyric:c.lyric,duration:Number(c.from.duration),trusted:false}:null)];
+  }
+
+  /** 自动合并的歌词（缓存里存的就是这一份，没有时间微调）；用户指定了来源就用指定的那份做正文。 */
+  private async fetchLyricBase(track: Track, signal?:AbortSignal, origin?: Track): Promise<Lyric|null> {
+    if(signal?.aborted)return null;
+    const cached=this.cache?.get(track.platform,track.sourceId);if(cached)return withKoreanRoman(cached);
+    const key=this.keyOf(track);
+    const pending=this.lyricJobs.get(key);if(pending && !pending.control.signal.aborted)return this.consumeLyric(pending,signal);
+    const job={control:new AbortController(),users:0,done:false,promise:Promise.resolve(null) as Promise<Lyric|null>};
+    let best:Lyric|null=null;
+    const chosen=this.overrides?.get(key)?.pick;
+    // 选中的那一份取到了才算 manual；取不到就退回自动（不能让这首歌没歌词）
+    let manual=false;
+    const isChosen=(l:Lyric|undefined)=>manual && !!chosen && l?.identity?.platform===chosen.platform && l.identity.sourceId===chosen.sourceId;
+    const task=withRequestScope(8500,async()=>{
+      if(chosen){
+        best=await this.fetchPicked(track,chosen);
+        throwIfCancelled();
+        manual=!!best;
+      }
+      if(!best)best=await this.fetchOne(track,'primary');
+      // 够好就不去别家补：判定按语种（中文不要求翻译，日语要罗马音，见 lyricComplete）
+      if(best && lyricComplete(best)){
+        // 只按已知 id 查一次 AMLL（不查 Apple、不搜别的平台）：它带和声 / 对唱归属，主歌词没有这两样；只补缺的层，不动已有的。没命中 / 失败照旧返回
+        const {hit}=await this.amllHit(mergeLyricIds(lyricIdsOf(track),lyricIdsOf(origin)),AMLL_RICH_BUDGET_MS);
+        throwIfCancelled();
+        return hit && !isChosen(hit.lyric)?enrichAligned(best,hit.lyric):best;
+      }
+      // 补丁里跳过选中的那一份（它已经是正文）
+      const hits=(await this.gatherHits(track,origin)).map(h=>h && isChosen(h.lyric)?null:h);
       const primary=best;
       for(const hit of hits){
         if(!hit)continue;
@@ -205,9 +242,101 @@ export class LyricService {
       if(!lyric || job.control.signal.aborted)return null;
       const coverage=lyricCoverage(lyric);
       const incomplete=!!lyric.incomplete || !lyricComplete(lyric);
-      const result=withKoreanRoman({...lyric,coverage,incomplete});this.cache?.set(track.platform,track.sourceId,result);return result;
+      const result=withKoreanRoman({...lyric,coverage,incomplete});
+      // 选中的那份这次没取到、退回了自动：不写缓存，否则自动结果会盖住用户的选择最长 30 天；下次再按选择重试
+      if(!(chosen && !manual))this.cache?.set(track.platform,track.sourceId,result);
+      return result;
     }).finally(()=>{job.done=true;if(this.lyricJobs.get(key)===job)this.lyricJobs.delete(key);});
     job.promise=task;this.lyricJobs.set(key,job);return this.consumeLyric(job,signal);
+  }
+
+  /**
+   * 歌词入口。origin：兜底播放时用户点的原曲（只用来提供 AMLL / Apple 查询用的 id）；缓存键和歌词身份仍按 track（实际供流那首）。
+   * 用户手动选过来源（chooseLyric）时，正文取选中的那份；时间微调只在这里输出时平移（缓存、进行中的任务里都是没平移的）。
+   */
+  async fetchLyric(track: Track, signal?:AbortSignal, origin?: Track): Promise<Lyric | null> {
+    const lyric=await this.fetchLyricBase(track,signal,origin);
+    const offsetMs=this.overrides?.get(this.keyOf(track))?.offsetMs;
+    return lyric && offsetMs?applyLyricOffset(lyric,offsetMs):lyric;
+  }
+
+  /** 列版本时取到的候选歌词，选中时直接用（键：供流那首 + 候选来源）。 */
+  private versionCache=new Map<string,{at:number;lyric:Lyric}>();
+  private versionKey(track:Track,pick:LyricPick):string { return `${this.keyOf(track)}|${pick.platform}:${pick.sourceId}`; }
+  private rememberVersion(track:Track,lyric:Lyric):void {
+    if(!lyric.identity)return;
+    const k=this.versionKey(track,lyric.identity);
+    this.versionCache.delete(k);this.versionCache.set(k,{at:Date.now(),lyric});
+    while(this.versionCache.size>VERSION_CACHE_MAX)this.versionCache.delete(this.versionCache.keys().next().value!);
+  }
+
+  /** 取用户选中的那一份（kind 记 manual）：先查内存里的候选缓存，没有再按来源重取；取不到返回 null。 */
+  private async fetchPicked(track: Track, pick: LyricPick): Promise<Lyric|null> {
+    const mark=(l:Lyric|null):Lyric|null=>l?{...l,provenance:[{platform:pick.platform,sourceId:pick.sourceId,kind:'manual'}]}:null;
+    const k=this.versionKey(track,pick),hit=this.versionCache.get(k);
+    if(hit && Date.now()-hit.at<VERSION_TTL_MS)return mark(hit.lyric);
+    this.versionCache.delete(k);
+    if(pick.platform==='amll'){
+      const m=/^([a-z]+):(.+)$/.exec(pick.sourceId),key=m?.[1] as LyricIdKey|undefined;
+      if(!m || !key || !LYRIC_ID_ORDER.includes(key))return null;
+      return mark((await this.amllHit({[key]:m[2]},AMLL_BUDGET_MS)).hit?.lyric ?? null);
+    }
+    if(pick.platform==='applemusic'){
+      // Apple 按目录 id 重取：把它当「原曲」传给 lookup（appleCatalogIdOf(origin) 优先），走的就是按 id 直取的那条路，不搜
+      const asOrigin:Track={...track,platform:'applemusic',sourceId:pick.sourceId,extra:{catalogId:pick.sourceId}};
+      return mark((await this.appleHit(track,asOrigin))?.lyric ?? null);
+    }
+    if(!this.adapters[pick.platform as Platform]?.fetchLyric)return null;
+    return mark(await this.fetchOne({...track,platform:pick.platform as Platform,sourceId:pick.sourceId},'manual'));
+  }
+
+  /**
+   * 「歌词版本」列表：本平台自己的歌词（有正文才算）+ 别家的候选（AMLL / Apple / 网易云 / QQ / 酷狗，和 fetchLyric 补全用的是同一段收集）。
+   * 各来源失败只当没有，整体 9 秒；取到的每份候选按「供流那首 + 来源」在内存缓存 30 分钟，选它时不用重取。
+   */
+  async listLyricVersions(track: Track, signal?: AbortSignal, origin?: Track): Promise<LyricVersions> {
+    const choice=this.overrides?.get(this.keyOf(track));
+    let own:Lyric|null=null,hits:Array<LyricHit|null>=[];
+    // 谁先到谁先落地：整体超时 / 取消时，已经取到的仍然保留
+    await withRequestScope(VERSIONS_BUDGET_MS,async()=>{
+      await Promise.all([
+        this.fetchOne(track,'primary').then(v=>{own=v;}).catch(()=>{}),
+        this.gatherHits(track,origin).then(v=>{hits=v;}).catch(()=>{}),
+      ]);
+    },{detached:true,signal}).catch(()=>{});
+    const versions:LyricVersion[]=[];
+    const push=(lyric:Lyric,durationDiffSec:number|null)=>{
+      const coverage=lyricCoverage(lyric);
+      if(!coverage.textLines || !lyric.identity)return;
+      this.rememberVersion(track,lyric);
+      versions.push({platform:lyric.identity.platform,sourceId:lyric.identity.sourceId,coverage,durationDiffSec});
+    };
+    // 赋值发生在上面的闭包里，TS 看不到，显式声明类型
+    const ownLyric=own as Lyric|null;
+    if(ownLyric)push(ownLyric,null);
+    for(const h of hits){
+      if(!h)continue;
+      // 按 id 确认的同一录音、或没有时长的不给时长差
+      const known=!h.trusted && h.duration>0 && Number(track.duration)>0;
+      push(h.lyric,known?Math.round(Math.abs(h.duration-Number(track.duration))*10)/10:null);
+    }
+    return {pick:choice?.pick ?? null,offsetMs:choice?.offsetMs ?? 0,versions};
+  }
+
+  /**
+   * 手动换歌词：写入这首的选择（pick = null 恢复自动合并；offsetMs 缺省 = 保持原来的微调）。
+   * 来源变了就删掉这首的歌词缓存并作废进行中的任务，下次取歌词按新选择重来；只改微调不动缓存（微调在输出时才平移）。
+   */
+  chooseLyric(track: Track, choice: { pick: LyricPick | null; offsetMs?: number }): void {
+    if(!this.overrides)return;
+    const key=this.keyOf(track),before=this.overrides.get(key);
+    const pick=choice.pick && typeof choice.pick.platform==='string' && choice.pick.platform && typeof choice.pick.sourceId==='string' && choice.pick.sourceId?{platform:choice.pick.platform,sourceId:choice.pick.sourceId}:undefined;
+    const offsetMs=choice.offsetMs===undefined?before?.offsetMs ?? 0:clampLyricOffset(choice.offsetMs);
+    this.overrides.set(key,{pick,offsetMs});
+    if(before?.pick?.platform===pick?.platform && before?.pick?.sourceId===pick?.sourceId)return;
+    this.cache?.delete(track.platform,track.sourceId);
+    const job=this.lyricJobs.get(key);
+    if(job){job.control.abort();this.lyricJobs.delete(key);}
   }
 
   private consumeLyric(job:{control:AbortController;users:number;done:boolean;promise:Promise<Lyric|null>},signal?:AbortSignal):Promise<Lyric|null> {

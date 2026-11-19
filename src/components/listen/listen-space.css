@@ -569,6 +569,136 @@
   padding-right: 6px;
 }
 
+/* 右栏「歌词版本」页（LyricVersionsPanel）：一列选择行 + 底部时间微调；悬停只让字自身提亮，不加背景 */
+.lv-head {
+  flex: none;
+  margin: 22px 0 14px;
+}
+.lv-title {
+  margin: 0;
+  font-family: var(--ls-serif);
+  font-size: 24px;
+  font-weight: 600;
+  line-height: 1.25;
+  color: var(--fg);
+}
+.ls-root[data-font='sans'] .lv-title {
+  font-family: var(--ls-sans);
+}
+.lv-sub {
+  margin: 6px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--fg-3s);
+}
+.lv-row,
+.lv-offset {
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.lv-row {
+  width: 100%;
+  appearance: none;
+  border-left: 0;
+  border-right: 0;
+  border-bottom: 0;
+  background: none;
+  padding: 8px 4px 8px 0;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.lv-txt {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.lv-name {
+  font-size: 14.5px;
+  font-weight: 500;
+  color: var(--fg-2);
+  transition: color 0.18s var(--ease-std);
+}
+.lv-desc {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--fg-3s);
+}
+.lv-row:hover .lv-name,
+.lv-row.is-on .lv-name {
+  color: var(--fg);
+}
+.lv-ck {
+  flex: none;
+  color: var(--fg);
+  opacity: 0;
+  transition: opacity 0.12s ease;
+}
+.lv-row.is-on .lv-ck {
+  opacity: 1;
+}
+.lv-row:focus-visible,
+.lv-stepbtn:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.55);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+.lv-hint {
+  padding: 14px 0 6px;
+  font-size: 12px;
+  color: var(--fg-3s);
+}
+.lv-offset {
+  flex: none;
+  padding: 10px 4px 0 0;
+}
+.lv-offset .lv-name {
+  color: var(--fg);
+}
+.lv-step {
+  flex: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.lv-val {
+  min-width: 72px;
+  text-align: center;
+  font-size: 14px;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: 'tnum';
+  color: var(--fg);
+}
+.lv-stepbtn {
+  width: 36px;
+  height: 36px;
+  display: grid;
+  place-items: center;
+  appearance: none;
+  border: 0;
+  padding: 0;
+  background: none;
+  color: var(--fg-2);
+  cursor: pointer;
+  transition:
+    color 0.18s var(--ease-std),
+    transform 0.18s var(--ease-std);
+}
+.lv-stepbtn:hover:not(:disabled) {
+  color: var(--fg);
+  transform: scale(1.1);
+}
+.lv-stepbtn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .ls-art-prev {
     display: none;
