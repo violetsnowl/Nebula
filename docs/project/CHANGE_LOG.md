@@ -6,6 +6,37 @@
 
 ---
 
+## #191 — 2026-11-19 — 接入 Apple Music：官方网页内登录、我的歌单、歌单导入、跨平台播放
+
+**背景**（用户 2026-11-19）
+- 平台扩展最后一家。用户拍板令牌路线 A：在官方网页播放器里读，令牌不出页面（免费、不抓令牌）。
+- 开工实验（交接文档第五节）全部通过：Electron 43 没有 Widevine，但 music.apple.com 能加载、MusicKit 能初始化；未登录能读公开歌单；Apple ID 在页面里直接登录，不弹新窗口；重启后仍登录。
+- 用户第一个测试号没有订阅：资料库接口一律 400 / 40015，订阅状态 `active:false`。换用户有订阅的日常账号（12 张歌单、1165 首）补测资料库，发现三处与交接文档假设不同（资料库曲目没有 isrc、id 有 `i.` / `a.` 两种开头、歌单不给曲目数），按实测改了实现。
+
+**改动**（代码与测试由 implementer 子代理按主对话定的设计写，主对话审查、按实测修正、真实账号实测）
+- 新增 `electron/appleMusicEngine.cjs`：从不挂载的页面视图（分区 `persist:applemusic-login`），懒加载；在页面里串行执行固定的读取函数，按白名单精简结果，令牌不出页面；登录时把视图交给内嵌弹窗，登上自动收起；退出时取消授权并清空分区；导航只放行 `*.apple.com`。
+- 新增 `src/main/adapters/applemusicAdapter.ts`（客户端、错误分类、我的歌单、资料库 / 公开歌单、首歌封面）与 `src/main/login/applemusicLogin.ts`（不含凭据的登录标记，没有标记不唤起页面）。
+- 接入：`types.ts`、`adapters/index.ts`（链接识别 `music.apple.com/{地区}/playlist/…/pl.…`）、`index.ts`、`cookieStore.ts`、`http.ts`、`coverService.ts`（mzstatic 1000 图）、`login/index.ts`、`ipc.ts`（登录通道、导入提示文字）、`electron/main.cjs`（引擎注入、登录、退出清理、封面跨域放行）、`preload.cjs`。
+- 前端：logo、平台顺序（YouTube Music 之后）、`AccountDock` 的 Apple Music 登录（三步说明 + 需要有效订阅）；拉歌单失败的原因只对 Apple Music 显示（子代理原本对所有平台生效，主对话收窄：其他平台的失败消息不一定是写给用户看的中文）；歌单列表 / 详情头对 Apple Music 的 0 首不显示数量；各处平台名列表。
+- 测试：新增 `applemusic-regression`（19 项）、`applemusic-engine-regression`（21 项，读取函数在假页面里真跑，断言令牌带不出来），接入 `qa:backend`；`import-regression` 加 Apple Music 样例（九平台）。
+- 文档：完成度表加 Apple Music 列、缺陷清单更新；ARCHITECTURE、NOTES、README、PROJECT（平台名单补全）、快照、交接文档顶部写明实测结论。
+
+**验证**
+- `pnpm build:desktop`、`pnpm build`、`pnpm qa:backend`（全绿）、`pnpm qa`（控制台错误 0）。
+- 真实账号实测（用实验时日常账号登录过的独立配置启动正式版 `main.cjs`，不碰用户真实配置；只记计数）：
+  - 登录前 `getAccount` 为空且没有加载 Apple 页面；页面已登录时点登录直接成功、不弹窗（3.5 秒）；账号 valid、会员 true，昵称回退「Apple Music 用户」（没有社交资料）。
+  - 我的歌单 12 张，封面 12/12（1 张靠首歌补）；12 张全部导入，最大 644 首约 10 秒；有目录 ID 的歌 isrc 基本齐全（如 286 首里 282）。
+  - 两张歌单（49、48 首）是自己上传、匹配不上目录的歌：只有歌名，没有歌手、封面、isrc。
+  - 跨平台播放抽查 15 首（游客兜底，这份配置没登其他平台）命中 12 首（网易云 11、酷狗 1）；歌词 5/5。
+  - 公开歌单链接导入 50 首，isrc 50/50。
+  - 重启后启动核验即 valid。
+
+**遗留**
+- 待用户桌面验收（登录弹窗的样子、换号、没订阅号的提示文字）。
+- 本平台逐字歌词（`syllable-lyrics`）、本平台出声（DRM）、搜索归第二阶段；自己上传的歌跨平台基本找不到。
+
+---
+
 ## #190 — 2026-11-19 — 用户画像沟通口径统一
 
 **背景**（用户 2026-11-19）：新窗口接手时发现 `USER_PROFILE.md` 还写着「按新手水平解释」，与 #189 后的 HANDOFF 矛盾。用户定：按「用户是开发者，不要讲得太浅」，但不要太技术性。

@@ -33,6 +33,7 @@ export interface IpcDeps {
   qqLoginWindow?: () => Promise<{ ok: boolean; message?: string; error?: string }>;
   kugouLoginWindow?: () => Promise<{ ok: boolean; message?: string; error?: string }>;
   kuwoLoginWindow?: () => Promise<{ ok: boolean; message?: string; error?: string }>;
+  applemusicLoginWindow?: () => Promise<{ ok: boolean; message?: string; error?: string }>;
   /**
    * Optional hook invoked after a platform cookie is cleared (e.g. purge Electron partition sessions).
    * previous 是清除前的记录（YouTube Music 退出时要拿续期令牌去撤销）。
@@ -91,7 +92,7 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
   safe('nebula:import-playlist', async ({ url }: { url?: string }) => {
     if (!url) throw new Error('缺少歌单链接');
     const target: UrlTarget | null = resolveAdapterByUrl(url);
-    if (!target) throw new Error('无法识别的歌单链接（支持网易云 / QQ音乐 / 酷狗 / 酷我 / 波点 / YouTube Music / Spotify / 汽水）');
+    if (!target) throw new Error('无法识别的歌单链接（支持网易云 / QQ音乐 / 酷狗 / 酷我 / 波点 / YouTube Music / Apple Music / Spotify / 汽水）');
     const playlist = await deps.adapters[target.platform].fetchPlaylist(target.id);
     return {
       platformName: target.platform,
@@ -277,5 +278,9 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
   safe('nebula:login:kuwo:window', async () => {
     if (!deps.kuwoLoginWindow) throw new Error('酷我登录窗口不可用');
     return deps.kuwoLoginWindow();
+  });
+  safe('nebula:login:applemusic:window', async () => {
+    if (!deps.applemusicLoginWindow) throw new Error('Apple Music 登录窗口不可用');
+    return deps.applemusicLoginWindow();
   });
 }

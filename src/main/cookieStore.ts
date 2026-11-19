@@ -129,8 +129,8 @@ export class CookieStore {
   }
 
   set(platform: Platform, cookies: string, token?: string, nickname?: string): void {
-    // Spotify / YouTube Music 存的是访问令牌（Bearer），不是 Cookie 头；按 Cookie 格式清洗会把它洗成空串。
-    const normalized = platform === 'spotify' || platform === 'ytmusic' ? String(cookies || '').trim() : normalizeCookieHeader(cookies);
+    // Spotify / YouTube Music 存的是访问令牌（Bearer），不是 Cookie 头；Apple Music 只存一条「page-session」标记（登录态在页面分区里）；按 Cookie 格式清洗会把它们洗成空串。
+    const normalized = platform === 'spotify' || platform === 'ytmusic' || platform === 'applemusic' ? String(cookies || '').trim() : normalizeCookieHeader(cookies);
     this.data[platform] = {
       cookies: normalized,
       token,

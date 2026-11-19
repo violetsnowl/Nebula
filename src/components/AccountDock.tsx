@@ -901,6 +901,45 @@ function KuwoLogin({ onSuccess }: { onSuccess: () => void }) {
   );
 }
 
+/** Apple Music：在软件里打开 Apple 官方页面登录（Apple ID，可能需要双重认证），登录完成后弹窗自动关闭。 */
+function AppleMusicLogin({ onSuccess }: { onSuccess: () => void }) {
+  const [busy, setBusy] = useState(false);
+  const [status, setStatus] = useState('');
+
+  const openWindow = useCallback(async () => {
+    if (!window.nebulaAPI) return;
+    setBusy(true);
+    setStatus('正在打开 Apple Music…');
+    try {
+      const r = await window.nebulaAPI.applemusicLoginWindow();
+      const data = r.ok ? r.data : null;
+      if (data?.ok) {
+        setStatus(data.message ?? '登录成功');
+        onSuccess();
+      } else {
+        setStatus(data?.error ?? (r.ok ? '登录窗口已关闭' : r.error));
+      }
+    } finally {
+      setBusy(false);
+    }
+  }, [onSuccess]);
+
+  return (
+    <div className="rp-flow">
+      <ol className="rp-steps">
+        <li>点下面的按钮，在软件里打开 Apple 官方页面。</li>
+        <li>点页面右上角的「登录」，用 Apple ID 登录（可能需要双重认证）。</li>
+        <li>登录完成后窗口会自动关闭。</li>
+      </ol>
+      <div className="rp-flow-status">读取我的歌单需要有效的 Apple Music 订阅；没有订阅时仍可导入公开歌单链接。</div>
+      <button type="button" className="btn primary full" disabled={busy} onClick={openWindow}>
+        {busy ? '等待登录…' : '打开 Apple Music 登录页'}
+      </button>
+      <div className="rp-flow-status">{status || '未登录 Apple Music'}</div>
+    </div>
+  );
+}
+
 function PlatformLogin({
   platform,
   info,
@@ -928,6 +967,7 @@ function PlatformLogin({
   if (platform === 'bodian') return <BodianLogin onSuccess={() => onRefresh('bodian')} />;
   if (platform === 'spotify') return <SpotifyLogin onSuccess={() => onRefresh('spotify')} />;
   if (platform === 'ytmusic') return <YtmusicLogin onSuccess={() => onRefresh('ytmusic')} />;
+  if (platform === 'applemusic') return <AppleMusicLogin onSuccess={() => onRefresh('applemusic')} />;
   return (
     <div className="rp-flow">
       <div className="rp-flow-status">暂不支持该平台登录</div>
@@ -959,6 +999,12 @@ function AccountDetail({
         <div className="rp-acct-meta">
           {meta.name} · {vipText(account)} · 歌单 {account.playlists.length} 个
         </div>
+        {/* 只给 Apple Music 显示（没有订阅时说明原因）；其他平台后端的失败消息不一定是写给用户看的中文，暂不放出来 */}
+        {platform === 'applemusic' && account.playlistError && (
+          <p className="rp-how" role="status">
+            {account.playlistError}
+          </p>
+        )}
         <div className="group">
           <RefreshRow loading={account.loading} onRefresh={() => onRefresh(platform)} />
         </div>

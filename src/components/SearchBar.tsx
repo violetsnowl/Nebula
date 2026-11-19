@@ -424,6 +424,8 @@ function platformLabel(platform: string): string {
       return '波点音乐';
     case 'ytmusic':
       return 'YouTube Music';
+    case 'applemusic':
+      return 'Apple Music';
     default:
       return platform;
   }

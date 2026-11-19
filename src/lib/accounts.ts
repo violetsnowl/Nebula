@@ -14,6 +14,8 @@ export interface AccountState {
    */
   auth?: 'expired' | 'missing';
   playlists: DesktopPlaylistSummary[];
+  /** 拉「我的歌单」失败时后端给的中文原因（如 Apple Music 没有订阅）；成功时为空。 */
+  playlistError?: string;
   loading: boolean;
 }
 

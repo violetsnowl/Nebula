@@ -50,6 +50,11 @@ export const PLATFORM_HEADERS: Record<Platform, Record<string, string>> = {
   ytmusic: {
     'User-Agent': 'Mozilla/5.0 (ChromiumStylePlatform) Cobalt/Version',
   },
+  // Apple Music 的请求全部在官方页面里完成（见 applemusicAdapter / appleMusicEngine）；这里只给个最小条目，且不附 Cookie。
+  applemusic: {
+    'User-Agent':
+      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36',
+  },
   qishui: {
     Referer: 'https://www.qishui.com/',
     Origin: 'https://www.qishui.com',
@@ -87,7 +92,7 @@ export class HttpClient {
       ...opts.headers,
     };
     const cookie = opts.cookie ?? this.cookies.getHeader(opts.platform);
-    if (cookie && opts.platform !== 'spotify' && opts.platform !== 'ytmusic') headers.Cookie = cookie;
+    if (cookie && opts.platform !== 'spotify' && opts.platform !== 'ytmusic' && opts.platform !== 'applemusic') headers.Cookie = cookie;
     if (opts.platform === 'spotify') {
       const token = this.cookies.get('spotify')?.cookies;
       if (token) headers.Authorization = `Bearer ${token}`;

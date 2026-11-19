@@ -22,8 +22,12 @@ const ytTile={tileRenderer:{contentType:'TILE_CONTENT_TYPE_VIDEO',contentId:'aaa
 const ytPage={contents:{tvBrowseRenderer:{content:{tvSurfaceContentRenderer:{content:{twoColumnRenderer:{
  leftColumn:{entityMetadataRenderer:{title:{simpleText:'公开测试'}}},rightColumn:{playlistVideoListRenderer:{contents:[ytTile]}}}}}}}}};
 adapters.ytmusic=new b.YtmusicAdapter(http,cookies,async()=>({status:200,text:JSON.stringify(ytPage)}));
+// Apple Music 走页面里的读取桥（桥由 Electron 注入页面引擎），导入契约注入假桥：公开歌单是目录歌单，免登录
+adapters.applemusic.client.setBridge({call:async req=>req.path.endsWith('/tracks')
+ ?{status:200,data:[{id:'1001',type:'songs',attributes:{name:'测试曲',artistName:'测试歌手',albumName:'测试专辑',durationInMillis:180000,artwork:{url:'https://is1-ssl.mzstatic.com/test/{w}x{h}bb.{f}'},isrc:'CNA000000001',playParams:{id:'1001',kind:'song'}}}]}
+ :{status:200,data:[{id:'pl.test',type:'playlists',attributes:{name:'公开测试'}}]}});
 b.registerIpcHandlers({handle:(k,f)=>handlers.set(k,f)},{adapters,cookies,resolver:{},lyricService:{},login:{},audioProxy:{urlFor:u=>u}});
-const urls={netease:'https://music.163.com/#/playlist?id=1',qq:'https://y.qq.com/n/ryqq/playlist/1',kugou:'https://www.kugou.com/yy/special/single/3756318.html',spotify:'https://open.spotify.com/playlist/test',qishui:'https://www.qishui.com/playlist/1',kuwo:'https://www.kuwo.cn/playlist_detail/1',bodian:'https://h5app.kuwo.cn/m/bodian/collection.html?uid=1&playlistId=1&source=4&ownerId=',ytmusic:'https://music.youtube.com/playlist?list=PLtest123'};
+const urls={netease:'https://music.163.com/#/playlist?id=1',qq:'https://y.qq.com/n/ryqq/playlist/1',kugou:'https://www.kugou.com/yy/special/single/3756318.html',spotify:'https://open.spotify.com/playlist/test',qishui:'https://www.qishui.com/playlist/1',kuwo:'https://www.kuwo.cn/playlist_detail/1',bodian:'https://h5app.kuwo.cn/m/bodian/collection.html?uid=1&playlistId=1&source=4&ownerId=',ytmusic:'https://music.youtube.com/playlist?list=PLtest123',applemusic:'https://music.apple.com/cn/playlist/%E5%85%AC%E5%BC%80%E6%B5%8B%E8%AF%95/pl.test'};
 let n=0;
 for(const platform of Object.keys(urls)){
  const r=await handlers.get('nebula:import-playlist')(null,{url:urls[platform]});assert.equal(r.ok,true,r.error);assert.equal(r.data.tracks.length,1);
@@ -45,4 +49,4 @@ const denied=new b.SpotifyAdapter({requestJson:async(url)=>url.includes('pathfin
   assert.equal(pl.tracks.length,3);assert.equal(pl.name,'查询服务歌单');assert.equal(pl.tracks[2].duration,180);
   assert.ok(seen.every(u=>u.includes('pathfinder')));n++;console.log('通过 Spotify 查询服务分页导入');
 }
-console.log(`八平台导入契约 ${n}/${n}`);
+console.log(`九平台导入契约 ${n}/${n}`);

@@ -20,6 +20,7 @@ export { QqLogin, hash33 } from './qqLogin';
 export { KuwoLogin, kuwoAvatarUrl } from './kuwoLogin';
 export { BodianLogin, bodianSelfFromPlaylists } from './bodianLogin';
 export { YtmusicLogin, revokeYtmusicToken } from './ytmusicLogin';
+export { AppleMusicLogin } from './applemusicLogin';
 
 export function createKugouLoginAdapter(kugouLogin: {
   getAccount: () => Promise<AccountInfo | null>;
@@ -45,6 +46,21 @@ export function createKuwoLoginAdapter(kuwoLogin: {
     kind: 'window',
     getAccount: () => kuwoLogin.getAccount(),
     getMyPlaylists: kuwoLogin.getMyPlaylists,
+    unavailableReason: undefined,
+  };
+}
+
+/** Apple Music：官方页面登录（页面引擎在内嵌弹窗里显示 music.apple.com），登录态在页面分区里。 */
+export function createAppleMusicLoginAdapter(appleLogin: {
+  getAccount: () => Promise<AccountInfo | null>;
+  getMyPlaylists?: () => Promise<PlaylistSummary[]>;
+}): LoginAdapter {
+  return {
+    platform: 'applemusic',
+    name: 'Apple Music',
+    kind: 'window',
+    getAccount: () => appleLogin.getAccount(),
+    getMyPlaylists: appleLogin.getMyPlaylists,
     unavailableReason: undefined,
   };
 }

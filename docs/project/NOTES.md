@@ -103,6 +103,16 @@
 - **令牌**：访问令牌实测约 23 小时有效（expires_in 约 83000 秒），仍按 50 分钟提前续；续期响应不带新 refresh_token。无效 access_token → youtubei HTTP 401；无效 refresh_token → HTTP 400 `invalid_grant`；轮询等待中是 HTTP 200 + `authorization_pending`。
 - **封面**：`i.ytimg.com`、`yt3.ggpht.com`、`yt3.googleusercontent.com` 都带 `Access-Control-Allow-Origin: *`，不用补跨域头；视频缩略图是 16:9。
 
+### Apple Music（2026-11-19，#191）
+
+- **Electron 里能用**：官方 Electron 不带 Widevine，但 music.apple.com 照样加载、MusicKit 照样初始化（版本 `playback/AppleMusic-2646.4.0-external`），只是不能出声；只有 `mk.api.music`，没有 `mk.api.v3`。Apple ID 在页面里直接登录（不弹新窗口，Apple 没拦），分区持久化后重启仍登录。UA 要去掉 Electron 片段。
+- **没有订阅读不了资料库**：`/v1/me/library/*` 一律 400 + `40015`（`privilege: CloudLibrary`），最近播放是 `ListeningHistory`；`/v1/me/account?meta=subscription` 的 `meta.subscription.active` 能直接看订阅状态。这不是掉登录。用户第一个测试号就是这种情况。
+- **资料库曲目没有 isrc**：要在 tracks 请求上加 `include=catalog`，从 `relationships.catalog.data[0].attributes.isrc` 拿。资料库曲目 id 有 `i.`、`a.` 两种开头；`catalogId` 在 `playParams` 里，自己上传、匹配不上目录的歌没有，而且歌手、专辑、封面基本是空的（只有歌名），跨平台很难找到。
+- **歌单列表不给曲目数**（attributes 里没有 trackCount），要数量只能逐张查，所以列表里不显示数量。
+- **分页**：`next` 是相对地址（如 `/v1/me/library/playlists/{id}/tracks?offset=100`），每页 100 首约 1 秒；644 首歌单约 10 秒。
+- **社交资料常为空**：`/v1/me/social-profile` 200 但 data 为空数组，昵称只能回退「Apple Music 用户」。
+- **测试**：真实账号测试用实验时的空配置（独立 userData），登录只在那份配置的分区里，不碰用户的真实配置。
+
 ### 酷我 / 波点头像、空封面歌单、登录页宽度（2026-11-18，#184）
 
 - **酷我 Cookie 值带双引号**：官网写的 `pic3`（头像）是 URL 编码后再包一层 `"…"`，以前按「以 http 开头」判断，整条被丢掉。昵称在 `uname3`，不是 `username`。第三方登录（`t3=weixin` / qq）时头像是 `thirdwx.qlogo.cn` / `thirdqq.qlogo.cn`，末段 `/132` 是缩略图，换 `/0` 取原图，可升 https；酷我自己的图床仍保持 http。

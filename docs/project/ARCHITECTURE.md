@@ -196,6 +196,18 @@ view blocks（同层互不依赖，组合只由 App 完成）
 - 前端 `AccountDock.tsx` 的 `YtmusicLogin`：三步说明；大号代码整块点击复制；授权页地址是可点击的链接（默认浏览器打开，文字可选中）并带「复制链接」；主按钮「复制代码并打开授权页」（#186）。
 - 回归：`scripts/ytmusic-regression.mjs`（23 项，离线）。
 
+## Apple Music（#191，2026-11-19）
+
+- 路线：在官方网页播放器里读（交接文档的路线 A）。Apple Music 的接口要开发者令牌加用户令牌，两个都只在 music.apple.com 页面里；页面自带的 MusicKit 替我们带令牌去请求。**令牌不出页面、不写日志、不落盘**。
+- `electron/appleMusicEngine.cjs`（`createAppleMusicEngine`，依赖由调用方传入，可离线单测）：
+  - 一个从不挂到窗口上的 `WebContentsView`，分区 `persist:applemusic-login`，`backgroundThrottling: false`，UA 去掉 Electron 片段。第一次用到时才创建和加载（没用过 Apple 的用户启动时不加载 music.apple.com）。
+  - `call({ path, query })`：等页面里 `MusicKit.getInstance()` 出现（最多 25 秒），串行执行一段固定的读取函数 `readInPage`，路径只认 `/v1/me/…`、`/v1/catalog/…`；页面里按白名单挑字段（曲目基本信息、artwork、playParams、tags、`relationships.catalog` 的 id 和 isrc、`next`、`meta.total`、`meta.subscription.active`、错误码），主进程再过一遍。兼容 `mk.api.v3.music` 和 `mk.api.music`（实测 Electron 43 下只有后者），4xx 可能 resolve 也可能抛。
+  - `login()`：已登录直接成功；否则把同一个视图交给 `sheetHost.open({ view })` 显示在内嵌弹窗里，每 1.5 秒查 `mk.isAuthorized`，登上就收起（只摘下，不销毁）。`logout()`：页面里 `unauthorize`，再清空分区全部存储。导航只放行 `*.apple.com` 的 https。
+- `adapters/applemusicAdapter.ts`：`AppleMusicClient`（可注入的桥 `setBridge`，Electron 启动时注入引擎；错误分类：401 过期、40015 没有订阅、403 本次受限、页面没就绪）+ `AppleMusicAdapter`（我的歌单带 `extend=tags`，「喜爱」排前；资料库歌单曲目带 `include=catalog`——资料库曲目自己没有 isrc，要从对应的目录曲目拿；公开歌单 id 记成 `{地区}:pl.…`；`fetchSongUrl` / `fetchLyric` 返回 null 走跨平台兜底，不实现 `getAuthStatus`）。
+- `login/applemusicLogin.ts`：登录成功后在 CookieStore 存一条**不含凭据**的标记（`cookies = 'page-session'`），没有标记时 `getAccount` 直接返回 null、不唤起页面；账号信息读地区、社交资料（常为空，昵称回退「Apple Music 用户」）和订阅状态。
+- 前端：`AccountDock` 的 `AppleMusicLogin`（三步说明 + 「需要有效订阅」提示）；拉「我的歌单」失败的原因（`AccountState.playlistError`）目前只对 Apple Music 显示；资料库歌单接口不给曲目数，`PlaylistDock` 对 Apple Music 的 0 不显示数量。
+- 回归：`scripts/applemusic-regression.mjs`（19 项）、`scripts/applemusic-engine-regression.mjs`（21 项，读取函数放进 `node:vm` 假页面里真跑，断言令牌字段带不出来）。
+
 ## 内嵌页面弹窗（#183，2026-11-18）
 
 - 用户要求：登录页和壁纸库不再开带系统标题栏的独立窗口，改成软件内、风格一致。

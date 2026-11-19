@@ -27,9 +27,11 @@ export function useAccounts() {
       const loggedIn = !!data?.loggedIn;
       const auth = !loggedIn && (data?.authStatus === 'expired' || data?.authStatus === 'missing') ? data.authStatus : undefined;
       let playlists: DesktopPlaylistSummary[] = [];
+      let playlistError: string | undefined;
       if (loggedIn) {
         const pl = await api.loginPlaylists(platform);
         if (pl.ok) playlists = pl.data;
+        else playlistError = pl.error;
       }
       setAccounts((prev) => ({
         ...prev,
@@ -42,6 +44,7 @@ export function useAccounts() {
           isSvip: acc.ok ? acc.data?.isSvip : undefined,
           auth,
           playlists,
+          playlistError,
           loading: false,
         },
       }));

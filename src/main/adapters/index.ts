@@ -9,6 +9,7 @@ import { QishuiAdapter } from './qishuiAdapter';
 import { KuwoAdapter } from './kuwoAdapter';
 import { BodianAdapter } from './bodianAdapter';
 import { YtmusicAdapter } from './ytmusicAdapter';
+import { AppleMusicAdapter, parseAppleMusicPlaylistUrl } from './applemusicAdapter';
 
 export type AdapterMap = Record<Platform, PlatformAdapter>;
 
@@ -22,6 +23,7 @@ export function createAdapters(http: HttpClient, cookies: CookieStore): AdapterM
     kuwo: new KuwoAdapter(http, cookies),
     bodian: new BodianAdapter(http, cookies),
     ytmusic: new YtmusicAdapter(http, cookies),
+    applemusic: new AppleMusicAdapter(http, cookies),
   };
 }
 
@@ -70,5 +72,7 @@ export function resolveAdapterByUrl(input: string): UrlTarget | null {
     const id = url.match(/[?&]list=([A-Za-z0-9_-]+)/i)?.[1];
     if (id) return { platform: 'ytmusic', id };
   }
+  // Apple Music 公开歌单：music.apple.com/{地区}/playlist/{名字（可省略）}/pl.xxx → 目录歌单 {地区}:pl.xxx
+  if (/^(?:https?:\/\/)?music\.apple\.com(?:[:/?#]|$)/i.test(url)) return parseAppleMusicPlaylistUrl(url);
   return null;
 }

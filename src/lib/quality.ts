@@ -44,6 +44,7 @@ const PLATFORM_NAME: Record<string, string> = {
   bodian: '波点音乐',
   spotify: 'Spotify',
   ytmusic: 'YouTube Music',
+  applemusic: 'Apple Music',
 };
 
 export function platformName(platform: string | undefined): string {

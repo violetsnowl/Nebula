@@ -18,6 +18,7 @@ export * from './adapters/kuwoAdapter';
 export * from './adapters/bodianAdapter';
 export * from './adapters/spotifyAdapter';
 export * from './adapters/ytmusicAdapter';
+export * from './adapters/applemusicAdapter';
 export * from './quality';
 export * from './services/songResolver';
 export * from './services/lyricService';

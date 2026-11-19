@@ -19,6 +19,11 @@ export function coverCandidates(track:Pick<Track,'platform'|'cover'>):string[] {
       const id=u.pathname.match(/^\/vi(?:_webp)?\/([A-Za-z0-9_-]{11})\//)?.[1];
       if(id && /(?:^|\.)ytimg\.com$/i.test(u.hostname))return [...new Set([`https://i.ytimg.com/vi/${id}/maxresdefault.jpg`,`https://i.ytimg.com/vi/${id}/hqdefault.jpg`,u.href])];
     }
+    // Apple Music：封面是 mzstatic 的尺寸模板，适配器已换成 1000x1000；大图不可用时退到 600x600，最后原地址。
+    if(track.platform==='applemusic' && /(?:^|\.)mzstatic\.com$/i.test(u.hostname)){
+      const small=u.href.replace(/\/\d+x\d+(?=[a-z0-9-]*\.(?:jpe?g|png|webp)$)/i,'/600x600');
+      return [...new Set([u.href,small])];
+    }
     return [u.href];
   }catch{return [];}
 }
@@ -44,7 +49,7 @@ export function imageDimensions(b:Buffer):{width:number;height:number}|null {
   return width>0 && height>0 && width<=32768 && height<=32768?{width,height}:null;
 }
 function allowed(u:URL):boolean {
-  return ['https:','http:'].includes(u.protocol) && !u.username && !u.password && ['music.126.net','music.163.com','gtimg.cn','gtimg.com','qq.com','kugou.com','kugou.net','kuwo.cn','scdn.co','byteimg.com','douyinpic.com','bytedance.net','ytimg.com','ggpht.com','googleusercontent.com'].some(h=>u.hostname===h || u.hostname.endsWith('.'+h));
+  return ['https:','http:'].includes(u.protocol) && !u.username && !u.password && ['music.126.net','music.163.com','gtimg.cn','gtimg.com','qq.com','kugou.com','kugou.net','kuwo.cn','scdn.co','byteimg.com','douyinpic.com','bytedance.net','ytimg.com','ggpht.com','googleusercontent.com','mzstatic.com'].some(h=>u.hostname===h || u.hostname.endsWith('.'+h));
 }
 export class CoverService {
   private cache=new Map<string,{at:number;info:CoverInfo}>();

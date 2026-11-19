@@ -21,6 +21,14 @@ export function trackShareLink(track: Track): string | null {
       return /^\d+$/.test(id) ? `https://www.kuwo.cn/play_detail/${id}` : null;
     case 'ytmusic':
       return /^[A-Za-z0-9_-]{11}$/.test(id) ? `https://music.youtube.com/watch?v=${id}` : null;
+    case 'applemusic': {
+      // 目录歌曲 id（纯数字）；资料库上传的歌（i. 开头）没有公开页面。地区取自曲目记下的账号 / 歌单地区，没有就用 cn
+      const ex = (track as { extra?: Record<string, unknown> }).extra;
+      const catalogId = typeof ex?.catalogId === 'string' && ex.catalogId ? ex.catalogId : /^\d+$/.test(id) ? id : '';
+      if (!/^\d{1,40}$/.test(catalogId)) return null;
+      const sf = typeof ex?.storefront === 'string' && /^[a-z]{2}$/.test(ex.storefront) ? ex.storefront : 'cn';
+      return `https://music.apple.com/${sf}/song/${catalogId}`;
+    }
     default:
       return null;
   }

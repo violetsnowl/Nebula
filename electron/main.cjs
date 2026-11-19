@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const http = require('http');
 const { pathToFileURL } = require('url');
 const { createSheetHost } = require('./embeddedSheet.cjs');
+const { createAppleMusicEngine } = require('./appleMusicEngine.cjs');
 
 // 后端统一出口（esbuild 打包产物，见 package.json build:main）
 const {
@@ -23,11 +24,13 @@ const {
   BodianLogin,
   YtmusicLogin,
   revokeYtmusicToken,
+  AppleMusicLogin,
   QqRightsService,
   QqRenewService,
   qqSession,
   createQishuiLoginAdapter,
   createKuwoLoginAdapter,
+  createAppleMusicLoginAdapter,
   AudioProxy,
   LyricCache,
   WallpaperLibrary,
@@ -459,7 +462,7 @@ function setupRequestInterception() {
   });
 
   ses.webRequest.onHeadersReceived(
-    { urls: ['*://*.music.163.com/*', '*://*.music.126.net/*', '*://*.qq.com/*', '*://*.gtimg.cn/*', '*://*.kugou.com/*', '*://*.kugou.com.cn/*', '*://*.kuwo.cn/*', '*://*.douyinpic.com/*'] },
+    { urls: ['*://*.music.163.com/*', '*://*.music.126.net/*', '*://*.qq.com/*', '*://*.gtimg.cn/*', '*://*.kugou.com/*', '*://*.kugou.com.cn/*', '*://*.kuwo.cn/*', '*://*.douyinpic.com/*', '*://*.mzstatic.com/*'] },
     (details, callback) => {
       const responseHeaders = { ...details.responseHeaders };
       responseHeaders['Access-Control-Allow-Origin'] = ['*'];
@@ -589,6 +592,17 @@ app.whenReady().then(async () => {
   const bodianLogin = new BodianLogin(cookies);
   // YouTube Music：设备码登录；与适配器共用同一个协议客户端，令牌续期全局只有一个在进行
   const ytmusicLogin = new YtmusicLogin(cookies, adapters.ytmusic.client);
+  // Apple Music：官方页面引擎（独立分区的 WebContentsView，从不挂载，登录时才交给内嵌弹窗显示）；
+  // 适配器经「桥」在页面里读数据，令牌不出页面。UA 去掉 Electron / 应用名，用本机 Chrome 版本号。
+  const appleEngine = createAppleMusicEngine({
+    WebContentsView,
+    session,
+    sheetHost,
+    userAgent: `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`,
+  });
+  adapters.applemusic.client.setBridge(appleEngine);
+  app.once('before-quit', () => appleEngine.dispose());
+  const applemusicLogin = new AppleMusicLogin(cookies, adapters.applemusic.client);
 
   // 启动探活：已存 cookie 自动校验登录态，失败仅标记未登录，不抛异常
   login.probeLogin();
@@ -640,6 +654,7 @@ app.whenReady().then(async () => {
       getAccount: () => ytmusicLogin.getAccount(),
       getMyPlaylists: () => adapters.ytmusic.fetchMyPlaylists(),
     },
+    applemusic: createAppleMusicLoginAdapter({ getAccount: () => applemusicLogin.getAccount(), getMyPlaylists: () => adapters.applemusic.fetchMyPlaylists() }),
     spotify: {
       platform: 'spotify',
       name: 'Spotify',
@@ -672,12 +687,23 @@ app.whenReady().then(async () => {
     qqLoginWindow: () => createQqLoginWindow(cookies),
     kugouLoginWindow: () => createKugouLoginWindow(cookies, kugouLogin),
     kuwoLoginWindow: () => createKuwoLoginWindow(cookies),
+    // Apple Music：在内嵌弹窗里打开官方页面；登录成功后只在 CookieStore 记一条不含凭据的标记（登录态在页面分区里）
+    applemusicLoginWindow: async () => {
+      const r = await appleEngine.login();
+      if (r.ok) cookies.set('applemusic', 'page-session', '', 'Apple Music');
+      return r.ok ? { ok: true, message: 'Apple Music 登录成功' } : r;
+    },
     wallpaperLibrary,
     // 退出登录时同步清空 QQ / 酷我官方登录窗口独立分区的 Cookie，
     // 确保 CookieStore 与浏览器会话一并干净退出。
     onCookieClear: async (platform, previous) => {
       // YouTube Music：尽力撤销续期令牌（失败忽略、不记日志——令牌在请求地址里）
       if (platform === 'ytmusic' && previous?.token) void revokeYtmusicToken(previous.token);
+      // Apple Music：退出时页面里取消授权并清空分区存储（登录态不在 CookieStore 里）
+      if (platform === 'applemusic') {
+        await appleEngine.logout();
+        return;
+      }
       const partitions = { qq: 'persist:qq-music-login', kuwo: 'persist:kuwo-login' };
       if (!partitions[platform]) return;
       try {

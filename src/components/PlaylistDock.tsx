@@ -143,7 +143,7 @@ function ManualImport({
           ref={inputRef}
           className="input"
           type="text"
-          placeholder="网易云 / QQ / 酷狗 / 酷我 / 波点 / 汽水 / Spotify / YouTube Music 的歌单链接"
+          placeholder="网易云 / QQ / 酷狗 / 酷我 / 波点 / 汽水 / Spotify / YouTube Music / Apple Music 的歌单链接"
           aria-label="歌单链接"
           value={value}
           onChange={(e) => setValue(e.target.value)}
@@ -349,7 +349,8 @@ export const PlaylistDock = memo(function PlaylistDock({
                       <span className="nm">{pl.name}</span>
                       <small>
                         {meta.logo ? <img alt="" src={meta.logo} /> : null}
-                        {pl.trackCount.toLocaleString('en-US')} 首
+                        {/* Apple Music 的资料库歌单列表不带曲目数（给的是 0）：不显示数量，免得误导成「0 首」 */}
+                        {p === 'applemusic' && pl.trackCount === 0 ? '' : `${pl.trackCount.toLocaleString('en-US')} 首`}
                       </small>
                     </span>
                     {cur ? <span className="now">当前</span> : <span className="chev"><IconChevronRight size={14} /></span>}
@@ -485,7 +486,10 @@ export const PlaylistDock = memo(function PlaylistDock({
               <h3 title={sel.name}>{sel.name}</h3>
               <div className="meta">
                 {selMeta.logo ? <img alt="" src={selMeta.logo} /> : null}
-                {selMeta.name} · {(ready ? songs.length : sel.trackCount).toLocaleString('en-US')} 首
+                {selMeta.name}
+                {sel.platform === 'applemusic' && !ready && sel.trackCount === 0
+                  ? ''
+                  : ` · ${(ready ? songs.length : sel.trackCount).toLocaleString('en-US')} 首`}
               </div>
             </div>
           </div>
