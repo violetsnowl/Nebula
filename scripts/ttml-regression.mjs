@@ -237,6 +237,11 @@ const duet = (ids, head = '') => `<tt ${NS}><head><metadata>${head}</metadata></
   ${ids.map(([id, text], i) => `<p begin="${1 + i * 4}s" end="${3 + i * 4}s"${id ? ` ttm:agent="${id}"` : ''}><span begin="${1 + i * 4}s" end="${3 + i * 4}s">${text}</span></p>`).join('')}</div></body></tt>`;
 const agents = (xml) => parseTtml(xml).lineRows.map((l) => l.agent);
 
+test('对唱：主唱是唱得最多的那位，不是最先出场的（开头一段别人唱的独唱歌不能整首换色，#201）', () => {
+  const r = parseTtml(duet([['v1', '编的开场'], ['v2', '编的一'], ['v2', '编的二'], ['v2', '编的三'], ['v1', '编的插句']]));
+  assert.deepEqual(r.lineRows.map((x) => x.agent), ['v2', 'v1', 'v1', 'v1', 'v2']);
+});
+
 test('对唱：两位 person 按正文第一次出现的顺序 → v1 / v2；group 与未声明的 v1000 → both；没写 agent 的行不标', () => {
   const head = '<ttm:agent type="person" xml:id="v2"/><ttm:agent type="person" xml:id="v1"/><ttm:agent type="group" xml:id="g1"/>';
   // head 里 v2 先声明，但正文里 v1 先唱：按正文顺序，v1 是第一位

@@ -39,6 +39,20 @@ export function lyricScript(l:Lyric):'zh'|'ja'|'ko'|'en' {
  * 这份歌词够不够好、还要不要去别家补（#197）：逐字 ≥80%；不是中文的要翻译 ≥80%（中文歌本来没有翻译，以前也按缺翻译处理，每首都白搜一遍）；
  * 日语歌还要罗马音 ≥80%（以前逐字、翻译齐了就不再找罗马音）。韩语罗马音本地生成，不要求。
  */
+/**
+ * 歌词被截断（#201，真实案例：QQ 一首 174 秒的歌只有前 39 秒的 9 句原文，后面几十行只剩翻译、原文是空的）：
+ * 最后一句原文在歌曲时长六成以前就结束（歌长 1 分钟以上才判），或「只有翻译、原文是空的」行比原文行还多。
+ * 截断的歌词逐字、翻译再齐也不算够好。durationSec 未知时只看第二条。
+ */
+export function lyricTruncated(l:Lyric,durationSec?:number):boolean {
+  const rows=textRows(l);
+  if(!rows.length)return false;
+  const orphan=l.lines.filter(x=>!x.text.trim() && x.translation?.trim()).length;
+  if(orphan>rows.length)return true;
+  const d=Number(durationSec)||0;
+  return d>=60 && Math.max(...rows.map(x=>x.timeMs))<d*1000*.6;
+}
+
 export function lyricComplete(l:Lyric):boolean {
   const c=lyricCoverage(l);if(!c.textLines)return false;
   const script=lyricScript(l);

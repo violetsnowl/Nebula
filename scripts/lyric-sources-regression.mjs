@@ -476,6 +476,28 @@ await test('LyricService（#197）：日语歌逐字、翻译都齐，只缺罗�
   assert.equal(rz.incomplete, false);
 });
 
+await test('LyricService（#201）：主歌词被截断（只有前几句、逐字翻译齐）不算够好；别家明显更全就改用它做正文；都不更全保留原样并标不完整', async () => {
+  const mk = (n, step) => { const ls = Array.from({ length: n }, (_, i) => ({ timeMs: 1000 + i * step, text: '编的第' + i + '句', translation: '译' + i })); return { raw: '', lines: ls, yrc: ls.map((l) => `[${l.timeMs},2000](${l.timeMs},2000,0)${l.text}`).join('\n') }; };
+  const short = mk(4, 5000); // 最后一句 16 秒，歌长 100 秒
+  const full = { ...mk(12, 7000), source: 'netease' }; // 一直到 78 秒
+  // 搜到的那首时长也是 100 秒（同一录音）
+  const long = (x) => { x.map.netease.searchSongs = async () => { x.calls.search++; return [song({ id: 'netease:900', platform: 'netease', sourceId: '900', duration: 100 })]; }; return x; };
+  const a = long(adapters({ primary: short, neteaseLyric: full }));
+  const r = await new LyricService(a.map).fetchLyric(song({ duration: 100 }));
+  assert.equal(a.calls.search, 1, '截断的不算够好，会去搜');
+  assert.equal(lyricCoverage(r).textLines, 12);
+  assert.equal(r.provenance[0].platform, 'netease');
+  const b = long(adapters({ primary: short, neteaseLyric: { ...mk(5, 5000), source: 'netease' } }));
+  const r2 = await new LyricService(b.map).fetchLyric(song({ duration: 100 }));
+  assert.equal(lyricCoverage(r2).textLines, 4, '别家不明显更全：保留主歌词');
+  assert.equal(r2.incomplete, true);
+  // 只有翻译、原文是空的行比原文多：歌长未知也算截断
+  const orphan = { ...short, lines: [...short.lines, ...Array.from({ length: 6 }, (_, i) => ({ timeMs: 30000 + i * 4000, text: '', translation: '只有译文' + i }))] };
+  const c = adapters({ primary: orphan, neteaseLyric: full });
+  const r3 = await new LyricService(c.map).fetchLyric(song({ duration: 0 }));
+  assert.equal(r3.provenance[0].platform, 'netease');
+});
+
 await test('LyricService：origin 的 Spotify / Apple / isrc id 用于查询，缓存键和歌词身份仍按实际供流那首', async () => {
   const stored = [];
   const cache = { get: () => null, set: (p, id, l) => stored.push([p, id, l]) };

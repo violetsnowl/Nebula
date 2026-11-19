@@ -242,8 +242,8 @@ await test('英文空格补齐保持原始长音时长',()=>{
 });
 await test('相近时间但不同正文不能挂接逐字',()=>{const r=ui.mergeWordLyrics([{timeMs:1000,text:'甲'}],'[1000,1000](1000,1000,0)乙');assert.equal(r[0].words,undefined)});
 await test('只有逐字时仍能显示原始正文',()=>{const r=ui.mergeWordLyrics([],'[1000,1000](1000,1000,0)甲');assert.equal(r[0].text,'甲')});
-await test('旧版/损坏缓存失效（v2、v3 也作废，#197 / #199），v4 不完整六小时与完整三十天',async()=>{
- for(const schema of [2,3]){fs.writeFileSync(path.join(temp,'lyric-cache.json'),JSON.stringify({schema,entries:{'qq:x':{at:Date.now(),lyric:base}}}));assert.equal(new b.LyricCache(temp).get('qq','x'),null);}
+await test('旧版/损坏缓存失效（v2–v4 也作废，#197 / #199 / #201），v5 不完整六小时与完整三十天',async()=>{
+ for(const schema of [2,3,4]){fs.writeFileSync(path.join(temp,'lyric-cache.json'),JSON.stringify({schema,entries:{'qq:x':{at:Date.now(),lyric:base}}}));assert.equal(new b.LyricCache(temp).get('qq','x'),null);}
  fs.writeFileSync(path.join(temp,'lyric-cache.json'),JSON.stringify({'qq:x':{at:Date.now(),lyric:base}}));assert.equal(new b.LyricCache(temp).get('qq','x'),null);
  const cache=new b.LyricCache(temp);cache.set('qq','x',{...base,incomplete:true});cache.set('qq','full',{...base,incomplete:false});await cache.flush();
  const fresh=new b.LyricCache(temp);assert.ok(fresh.get('qq','x'));const now=Date.now;Date.now=()=>now()+7*3600000;

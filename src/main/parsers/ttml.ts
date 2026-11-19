@@ -389,7 +389,7 @@ function headTexts(root: XEl, group: 'translation' | 'transliteration'): Map<str
 
 /**
  * 对唱归属：head 里 `<ttm:agent xml:id type>`。type=group，或没在 head 里声明的 v1000 这类合唱 id → both；
- * 其余按正文里第一次出现的顺序：第一位 → v1，之后的 → v2。整首只有一位 person（没有第二位）时一律不标。
+ * 其余里唱得最多的那位 → v1（一样多按出场先后），其他人 → v2。整首只有一位 person（没有第二位）时一律不标。
  */
 function resolveAgents(root: XEl, ids: Array<string | undefined>): Array<TtmlAgent | undefined> {
   const declared = new Map<string, string>();
@@ -401,8 +401,16 @@ function resolveAgents(root: XEl, ids: Array<string | undefined>): Array<TtmlAge
   }
   const isGroup = (id: string): boolean => (declared.has(id) ? declared.get(id) === 'group' : /^v\d{4,}$/i.test(id));
   const order: string[] = [];
-  for (const id of ids) if (id && !isGroup(id) && !order.includes(id)) order.push(id);
+  const count = new Map<string, number>();
+  for (const id of ids) {
+    if (!id || isGroup(id)) continue;
+    if (!order.includes(id)) order.push(id);
+    count.set(id, (count.get(id) ?? 0) + 1);
+  }
   if (order.length < 2) return ids.map(() => undefined);
+  // 主唱 = 唱得最多的那位（一样多时按出场先后）：只按出场顺序的话，开头有一段别人唱的独唱歌，几乎整首都会被换成第二色（#201，真实案例）
+  const seen = new Map(order.map((id, i) => [id, i]));
+  order.sort((a, b) => count.get(b)! - count.get(a)! || seen.get(a)! - seen.get(b)!);
   return ids.map((id) => (!id ? undefined : isGroup(id) ? 'both' : order[0] === id ? 'v1' : 'v2'));
 }
 

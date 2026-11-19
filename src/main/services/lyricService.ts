@@ -20,7 +20,7 @@ import { LyricCache } from './lyricCache';
 import { LyricOverrides, clampLyricOffset } from './lyricOverrides';
 import { applyLyricOffset } from './lyricOffset';
 import { withRequestScope, throwIfCancelled, requestScope } from '../requestScope';
-import { enrichAligned, lyricComplete, lyricCoverage, snapLinesToWords } from './lyricAlignment';
+import { enrichAligned, lyricComplete, lyricCoverage, lyricTruncated, snapLinesToWords } from './lyricAlignment';
 import type { AmllSource } from './amllLyrics';
 import type { AppleLyricsSource } from './appleMusicLyrics';
 import { LYRIC_ID_ORDER, lyricIdsOf, mergeLyricIds, type LyricIdKey, type LyricIds } from './lyricSourceIds';
@@ -202,14 +202,25 @@ export class LyricService {
       }
       if(!best)best=await this.fetchOne(track,'primary');
       // 够好就不去别家补：判定按语种（中文不要求翻译，日语要罗马音，见 lyricComplete）
-      if(best && lyricComplete(best)){
+      if(best && lyricComplete(best) && !lyricTruncated(best,track.duration)){
         // 只按已知 id 查一次 AMLL（不查 Apple、不搜别的平台）：它带和声 / 对唱归属，主歌词没有这两样；只补缺的层，不动已有的。没命中 / 失败照旧返回
         const {hit}=await this.amllHit(mergeLyricIds(lyricIdsOf(track),lyricIdsOf(origin)),AMLL_RICH_BUDGET_MS);
         throwIfCancelled();
         return hit && !isChosen(hit.lyric)?enrichAligned(best,hit.lyric):best;
       }
       // 补丁里跳过选中的那一份（它已经是正文）
-      const hits=(await this.gatherHits(track,origin)).map(h=>h && isChosen(h.lyric)?null:h);
+      let hits=(await this.gatherHits(track,origin)).map(h=>h && isChosen(h.lyric)?null:h);
+      // 主歌词被截断（#201）：别家有一份明显更全的（句数多一半以上、往后多出 20 秒以上）就改用它做正文——合并只往已有的句子上补，补不出缺的后半段。
+      // 手动选的不换。更全的那份挪到最前面当正文，其余照固定顺序补；截断的主歌词不再参与。
+      if(best && !manual && lyricTruncated(best,track.duration)){
+        const own=lyricCoverage(best).textLines,ownLast=Math.max(...best.lines.filter(x=>x.text.trim()).map(x=>x.timeMs));
+        const fuller=hits.findIndex(h=>{
+          if(!h)return false;
+          const rows=h.lyric.lines.filter(x=>x.text.trim());
+          return lyricCoverage(h.lyric).textLines>=Math.max(own*1.5,own+5) && Math.max(...rows.map(x=>x.timeMs))>ownLast+20000;
+        });
+        if(fuller>=0){best=null;hits=[hits[fuller]!,...hits.filter((_,i)=>i!==fuller)];}
+      }
       const primary=best;
       for(const hit of hits){
         if(!hit)continue;
@@ -241,7 +252,7 @@ export class LyricService {
     },{detached:true,signal:job.control.signal}).catch(()=>best).then(lyric=>{
       if(!lyric || job.control.signal.aborted)return null;
       const coverage=lyricCoverage(lyric);
-      const incomplete=!!lyric.incomplete || !lyricComplete(lyric);
+      const incomplete=!!lyric.incomplete || !lyricComplete(lyric) || lyricTruncated(lyric,track.duration);
       const result=withKoreanRoman({...lyric,coverage,incomplete});
       // 选中的那份这次没取到、退回了自动：不写缓存，否则自动结果会盖住用户的选择最长 30 天；下次再按选择重试
       if(!(chosen && !manual))this.cache?.set(track.platform,track.sourceId,result);
