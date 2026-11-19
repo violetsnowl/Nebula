@@ -112,6 +112,39 @@ export function retimeByText(base:Lyric,other:Lyric):{lyric:Lyric;pairs:number;m
   if(!base.romanRaw && !base.romalrc && (other.romalrc || other.romanRaw))next.romanRaw=next.romalrc=other.romalrc || other.romanRaw;
   return {lyric:next,pairs:pairs.size,medianDeltaMs};
 }
+/** 一句里没配对的左括号数（全角、半角分开数）。 */
+const unclosed=(t:string,open:string,close:string):number=>Math.max(0,t.split(open).length-t.split(close).length);
+/**
+ * 补上只有左括号的句子（#202，真实案例：QQ《小半 (Live)》的和声写成单独一行「（……」，普通歌词和逐字里都没有右括号）。
+ * 只处理以左括号开头、全句没有对应右括号的行：句尾补上同款右括号；同一时间、正文相同的逐字行，最后一个字后面也补上。其余原样返回。
+ */
+export function closeBrackets(l:Lyric):Lyric {
+  const fix=(t:string):string=>{
+    const s=t.trim();
+    if(s.startsWith('（') && unclosed(s,'（','）'))return t.replace(/\s*$/,'）'.repeat(unclosed(s,'（','）')));
+    if(s.startsWith('(') && unclosed(s,'(',')'))return t.replace(/\s*$/,')'.repeat(unclosed(s,'(',')')));
+    return t;
+  };
+  const changed=new Map<number,string>();
+  const lines=l.lines.map(x=>{const t=fix(x.text);if(t===x.text)return x;changed.set(x.timeMs,identityText(x.text));return {...x,text:t};});
+  if(!changed.size)return l;
+  const next:Lyric={...l,lines,lrc:lines.map(x=>lrcAt(x.timeMs,x.text)).join(String.fromCharCode(10))};
+  const words=timedLines(l.yrc || '');
+  if(words.length){
+    let touched=false;
+    const rows=words.map(w=>{
+      const hit=[...changed].some(([t,key])=>Math.abs(t-w.timeMs)<=250 && key===identityText(w.text));
+      const joined=w.words.map(x=>x.text).join('');
+      if(!hit || !w.words.length || fix(joined)===joined)return w;
+      touched=true;
+      const last=w.words[w.words.length-1]!,tail=fix(joined).slice(joined.trimEnd().length);
+      return {...w,text:fix(w.text),words:[...w.words.slice(0,-1),{...last,text:last.text.trimEnd()+tail}]};
+    });
+    if(touched)next.yrc=toYrc(rows);
+  }
+  return next;
+}
+
 /** 逐行配对的时间窗：同一首歌两份歌词（普通行 / 逐字行）开头常差几百毫秒，实测九成在 1.1 秒内（#196）。 */
 export const PAIR_WINDOW_MS=1200;
 

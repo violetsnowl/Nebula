@@ -20,7 +20,7 @@ import { LyricCache } from './lyricCache';
 import { LyricOverrides, clampLyricOffset } from './lyricOverrides';
 import { applyLyricOffset } from './lyricOffset';
 import { withRequestScope, throwIfCancelled, requestScope } from '../requestScope';
-import { enrichAligned, lyricComplete, lyricCoverage, lyricTruncated, snapLinesToWords } from './lyricAlignment';
+import { closeBrackets, enrichAligned, lyricComplete, lyricCoverage, lyricTruncated, snapLinesToWords } from './lyricAlignment';
 import type { AmllSource } from './amllLyrics';
 import type { AppleLyricsSource } from './appleMusicLyrics';
 import { LYRIC_ID_ORDER, lyricIdsOf, mergeLyricIds, type LyricIdKey, type LyricIds } from './lyricSourceIds';
@@ -143,7 +143,8 @@ export class LyricService {
     const lyric=await withRequestScope(3200,()=>this.adapters[t.platform].fetchLyric(t.sourceId,t.duration? t.duration*1000:undefined)).catch(()=>null);
     throwIfCancelled();
     // 同一份歌词里普通行和逐字行开头差几百毫秒的，先把行时间校准到逐字（#196），否则自带的逐字会被当成没有
-    return lyric?.lines?.length?snapLinesToWords({...lyric,identity:{platform:t.platform,sourceId:t.sourceId},provenance:[{platform:t.platform,sourceId:t.sourceId,kind}]}):null;
+    // 只有左括号的句子补上右括号（#202）
+    return lyric?.lines?.length?snapLinesToWords(closeBrackets({...lyric,identity:{platform:t.platform,sourceId:t.sourceId},provenance:[{platform:t.platform,sourceId:t.sourceId,kind}]})):null;
   }
 
   /**

@@ -235,6 +235,16 @@ await test('#199 前端：normalizeLyricLines 把 agent / bg 带出来（防御�
  const entries=model.buildEntries([{timeMs:1000,text:'甲',words:[{text:'甲',startMs:1000,duration:500}],bg:{text:'和',words:[{text:'和',startMs:2000,duration:1500}]}},{timeMs:20000,text:'乙'}]);
  const gap=entries.find((e,i)=>e.kind==='gap'&&i>0);assert.ok(gap);assert.equal(gap.s,3.5);
 });
+await test('#202 只有左括号的句子补上右括号：正文和同一句的逐字都补，成对的、句中括号、普通句不动',()=>{
+ const l={raw:'',lines:[{timeMs:1000,text:'（编的和声'},{timeMs:5000,text:'(made up echo'},{timeMs:9000,text:'（成对的）'},{timeMs:13000,text:'编的（句中'},{timeMs:17000,text:'普通句'}],
+  yrc:['[1000,2000](1000,1000,0)（(2000,1000,0)编的和声','[5000,1000](5000,1000,0)(made up echo','[9000,1000](9000,1000,0)（成对的）'].join('\n')};
+ const r=b.closeBrackets(l);
+ assert.deepEqual(r.lines.map(x=>x.text),['（编的和声）','(made up echo)','（成对的）','编的（句中','普通句']);
+ const w=b.timedLines(r.yrc);
+ assert.equal(w[0].words.map(x=>x.text).join(''),'（编的和声）');assert.equal(w[0].words.at(-1).startMs,2000,'词时间不变');
+ assert.equal(w[1].words.map(x=>x.text).join(''),'（成对的）');
+ assert.equal(b.closeBrackets({raw:'',lines:[{timeMs:1,text:'普通'}]}).lines[0].text,'普通');
+});
 await test('普通整句与无词时间的 JSON 不伪造逐字',()=>{assert.equal(ui.parseYrcText('[00:10.00]普通歌词').length,0);assert.equal(ui.parseYrcText('{"t":10,"c":[{"tx":"正文"}]}').length,0)});
 await test('英文空格补齐保持原始长音时长',()=>{
  const lines=[{timeMs:1000,text:'Hello world',words:[{text:'Hello',startMs:1000,duration:100},{text:'world',startMs:1100,duration:1900}]}];
@@ -242,8 +252,8 @@ await test('英文空格补齐保持原始长音时长',()=>{
 });
 await test('相近时间但不同正文不能挂接逐字',()=>{const r=ui.mergeWordLyrics([{timeMs:1000,text:'甲'}],'[1000,1000](1000,1000,0)乙');assert.equal(r[0].words,undefined)});
 await test('只有逐字时仍能显示原始正文',()=>{const r=ui.mergeWordLyrics([],'[1000,1000](1000,1000,0)甲');assert.equal(r[0].text,'甲')});
-await test('旧版/损坏缓存失效（v2–v4 也作废，#197 / #199 / #201），v5 不完整六小时与完整三十天',async()=>{
- for(const schema of [2,3,4]){fs.writeFileSync(path.join(temp,'lyric-cache.json'),JSON.stringify({schema,entries:{'qq:x':{at:Date.now(),lyric:base}}}));assert.equal(new b.LyricCache(temp).get('qq','x'),null);}
+await test('旧版/损坏缓存失效（v2–v5 也作废，#197 / #199 / #201 / #202），v6 不完整六小时与完整三十天',async()=>{
+ for(const schema of [2,3,4,5]){fs.writeFileSync(path.join(temp,'lyric-cache.json'),JSON.stringify({schema,entries:{'qq:x':{at:Date.now(),lyric:base}}}));assert.equal(new b.LyricCache(temp).get('qq','x'),null);}
  fs.writeFileSync(path.join(temp,'lyric-cache.json'),JSON.stringify({'qq:x':{at:Date.now(),lyric:base}}));assert.equal(new b.LyricCache(temp).get('qq','x'),null);
  const cache=new b.LyricCache(temp);cache.set('qq','x',{...base,incomplete:true});cache.set('qq','full',{...base,incomplete:false});await cache.flush();
  const fresh=new b.LyricCache(temp);assert.ok(fresh.get('qq','x'));const now=Date.now;Date.now=()=>now()+7*3600000;
