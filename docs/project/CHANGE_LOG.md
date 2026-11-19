@@ -14,7 +14,7 @@
 - `electron/appleMusicEngine.cjs`：新增 `callMany(reqs)`：一批请求只占队列里一个位置，在页面里用同一个读取函数限并发（6）并行跑，结果按顺序返回（最多 60 个）；校验、精简、令牌不出页面与单个请求相同。
 - `applemusicAdapter.ts`：`libraryPlaylistTrackCounts` 批量读每张歌单 `tracks?limit=1` 的 `meta.total`；`fetchMyPlaylists` 用它补曲目数，缓存 5 分钟（用户可能在手机上改歌单），导入歌单时顺手记下实际数量；最多等 8 秒，超时、页面没就绪、单张失败都不影响歌单列表，读不到的仍不显示数量（结果晚到也写缓存，下次刷新就有）。
 - 回归：适配器 +3（批量读与排序、缓存与重试、失败降级），页面引擎 +3（一次执行与并发上限、校验与 notReady、与单个请求共用队列）。
-- 文档：完成度表、ARCHITECTURE、NOTES。
+- 文档：完成度表、ARCHITECTURE、NOTES；快照与完成度表记 #191 用户验收通过（补记在本条）。
 
 **验证**
 - `pnpm build`、`pnpm qa:backend`（Apple Music 适配器 22/22、页面引擎 24/24，全绿）、`pnpm build:desktop`。
