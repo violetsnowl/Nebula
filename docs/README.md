@@ -9,7 +9,7 @@
 
 | 目录 | 内容 | 文档 |
 |---|---|---|
-| `docs/project/` | 项目治理：总览、架构、变更日志、踩坑与待办；后端 | `PROJECT.md` · `ARCHITECTURE.md` · `CHANGE_LOG.md` · `NOTES.md` · `PLATFORM_MATRIX.md`（五平台 × 后端功能完成度表，补缺口时同步改）· `BACKEND_OVERHAUL.md`（后端两轮整修报告，含第 14 节合并复核）· `BACKEND_OVERHAUL_BRIEF.md` / `BACKEND_OVERHAUL_ROUND2_BRIEF.md`（交给 Codex 的任务书原文，归档不再改）· `backend-overhaul-evidence/` 与 `backend-overhaul-round2-evidence/`（脱敏证据） |
+| `docs/project/` | 项目治理：总览、架构、变更日志、踩坑与待办；后端 | `PROJECT.md` · `ARCHITECTURE.md` · `CHANGE_LOG.md` · `NOTES.md` · `PLATFORM_MATRIX.md`（各平台 × 后端功能完成度表，补缺口时同步改）· `APPLE_MUSIC_HANDOFF.md`（Apple Music 接入交接：调研结论、令牌路线、落地方案、开工实验）· `BACKEND_OVERHAUL.md`（后端两轮整修报告，含第 14 节合并复核）· `BACKEND_OVERHAUL_BRIEF.md` / `BACKEND_OVERHAUL_ROUND2_BRIEF.md`（交给 Codex 的任务书原文，归档不再改）· `backend-overhaul-evidence/` 与 `backend-overhaul-round2-evidence/`（脱敏证据） |
 | `docs/design/` | 设计规格：全局 UI 系统、歌词系统、播放器重设计 | `NEBULA_UI_SYSTEM.md`（全局 UI 真源）· `LYRICS_SYSTEM.md` · `NEBULA_PLAYER_DESIGN_SPEC.md` · `PLAYER_AGENT_BRIEF.md` · `PLAYER_IMPL_PLAN.md`；历史：`UI_SPEC.md`（已被取代）· `NEBULA_DESIGN_REVIEW.md`（审查记录）· `archive/` |
 | `docs/meta/` | 交接与记忆：接手手册、用户画像、上下文快照 | `HANDOFF.md` · `USER_PROFILE.md` · `CONTEXT_SNAPSHOT.md` |
 
