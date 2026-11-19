@@ -34,7 +34,8 @@ await test('跨源稳定偏移按正文锚点对齐，补齐单句翻译',()=>{
 });
 await test('时间漂移或正文不同拒绝跨源补全',()=>{
  assert.equal(b.alignTimelines(base,{...other,lines:other.lines.map((l,i)=>({...l,timeMs:l.timeMs+i*1000}))}),null);
- assert.equal(b.enrichAligned(base,{...other,lines:other.lines.map(l=>({...l,text:'不同歌词'}))}),base);
+ // 正文不同（普通行和逐字行都不同）才是真的不同歌词；#196 起逐行补以逐字行正文为准
+ assert.equal(b.enrichAligned(base,{...other,lines:other.lines.map(l=>({...l,text:'不同歌词'})),yrc:other.lines.map(l=>`[${l.timeMs},1000](${l.timeMs},1000,0)不同歌词`).join('\n')}),base);
 });
 await test('两平台行时间各差几百毫秒且不固定：按正文逐行对齐，采用对方逐字时间轴',()=>{
  const jitter=[300,-250,420,-380];
@@ -48,8 +49,46 @@ await test('两平台行时间各差几百毫秒且不固定：按正文逐行�
 await test('逐行对齐不放过系统性漂移和不同正文',()=>{
  const drift={...other,lines:other.lines.map((l,i)=>({...l,timeMs:l.timeMs+i*1000})),yrc:other.lines.map((l,i)=>`[${l.timeMs+i*1000},1000](${l.timeMs+i*1000},1000,0)${l.text}`).join('\n')};
  assert.equal(b.enrichAligned(base,drift),base);
- const wrong={...other,lines:other.lines.map((l,i)=>({...l,timeMs:l.timeMs+(i%2?300:-300),text:'不同歌词'+i}))};
+ const wrongLines=other.lines.map((l,i)=>({...l,timeMs:l.timeMs+(i%2?300:-300),text:'不同歌词'+i}));
+ const wrong={...other,lines:wrongLines,yrc:wrongLines.map(l=>`[${l.timeMs},1000](${l.timeMs},1000,0)${l.text}`).join('\n')};
  assert.equal(b.enrichAligned(base,wrong),base);
+});
+await test('#196 同一份歌词里普通行和逐字行开头差几百毫秒：行时间（连同翻译、罗马音）校准到逐字，覆盖率按逐字算',()=>{
+ const offs=[430,-280,900,-1100];
+ const l={raw:'',lines:base.lines.map((x,i)=>({...x,translation:'译'+i})),romalrc:base.lines.map((x,i)=>b.lrcAt(x.timeMs,'ro'+i)).join('\n'),
+  yrc:base.lines.map((x,i)=>`[${x.timeMs+offs[i]},1000](${x.timeMs+offs[i]},1000,0)${x.text}`).join('\n')};
+ assert.equal(b.lyricCoverage(l).wordLines,0,'250ms 规则下一行都配不上');
+ const s=b.snapLinesToWords(l);
+ assert.deepEqual(s.lines.map(x=>x.timeMs),base.lines.map((x,i)=>x.timeMs+offs[i]));
+ assert.equal(b.lyricCoverage(s).wordLines,4);assert.equal(b.lyricCoverage(s).translatedLines,4);
+ assert.deepEqual(b.parseLrc(s.romalrc).map(r=>r.timeMs),s.lines.map(x=>x.timeMs),'罗马音跟着行挪');
+ const far={...l,yrc:base.lines.map(x=>`[${x.timeMs+1500},1000](${x.timeMs+1500},1000,0)${x.text}`).join('\n')};
+ assert.equal(b.snapLinesToWords(far),far,'超过 1.2 秒不挪');
+ const diff={...l,yrc:base.lines.map(x=>`[${x.timeMs+300},1000](${x.timeMs+300},1000,0)别的词`).join('\n')};
+ assert.equal(b.snapLinesToWords(diff),diff,'正文不同不挪');
+});
+await test('#196 跨源逐行补逐字：只配上部分行也补这些行，其余保持；配上不足 3 行或中位差 >0.6 秒拒绝',()=>{
+ const rows=[1000,8000,16000,24000,32000,40000].map((timeMs,i)=>({timeMs,text:'正文'+i}));
+ const b0={raw:'',lines:rows};
+ const ok=[0,1,2,3];// 对方只有前 4 行正文一样，后两行分句不同
+ const jit=[350,-200,500,-300,0,0];// 偏移不固定：固定偏移对齐不过，走逐行补
+ const sup={raw:'',lines:rows.map((r,i)=>({...r,timeMs:r.timeMs+jit[i],text:ok.includes(i)?r.text:'别的分句'+i})),identity:{platform:'qq',sourceId:'z'},
+  yrc:rows.map((r,i)=>`[${r.timeMs+jit[i]},900](${r.timeMs+jit[i]},900,0)${ok.includes(i)?r.text:'别的分句'+i}`).join('\n')};
+ assert.equal(b.alignTimelines(b0,sup),null);
+ const r=b.enrichAligned(b0,sup);
+ assert.equal(b.lyricCoverage(r).wordLines,4);
+ assert.deepEqual(r.lines.map(x=>x.timeMs),[1350,7800,16500,23700,32000,40000],'配上的行用对方逐字时间，其余不动');
+ assert.equal(r.provenance.at(-1).platform,'qq');
+ // 固定偏移、而对方自己的普通行和逐字行又差几百毫秒：先校准对方，再按固定偏移补上
+ const sup2={raw:'',lines:rows,identity:{platform:'qq',sourceId:'z'},yrc:rows.map(x=>`[${x.timeMs+350},900](${x.timeMs+350},900,0)${x.text}`).join('\n')};
+ assert.equal(b.lyricCoverage(b.enrichAligned(b0,sup2)).wordLines,6);
+ const two={...sup,yrc:rows.slice(0,2).map(x=>`[${x.timeMs+350},900](${x.timeMs+350},900,0)${x.text}`).join('\n')};
+ assert.equal(b.enrichAligned(b0,two),b0,'只配上 2 行');
+ const big=[800,-700,1000,-750,900,-850];// 偏移不固定且普遍偏大
+ const slowLines=rows.map((x,i)=>({...x,timeMs:x.timeMs+big[i]}));
+ const slow={...sup,lines:slowLines,yrc:slowLines.map(x=>`[${x.timeMs},900](${x.timeMs},900,0)${x.text}`).join('\n')};
+ assert.equal(b.alignTimelines(b0,slow),null);
+ assert.equal(b.enrichAligned(b0,slow),b0,'中位差 0.8 秒以上');
 });
 await test('普通整句与无词时间的 JSON 不伪造逐字',()=>{assert.equal(ui.parseYrcText('[00:10.00]普通歌词').length,0);assert.equal(ui.parseYrcText('{"t":10,"c":[{"tx":"正文"}]}').length,0)});
 await test('英文空格补齐保持原始长音时长',()=>{

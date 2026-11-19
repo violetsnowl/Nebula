@@ -18,7 +18,7 @@ import { recordingMatch, searchKeyword } from './recordingMatch';
 import { normalizeQuery, titleSimilarity } from '../adapters/mappers';
 import { LyricCache } from './lyricCache';
 import { withRequestScope, throwIfCancelled, requestScope } from '../requestScope';
-import { enrichAligned, lyricCoverage } from './lyricAlignment';
+import { enrichAligned, lyricCoverage, snapLinesToWords } from './lyricAlignment';
 import type { AmllSource } from './amllLyrics';
 import type { AppleLyricsSource } from './appleMusicLyrics';
 import { LYRIC_ID_ORDER, lyricIdsOf, mergeLyricIds, type LyricIdKey, type LyricIds } from './lyricSourceIds';
@@ -132,7 +132,8 @@ export class LyricService {
       const fetch=async(t:Track,kind:'primary'|'fallback'):Promise<Lyric|null>=>{
         const lyric=await withRequestScope(3200,()=>this.adapters[t.platform].fetchLyric(t.sourceId,t.duration? t.duration*1000:undefined)).catch(()=>null);
         throwIfCancelled();
-        return lyric?.lines?.length?{...lyric,identity:{platform:t.platform,sourceId:t.sourceId},provenance:[{platform:t.platform,sourceId:t.sourceId,kind}]}:null;
+        // 同一份歌词里普通行和逐字行开头差几百毫秒的，先把行时间校准到逐字（#196），否则自带的逐字会被当成没有
+        return lyric?.lines?.length?snapLinesToWords({...lyric,identity:{platform:t.platform,sourceId:t.sourceId},provenance:[{platform:t.platform,sourceId:t.sourceId,kind}]}):null;
       };
       best=await fetch(track,'primary');
       const good=(l:Lyric|null):boolean=>{if(!l)return false;const c=lyricCoverage(l);return c.textLines>0 && c.wordLines/c.textLines>=.8 && c.translatedLines/c.textLines>=.8};
@@ -165,6 +166,7 @@ export class LyricService {
       throwIfCancelled();
       // 固定顺序合并：AMLL → Apple → 网易云 → QQ → 酷狗，网络完成顺序不改变结果。
       const hits:Array<LyricHit|null>=[amll,appleResult,...candidates.map(c=>c?.lyric?{lyric:c.lyric,duration:Number(c.from.duration),trusted:false}:null)];
+      const primary=best;
       for(const hit of hits){
         if(!hit)continue;
         const {lyric}=hit;
@@ -174,6 +176,16 @@ export class LyricService {
           const sameTimeline=hit.trusted || (hit.duration>0 && Number(track.duration)>0 && diff<=2);
           best=sameTimeline?{...lyric,incomplete:true}:{...lyric,yrc:undefined,qrc:undefined,krc:undefined,incomplete:true};
         }else best=enrichAligned(best,lyric);
+      }
+      // 依次合并有时会被前面的来源「占住」：先合并的只补上一部分行、挪了行时间，后面本来能补全的来源就对不上了（#196 实测）。
+      // 所以有主歌词时，再算一遍「主歌词只配一个来源」各自的结果，逐字行比依次合并的多才换（同样按固定顺序比，结果不随网络先后变）。
+      if(primary && best){
+        let words=lyricCoverage(best).wordLines;
+        for(const hit of hits){
+          if(!hit)continue;
+          const single=enrichAligned(primary,hit.lyric),w=lyricCoverage(single).wordLines;
+          if(w>words){best=single;words=w;}
+        }
       }
       return best;
     },{detached:true,signal:job.control.signal}).catch(()=>best).then(lyric=>{
