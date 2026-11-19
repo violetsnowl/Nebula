@@ -120,6 +120,8 @@ async function readInPage(req) {
         for (const k of ['name', 'artistName', 'albumName', 'curatorName', 'isrc', 'lastModifiedDate']) {
           if (typeof a[k] === 'string') at[k] = a[k].slice(0, 500);
         }
+        // 逐字歌词 TTML（syllable-lyrics）：只收字符串，单个上限 2MB，超了丢弃
+        for (const k of ['ttml', 'ttmlLocalizations']) if (typeof a[k] === 'string' && a[k].length <= 2097152) at[k] = a[k];
         for (const k of ['durationInMillis', 'trackCount']) if (typeof a[k] === 'number' && isFinite(a[k])) at[k] = a[k];
         for (const k of ['canEdit', 'isPublic']) if (typeof a[k] === 'boolean') at[k] = a[k];
         if (a.artwork && typeof a.artwork === 'object' && typeof a.artwork.url === 'string') at.artwork = { url: a.artwork.url.slice(0, 500) };
@@ -146,7 +148,13 @@ async function readInPage(req) {
     };
 
     const result = { status };
-    if (Array.isArray(body.data)) result.data = body.data.slice(0, 300).map(thin).filter(Boolean);
+    // 普通响应是 body.data；目录搜索的歌曲在 body.results.songs.data，同样按 thin 精简后放进 data
+    const rows = Array.isArray(body.data)
+      ? body.data
+      : body.results && body.results.songs && Array.isArray(body.results.songs.data)
+        ? body.results.songs.data
+        : null;
+    if (rows) result.data = rows.slice(0, 300).map(thin).filter(Boolean);
     if (typeof body.next === 'string' && body.next.length <= 500) result.next = body.next;
     const meta = body.meta && typeof body.meta === 'object' ? body.meta : null;
     if (meta && typeof meta.total === 'number' && isFinite(meta.total)) result.total = meta.total;
@@ -318,10 +326,27 @@ function createAppleMusicEngine({ WebContentsView, session, sheetHost, userAgent
     return run;
   }
 
+  /** 歌词 TTML 字段再核一遍：必须是字符串且不超过 2MB，否则去掉（其余字段页面里已按白名单精简）。 */
+  const TTML_MAX = 2097152;
+  function cleanRow(row) {
+    const a = row && row.attributes;
+    if (!a || typeof a !== 'object') return row;
+    let bad = false;
+    for (const k of ['ttml', 'ttmlLocalizations']) {
+      if (k in a && (typeof a[k] !== 'string' || a[k].length > TTML_MAX)) bad = true;
+    }
+    if (!bad) return row;
+    const attributes = { ...a };
+    for (const k of ['ttml', 'ttmlLocalizations']) {
+      if (k in attributes && (typeof attributes[k] !== 'string' || attributes[k].length > TTML_MAX)) delete attributes[k];
+    }
+    return { ...row, attributes };
+  }
+
   /** 只取已知字段（页面里已经精简过一次，这里再过一遍白名单）。 */
   function sanitize(raw) {
     const out = { status: Number(raw && raw.status) || 0 };
-    if (Array.isArray(raw && raw.data)) out.data = raw.data;
+    if (Array.isArray(raw && raw.data)) out.data = raw.data.map(cleanRow);
     if (typeof raw?.next === 'string') out.next = raw.next;
     if (typeof raw?.total === 'number') out.total = raw.total;
     if (Array.isArray(raw?.errors)) out.errors = raw.errors.map((e) => ({ code: String(e?.code ?? ''), status: String(e?.status ?? '') }));

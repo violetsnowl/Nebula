@@ -7,7 +7,7 @@
 1. `docs/meta/HANDOFF.md` — 协作规则与隐性约定
 2. `docs/meta/USER_PROFILE.md` — 用户画像、审美偏好、反模式
 3. `docs/meta/CONTEXT_SNAPSHOT.md` — 当前状态、活跃任务、挂起决策
-4. `docs/project/ARCHITECTURE.md` + `docs/project/CHANGE_LOG.md` 最近 20 条
+4. `docs/project/ARCHITECTURE.md`（后端先看「后端链路总览」）+ `docs/project/CHANGE_LOG.md` 最近 20 条
 5. `docs/README.md` — 文档索引与维护约定
 
 ## 硬性约定（不可自行放宽）

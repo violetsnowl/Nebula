@@ -120,6 +120,41 @@ view blocks（同层互不依赖，组合只由 App 完成）
 - [x] 9. `useStage`（最后，最高风险：hovered/visible/failed/liked/渐进揭示/PanController/虚拟化数据全部收敛；App 仅剩组合接线）
 
 
+## 后端链路总览（2026-11-19，#195；新会话先看这一节）
+
+后端只有三条链路，形状各不相同。下面两张图是现状的唯一总图，改了任何一条链路的结构都要回来更新。
+
+```mermaid
+flowchart TD
+  A[歌单里的一首歌] --> B["播放：定音源<br/>本平台取链 → 失败 / 试听 / 本平台不能取链<br/>→ 网易云、QQ、酷狗同时找同一录音，谁先拿到整首用谁"]
+  B --> C[实际在放的那首]
+  C --> D["歌词：一份为主，别家只补缺<br/>（见下图）"]
+  C --> E["评论 / 详情：取不到就换下一家<br/>本平台 → 网易云 → QQ（同一录音，标「来自 X」）"]
+```
+
+- **播放**（`SongResolver`，整条 ≤6 秒）：能本平台取链的是网易云、QQ、酷狗、酷我、波点（`PLAYABLE`）；汽水、Spotify、YouTube Music、Apple Music 永远直接走兜底。兜底时各家**并行**，各取最多 2 个通过同一录音判定的候选，第一个拿到整首的胜出（不是按顺序一家家试）。例外：QQ 登录过期时不兜底，提示重新登录。
+- **关键约定**：歌词、评论、详情都以**实际在放的那首**为准（前端 `streamTrack`），不是歌单里的原曲。原曲只作为 `origin` 提供查询用的 id（#195 起，歌词用）。
+- **评论 / 详情**（`LyricService.fetchComments` / `fetchSongDetail`）：依次兜底；翻页沿用第 0 页定下的来源。
+
+```mermaid
+flowchart TD
+  K{查缓存<br/>完整 30 天 / 不完整 6 小时} -->|有| K1[直接用]
+  K -->|没有| P[取主歌词：实际在放那首的平台]
+  P --> G{够好吗<br/>逐字、翻译都过八成}
+  G -->|够| G1[完成]
+  G -->|不够| S
+  subgraph S [同时找补丁，整条 8.5 秒内]
+    S1[AMLL 社区库<br/>按歌曲 ID]
+    S2[Apple Music<br/>需登录且有订阅]
+    S3[网易云 / QQ / 酷狗<br/>按歌名搜同一录音]
+  end
+  S --> M[按 AMLL → Apple → 网易云 → QQ → 酷狗 依次合并<br/>只补缺口，不替换已有]
+  M --> R[韩语缺罗马音本地补，写缓存]
+```
+
+- 合并规则（`lyricAlignment.enrichAligned`）：先试固定偏移对齐，不行再按正文逐行配对；只有对方的逐字确实更多时才换时间轴。主歌词没有正文时，第一个可用来源当正文：按 id 确认的同一录音（AMLL 第一轮、Apple 目录 id）保留逐字，其余要和实际在放那首时长差 ≤2 秒才保留逐字。
+- 歌词来源细节见下面「歌词新来源（#195）」。
+
 ## 后端整修 #B3：请求与媒体生命周期
 
 - `src/main/requestScope.ts`：AsyncLocalStorage 传播父截止时间/取消，阶段结束回收子请求；调用者取消经 preload → IPC → resolver → HTTP/Axios/probe。
@@ -195,6 +230,15 @@ view blocks（同层互不依赖，组合只由 App 完成）
 - `login/ytmusicLogin.ts`：登录类型 `kind: 'device'`，沿用扫码的 createQr / pollLogin 两条通道；device_code 只留在主进程，前端只拿 userCode 和验证地址；主进程按 Google 给的 interval 控制轮询频率，slow_down 加 5 秒。令牌存 CookieStore 的 `ytmusic`（cookies = access_token，token = refresh_token）。退出登录时 `onCookieClear` 拿到清除前的记录，尽力撤销 refresh_token。
 - 前端 `AccountDock.tsx` 的 `YtmusicLogin`：三步说明；大号代码整块点击复制；授权页地址是可点击的链接（默认浏览器打开，文字可选中）并带「复制链接」；主按钮「复制代码并打开授权页」（#186）。
 - 回归：`scripts/ytmusic-regression.mjs`（23 项，离线）。
+
+## 歌词新来源：AMLL 社区库与 Apple 逐字歌词（#195，2026-11-19）
+
+- **TTML 解析**（`parsers/ttml.ts`，自写，不依赖 XML 库；参考项目用的解析库是 AGPL，不能用）：`parseTtml` 支持 `itunes:timing` Word / Line、各种时间格式、嵌套 span、英文词间空格并到前一个词、实体；翻译 / 罗马音两种写法都认——行内 `ttm:role="x-translation"` / `"x-roman"`（AMLL）和 `<head>` 里按 `itunes:key` 对应的 `<translations>` / `<transliterations>`（Apple，优先 zh-Hans）。背景人声 `x-bg`（连同它的翻译）第一版丢掉；`ttm:agent`（对唱）不读。严格模式：带 DTD、结构错误、超过 2MB 一律返回空结果。`fromTtml` 产出与 QRC / KRC 相同的 `Lyric`（逐字转成 YRC 文本）。
+- **AMLL**（`services/amllLyrics.ts`）：`GET https://api.amll.dev/v1/lyrics/get?<键>=<id>`，键按 ncm → qq → apple → spotify → isrc 的顺序有哪个用哪个，命中即停（同一首最多 3 次请求）。QQ 只认数字 songid（`extra.songId`），songmid 查不到。命中后核对记录的 id 列表确实含查询的 id。走 `HttpClient.requestRaw`，只带歌曲 id，不带 Cookie / 账号信息。缓存：命中 24 小时、未收录 6 小时，最多 1000 条；429 / 5xx 后 5 分钟全局熔断。
+- **Apple 逐字歌词**（`services/appleMusicLyrics.ts`）：只有 CookieStore 里有 Apple 登录标记时才工作（没有就不唤起页面）。原曲或实际在放那首是 Apple 曲目时按目录 id 直取；否则用「歌名 + 第一个歌手」搜 Apple 目录，候选经 `recordingMatch` 判同一录音再取。请求 `/v1/catalog/{地区}/songs/{id}/syllable-lyrics?l=zh-Hans-CN&extend=ttmlLocalizations`（带中文翻译）；页面引擎白名单相应放行 `ttml` / `ttmlLocalizations`（单个 ≤2MB）和搜索结果 `results.songs.data`。总时限 4 秒，有缓存。
+- **并入 `LyricService.fetchLyric(track, signal, origin?)`**：只在主歌词不够好时查；AMLL 第一轮（实际在放那首 + 原曲的 id）、Apple 与网易云 / QQ / 酷狗搜索并行；AMLL 第一轮没命中而搜索找到了网易云 / QQ 的同一首时，用它们的 id 再查一次（只用整体截止前剩余时间，命中后按那首的时长核对逐字）。各自预算：AMLL 3.5 秒（第二轮 ≤2.5 秒）、Apple 4.2 秒；任一来源失败 / 超时都不影响其余。`provenance` 记 `amll` / `applemusic`，开发者面板（Ctrl+Shift+L）显示「AMLL 社区库」「Apple Music」。
+- **前端**：兜底播放时 `useLyrics` 多传 `origin: toBackendTrack(song)`，缓存键和歌词身份仍按实际在放那首。
+- 回归：`ttml-regression`（17 项）、`lyric-sources-regression`（23 项），引擎回归加 3 项。
 
 ## Apple Music（#191，2026-11-19）
 

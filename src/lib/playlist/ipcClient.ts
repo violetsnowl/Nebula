@@ -206,7 +206,8 @@ export interface DesktopApi {
   cancelResolve?: (requestId: string) => IpcResult<boolean>;
   songQualities: (track: DesktopTrack) => IpcResult<DesktopQualityOption[]>;
   fallbackSong: (track: DesktopTrack) => IpcResult<DesktopTrack | null>;
-  fetchLyric: (track: DesktopTrack, options?: {requestId:string}) => IpcResult<unknown>;
+  /** origin：兜底播放时用户点的原曲，只给 AMLL / Apple 歌词来源提供查询 id（缓存键和身份仍按 track）。 */
+  fetchLyric: (track: DesktopTrack, options?: {requestId:string; origin?: DesktopTrack}) => IpcResult<unknown>;
   coverInfo?: (track:DesktopTrack) => IpcResult<DesktopCoverInfo|null>;
   fetchComments: (track: DesktopTrack, page?: number) => IpcResult<DesktopCommentResult | null>;
   songDetail: (track: DesktopTrack, opts?: { withCredits?: boolean }) => IpcResult<DesktopSongDetail | null>;

@@ -147,11 +147,13 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
       fallbackUrl: deps.audioProxy.urlFor(result.fallbackUrl),
     };
   });
-  safe('nebula:lyric', async ({track,requestId}:{track:Track;requestId?:string},event)=>{
+  safe('nebula:lyric', async ({track,requestId,origin}:{track:Track;requestId?:string;origin?:Track},event)=>{
     const requests=requestsFor(event),control=new AbortController();
     const key=typeof requestId==='string'?requestId.slice(0,96):'';
     if(key){requests.get(key)?.abort();if(requests.size>=16){const first=requests.keys().next().value!;requests.get(first)?.abort();requests.delete(first);}requests.set(key,control);}
-    try{return await deps.lyricService.fetchLyric(track,control.signal);}
+    // origin：兜底播放时的原曲，只用来给 AMLL / Apple 提供查询 id；不是对象就忽略
+    const from=origin && typeof origin==='object' && typeof origin.platform==='string' && typeof origin.sourceId==='string'?origin:undefined;
+    try{return await deps.lyricService.fetchLyric(track,control.signal,from);}
     finally{if(key && requests.get(key)===control)requests.delete(key);}
   });
   safe('nebula:comments', async ({ track, page }: { track: Track; page?: number }) =>

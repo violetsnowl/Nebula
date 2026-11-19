@@ -82,6 +82,10 @@ export interface AppleMusicResource {
     canEdit?: boolean;
     isPublic?: boolean;
     lastModifiedDate?: string;
+    /** 逐字歌词 TTML（syllable-lyrics 接口；单个上限 2MB，页面里超了就丢弃）。 */
+    ttml?: string;
+    /** 带翻译 / 罗马音的 TTML（请求带 extend=ttmlLocalizations 且带 l= 语言时才有）。 */
+    ttmlLocalizations?: string;
   };
   /** 资料库曲目带 include=catalog 时，对应的目录曲目（页面里只留 id 和 isrc）。 */
   relationships?: { catalog?: { data?: Array<{ id?: string; attributes?: { isrc?: string } }> } };
@@ -275,6 +279,37 @@ export class AppleMusicClient {
       });
     }
     return out;
+  }
+
+  /**
+   * 目录曲目的逐字歌词 TTML：带 l=zh-Hans-CN&extend=ttmlLocalizations 时优先用 ttmlLocalizations（含中文翻译），
+   * 没有就用 ttml。404（没有歌词）返回 null，其他错误照常抛。
+   */
+  async syllableLyrics(storefront: string, catalogId: string): Promise<string | null> {
+    try {
+      const res = await this.request(`/v1/catalog/${catalogStorefront(storefront)}/songs/${segment(catalogId, '曲目 ID')}/syllable-lyrics`, {
+        l: 'zh-Hans-CN',
+        extend: 'ttmlLocalizations',
+      });
+      const a = res.data?.[0]?.attributes;
+      const text = a?.ttmlLocalizations || a?.ttml;
+      return typeof text === 'string' && text ? text : null;
+    } catch (err) {
+      if (err instanceof AppleMusicHttpError && err.status === 404) return null;
+      throw err;
+    }
+  }
+
+  /** 目录搜歌（只要歌曲）：结果在响应体 results.songs.data，页面里已放进 data。 */
+  async searchCatalogSongs(storefront: string, term: string, limit = 8): Promise<AppleMusicResource[]> {
+    const q = String(term ?? '').trim().slice(0, 150);
+    if (!q) return [];
+    const res = await this.request(`/v1/catalog/${catalogStorefront(storefront)}/search`, {
+      term: q,
+      types: 'songs',
+      limit: Math.max(1, Math.min(25, Math.floor(limit) || 8)),
+    });
+    return res.data ?? [];
   }
 
   /** 资料库歌单的第一页第一首（补封面用）。 */

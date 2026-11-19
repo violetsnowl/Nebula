@@ -16,6 +16,8 @@ const {
   createAdapters,
   SongResolver,
   LyricService,
+  AmllLyrics,
+  AppleMusicLyrics,
   NeteaseLogin,
   QqLogin,
   KugouLogin,
@@ -565,7 +567,11 @@ app.whenReady().then(async () => {
   );
   // 歌词磁盘缓存 + 自定义覆盖（存 userData，跨重启保留）
   const lyricCache = new LyricCache(app.getPath('userData'));
-  const lyricService = new LyricService(adapters, lyricCache);
+  // 逐字歌词的额外来源：AMLL 社区库（只带歌曲 id，不带 Cookie）、Apple Music（没有登录标记时不碰页面引擎）
+  const lyricService = new LyricService(adapters, lyricCache, {
+    amll: new AmllLyrics(http),
+    appleMusic: new AppleMusicLyrics(adapters.applemusic.client, cookies),
+  });
   const wallpaperLibrary = new WallpaperLibrary();
   protocol.handle('wallpaper', (request) => wallpaperLibrary.handle(request));
   const login = new NeteaseLogin(http, cookies);

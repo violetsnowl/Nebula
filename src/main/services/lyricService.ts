@@ -17,8 +17,11 @@ import { matchScore } from './songResolver';
 import { recordingMatch, searchKeyword } from './recordingMatch';
 import { normalizeQuery, titleSimilarity } from '../adapters/mappers';
 import { LyricCache } from './lyricCache';
-import { withRequestScope, throwIfCancelled } from '../requestScope';
+import { withRequestScope, throwIfCancelled, requestScope } from '../requestScope';
 import { enrichAligned, lyricCoverage } from './lyricAlignment';
+import type { AmllSource } from './amllLyrics';
+import type { AppleLyricsSource } from './appleMusicLyrics';
+import { LYRIC_ID_ORDER, lyricIdsOf, mergeLyricIds, type LyricIdKey, type LyricIds } from './lyricSourceIds';
 
 
 /** 歌词/评论统一入口：平台失败返回 null，不向上抛错。 */
@@ -53,14 +56,72 @@ export function withKoreanRoman(l: Lyric): Lyric {
   return { ...l, romalrc, romanRaw: romalrc, romanGenerated: missing.length };
 }
 
+/** 逐字歌词的额外来源（构造时注入，测试里可以换成假的）。 */
+export interface LyricExtraSources {
+  /** AMLL 社区逐字歌词库。 */
+  amll?: AmllSource;
+  /** Apple Music 逐字歌词（需要用户登录过 Apple Music）。 */
+  appleMusic?: AppleLyricsSource;
+}
+
+/** 新来源各自的预算（毫秒）：AMLL 第一轮与搜索并行；第二轮在搜索结束后，只用剩下的时间。 */
+const AMLL_BUDGET_MS = 3500;
+const AMLL_SECOND_BUDGET_MS = 2500;
+const APPLE_BUDGET_MS = 4200;
+
+/** 待合并的一份歌词：trusted = 按 id 确认是同一录音（AMLL、Apple 目录 id），不再要求时长差 ≤2 秒。 */
+interface LyricHit { lyric: Lyric; duration: number; trusted: boolean }
+
 export class LyricService {
   constructor(
     private adapters: AdapterMap,
     private cache?: LyricCache,
+    private extra: LyricExtraSources = {},
   ) {}
 
+  /** AMLL 查一次；任何失败都当没有。failed=true 表示来源出错 / 超时（不同于「没收录」），调用方不要再试第二轮。 */
+  /**
+   * fromSearch：第二轮用的是「按歌名搜到的网易云 / QQ 那首」的 id——那首只是歌名评分过线、不是严格确认的同一录音，
+   * 所以命中后不算 trusted，时长取那首的时长，照常按「时长差 ≤2 秒」判断能不能保留逐字。
+   */
+  private async amllHit(ids: LyricIds, budgetMs: number, fromSearch?: (key: LyricIdKey, id: string) => number): Promise<{ hit: LyricHit | null; failed: boolean }> {
+    if (!this.extra.amll || !LYRIC_ID_ORDER.some((k) => ids[k] !== undefined)) return { hit: null, failed: false }; // 没有任何可查的 id 就不查
+    const amll = this.extra.amll;
+    try {
+      // 自己再卡一道预算：来源卡住也只拖到预算为止，不会拖到整体 8.5 秒把别的结果一起丢掉
+      const hit = await withRequestScope(budgetMs, () => amll.lookup(ids));
+      if (!hit?.lyric?.lines?.length) return { hit: null, failed: false };
+      const sourceId = `${hit.matchedBy}:${hit.id}`;
+      const lyric = { ...hit.lyric, identity: { platform: 'amll', sourceId }, provenance: [{ platform: 'amll', sourceId, kind: 'fallback' as const }] };
+      if (fromSearch) return { hit: { lyric, duration: fromSearch(hit.matchedBy, hit.id) || 0, trusted: false }, failed: false };
+      return { hit: { lyric, duration: 0, trusted: true }, failed: false };
+    } catch {
+      return { hit: null, failed: true };
+    }
+  }
+
+  /** Apple Music 查一次；任何失败都当没有。 */
+  private async appleHit(track: Track, origin?: Track): Promise<LyricHit | null> {
+    if (!this.extra.appleMusic) return null;
+    const apple = this.extra.appleMusic;
+    try {
+      const hit = await withRequestScope(APPLE_BUDGET_MS, () => apple.lookup(track, origin));
+      if (!hit?.lyric?.lines?.length) return null;
+      return {
+        lyric: { ...hit.lyric, identity: { platform: 'applemusic', sourceId: hit.catalogId }, provenance: [{ platform: 'applemusic', sourceId: hit.catalogId, kind: 'fallback' }] },
+        duration: Number(hit.duration) || 0,
+        trusted: hit.via === 'id',
+      };
+    } catch {
+      return null;
+    }
+  }
+
   private lyricJobs=new Map<string,{control:AbortController;users:number;done:boolean;promise:Promise<Lyric|null>}>();
-  async fetchLyric(track: Track, signal?:AbortSignal): Promise<Lyric | null> {
+  /**
+   * origin：兜底播放时用户点的原曲（只用来提供 AMLL / Apple 查询用的 id）；缓存键和歌词身份仍按 track（实际供流那首）。
+   */
+  async fetchLyric(track: Track, signal?:AbortSignal, origin?: Track): Promise<Lyric | null> {
     if(signal?.aborted)return null;
     const cached=this.cache?.get(track.platform,track.sourceId);if(cached)return withKoreanRoman(cached);
     const key=track.platform+':'+track.sourceId;
@@ -77,23 +138,40 @@ export class LyricService {
       const good=(l:Lyric|null):boolean=>{if(!l)return false;const c=lyricCoverage(l);return c.textLines>0 && c.wordLines/c.textLines>=.8 && c.translatedLines/c.textLines>=.8};
       if(good(best))return best;
       const sources=(['netease','qq','kugou'] as Platform[]).filter(p=>p!==track.platform && this.adapters[p]?.searchSongs);
+      // AMLL / Apple 和网易云 / QQ / 酷狗的搜索并行；新来源失败或超时只当没有，不影响其余。
+      const ids=mergeLyricIds(lyricIdsOf(track),lyricIdsOf(origin));
+      const amllFirst=this.amllHit(ids,AMLL_BUDGET_MS),apple=this.appleHit(track,origin);
       const candidates=await Promise.all(sources.map(async platform=>{
         try{
           const rows=await withRequestScope(1800,()=>this.adapters[platform].searchSongs!(searchKeyword(track),10));
           const match=rows.map(t=>({t,score:matchScore(t,track)})).filter(x=>x.score>=.9).sort((a,b)=>b.score-a.score)[0];
           const lyric=match?await fetch(match.t,'fallback'):null;
-          return lyric?{lyric,from:match!.t}:null;
+          return match?{lyric,from:match.t}:null;
         }catch{return null;}
       }));
       throwIfCancelled();
-      // 固定平台顺序合并，网络完成顺序不改变结果。
-      for(const hit of candidates){
+      const first=await amllFirst;
+      let amll=first.hit;
+      if(!amll && !first.failed && this.extra.amll){
+        // 第一轮没命中：搜到的网易云 / QQ 同一首带来了新 id，再查一次。
+        const found=mergeLyricIds(ids,...candidates.map(c=>c?lyricIdsOf(c.from):undefined));
+        // 第二轮只用整体截止前剩下的时间（留 600ms 给合并），不够就不查
+        const left=(requestScope()?.deadline??Infinity)-Date.now()-600;
+        // 命中的 id 来自哪首搜到的歌，就用那首的时长核对（见 amllHit 的 fromSearch）
+        const durationOf=(k:LyricIdKey,id:string)=>Number(candidates.find(c=>c && lyricIdsOf(c.from)[k]===id)?.from.duration)||0;
+        if(LYRIC_ID_ORDER.some(k=>found[k]!==ids[k]) && left>=500)amll=(await this.amllHit(found,Math.min(AMLL_SECOND_BUDGET_MS,left),durationOf)).hit;
+      }
+      const appleResult=await apple;
+      throwIfCancelled();
+      // 固定顺序合并：AMLL → Apple → 网易云 → QQ → 酷狗，网络完成顺序不改变结果。
+      const hits:Array<LyricHit|null>=[amll,appleResult,...candidates.map(c=>c?.lyric?{lyric:c.lyric,duration:Number(c.from.duration),trusted:false}:null)];
+      for(const hit of hits){
         if(!hit)continue;
-        const {lyric,from}=hit;
+        const {lyric}=hit;
         if(!best){
-          // 无主源正文时无法用正文锚点核对跨源时间轴：同一录音且时长差 ≤2 秒才保留逐字，否则只给整句。
-          const diff=Math.abs(Number(from.duration)-Number(track.duration));
-          const sameTimeline=Number(from.duration)>0 && Number(track.duration)>0 && diff<=2;
+          // 无主源正文时无法用正文锚点核对跨源时间轴：按 id 确认的同一录音，或同一录音且时长差 ≤2 秒才保留逐字，否则只给整句。
+          const diff=Math.abs(hit.duration-Number(track.duration));
+          const sameTimeline=hit.trusted || (hit.duration>0 && Number(track.duration)>0 && diff<=2);
           best=sameTimeline?{...lyric,incomplete:true}:{...lyric,yrc:undefined,qrc:undefined,krc:undefined,incomplete:true};
         }else best=enrichAligned(best,lyric);
       }

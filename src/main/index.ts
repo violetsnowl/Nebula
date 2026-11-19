@@ -36,6 +36,12 @@ export { recordingMatch, identityText, searchKeyword } from './services/recordin
 
 export * from './parsers/timedLyrics';
 
+export * from './parsers/ttml';
+
+export * from './services/amllLyrics';
+export * from './services/appleMusicLyrics';
+export * from './services/lyricSourceIds';
+
 export * from './services/lyricAlignment';
 
 export * from './services/coverService';

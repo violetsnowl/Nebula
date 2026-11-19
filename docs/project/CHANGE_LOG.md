@@ -6,6 +6,38 @@
 
 ---
 
+## #195 — 2026-11-19 — 歌词新来源：AMLL 社区逐字歌词库与 Apple 逐字歌词；后端链路总览
+
+**背景**（用户 2026-11-19）
+- 第二阶段按功能横向补全，用户定先做歌词来源；方案（两个新来源并进现有补全流程、只补缺口、第一版不显示背景人声和对唱）经用户确认。
+- 用户说自己对后端机制「有点失控、理不清路径」：画了播放 / 歌词 / 评论详情三条链路的总图，写进 ARCHITECTURE。
+
+**调研实测**（用户真实配置副本，只记计数）
+- AMLL（`api.amll.dev`）：按网易云 / QQ 数字 / Apple / Spotify id 或 isrc 都能查；QQ songmid 查不到。用户网易云 150 首命中 24 首，全是逐字。
+- Apple `syllable-lyrics`：用户资料库 60 首 59 首有歌词（37 逐字）；带 `l=zh-Hans-CN&extend=ttmlLocalizations` 附中文翻译；网易云的歌去 Apple 目录搜，40 首配上 33 首、21 首逐字。
+- 参考项目的 TTML 解析库是 AGPL，自写解析器。
+
+**改动**（代码由 implementer 子代理写，中途网络断开一次后续上；主对话审查、收紧一条规则、真实文件与真实账号验证）
+- 新增 `parsers/ttml.ts`（TTML 子集解析 + `fromTtml`）、`services/amllLyrics.ts`、`services/appleMusicLyrics.ts`、`services/lyricSourceIds.ts`。
+- `LyricService.fetchLyric(track, signal, origin?)`：主歌词不够好时，AMLL / Apple 与网易云 / QQ / 酷狗搜索并行，按 AMLL → Apple → 网易云 → QQ → 酷狗合并；各自有预算，失败不影响其余。
+- 主对话收紧：AMLL 第二轮用的是按歌名搜到的那首的 id，命中后不算「按 id 确认的同一录音」，没有主歌词时仍按那首时长核对（差 >2 秒只给整句）；补了对应回归。
+- 页面引擎白名单放行 `ttml` / `ttmlLocalizations`（≤2MB）和搜索结果；`AppleMusicClient` 加 `syllableLyrics` / `searchCatalogSongs`。
+- 前端：兜底播放时歌词请求多带原曲（`origin`），缓存键不变；开发者面板显示「AMLL 社区库」「Apple Music」和合并链。
+- 测试：`ttml-regression`（17）、`lyric-sources-regression`（23）、引擎回归 +3，接入 `qa:backend`。fixture 全是编的句子。
+- 文档：ARCHITECTURE 新增「后端链路总览」（两张图）与「歌词新来源」，HANDOFF / AGENTS 恢复路径指向总览；NOTES、完成度表（逐字 / 跨平台补全两行、缺陷清单第 1 条）、快照。
+
+**验证**
+- `pnpm build`、`pnpm qa:backend`（全绿）、`pnpm qa`（控制台错误 0）、`pnpm build:desktop`。
+- 真实 AMLL 文件：日文歌翻译 + 罗马音 54/54、英文歌翻译 85/85，背景人声里的翻译随背景人声丢掉；逐字行全部识别。
+- 前后对比（真实配置副本，去掉 Spotify 令牌、不带歌词缓存）：网易云「我喜欢的音乐」抽 120 首——逐字过八成 现有 53 → 加 AMLL 60 → 再加 Apple 60；翻译过八成 67 / 68 / 67；用时中位 1.5 → 2.2 秒、95% 3.1 → 4.7 秒（只有主歌词不够好的歌才多等）。AMLL 在 8 首、Apple 在 10 首里参与了合并。Apple 资料库 26 首（实际经 QQ 出声）本来就 26/26 完整。
+- 第一次对比时网易云接口大面积超时（用户确认是网络波动），结果作废后重跑。
+
+**遗留**
+- 瓶颈在合并对不上：剩下一半没逐字的网易云歌，QQ / Apple 大多有逐字，但时间轴或分句对不上被拒。下一步先统计卡在哪条规则。
+- 背景人声、对唱信息第一版丢掉；要显示需先出样张。
+
+---
+
 ## #194 — 2026-11-19 — 平台 logo：恢复彩色；QQ / Spotify / Apple Music 换新图；清理不用的 logo
 
 **背景**（用户 2026-11-19）：各家平台图标全是黑白，看着奇怪，要恢复彩色；用户在 `docs/logo/` 放了 QQ、Spotify、Apple Music 的新 logo，要换上看效果。桌面验收两轮后满意。

@@ -12,7 +12,7 @@
 2. 本文件（HANDOFF.md）— 协作规则 + 工作区拓扑
 3. `docs/meta/USER_PROFILE.md` — 用户画像与审美偏好
 4. `docs/meta/CONTEXT_SNAPSHOT.md` — 当前状态与活跃任务
-5. `docs/project/PROJECT.md` + `docs/project/ARCHITECTURE.md` — 总览、命令、架构与依赖规则
+5. `docs/project/PROJECT.md` + `docs/project/ARCHITECTURE.md` — 总览、命令、架构与依赖规则；**后端先看 ARCHITECTURE「后端链路总览」**（播放、歌词、评论 / 详情三条链路的总图，2026-11-19 起）
 6. `docs/design/NEBULA_UI_SYSTEM.md` — 全局 UI 真源（2026-11 冻结）：光学材质（液态 / 磨砂）、环境光、token、交互状态、卡片、组件、实施批次。旧的 `UI_SPEC.md` 已被取代
 7. `docs/design/LYRICS_SYSTEM.md` — Z1 穿梭歌词设计规格（参数与已废弃决策）
 8. `docs/project/CHANGE_LOG.md` 最近 20 条 — 了解最近改动脉络与验证方式

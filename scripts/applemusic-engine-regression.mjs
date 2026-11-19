@@ -449,4 +449,56 @@ await test('callMany：和单个请求共用队列（串行，不会和别的读
   ]);
 });
 
+/* ---------- 逐字歌词（syllable-lyrics）与目录搜索 ---------- */
+await test('歌词：ttml / ttmlLocalizations 字符串带出页面（≤2MB），超限 / 非字符串丢弃，令牌与多余字段仍不出页面', async () => {
+  const { engine, state } = makeEnv();
+  const xml = '<tt>' + 'x'.repeat(1000) + '</tt>';
+  const ok = { id: '111', type: 'syllable-lyrics', attributes: { ttml: xml, ttmlLocalizations: xml + 'L', musicUserToken: 'USER-TOKEN-SECRET', role: 7 } };
+  state.music = async () => ({ status: 200, data: { data: [ok], token: 'USER-TOKEN-SECRET' }, headers: { Authorization: 'Bearer DEV-TOKEN-SECRET' } });
+  const r = await engine.call({ path: '/v1/catalog/cn/songs/111/syllable-lyrics', query: { l: 'zh-Hans-CN', extend: 'ttmlLocalizations' } });
+  assert.deepEqual(r.data[0], { id: '111', type: 'syllable-lyrics', href: '', attributes: { ttml: xml, ttmlLocalizations: xml + 'L' } });
+  assert.ok(!/SECRET|musicUserToken|Authorization/i.test(JSON.stringify(r)));
+  assert.deepEqual(state.apiCalls[0], { path: '/v1/catalog/cn/songs/111/syllable-lyrics', query: { l: 'zh-Hans-CN', extend: 'ttmlLocalizations' } });
+  const MAX = 2 * 1024 * 1024;
+  state.music = async () => ({ status: 200, data: { data: [
+    { id: 'a', attributes: { ttml: 'y'.repeat(MAX), ttmlLocalizations: 'y'.repeat(MAX + 1) } },
+    { id: 'b', attributes: { ttml: { evil: 1 }, ttmlLocalizations: 42 } },
+  ] } });
+  const big = await engine.call({ path: '/v1/catalog/cn/songs/1/syllable-lyrics' });
+  assert.equal(big.data[0].attributes.ttml.length, MAX, '恰好 2MB 保留');
+  assert.ok(!('ttmlLocalizations' in big.data[0].attributes), '超过 2MB 丢弃');
+  assert.deepEqual(big.data[1].attributes, {}, '非字符串丢弃');
+});
+
+await test('歌词：主进程 sanitize 再核一遍 ttml 字段（页面精简之外的第二道），超限 / 非字符串被去掉', async () => {
+  const { engine, state } = makeEnv();
+  // 绕过页面里的精简：让「页面」直接返回带超大字段的原始结果
+  const MAX = 2 * 1024 * 1024;
+  const v = (await (async () => { await engine.call({ path: '/v1/me/storefront' }); return state.views[0]; })());
+  const orig = v.webContents.executeJavaScript;
+  v.webContents.executeJavaScript = async (code, ...rest) => {
+    if (code.includes('readInPage')) return { status: 200, data: [{ id: 'z', attributes: { ttml: 'q'.repeat(MAX + 5), ttmlLocalizations: 'ok', name: 'n' } }, { id: 'w', attributes: { ttml: 5 } }] };
+    return orig(code, ...rest);
+  };
+  const r = await engine.call({ path: '/v1/catalog/cn/songs/1/syllable-lyrics' });
+  assert.deepEqual(r.data[0].attributes, { ttmlLocalizations: 'ok', name: 'n' });
+  assert.deepEqual(r.data[1].attributes, {});
+});
+
+await test('目录搜索：响应体 results.songs.data 按 thin 精简后放进返回结果的 data；普通 data 仍优先', async () => {
+  const { engine, state } = makeEnv();
+  state.music = async () => ({ status: 200, data: { results: { songs: { data: [dirtyTrack(), { id: '2', type: 'songs', attributes: { name: 'n2', secret: 'USER-TOKEN-SECRET' } }], href: '/x', next: '/y' }, albums: { data: [{ id: 'no' }] } }, meta: { results: { order: ['songs'] } } } });
+  const r = await engine.call({ path: '/v1/catalog/cn/search', query: { term: '编的歌 编的歌手', types: 'songs', limit: 8 } });
+  assert.deepEqual(Object.keys(r).sort(), ['data', 'status']);
+  assert.equal(r.data.length, 2);
+  assert.equal(r.data[0].attributes.isrc, 'X1');
+  assert.deepEqual(r.data[1], { id: '2', type: 'songs', href: '', attributes: { name: 'n2' } });
+  assert.ok(!/SECRET|developerToken|musicUserToken|Authorization|albums|\"no\"/i.test(JSON.stringify(r)));
+  assert.deepEqual(state.apiCalls[0], { path: '/v1/catalog/cn/search', query: { term: '编的歌 编的歌手', types: 'songs', limit: 8 } });
+  state.music = async () => ({ status: 200, data: { data: [{ id: 'top', type: 't' }], results: { songs: { data: [{ id: 'other' }] } } } });
+  assert.equal((await engine.call({ path: '/v1/catalog/cn/search' })).data[0].id, 'top');
+  state.music = async () => ({ status: 200, data: { results: { songs: { data: 'bad' } } } });
+  assert.deepEqual(await engine.call({ path: '/v1/catalog/cn/search' }), { status: 200 });
+});
+
 say(`Apple Music 页面引擎回归 ${passed}/${passed}`);

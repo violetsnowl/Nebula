@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { audioPlayer } from '../../lib/audio/AudioPlayer';
-import { hasDesktopAPI, streamTrack } from '../../lib/playlist/ipcClient';
+import { hasDesktopAPI, streamTrack, toBackendTrack } from '../../lib/playlist/ipcClient';
 import { alignWordsToText, attachRoman, filterCreditLines, mergeWordLyrics, type LyricLineUI } from '../../lib/lyrics';
 import type { ListenSettingsPatch, LyricVisualSettings } from '../../lib/lyricSettings';
 import type { Track } from '../../lib/catalog';
@@ -12,6 +12,8 @@ export interface LyricDebugInfo {
   hasQrc: boolean;
   totalLines: number;
   wordLines: number;
+  /** 合并来源链（后端 provenance，按合并顺序）：正文来源之外补全过的平台。 */
+  provenance?: Array<{ platform: string; kind: string }>;
 }
 
 /** 后端歌词结果（unknown）防御性归一化。 */
@@ -132,19 +134,26 @@ export function useLyrics() {
       }
       try {
         requestId=`lyric-${seq}-${Date.now()}`;
-        const res = await window.nebulaAPI!.fetchLyric(streamTrack(song),{requestId});
+        // 兜底播放时再带上原曲（Spotify id / Apple 目录 id / isrc 供 AMLL、Apple 歌词查询）；缓存键仍按实际供流那首
+        const res = await window.nebulaAPI!.fetchLyric(streamTrack(song),song.via?{requestId,origin:toBackendTrack(song)}:{requestId});
         if (seq !== loadSeqRef.current) return;
         const data = res.ok ? res.data : null;
         const lines = normalizeLyricLines(data, song.title, song.artist);
         setLyricLines(lines);
         if (data && typeof data === 'object') {
-          const src = data as { source?: unknown; yrc?: unknown; qrc?: unknown };
+          const src = data as { source?: unknown; yrc?: unknown; qrc?: unknown; provenance?: unknown };
+          const provenance = Array.isArray(src.provenance)
+            ? src.provenance
+                .filter((p): p is { platform: string; kind: string } => !!p && typeof p.platform === 'string' && typeof p.kind === 'string')
+                .map((p) => ({ platform: p.platform, kind: p.kind }))
+            : undefined;
           setLyricDebugInfo({
             source: typeof src.source === 'string' ? src.source : 'unknown',
             hasYrc: typeof src.yrc === 'string' && src.yrc.length > 0,
             hasQrc: typeof src.qrc === 'string' && src.qrc.length > 0,
             totalLines: lines.length,
             wordLines: lines.filter((l) => !!l.words?.length).length,
+            provenance,
           });
         } else {
           setLyricDebugInfo(null);

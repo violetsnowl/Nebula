@@ -12,7 +12,18 @@ interface ProbeInfo {
   hasQrc: boolean;
   totalLines: number;
   wordLines: number;
+  provenance?: Array<{ platform: string; kind: string }>;
 }
+
+/** 平台代号 → 面板里显示的名字；没登记的原样显示。 */
+const SOURCE_LABELS: Record<string, string> = {
+  amll: 'AMLL 社区库',
+  applemusic: 'Apple Music',
+  netease: '网易云',
+  qq: 'QQ 音乐',
+  kugou: '酷狗',
+};
+const sourceLabel = (p: string): string => SOURCE_LABELS[p] ?? p;
 
 const STORAGE_KEY = 'music-nebula.dev.lyric-probe';
 
@@ -59,7 +70,10 @@ export const LyricSourceProbe = memo(function LyricSourceProbe({ info }: { info:
       <div className="lyric-probe-title">歌词来源 · Ctrl+Shift+L 隐藏</div>
       {info ? (
         <>
-          <div>来源：{info.source}</div>
+          <div>来源：{sourceLabel(info.source)}</div>
+          {info.provenance && info.provenance.length > 0 && (
+            <div>合并：{info.provenance.map((p) => sourceLabel(p.platform)).join(' → ')}</div>
+          )}
           <div>
             级别：<span className={info.wordLines > 0 ? 'ok' : 'no'}>{level}</span>
           </div>

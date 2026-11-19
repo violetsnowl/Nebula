@@ -103,6 +103,14 @@
 - **令牌**：访问令牌实测约 23 小时有效（expires_in 约 83000 秒），仍按 50 分钟提前续；续期响应不带新 refresh_token。无效 access_token → youtubei HTTP 401；无效 refresh_token → HTTP 400 `invalid_grant`；轮询等待中是 HTTP 200 + `authorization_pending`。
 - **封面**：`i.ytimg.com`、`yt3.ggpht.com`、`yt3.googleusercontent.com` 都带 `Access-Control-Allow-Origin: *`，不用补跨域头；视频缩略图是 16:9。
 
+### 歌词新来源（2026-11-19，#195）
+
+- **AMLL 接口**：`api.amll.dev/v1/lyrics/get` 支持 `ncmMusicId`、`qqMusicId`（只认数字 songid，songmid 返回 404）、`appleMusicId`、`spotifyId`、`isrc`；没收录是 HTTP 404；`/v1/lyrics/search?q=` 能按文字搜，记录里同时带各平台 id。约 0.5 秒。根路径 404 是正常的。
+- **AMLL 覆盖**：用户网易云歌单抽 150 首命中 24 首（16%），命中的全是逐字、17 首带翻译——覆盖不广但质量高（社区手工打轴，有背景人声、对唱标记）。真实文件实测：日文歌带翻译 + 罗马音、英文歌带翻译都能完整解析；背景人声里的翻译随背景人声一起丢掉（如某首 82 条翻译、63 行正文）。
+- **Apple 逐字歌词覆盖**：用户 Apple 资料库 60 首 59 首有歌词（37 逐字、22 只有逐行），13 首有背景人声，多数带演唱者标记；带 `l=zh-Hans-CN&extend=ttmlLocalizations` 时约一半附中文翻译；约 0.8 秒一首。用网易云的歌按「歌名 + 第一个歌手」去 Apple 目录搜，40 首配上 33 首、21 首拿到逐字（中日韩歌 24 首里 9 首）。没订阅的号读不了（同资料库）。
+- **测 Apple 要连 Cookie 加密密钥一起复制**：Electron 的 Cookie 用配置根目录 `Local State` 里的密钥加密，只复制 `Partitions\applemusic-login` 读不出登录。
+- **参考项目的 TTML 解析库 `@applemusic-like-lyrics/ttml` 是 AGPL**，只能借思路。
+
 ### Apple Music（2026-11-19，#191）
 
 - **Electron 里能用**：官方 Electron 不带 Widevine，但 music.apple.com 照样加载、MusicKit 照样初始化（版本 `playback/AppleMusic-2646.4.0-external`），只是不能出声；只有 `mk.api.music`，没有 `mk.api.v3`。Apple ID 在页面里直接登录（不弹新窗口，Apple 没拦），分区持久化后重启仍登录。UA 要去掉 Electron 片段。
