@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { audioPlayer } from '../../lib/audio/AudioPlayer';
 import { hasDesktopAPI, streamTrack, toBackendTrack } from '../../lib/playlist/ipcClient';
-import { alignWordsToText, attachRoman, filterCreditLines, mergeWordLyrics, type LyricLineUI } from '../../lib/lyrics';
+import { normalizeLyricLines, type LyricLineUI } from '../../lib/lyrics';
 import type { ListenSettingsPatch, LyricVisualSettings } from '../../lib/lyricSettings';
 import type { Track } from '../../lib/catalog';
 
@@ -14,31 +14,6 @@ export interface LyricDebugInfo {
   wordLines: number;
   /** 合并来源链（后端 provenance，按合并顺序）：正文来源之外补全过的平台。 */
   provenance?: Array<{ platform: string; kind: string }>;
-}
-
-/** 后端歌词结果（unknown）防御性归一化。 */
-function normalizeLyricLines(data: unknown, title?: string, artist?: string): LyricLineUI[] {
-  if (!data || typeof data !== 'object') return [];
-  const lines = (data as { lines?: unknown }).lines;
-  if (!Array.isArray(lines)) return [];
-  const out: LyricLineUI[] = [];
-  for (const raw of lines) {
-    if (!raw || typeof raw !== 'object') continue;
-    const r = raw as { timeMs?: unknown; text?: unknown; translation?: unknown };
-    if (typeof r.timeMs !== 'number' || typeof r.text !== 'string') continue;
-    out.push({
-      timeMs: r.timeMs,
-      text: r.text,
-      translation: typeof r.translation === 'string' && r.translation ? r.translation : undefined,
-    });
-  }
-  // 逐字歌词：yrc 优先，QQ 的 qrc 直接映射进 yrc 统一解析
-  const src = data as { yrc?: unknown; qrc?: unknown; romalrc?: unknown; romanRaw?: unknown };
-  const yrc = typeof src.yrc === 'string' ? src.yrc : '';
-  const qrc = typeof src.qrc === 'string' ? src.qrc : '';
-  // 罗马音（#161）：逐字合并之后再按时间挂，行时间已经定下来
-  const roman = typeof src.romalrc === 'string' && src.romalrc ? src.romalrc : typeof src.romanRaw === 'string' ? src.romanRaw : '';
-  return filterCreditLines(attachRoman(alignWordsToText(mergeWordLyrics(out, yrc || qrc)), roman), title, artist);
 }
 
 /** 歌曲身份（含兜底供流那首）：同一首换了供流平台要重新取歌词。 */
@@ -123,7 +98,7 @@ export function useLyrics() {
   useEffect(() => {
     let requestId='';
     const cancel=()=>{if(requestId)void window.nebulaAPI?.cancelResolve?.(requestId).catch(()=>{});requestId='';};
-    // 预取下一首的歌词（#197）：后端取完进缓存，切过去时直接命中。不带 requestId，切歌不取消它。两个时机：
+    // 预取下一首的歌词（#198）：后端取完进缓存，切过去时直接命中。不带 requestId，切歌不取消它。两个时机：
     // 1) 当前这首歌词出来 8 秒后，下一首通常在本平台出声（或已经知道供流那首）就先取——手动切下一首也能用上；
     // 2) 临近结尾播放器解析好下一首音源时，按实际供流那首再取——兜底播放的歌这时才知道是哪首。同一首只取一次。
     const warmed=new Set<string>();

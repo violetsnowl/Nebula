@@ -262,7 +262,7 @@ await test('Apple 歌词：origin 是 Apple 曲目时按目录 id 直接取，�
   assert.equal(hit.via, 'id');
   assert.equal(hit.catalogId, '111');
   assert.equal(hit.lyric.source, 'applemusic');
-  assert.deepEqual(lyricCoverage(hit.lyric), { textLines: 4, wordLines: 4, translatedLines: 4, romanLines: 0 });
+  assert.deepEqual(lyricCoverage(hit.lyric), { textLines: 4, wordLines: 4, translatedLines: 4, romanLines: 0, bgLines: 0, agentLines: 0 });
   assert.deepEqual(a.bridge.calls.map((c) => c.path), ['/v1/me/storefront', '/v1/catalog/cn/songs/111/syllable-lyrics']);
   // 第二首：地区不再读
   const hit2 = await lyrics.lookup(song({ id: 'x' }), song({ platform: 'applemusic', sourceId: 'i.LIB', extra: { catalogId: '222', libraryId: 'i.LIB' } }));
@@ -352,16 +352,77 @@ const amllHit = (xml, over = {}) => ({ lyric: fromTtml(xml, 'amll'), matchedBy: 
 const fakeApple = (impl) => { const calls = []; return { calls, lookup: async (track, origin) => { calls.push({ track, origin }); return impl(track, origin); } }; };
 const appleHit = (xml, over = {}) => ({ lyric: fromTtml(xml, 'applemusic'), catalogId: '111', via: 'id', ...over });
 
-await test('LyricService：主歌词已经够好（逐字和翻译都 ≥80%）时不查任何新来源，也不搜别的平台', async () => {
+await test('LyricService：主歌词已经够好（逐字和翻译都 ≥80%）时只按已知 id 查一次 AMLL（补和声 / 对唱），不查 Apple，也不搜别的平台', async () => {
   const full = fromTtml(ttmlDoc({ trans: true }), 'amll');
   const { map, calls } = adapters({ primary: full });
   const amll = fakeAmll(() => amllHit(ttmlDoc()));
   const apple = fakeApple(() => appleHit(ttmlDoc()));
   const r = await new LyricService(map, undefined, { amll, appleMusic: apple }).fetchLyric(song({ extra: { songId: 1 } }), undefined, song({ platform: 'spotify', sourceId: SPOTIFY_ID }));
   assert.equal(r.lines.length, 4);
-  assert.equal(amll.calls.length, 0);
+  assert.deepEqual(amll.calls, [{ qq: '1', spotify: SPOTIFY_ID }], '只查一次，只用第一轮的 id');
   assert.equal(apple.calls.length, 0);
   assert.equal(calls.search, 0);
+  assert.equal(r.provenance.length, 1, 'AMLL 没带来新东西：不记 enrichment');
+});
+
+/** 带和声 / 对唱的 AMLL 歌词（正文、时间与 ttmlDoc 一致）：偶数行 v1、奇数行 v2，前三行有和声。 */
+function duetDoc() {
+  const ps = TEXTS.map((text, i) => {
+    const begin = TIMES[i];
+    const bg = i < 3 ? `<span ttm:role="x-bg"><span begin="${(begin + 1000) / 1000}s" end="${(begin + 1500) / 1000}s">(哦${i}</span><span begin="${(begin + 1500) / 1000}s" end="${(begin + 2200) / 1000}s">耶)</span></span>` : '';
+    return `<p begin="${begin / 1000}s" end="${(begin + 4000) / 1000}s" ttm:agent="${i % 2 ? 'v2' : 'v1'}"><span begin="${begin / 1000}s" end="${(begin + 4000) / 1000}s">${text}</span>${bg}</p>`;
+  });
+  return `<tt ${NS}><head><metadata><ttm:agent type="person" xml:id="v1"/><ttm:agent type="person" xml:id="v2"/></metadata></head><body><div>${ps.join('')}</div></body></tt>`;
+}
+
+await test('LyricService：主歌词够好时，AMLL 带和声 / 对唱就补上（只补缺的，已有的翻译、逐字不动）；provenance 记 amll', async () => {
+  const full = fromTtml(ttmlDoc({ trans: true }), 'amll');
+  const { map, calls } = adapters({ primary: full });
+  const amll = fakeAmll(() => amllHit(duetDoc()));
+  const apple = fakeApple(() => appleHit(ttmlDoc()));
+  const r = await new LyricService(map, undefined, { amll, appleMusic: apple }).fetchLyric(song({ extra: { songId: 1 } }));
+  assert.equal(amll.calls.length, 1);
+  assert.equal(apple.calls.length, 0);
+  assert.equal(calls.search, 0);
+  assert.deepEqual(r.lines.map((l) => l.agent), ['v1', 'v2', 'v1', 'v2']);
+  assert.deepEqual(r.lines.map((l) => l.bg?.text), ['哦0耶', '哦1耶', '哦2耶', undefined]);
+  assert.deepEqual(r.lines[0].bg.words.map((w) => [w.text, w.startMs]), [['哦0', 2000], ['耶', 2500]]);
+  assert.equal(lyricCoverage(r).bgLines, 3);
+  assert.equal(lyricCoverage(r).agentLines, 4);
+  assert.deepEqual(r.coverage.bgLines, 3, '写进 coverage');
+  assert.equal(r.yrc, full.yrc, '已有的逐字不动');
+  assert.deepEqual(r.lines.map((l) => l.translation), ['译文0', '译文1', '译文2', '译文3']);
+  assert.deepEqual(r.provenance.map((p) => [p.platform, p.kind]), [['qq', 'primary'], ['amll', 'enrichment']]);
+  assert.equal(r.incomplete, false);
+});
+
+await test('LyricService：主歌词够好时 AMLL 没命中 / 抛错 / 卡住（1.2 秒预算）：照旧返回主歌词，没带来和声', async () => {
+  const full = fromTtml(ttmlDoc({ trans: true }), 'amll');
+  const run = async (impl) => {
+    const { map, calls } = adapters({ primary: full });
+    const amll = fakeAmll(impl);
+    const t0 = Date.now();
+    const r = await new LyricService(map, undefined, { amll }).fetchLyric(song({ extra: { songId: 1 } }));
+    assert.equal(calls.search, 0);
+    return { r, amll, took: Date.now() - t0 };
+  };
+  for (const impl of [() => null, () => { throw new Error('boom'); }, () => ({ lyric: null })]) {
+    const { r, amll } = await run(impl);
+    assert.equal(amll.calls.length, 1);
+    assert.equal(r.lines.length, 4);
+    assert.ok(r.lines.every((l) => !l.bg && !l.agent));
+    assert.equal(r.yrc, full.yrc);
+  }
+  const hung = await run(() => new Promise(() => {}));
+  assert.ok(hung.took < 2500, `卡住时只拖到预算 ${hung.took}ms`);
+  assert.equal(hung.r.lines.length, 4);
+  assert.ok(hung.r.lines.every((l) => !l.bg));
+  // 没有可查的 id（主平台没有 songId 之类）：不查
+  const none = adapters({ primary: full });
+  const amll = fakeAmll(() => amllHit(duetDoc()));
+  const r = await new LyricService({ ...none.map, kuwo: { fetchLyric: async () => full } }, undefined, { amll }).fetchLyric(song({ id: 'kuwo:1', platform: 'kuwo', sourceId: '1' }));
+  assert.equal(amll.calls.length, 0);
+  assert.ok(r.lines.every((l) => !l.bg));
 });
 
 await test('LyricService：主歌词只有行级时，AMLL 补上逐字（provenance 记 amll）；没注入新来源时行为不变', async () => {
@@ -411,7 +472,7 @@ await test('LyricService（#197）：日语歌逐字、翻译都齐，只缺罗�
   const amll = fakeAmll(() => null);
   const rz = await new LyricService(zh.map, undefined, { amll }).fetchLyric(song({ extra: { songId: 1 } }));
   assert.equal(zh.calls.search, 0);
-  assert.equal(amll.calls.length, 0);
+  assert.equal(amll.calls.length, 1, '够好时只按 id 查一次 AMLL（补和声 / 对唱），不搜别的平台');
   assert.equal(rz.incomplete, false);
 });
 

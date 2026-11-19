@@ -10,6 +10,8 @@ const require=createRequire(import.meta.url),b=require('../dist-main/index.cjs')
 const temp=fs.mkdtempSync(path.join(os.tmpdir(),'nebula-lyrics-test-'));
 buildSync({entryPoints:['src/lib/lyrics.ts'],bundle:true,platform:'node',format:'cjs',outfile:path.join(temp,'lyrics.cjs')});
 const ui=require(path.join(temp,'lyrics.cjs'));
+buildSync({entryPoints:['src/lib/listen/model.ts'],bundle:true,platform:'node',format:'cjs',outfile:path.join(temp,'model.cjs')});
+const model=require(path.join(temp,'model.cjs'));
 let count=0;const test=async(name,fn)=>{await fn();count++;console.log('通过 '+name)};
 try{
 await test('混合 JSON 与普通 LRC 不丢正文',()=>{const s=b.normalizeJsonLrc('{"t":0,"c":[{"tx":"制作信息"}]}\n[00:10.000]测试正文');assert.equal(b.parseLrc(s).length,2)});
@@ -127,6 +129,110 @@ await test('#197 逐行补罗马音：本平台只有一部分行有，对方没
  assert.ok(b.alignTimelines(own,late));
  assert.equal(b.lyricCoverage(b.enrichAligned(own,late)).romanLines,5);
 });
+/* ---------- #199 和声（bg）与对唱（agent）：句子全是编的 ---------- */
+const bgRows=[1000,8000,16000,24000,32000].map((timeMs,i)=>({timeMs,text:'编的正文'+'甲乙丙丁戊'[i]}));
+const bgOf=(timeMs,i)=>({text:'和声'+i,words:[{text:'和',startMs:timeMs+500,duration:400},{text:'声'+i,startMs:timeMs+900,duration:600}]});
+const agentCycle=['v1','v2','both','v1','v2'];
+await test('#199 lyricCoverage 多 bgLines / agentLines；署名行不算',()=>{
+ const l={raw:'',lines:[{timeMs:0,text:'作词：编的人',bg:{text:'x'},agent:'v1'},...bgRows.map((r,i)=>({...r,...(i<2?{bg:bgOf(r.timeMs,i)}:{}),...(i<3?{agent:agentCycle[i]}:{})}))]};
+ const c=b.lyricCoverage(l);assert.equal(c.bgLines,2);assert.equal(c.agentLines,3);assert.equal(c.textLines,5);
+ assert.equal(b.lyricCoverage({raw:'',lines:bgRows}).bgLines,0);
+});
+await test('#199 逐行路：对方的和声（词时间随行平移）和 agent 补到主歌词上；本行已有的不覆盖；行时间不动',()=>{
+ const jit=[350,-200,500,-300,100];// 偏移不固定：固定偏移对齐不过，走逐行补
+ const own={raw:'',lines:bgRows.map((r,i)=>i===1?{...r,agent:'both',bg:{text:'自己的和声'}}:{...r})};
+ const sup={raw:'',identity:{platform:'amll',sourceId:'a'},lines:bgRows.map((r,i)=>({...r,timeMs:r.timeMs+jit[i],agent:agentCycle[i],bg:bgOf(r.timeMs+jit[i],i)}))};
+ assert.equal(b.alignTimelines(own,sup),null);
+ const r=b.enrichAligned(own,sup);
+ assert.deepEqual(r.lines.map(x=>x.timeMs),bgRows.map(x=>x.timeMs),'行时间不动');
+ assert.deepEqual(r.lines.map(x=>x.agent),['v1','both','both','v1','v2'],'已有的 both 不被 v2 覆盖');
+ assert.deepEqual(r.lines[1].bg,{text:'自己的和声'},'已有的和声不覆盖');
+ // 平移：和声词相对行开头的位置不变（对方行开头 +jit，本行平移 -jit）
+ assert.deepEqual(r.lines[0].bg.words.map(w=>w.startMs),[1000+500,1000+900]);
+ assert.deepEqual(r.lines[3].bg.words.map(w=>[w.startMs,w.duration]),[[24000+500,400],[24000+900,600]]);
+ assert.equal(sup.lines[0].bg.words[0].startMs,1000+350+500,'不改对方的数据');
+ const c=b.lyricCoverage(r);assert.equal(c.bgLines,5);assert.equal(c.agentLines,5);
+ assert.equal(r.provenance.at(-1).platform,'amll');
+ // 补 agent 但只补和声：没有增益时原样返回
+ assert.equal(b.enrichAligned(r,sup),r,'再补一遍没有增益');
+});
+await test('#199 对方只有一种 agent 时不补 agent（只补和声）；对方没有和声也没有两种 agent 时没有增益',()=>{
+ const jit=[350,-200,500,-300,100];
+ const own={raw:'',lines:bgRows.map(r=>({...r}))};
+ const mk=(f)=>({raw:'',identity:{platform:'amll',sourceId:'a'},lines:bgRows.map((r,i)=>({...r,timeMs:r.timeMs+jit[i],...f(r,i)}))});
+ const oneAgent=b.enrichAligned(own,mk((r,i)=>({agent:'v1',bg:bgOf(r.timeMs+jit[i],i)})));
+ assert.equal(b.lyricCoverage(oneAgent).bgLines,5);assert.equal(b.lyricCoverage(oneAgent).agentLines,0);
+ assert.equal(b.enrichAligned(own,mk(()=>({agent:'v1'}))),own,'只有一种 agent 且没有和声：没增益');
+ const twoAgents=b.enrichAligned(own,mk((r,i)=>({agent:i%2?'v2':'v1'})));
+ assert.equal(b.lyricCoverage(twoAgents).agentLines,5);assert.equal(b.lyricCoverage(twoAgents).bgLines,0);
+});
+await test('#199 固定偏移那条路：对方每行的和声词也加上 offset，agent 一并补上',()=>{
+ const sup={raw:'',identity:{platform:'amll',sourceId:'a'},lines:bgRows.map((r,i)=>({...r,timeMs:r.timeMs+400,agent:i%2?'v2':'v1',bg:bgOf(r.timeMs+400,i)}))};
+ const own={raw:'',lines:bgRows.map(r=>({...r}))};
+ const al=b.alignTimelines(own,sup);assert.equal(al.offsetMs,-400);
+ const r=b.enrichAligned(own,sup);
+ assert.deepEqual(r.lines.map(x=>x.timeMs),bgRows.map(x=>x.timeMs));
+ assert.deepEqual(r.lines[2].bg.words.map(w=>w.startMs),[16000+500,16000+900],'对方的 16400+500 加上 offset -400');
+ assert.deepEqual(r.lines.map(x=>x.agent),['v1','v2','v1','v2','v1']);
+ assert.equal(b.lyricCoverage(r).bgLines,5);
+ // 对方自己的（已挪动前）数据没被改
+ assert.equal(sup.lines[2].bg.words[0].startMs,16000+400+500);
+ // 本行已有的和声不覆盖，缺的补上
+ const part=b.enrichAligned({raw:'',lines:bgRows.map((x,i)=>i===0?{...x,bg:{text:'有'}}:{...x})},sup);
+ assert.deepEqual(part.lines[0].bg,{text:'有'});assert.equal(part.lines[1].bg.text,'和声1');
+});
+await test('#199 行时间校准 / 逐行补逐字时 bg、agent 跟着行走，和声词的绝对时间不跟着挪',()=>{
+ const offs=[430,-280,900,-1100,300];
+ const rows=bgRows.map((r,i)=>({...r,agent:agentCycle[i],bg:bgOf(r.timeMs,i)}));
+ const l={raw:'',lines:rows,yrc:rows.map((x,i)=>`[${x.timeMs+offs[i]},1000](${x.timeMs+offs[i]},1000,0)${x.text}`).join('\n')};
+ const s=b.snapLinesToWords(l);
+ assert.deepEqual(s.lines.map(x=>x.timeMs),rows.map((x,i)=>x.timeMs+offs[i]));
+ s.lines.forEach((x,i)=>{assert.equal(x.agent,agentCycle[i]);assert.deepEqual(x.bg,rows[i].bg);});
+ // 逐行补逐字（mergeWordsByLine）：本平台没逐字，对方有，bg 不丢
+ const jit=[350,-200,500,-300,100];
+ const own={raw:'',lines:rows};
+ const sup={raw:'',identity:{platform:'qq',sourceId:'q'},lines:rows.map((x,i)=>({...x,timeMs:x.timeMs+jit[i],bg:undefined,agent:undefined})),yrc:rows.map((x,i)=>`[${x.timeMs+jit[i]},900](${x.timeMs+jit[i]},900,0)${x.text}`).join('\n')};
+ const r=b.enrichAligned(own,sup);
+ assert.deepEqual(r.lines.map(x=>x.timeMs),rows.map((x,i)=>x.timeMs+jit[i]),'行时间改用对方逐字');
+ r.lines.forEach((x,i)=>{assert.equal(x.agent,agentCycle[i]);assert.deepEqual(x.bg,rows[i].bg);});
+});
+await test('#199 缓存校验：agent / bg 类型不对的整条拒绝，合法的原样存取',async()=>{
+ const good={...base,lines:base.lines.map((l,i)=>({...l,agent:'v2',bg:i?{text:'和'}:bgOf(l.timeMs,0)}))};
+ const cache=new b.LyricCache(temp);
+ cache.set('qq','bg-ok',{...good,incomplete:false});assert.deepEqual(cache.get('qq','bg-ok').lines[0].bg,good.lines[0].bg);
+ for(const [i,bad] of [{agent:'v3'},{agent:1},{bg:'和声'},{bg:{text:1}},{bg:{text:'x',words:'w'}},{bg:{text:'x',words:[{text:'a',startMs:'1',duration:2}]}},{bg:null}].entries()){
+  cache.set('qq','bad'+i,{...base,lines:[{...base.lines[0],...bad}]});assert.equal(cache.get('qq','bad'+i),null,JSON.stringify(bad));
+ }
+});
+await test('#199 前端：normalizeLyricLines 把 agent / bg 带出来（防御性读入），经逐字合并、注音、过滤署名行一路不丢；toEngineLine 带上和声 units 与 agent',()=>{
+ const raw={lines:[
+  {timeMs:1000,text:'编的第一句',agent:'v1',bg:{text:'哦',words:[{text:'哦',startMs:1500,duration:1200},{text:'坏',startMs:'x',duration:1}]}},
+  {timeMs:6000,text:'编的第二句',agent:'v2',bg:{text:'只有文字'}},
+  {timeMs:11000,text:'编的第三句',agent:'both'},
+  {timeMs:16000,text:'编的第四句',agent:'v9',bg:{text:1}},
+  {timeMs:21000,text:'编的第五句',bg:{text:'  '}}],
+  yrc:[1000,6000,11000,16000,21000].map((t,i)=>`[${t},1000](${t},1000,0)编的第${'一二三四五'[i]}句`).join('\n')};
+ const lines=ui.normalizeLyricLines(raw);
+ assert.deepEqual(lines.map(l=>l.agent),['v1','v2','both',undefined,undefined],'类型不对的 agent 丢掉');
+ assert.deepEqual(lines[0].bg,{text:'哦',words:[{text:'哦',startMs:1500,duration:1200}]},'时间不是数字的词丢掉');
+ assert.deepEqual(lines[1].bg,{text:'只有文字'});
+ assert.equal(lines[3].bg,undefined);assert.equal(lines[4].bg,undefined);
+ assert.ok(lines.every(l=>l.words?.length),'逐字合并成功，bg / agent 没丢');
+ assert.equal(ui.normalizeLyricLines(null).length,0);
+ const es=lines.map((l,i)=>model.toEngineLine(l,lines[i+1]?lines[i+1].timeMs/1000:undefined));
+ assert.deepEqual(es.map(e=>e.agent),[undefined,'v2','both',undefined,undefined],'v1 不记');
+ assert.equal(es[0].bg.text,'哦');assert.equal(es[0].bg.units.length,1);
+ assert.deepEqual([es[0].bg.units[0].s,es[0].bg.units[0].e],[1.5,2.7]);
+ assert.equal(es[0].bg.units[0].emph,false,'和声没有长音效果：时长 1.2 秒也不算长音');
+ assert.deepEqual(es[1].bg,{text:'只有文字',units:null},'没有逐字时间：整句显示');
+ assert.equal(es[2].bg,undefined);
+ // 没有逐字的主歌词行也能带和声
+ const plain=model.toEngineLine({timeMs:1000,text:'整句',bg:{text:'小字',words:[{text:'小',startMs:1200,duration:300},{text:'字',startMs:1500,duration:300}]}});
+ assert.equal(plain.units,null);assert.equal(plain.bg.units.length,2);
+ // 和声比主唱晚唱完：间奏从和声唱完开始算
+ const entries=model.buildEntries([{timeMs:1000,text:'甲',words:[{text:'甲',startMs:1000,duration:500}],bg:{text:'和',words:[{text:'和',startMs:2000,duration:1500}]}},{timeMs:20000,text:'乙'}]);
+ const gap=entries.find((e,i)=>e.kind==='gap'&&i>0);assert.ok(gap);assert.equal(gap.s,3.5);
+});
 await test('普通整句与无词时间的 JSON 不伪造逐字',()=>{assert.equal(ui.parseYrcText('[00:10.00]普通歌词').length,0);assert.equal(ui.parseYrcText('{"t":10,"c":[{"tx":"正文"}]}').length,0)});
 await test('英文空格补齐保持原始长音时长',()=>{
  const lines=[{timeMs:1000,text:'Hello world',words:[{text:'Hello',startMs:1000,duration:100},{text:'world',startMs:1100,duration:1900}]}];
@@ -134,8 +240,8 @@ await test('英文空格补齐保持原始长音时长',()=>{
 });
 await test('相近时间但不同正文不能挂接逐字',()=>{const r=ui.mergeWordLyrics([{timeMs:1000,text:'甲'}],'[1000,1000](1000,1000,0)乙');assert.equal(r[0].words,undefined)});
 await test('只有逐字时仍能显示原始正文',()=>{const r=ui.mergeWordLyrics([],'[1000,1000](1000,1000,0)甲');assert.equal(r[0].text,'甲')});
-await test('旧版/损坏缓存失效（v2 也作废，#197），v3 不完整六小时与完整三十天',async()=>{
- fs.writeFileSync(path.join(temp,'lyric-cache.json'),JSON.stringify({schema:2,entries:{'qq:x':{at:Date.now(),lyric:base}}}));assert.equal(new b.LyricCache(temp).get('qq','x'),null);
+await test('旧版/损坏缓存失效（v2、v3 也作废，#197 / #199），v4 不完整六小时与完整三十天',async()=>{
+ for(const schema of [2,3]){fs.writeFileSync(path.join(temp,'lyric-cache.json'),JSON.stringify({schema,entries:{'qq:x':{at:Date.now(),lyric:base}}}));assert.equal(new b.LyricCache(temp).get('qq','x'),null);}
  fs.writeFileSync(path.join(temp,'lyric-cache.json'),JSON.stringify({'qq:x':{at:Date.now(),lyric:base}}));assert.equal(new b.LyricCache(temp).get('qq','x'),null);
  const cache=new b.LyricCache(temp);cache.set('qq','x',{...base,incomplete:true});cache.set('qq','full',{...base,incomplete:false});await cache.flush();
  const fresh=new b.LyricCache(temp);assert.ok(fresh.get('qq','x'));const now=Date.now;Date.now=()=>now()+7*3600000;

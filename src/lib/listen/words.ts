@@ -245,6 +245,16 @@ export function unitFrame(
   } else rt.v.glow(false);
 }
 
+/**
+ * 和声的一个字这一帧的状态（#199，方案 A「随行小字」）：只扫色，写 --p 一个变量。
+ * 不浮起、不放大、不出长音白光（这些只属于主唱，「正在唱的那个字」是签名时刻）；三段颜色由样式按视觉模式定（lyric-column.css 的 --bgs / --bge / --bgu），
+ * 所以也没有尾韵。只有当前句调用它；不是当前句时样式直接给静止色（已唱 / 待唱），和声时间超出这一句的部分换句后就停在那里。
+ */
+export function bgUnitFrame(rt: UnitRt, t: number): void {
+  const u = rt.u;
+  rt.v.set('--p', clamp((t - u.s) / Math.max(0.001, u.e - u.s), 0, 1).toFixed(3));
+}
+
 /** 一个字回到静止（含拉丁长音拆开的字母）。 */
 export function restUnit(rt: UnitRt): void {
   rt.v.rest();

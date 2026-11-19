@@ -46,7 +46,7 @@ const appleWord = `<?xml version="1.0" encoding="UTF-8"?>
   </div></body>
 </tt>`;
 
-test('Apple Word：逐字、词间空格并到前一个词末尾、head 翻译优先 zh-Hans、head 罗马音、背景人声丢掉', () => {
+test('Apple Word：逐字、词间空格并到前一个词末尾、head 翻译优先 zh-Hans、head 罗马音、背景人声不进正文（单独进 bg）', () => {
   const r = parseTtml(appleWord);
   assert.equal(r.timing, 'Word');
   assert.equal(r.lines.length, 2);
@@ -56,7 +56,10 @@ test('Apple Word：逐字、词间空格并到前一个词末尾、head 翻译�
   assert.equal(r.lines[0].timeMs, 1000);
   assert.equal(r.lines[0].duration, 2000);
   assert.deepEqual(r.lines[1].words.map((w) => w.text), ['Second ', 'line'], '换行缩进的空白折成一个空格，背景人声不进正文');
-  assert.deepEqual(r.lineRows, [{ timeMs: 1000, text: 'Hello world', key: 'L1' }, { timeMs: 6000, text: 'Second line', key: 'L2' }]);
+  assert.deepEqual(r.lineRows, [
+    { timeMs: 1000, text: 'Hello world', key: 'L1', agent: 'v1' },
+    { timeMs: 6000, text: 'Second line', key: 'L2', agent: 'v2', bg: { text: 'echo', words: [{ text: 'echo', startMs: 7200, duration: 600 }] } },
+  ]);
   assert.deepEqual(r.translations, [{ timeMs: 1000, text: '你好 世界' }, { timeMs: 6000, text: '第二句译文' }]);
   assert.deepEqual(r.romans, [{ timeMs: 6000, text: 'roma ji' }]);
 });
@@ -89,14 +92,15 @@ const amll = `<tt ${NS}><head><metadata><ttm:agent type="person" xml:id="v1"/></
   <p begin="00:08.000" end="00:08.000" ttm:agent="v1" itunes:key="L3"><span begin="00:08.000" end="00:08.000">末</span></p>
 </div></body></tt>`;
 
-test('AMLL：行内 x-translation / x-roman 提成翻译 / 罗马音，不进正文；嵌套 span 展开；x-bg 丢掉；agent 不影响输出', () => {
+test('AMLL：行内 x-translation / x-roman 提成翻译 / 罗马音，不进正文；嵌套 span 展开；x-bg 进 bg；只有一位 person 不标 agent', () => {
   const r = parseTtml(amll);
   assert.equal(r.timing, 'Word');
   assert.deepEqual(r.lineRows.map((l) => l.text), ['春风', '夏雨', '末']);
   assert.deepEqual(r.translations, [{ timeMs: 1000, text: 'Spring wind' }]);
   assert.deepEqual(r.romans, [{ timeMs: 1000, text: 'chun feng' }]);
   assert.deepEqual(r.lines[1].words.map((w) => [w.text, w.startMs, w.duration]), [['夏', 4000, 1000], ['雨', 5000, 2000]]);
-  assert.ok(!JSON.stringify(r).includes('v1'), 'agent 不进输出');
+  assert.ok(!JSON.stringify(r).includes('v1'), '只有一位歌手，不标 agent');
+  assert.deepEqual(r.lineRows[1].bg, { text: '哦', words: [{ text: '哦', startMs: 5000, duration: 1000 }] });
 });
 
 test('零时长的末字不丢（给 1ms），否则 timedLines 会因为 span<=0 把它丢掉', () => {
@@ -173,7 +177,7 @@ test('fromTtml(Word)：yrc 能被现有 timedLines 读回，lyricCoverage 逐字
   const back = timedLines(l.yrc);
   assert.equal(back.length, 2);
   assert.deepEqual(back[0].words.map((w) => w.text), ['Hello ', 'world']);
-  assert.deepEqual(lyricCoverage(l), { textLines: 2, wordLines: 2, translatedLines: 2, romanLines: 1 });
+  assert.deepEqual(lyricCoverage(l), { textLines: 2, wordLines: 2, translatedLines: 2, romanLines: 1, bgLines: 1, agentLines: 2 });
   assert.match(l.lrc, /^\[00:01\.000\]Hello world\n\[00:06\.000\]Second line$/);
   assert.match(l.romalrc, /^\[00:06\.000\]roma ji$/);
   assert.equal(l.romanRaw, l.romalrc);
@@ -183,7 +187,7 @@ test('fromTtml(Word)：yrc 能被现有 timedLines 读回，lyricCoverage 逐字
 test('fromTtml(AMLL)：含零时长末字的歌词，逐字覆盖仍是满的', () => {
   const l = fromTtml(amll, 'amll');
   assert.equal(l.source, 'amll');
-  assert.deepEqual(lyricCoverage(l), { textLines: 3, wordLines: 3, translatedLines: 1, romanLines: 1 });
+  assert.deepEqual(lyricCoverage(l), { textLines: 3, wordLines: 3, translatedLines: 1, romanLines: 1, bgLines: 1, agentLines: 0 });
 });
 
 test('fromTtml：没有正文返回 null；Line 不给 yrc', () => {
@@ -198,6 +202,72 @@ test('p 的 begin 晚于首字时，行时间取更早者，yrc 仍能读回', (
   const l = fromTtml(`<tt ${NS}><body><div><p begin="2s" end="5s"><span begin="1.9s" end="3s">早</span><span begin="3s" end="5s">字</span></p></div></body></tt>`, 'amll');
   assert.equal(l.lines[0].timeMs, 1900);
   assert.equal(timedLines(l.yrc)[0].words.length, 2);
+});
+
+/* ---------- 和声（x-bg）与对唱（ttm:agent）：句子全是编的 ---------- */
+test('和声：括号在第一个 / 最后一个词里，去掉后留词和绝对时间；全角括号也去', () => {
+  const xml = `<tt ${NS}><body><div><p begin="0:10" end="0:14"><span begin="0:10" end="0:12">编主</span><span begin="0:12" end="0:14">唱</span><span ttm:role="x-bg"><span begin="0:11.000" end="0:11.500">(la</span> <span begin="0:11.500" end="0:12.500">dee</span> <span begin="0:12.500" end="0:13.000">da)</span></span></p>
+    <p begin="0:20" end="0:22"><span begin="0:20" end="0:22">全角编</span><span ttm:role="x-bg"><span begin="0:20.500" end="0:21.500">（嗯嗯）</span></span></p></div></body></tt>`;
+  const r = parseTtml(xml);
+  assert.deepEqual(r.lineRows[0].bg, { text: 'la dee da', words: [
+    { text: 'la ', startMs: 11000, duration: 500 }, { text: 'dee ', startMs: 11500, duration: 1000 }, { text: 'da', startMs: 12500, duration: 500 }] });
+  assert.equal(r.lineRows[0].text, '编主唱', '和声不混进正文');
+  assert.deepEqual(r.lineRows[1].bg, { text: '嗯嗯', words: [{ text: '嗯嗯', startMs: 20500, duration: 1000 }] });
+  assert.deepEqual(r.lines[0].words.map((w) => w.text), ['编主', '唱'], '逐字行不含和声');
+});
+
+test('和声：里面的翻译 / 罗马音 span 忽略；一个 p 里有多个 x-bg 按顺序拼成一份；没有时间时只有 text；去掉括号后没内容就不算和声', () => {
+  const xml = `<tt ${NS}><body><div><p begin="1s" end="6s"><span begin="1s" end="3s">编的主句</span>
+    <span ttm:role="x-bg"><span begin="1.5s" end="2s">(哦</span><span ttm:role="x-translation">不该出现的译文</span><span ttm:role="x-roman">bu gai</span></span>
+    <span ttm:role="x-bg"><span begin="3s" end="4s">啊)</span></span></p>
+    <p begin="8s" end="9s">纯行时间<span ttm:role="x-bg">(只有文字)</span></p>
+    <p begin="10s" end="11s"><span begin="10s" end="11s">只有括号</span><span ttm:role="x-bg"><span begin="10s" end="10.5s">(</span><span begin="10.5s" end="11s">)</span></span></p></div></body></tt>`;
+  const r = parseTtml(xml);
+  assert.deepEqual(r.lineRows[0].bg, { text: '哦啊', words: [{ text: '哦', startMs: 1500, duration: 500 }, { text: '啊', startMs: 3000, duration: 1000 }] }, '中文两段直接接上，不加空格');
+  const latin = parseTtml(`<tt ${NS}><body><div><p begin="1s" end="6s"><span begin="1s" end="3s">made up line</span><span ttm:role="x-bg"><span begin="3s" end="3.5s">(oh</span></span><span ttm:role="x-bg"><span begin="4s" end="4.5s">yeah)</span></span></p></div></body></tt>`);
+  assert.equal(latin.lineRows[0].bg.text, 'oh yeah', '拉丁两段之间补空格');
+  assert.ok(!JSON.stringify(r.lineRows[0]).includes('译文') && !JSON.stringify(r.lineRows[0]).includes('bu gai'));
+  assert.deepEqual(r.translations, [], '和声里的翻译不混入行翻译');
+  assert.deepEqual(r.romans, []);
+  assert.deepEqual(r.lineRows[1].bg, { text: '只有文字' });
+  assert.equal(r.lineRows[2].bg, undefined);
+});
+
+const duet = (ids, head = '') => `<tt ${NS}><head><metadata>${head}</metadata></head><body><div>
+  ${ids.map(([id, text], i) => `<p begin="${1 + i * 4}s" end="${3 + i * 4}s"${id ? ` ttm:agent="${id}"` : ''}><span begin="${1 + i * 4}s" end="${3 + i * 4}s">${text}</span></p>`).join('')}</div></body></tt>`;
+const agents = (xml) => parseTtml(xml).lineRows.map((l) => l.agent);
+
+test('对唱：两位 person 按正文第一次出现的顺序 → v1 / v2；group 与未声明的 v1000 → both；没写 agent 的行不标', () => {
+  const head = '<ttm:agent type="person" xml:id="v2"/><ttm:agent type="person" xml:id="v1"/><ttm:agent type="group" xml:id="g1"/>';
+  // head 里 v2 先声明，但正文里 v1 先唱：按正文顺序，v1 是第一位
+  assert.deepEqual(agents(duet([['v1', '甲一'], ['v2', '乙一'], ['g1', '合一'], ['v1', '甲二'], ['', '无标'], ['v1000', '合二']], head)), ['v1', 'v2', 'both', 'v1', undefined, 'both']);
+  // 正文里 v2 先唱：它就是第一位 → v1
+  assert.deepEqual(agents(duet([['v2', '乙一'], ['v1', '甲一']], head)), ['v1', 'v2']);
+  // 三位 person：第一位 v1，其余都是 v2
+  assert.deepEqual(agents(duet([['a', '一'], ['b', '二'], ['c', '三']], '<ttm:agent type="person" xml:id="a"/><ttm:agent type="person" xml:id="b"/><ttm:agent type="person" xml:id="c"/>')), ['v1', 'v2', 'v2']);
+});
+
+test('对唱：整首只有一位 person（没有第二位）时所有行都不标，哪怕有合唱行', () => {
+  const head = '<ttm:agent type="person" xml:id="v1"/><ttm:agent type="group" xml:id="g1"/>';
+  assert.deepEqual(agents(duet([['v1', '甲一'], ['g1', '合一'], ['v1', '甲二']], head)), [undefined, undefined, undefined]);
+  assert.deepEqual(agents(duet([['v1', '甲一'], ['v1', '甲二']])), [undefined, undefined], 'head 里没声明也一样');
+  assert.deepEqual(agents(duet([['', '无一'], ['', '无二']])), [undefined, undefined]);
+});
+
+test('对唱：agent 写在 div 上（p 自己的优先）；fromTtml 把 agent / bg 放到 lyric.lines 上，同时刻的翻译不影响', () => {
+  const xml = `<tt ${NS}><body><div ttm:agent="v1"><p begin="1s" end="3s"><span begin="1s" end="3s">一号句</span><span ttm:role="x-bg"><span begin="1.5s" end="2s">(哦)</span></span></p></div>
+    <div ttm:agent="v2"><p begin="5s" end="7s"><span begin="5s" end="7s">二号句</span><span ttm:role="x-translation">译二</span></p>
+    <p begin="9s" end="11s" ttm:agent="v1"><span begin="9s" end="11s">自己写的优先</span></p></div></body></tt>`;
+  assert.deepEqual(agents(xml), ['v1', 'v2', 'v1']);
+  const l = fromTtml(xml, 'amll');
+  assert.deepEqual(l.lines.map((x) => x.agent), ['v1', 'v2', 'v1']);
+  assert.deepEqual(l.lines[0].bg, { text: '哦', words: [{ text: '哦', startMs: 1500, duration: 500 }] });
+  assert.equal(l.lines[1].bg, undefined);
+  assert.equal(l.lines[1].translation, '译二');
+  assert.equal(lyricCoverage(l).bgLines, 1);
+  assert.equal(lyricCoverage(l).agentLines, 3);
+  // 只有一位歌手：lines 上没有 agent 字段
+  assert.ok(fromTtml(duet([['v1', '甲一'], ['v1', '甲二']]), 'amll').lines.every((x) => !('agent' in x)));
 });
 
 say(`TTML 解析回归 ${passed}/${passed}`);

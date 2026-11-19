@@ -28,6 +28,10 @@ export interface LyricLineUI {
   duration?: number;
   /** Word-level timings; absent → whole-line highlight fallback. */
   words?: LyricWordUI[];
+  /** 对唱（#199）：这一句是谁唱；只有一位歌手的歌不标。听音空间里 v2 换第二色。 */
+  agent?: 'v1' | 'v2' | 'both';
+  /** 和声（背景人声，#199）：随行小字；words 的时间是绝对毫秒，没有逐字时只有 text。 */
+  bg?: { text: string; words?: LyricWordUI[] };
 }
 
 /** 二分查找当前播放进度对应的歌词行下标。 */
@@ -162,6 +166,9 @@ export function mergeWordLyrics(lines: LyricLineUI[], rawYrc: string): LyricLine
       duration: wl.duration || match?.duration,
       translation: match?.translation,
       words: wl.words,
+      // 对唱归属和和声挂在正文行上，逐字行只带词（#199）
+      ...(match?.agent ? { agent: match.agent } : {}),
+      ...(match?.bg ? { bg: match.bg } : {}),
     });
   }
   for (const l of lines) {
@@ -338,4 +345,49 @@ export function filterCreditLines(lines: LyricLineUI[], title?: string, artist?:
     out.push(text === l.text ? l : { ...l, text });
   }
   return out;
+}
+
+/** 和声（后端 LyricLine.bg）防御性读入：类型不对就丢；词的时间不是有限数字的词丢掉。 */
+function normalizeBg(v: unknown): LyricLineUI['bg'] {
+  if (!v || typeof v !== 'object') return undefined;
+  const b = v as { text?: unknown; words?: unknown };
+  if (typeof b.text !== 'string' || !b.text.trim()) return undefined;
+  const words = Array.isArray(b.words)
+    ? b.words.flatMap((w): LyricWordUI[] => {
+        const x = w as { text?: unknown; startMs?: unknown; duration?: unknown } | null;
+        return x && typeof x.text === 'string' && typeof x.startMs === 'number' && Number.isFinite(x.startMs) && typeof x.duration === 'number' && Number.isFinite(x.duration)
+          ? [{ text: x.text, startMs: x.startMs, duration: x.duration }]
+          : [];
+      })
+    : [];
+  return words.length ? { text: b.text, words } : { text: b.text };
+}
+
+/** 后端歌词结果（unknown）防御性归一化（从 useLyrics 挪来，好单测；#199）。 */
+export function normalizeLyricLines(data: unknown, title?: string, artist?: string): LyricLineUI[] {
+  if (!data || typeof data !== 'object') return [];
+  const lines = (data as { lines?: unknown }).lines;
+  if (!Array.isArray(lines)) return [];
+  const out: LyricLineUI[] = [];
+  for (const raw of lines) {
+    if (!raw || typeof raw !== 'object') continue;
+    const r = raw as { timeMs?: unknown; text?: unknown; translation?: unknown; agent?: unknown; bg?: unknown };
+    if (typeof r.timeMs !== 'number' || typeof r.text !== 'string') continue;
+    const agent = r.agent === 'v1' || r.agent === 'v2' || r.agent === 'both' ? r.agent : undefined;
+    const bg = normalizeBg(r.bg);
+    out.push({
+      timeMs: r.timeMs,
+      text: r.text,
+      translation: typeof r.translation === 'string' && r.translation ? r.translation : undefined,
+      ...(agent ? { agent } : {}),
+      ...(bg ? { bg } : {}),
+    });
+  }
+  // 逐字歌词：yrc 优先，QQ 的 qrc 直接映射进 yrc 统一解析
+  const src = data as { yrc?: unknown; qrc?: unknown; romalrc?: unknown; romanRaw?: unknown };
+  const yrc = typeof src.yrc === 'string' ? src.yrc : '';
+  const qrc = typeof src.qrc === 'string' ? src.qrc : '';
+  // 罗马音（#161）：逐字合并之后再按时间挂，行时间已经定下来
+  const roman = typeof src.romalrc === 'string' && src.romalrc ? src.romalrc : typeof src.romanRaw === 'string' ? src.romanRaw : '';
+  return filterCreditLines(attachRoman(alignWordsToText(mergeWordLyrics(out, yrc || qrc)), roman), title, artist);
 }

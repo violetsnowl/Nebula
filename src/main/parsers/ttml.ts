@@ -9,11 +9,21 @@ import { lrcAt, toYrc, type TimedLine } from './timedLyrics';
  * 畸形输入一律返回空结果，不抛异常。
  */
 
+/** 和声（背景人声）：词时间是绝对毫秒；没有逐字时只有 text。 */
+export interface TtmlBg {
+  text: string;
+  words?: Array<{ text: string; startMs: number; duration: number }>;
+}
+export type TtmlAgent = 'v1' | 'v2' | 'both';
 export interface TtmlLineRow {
   timeMs: number;
   text: string;
   /** 行 id（itunes:key），翻译 / 罗马音按它对应。 */
   key?: string;
+  /** 对唱时这一行是谁唱（只有一位歌手的歌不标）。 */
+  agent?: TtmlAgent;
+  /** 这一行的和声。 */
+  bg?: TtmlBg;
 }
 export interface TtmlTextRow {
   timeMs: number;
@@ -221,7 +231,11 @@ interface LineCtx {
   plain: string;
   translation: string;
   roman: string;
+  /** 和声（x-bg）里带时间的词，一个 p 里有多个 x-bg 就按顺序拼在一起。 */
+  bgWords: RawWord[];
+  bgPlain: string;
 }
+const newCtx = (): LineCtx => ({ words: [], plain: '', translation: '', roman: '', bgWords: [], bgPlain: '' });
 
 function walkLine(el: XEl, ctx: LineCtx): void {
   for (const k of el.kids) {
@@ -233,7 +247,20 @@ function walkLine(el: XEl, ctx: LineCtx): void {
       continue;
     }
     const role = roleOf(k);
-    if (role === 'bg') continue; // 背景人声：第一版丢掉
+    if (role === 'bg') {
+      // 和声：用一份新的上下文走同一套规则，里面的翻译 / 罗马音 span 被它自己的 ctx 接住后丢掉
+      const sub = newCtx();
+      walkLine(k, sub);
+      // 多段和声之间：两边都是拉丁字母 / 数字才补空格（中日韩直接接上，不然会变成「等你 回来」）
+      const latinJoin = (a: string, b: string): boolean => /[A-Za-z0-9À-ɏ'’]$/.test(a.trimEnd()) && /^[A-Za-z0-9À-ɏ]/.test(b.trimStart().replace(/^[(（]+/, ''));
+      if (ctx.bgWords.length && sub.words.length) {
+        const last = ctx.bgWords[ctx.bgWords.length - 1]!;
+        if (!/\s$/.test(last.text) && latinJoin(last.text, sub.words[0]!.text)) last.text += ' ';
+      }
+      ctx.bgWords.push(...sub.words);
+      ctx.bgPlain += (ctx.bgPlain && sub.plain && latinJoin(ctx.bgPlain, sub.plain) ? ' ' : '') + sub.plain;
+      continue;
+    }
     if (role === 'translation') {
       ctx.translation += textOf(k);
       continue;
@@ -289,6 +316,36 @@ function normalizeWords(raw: RawWord[], lineEnd: number | null): TimedLine['word
   });
 }
 
+/** 和声整理：词表按主唱同一套规则，再去掉首尾的半角 / 全角括号（AMLL / Apple 常把「(oh」「oh)」写在第一个和最后一个词里）。 */
+function normalizeBg(raw: RawWord[], plain: string, lineEnd: number | null): TtmlBg | undefined {
+  const OPEN = /^[\s(（]+/;
+  const CLOSE = /[\s)）]+$/;
+  const words = normalizeWords(raw, lineEnd);
+  if (words.length) {
+    words[0]!.text = words[0]!.text.replace(OPEN, '');
+    words[words.length - 1]!.text = words[words.length - 1]!.text.replace(CLOSE, '');
+    const kept = words.filter((w) => w.text.trim());
+    const text = kept.map((w) => w.text).join('').trim();
+    return text && kept.length ? { text, words: kept } : undefined;
+  }
+  const text = collapse(plain).trim().replace(OPEN, '').replace(CLOSE, '');
+  return text ? { text } : undefined;
+}
+
+/** 一个 p 连同它向上找到的 ttm:agent（p 自己的优先，没有就用最近的 div / body）。 */
+interface PNode {
+  p: XEl;
+  agent: string | undefined;
+}
+function collectPs(el: XEl, inherited: string | undefined, out: PNode[]): void {
+  for (const k of el.kids) {
+    if (typeof k === 'string') continue;
+    const own = attr(k, 'agent')?.trim() || undefined;
+    if (local(k.name) === 'p') out.push({ p: k, agent: own ?? inherited });
+    else collectPs(k, own ?? inherited, out);
+  }
+}
+
 function collectByTag(el: XEl, tag: string, out: XEl[]): void {
   for (const k of el.kids) {
     if (typeof k === 'string') continue;
@@ -330,6 +387,25 @@ function headTexts(root: XEl, group: 'translation' | 'transliteration'): Map<str
   return out;
 }
 
+/**
+ * 对唱归属：head 里 `<ttm:agent xml:id type>`。type=group，或没在 head 里声明的 v1000 这类合唱 id → both；
+ * 其余按正文里第一次出现的顺序：第一位 → v1，之后的 → v2。整首只有一位 person（没有第二位）时一律不标。
+ */
+function resolveAgents(root: XEl, ids: Array<string | undefined>): Array<TtmlAgent | undefined> {
+  const declared = new Map<string, string>();
+  const heads: XEl[] = [];
+  collectByTag(root, 'agent', heads);
+  for (const h of heads) {
+    const id = attr(h, 'id')?.trim();
+    if (id) declared.set(id, (attr(h, 'type') ?? '').trim().toLowerCase());
+  }
+  const isGroup = (id: string): boolean => (declared.has(id) ? declared.get(id) === 'group' : /^v\d{4,}$/i.test(id));
+  const order: string[] = [];
+  for (const id of ids) if (id && !isGroup(id) && !order.includes(id)) order.push(id);
+  if (order.length < 2) return ids.map(() => undefined);
+  return ids.map((id) => (!id ? undefined : isGroup(id) ? 'both' : order[0] === id ? 'v1' : 'v2'));
+}
+
 /** 解析 TTML：不抛异常，畸形 / 超大输入返回空结果。 */
 export function parseTtml(xml: string): TtmlResult {
   try {
@@ -340,8 +416,8 @@ export function parseTtml(xml: string): TtmlResult {
     collectByTag(root, 'tt', tts);
     const body: XEl[] = [];
     collectByTag(tts[0] ?? root, 'body', body);
-    const ps: XEl[] = [];
-    collectByTag(body[0] ?? tts[0] ?? root, 'p', ps);
+    const ps: PNode[] = [];
+    collectPs(body[0] ?? tts[0] ?? root, undefined, ps);
 
     interface Row {
       timeMs: number;
@@ -351,11 +427,13 @@ export function parseTtml(xml: string): TtmlResult {
       endMs: number;
       translation: string;
       roman: string;
+      bg?: TtmlBg;
+      agentId?: string;
     }
     const rows: Row[] = [];
-    for (const p of ps) {
+    for (const { p, agent: agentId } of ps) {
       if (roleOf(p) === 'bg') continue;
-      const ctx: LineCtx = { words: [], plain: '', translation: '', roman: '' };
+      const ctx = newCtx();
       walkLine(p, ctx);
       const pBegin = parseTtmlTime(attr(p, 'begin'));
       let pEnd = parseTtmlTime(attr(p, 'end'));
@@ -378,10 +456,13 @@ export function parseTtml(xml: string): TtmlResult {
         endMs,
         translation: collapse(ctx.translation).trim(),
         roman: collapse(ctx.roman).trim(),
+        bg: normalizeBg(ctx.bgWords, ctx.bgPlain, pEnd),
+        agentId,
       });
     }
     if (!rows.length) return empty();
     rows.sort((a, b) => a.timeMs - b.timeMs);
+    const agents = resolveAgents(root, rows.map((r) => r.agentId));
 
     const headTrans = headTexts(root, 'translation');
     const headRoman = headTexts(root, 'transliteration');
@@ -399,7 +480,13 @@ export function parseTtml(xml: string): TtmlResult {
     return {
       timing: lines.length ? 'Word' : 'Line',
       lines,
-      lineRows: rows.map((r) => ({ timeMs: r.timeMs, text: r.text, ...(r.key ? { key: r.key } : {}) })),
+      lineRows: rows.map((r, i) => ({
+        timeMs: r.timeMs,
+        text: r.text,
+        ...(r.key ? { key: r.key } : {}),
+        ...(agents[i] ? { agent: agents[i] } : {}),
+        ...(r.bg ? { bg: r.bg } : {}),
+      })),
       translations,
       romans,
     };
@@ -415,10 +502,17 @@ export function fromTtml(xml: string, source: 'amll' | 'applemusic'): Lyric | nu
   const lrc = t.lineRows.map((l) => lrcAt(l.timeMs, l.text)).join('\n');
   const tlyric = t.translations.map((l) => lrcAt(l.timeMs, l.text)).join('\n');
   const romalrc = t.romans.map((l) => lrcAt(l.timeMs, l.text)).join('\n');
+  // 和声 / 对唱归属按行时间对应（lrcAt 保留毫秒，mergeLyric 以时间为键，同一时刻的行后者覆盖前者）
+  const extras = new Map<number, TtmlLineRow>();
+  for (const l of t.lineRows) if (l.bg || l.agent) extras.set(l.timeMs, l);
+  const lines = mergeLyric(lrc, tlyric).map((l) => {
+    const x = extras.get(l.timeMs);
+    return x && x.text === l.text ? { ...l, ...(x.agent ? { agent: x.agent } : {}), ...(x.bg ? { bg: x.bg } : {}) } : l;
+  });
   const lyric: Lyric = {
     raw: lrc,
     lrc,
-    lines: mergeLyric(lrc, tlyric),
+    lines,
     translationRaw: tlyric,
     tlyric,
     romanRaw: romalrc,

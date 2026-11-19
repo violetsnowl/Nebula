@@ -4,6 +4,7 @@ import type { ListenSettings } from './settings';
 import {
   TYPO,
   Vars,
+  bgUnitFrame,
   clamp,
   measureUnits,
   renderUnits,
@@ -63,6 +64,8 @@ interface Row {
   /** 正文节点（整句条目的浮起也作用在它上面）。 */
   main: HTMLElement | null;
   rts: UnitRt[] | null;
+  /** 和声（#199）的逐字节点；没有逐字时间（整句显示）或没有和声为 null。 */
+  bgRts: UnitRt[] | null;
   /** 假名注音节点（#172），与正文里的汉字段一一对应；#174 起挂在所属的逐字单元里。 */
   rubies?: HTMLElement[];
   whole: Vars | null;
@@ -358,6 +361,7 @@ export class LyricEngine {
       el,
       main: null,
       rts: null,
+      bgRts: null,
       whole: null,
       dots: null,
       y: 0,
@@ -410,6 +414,19 @@ export class LyricEngine {
         (hosts?.[i] ?? main).appendChild(rb);
         return rb;
       });
+    }
+    // 对唱（#199）：第二位歌手的句子换第二色，位置、字号都不变
+    if (e.agent === 'v2') el.classList.add('is-v2');
+    // 和声（#199，方案 A「随行小字」）：紧跟在正文后面的小字，按它自己的时间只扫色；罗马音 / 翻译照旧排在它后面
+    if (e.bg) {
+      const bg = document.createElement('div');
+      bg.className = 'ly-bg';
+      if (e.bg.units) row.bgRts = renderUnits(bg, e.bg.units);
+      else {
+        bg.classList.add('ly-bg-whole');
+        bg.textContent = e.bg.text;
+      }
+      el.appendChild(bg);
     }
     // 罗马音读的是原文，紧贴在原文下面；翻译排在它后面（#161）
     if (e.ro) {
@@ -651,6 +668,8 @@ export class LyricEngine {
       const D = e.dens;
       C.whole.set('--lift', wholeLift(e.s, e.e, D, t).toFixed(4));
     }
+    // 和声按自己的时间扫色（主唱唱完、和声没唱完时这一句仍是当前句，照常扫）
+    if (C.bgRts) for (const rt of C.bgRts) bgUnitFrame(rt, t);
     // 上一句的尾韵还在褪
     for (const r of this.tails) {
       if (r.gradUntil > t) {

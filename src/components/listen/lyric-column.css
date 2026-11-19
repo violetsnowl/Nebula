@@ -175,6 +175,75 @@
   color: rgba(255, 255, 255, 0.56);
 }
 
+/* 对唱 · 换色（#199，方案 C）：第二位歌手（agent = v2）的句子，主色换成第二色；位置、字号都不变，合唱（both）和第一位用主色。
+   它的和声、已唱过去的状态也都用这一色。注意：同色系模式的 --lc-rest 等写在 .lc-root 上、var() 在那里就算死了，所以这里要在句子上重写一遍 */
+.lc-root .ly-line.is-v2 {
+  --lc-a: var(--ly-b, rgb(222 228 236));
+}
+.lc-root[data-scheme='mono'] .ly-line.is-v2 {
+  --lc-rest: color-mix(in srgb, var(--lc-a) 58%, #fff);
+  --lc-tr: color-mix(in srgb, var(--lc-a) 50%, rgba(255, 255, 255, 0.62));
+  --lc-ro: color-mix(in srgb, var(--lc-a) 46%, rgba(255, 255, 255, 0.56));
+}
+
+/* 和声（背景人声，#199，方案 A「随行小字」）：正文后面一行小字，同一字体栈，字号是原文的 0.62 倍。
+   只扫色：不浮起、不放大、不出长音白光（那些只属于主唱）；整句的亮暗、景深、上场轻弹、退场落回都跟着整句走（它就在 .ly-line 里）。
+   五个颜色变量写在 .ly-line 上（不是根上），这样 .is-v2 换了 --lc-a 之后它们跟着变：
+   --bgs 唱过、--bge 波前、--bgu 没唱（只在当前句里用），--bgp 已唱过去的句子，--bgr 待唱的句子（跟整句一样），--bgw 没有逐字时当前句的整句色 */
+.lc-root .ly-bg {
+  display: block;
+  margin-top: 0.16em;
+  font-size: 0.62em;
+  font-weight: 500;
+  line-height: 1.4;
+  letter-spacing: 0.03em;
+}
+.lc-root[data-scheme='accent'] .ly-line {
+  --bgs: color-mix(in srgb, var(--lc-a) 70%, #fff);
+  --bge: rgba(255, 255, 255, 0.92);
+  --bgu: rgba(255, 255, 255, 0.3);
+  --bgp: color-mix(in srgb, var(--lc-a) 75%, #fff);
+  --bgr: #fff;
+  --bgw: color-mix(in srgb, var(--lc-a) 30%, #fff);
+}
+/* 同色系与封面色互为反色：唱过 = 白，波前 = 主色淡染，没唱 = 和原文没唱的同色但更淡 */
+.lc-root[data-scheme='mono'] .ly-line {
+  --bgs: rgba(255, 255, 255, 0.9);
+  --bge: color-mix(in srgb, var(--lc-a) 35%, #fff);
+  --bgu: color-mix(in srgb, color-mix(in srgb, var(--lc-a) 58%, #fff) 31%, transparent);
+  --bgp: rgba(255, 255, 255, 0.9);
+  --bgr: color-mix(in srgb, var(--lc-a) 58%, #fff);
+  --bgw: color-mix(in srgb, var(--lc-a) 35%, #fff);
+}
+/* 非当前句：纯色，不用扫光渐变（压过 lyric-words.css 里 .is-grad 尾韵期的渐变） */
+.lc-root .ly-line:not(.is-cur) .ly-bg .u,
+.lc-root .ly-bg-whole {
+  color: var(--bgr, #fff);
+  background-image: none;
+}
+/* 已唱过去的句子：和声停在静止色（压过上面主唱的 .is-past 规则，所以带 [data-scheme] 凑够优先级、放在它们后面） */
+.lc-root[data-scheme] .ly-line.is-past .ly-bg .u,
+.lc-root[data-scheme] .ly-line.is-past .ly-bg-whole {
+  color: var(--bgp, #fff);
+  background-image: none;
+}
+/* 当前句：按和声自己的时间扫色（--p 由引擎写，--f 是羽化宽度，和主唱同一套渐变） */
+.lc-root .ly-line.is-cur .ly-bg .u {
+  color: transparent;
+  -webkit-background-clip: text;
+  background-clip: text;
+  will-change: auto;
+  --P: calc(var(--p, 0) * (100% + 2 * var(--f, 34%)) - var(--f, 34%));
+  background-image: linear-gradient(90deg, var(--bgs) 0, var(--bgs) calc(var(--P) - var(--f, 34%)), var(--bge) var(--P), var(--bgu) calc(var(--P) + var(--f, 34%)));
+}
+/* 没有逐字时间的和声：整句，当前句里亮起 */
+.lc-root .ly-bg-whole {
+  transition: color 0.38s ease;
+}
+.lc-root .ly-line.is-cur .ly-bg-whole {
+  color: var(--bgw, #fff);
+}
+
 /* 间奏 / 前奏的三个点 */
 .lc-root .ly-gap {
   height: calc(var(--lc-size, 36px) * var(--lc-lh, 1.32));

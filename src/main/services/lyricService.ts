@@ -68,6 +68,8 @@ export interface LyricExtraSources {
 const AMLL_BUDGET_MS = 3500;
 const AMLL_SECOND_BUDGET_MS = 2500;
 const APPLE_BUDGET_MS = 4200;
+/** 主歌词已经够好时顺手再查一次 AMLL（只为补和声 / 对唱归属，#199）：预算很小，不能拖慢一首本来就齐的歌。 */
+const AMLL_RICH_BUDGET_MS = 1200;
 
 /** 待合并的一份歌词：trusted = 按 id 确认是同一录音（AMLL、Apple 目录 id），不再要求时长差 ≤2 秒。 */
 interface LyricHit { lyric: Lyric; duration: number; trusted: boolean }
@@ -137,7 +139,12 @@ export class LyricService {
       };
       best=await fetch(track,'primary');
       // 够好就不去别家补：判定按语种（中文不要求翻译，日语要罗马音，见 lyricComplete）
-      if(best && lyricComplete(best))return best;
+      if(best && lyricComplete(best)){
+        // 只按已知 id 查一次 AMLL（不查 Apple、不搜别的平台）：它带和声 / 对唱归属，主歌词没有这两样；只补缺的层，不动已有的。没命中 / 失败照旧返回
+        const {hit}=await this.amllHit(mergeLyricIds(lyricIdsOf(track),lyricIdsOf(origin)),AMLL_RICH_BUDGET_MS);
+        throwIfCancelled();
+        return hit?enrichAligned(best,hit.lyric):best;
+      }
       const sources=(['netease','qq','kugou'] as Platform[]).filter(p=>p!==track.platform && this.adapters[p]?.searchSongs);
       // AMLL / Apple 和网易云 / QQ / 酷狗的搜索并行；新来源失败或超时只当没有，不影响其余。
       const ids=mergeLyricIds(lyricIdsOf(track),lyricIdsOf(origin));

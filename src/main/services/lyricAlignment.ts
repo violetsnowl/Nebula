@@ -8,11 +8,13 @@ const textRows=(l:Lyric):LyricLine[]=>l.lines.filter(x=>x.text.trim() && !credit
 /** 罗马音行挂到正文行的时间窗，和前端 attachRoman 一致（300ms）。 */
 const ROMAN_WINDOW_MS=300;
 const romanRows=(l:Lyric):LyricLine[]=>parseLrc(l.romalrc || l.romanRaw || '').filter(r=>r.text.trim());
-export function lyricCoverage(l:Lyric):{wordLines:number;textLines:number;translatedLines:number;romanLines:number} {
+/** bgLines = 有和声的正文行数，agentLines = 标了对唱归属的正文行数（#199）。 */
+export function lyricCoverage(l:Lyric):{wordLines:number;textLines:number;translatedLines:number;romanLines:number;bgLines:number;agentLines:number} {
   const rows=textRows(l),words=timedLines(l.yrc || ''),roman=romanRows(l);
   return {textLines:rows.length,translatedLines:rows.filter(x=>x.translation?.trim()).length,
     wordLines:rows.filter(x=>words.some(w=>Math.abs(w.timeMs-x.timeMs)<=250 && identityText(w.text)===identityText(x.text))).length,
-    romanLines:rows.filter(x=>roman.some(r=>Math.abs(r.timeMs-x.timeMs)<=ROMAN_WINDOW_MS)).length};
+    romanLines:rows.filter(x=>roman.some(r=>Math.abs(r.timeMs-x.timeMs)<=ROMAN_WINDOW_MS)).length,
+    bgLines:rows.filter(x=>x.bg?.text?.trim()).length,agentLines:rows.filter(x=>!!x.agent).length};
 }
 
 const KANA=/[぀-ヿ]/,HANGUL=/[가-힯ᄀ-ᇿ㄰-㆏]/,HAN=/[㐀-鿿豈-﫿]/;
@@ -192,10 +194,16 @@ export function mergeWordsByLine(base:Lyric,other:Lyric):{lyric:Lyric;pairs:numb
   return {lyric:next,pairs:pairs.length,added:addWords.length};
 }
 
+/** 和声的词时间是绝对毫秒：跟着配上的行从对方的时间轴平移到本平台的（行时间不同时），行时间校准不动它。 */
+const shiftBg=(bg:NonNullable<LyricLine['bg']>,by:number):NonNullable<LyricLine['bg']>=>
+  by && bg.words?{...bg,words:bg.words.map(w=>({...w,startMs:w.startMs+by}))}:bg;
+
 /**
  * 逐行补翻译 / 罗马音（#197）：不要求对方有逐字。本平台的正文行和对方的正文行按 pairRowsToWords 同样的规则配对
  * （正文相同、时间差 ≤1.2 秒、顺序一致；至少 3 对、中位差 ≤0.6 秒），本行缺、对方那行有的翻译 / 罗马音挂上来，行时间不动。
- * 以前罗马音只在「本平台一行都没有」时整份照搬，缺一部分的（QQ 日语歌约两成行没有）补不上。没有增益返回 null。
+ * 以前罗马音只在「本平台一行都没有」时整份照搬，缺一部分的（QQ 日语歌约两成行没有）补不上。
+ * 和声（背景人声）与对唱归属（agent）也一起补（#199）：本行没有、对方这行有就挂上；agent 只在对方整首至少两种不同的归属都出现过时才补
+ * （只有一种说明对方没真正区分歌手，补上去会把本来的独唱歌染成对唱）。没有增益返回 null。
  */
 export function fillTextLayers(base:Lyric,other:Lyric):{lyric:Lyric;pairs:number}|null {
   const rows=textRows(base).sort((a,b)=>a.timeMs-b.timeMs),theirs=textRows(other).sort((a,b)=>a.timeMs-b.timeMs);
@@ -205,15 +213,20 @@ export function fillTextLayers(base:Lyric,other:Lyric):{lyric:Lyric;pairs:number
   const deltas=pairs.map(([r,o])=>Math.abs(o.timeMs-r.timeMs)).sort((a,b)=>a-b);
   if(deltas[Math.floor(deltas.length/2)]!>600)return null;
   const ownRoman=romanRows(base),theirRoman=romanRows(other);
-  const translation=new Map<LyricLine,string>(),addRoman:LyricLine[]=[];
+  const translation=new Map<LyricLine,string>(),addRoman:LyricLine[]=[],extra=new Map<LyricLine,Partial<LyricLine>>();
+  const fillAgent=new Set(theirs.map(o=>o.agent).filter(Boolean)).size>=2;
   for(const [row,o] of pairs){
     if(!row.translation?.trim() && o.translation?.trim())translation.set(row,o.translation);
+    const patch:Partial<LyricLine>={};
+    if(!row.bg?.text?.trim() && o.bg?.text?.trim())patch.bg=shiftBg(o.bg,row.timeMs-o.timeMs);
+    if(!row.agent && fillAgent && o.agent)patch.agent=o.agent;
+    if(patch.bg || patch.agent)extra.set(row,patch);
     if(ownRoman.some(r=>Math.abs(r.timeMs-row.timeMs)<=ROMAN_WINDOW_MS))continue;
     const roman=theirRoman.filter(r=>Math.abs(r.timeMs-o.timeMs)<=ROMAN_WINDOW_MS).sort((a,b)=>Math.abs(a.timeMs-o.timeMs)-Math.abs(b.timeMs-o.timeMs))[0];
     if(roman)addRoman.push({timeMs:row.timeMs,text:roman.text});
   }
-  if(!translation.size && !addRoman.length)return null;
-  const next:Lyric={...base,lines:base.lines.map(x=>translation.has(x)?{...x,translation:translation.get(x)}:x)};
+  if(!translation.size && !addRoman.length && !extra.size)return null;
+  const next:Lyric={...base,lines:base.lines.map(x=>translation.has(x) || extra.has(x)?{...x,...(translation.has(x)?{translation:translation.get(x)}:{}),...extra.get(x)}:x)};
   if(translation.size)next.tlyric=next.translationRaw=next.lines.filter(x=>x.text && x.translation).map(x=>lrcAt(x.timeMs,x.translation!)).join('\n');
   if(addRoman.length){
     const merged=[...ownRoman,...addRoman].sort((a,b)=>a.timeMs-b.timeMs).map(r=>lrcAt(r.timeMs,r.text)).join('\n');
@@ -226,8 +239,8 @@ export function enrichAligned(base:Lyric,other0:Lyric):Lyric {
   // 补丁自己的普通行和逐字行也可能差几百毫秒：先校准，否则固定偏移那条路同样会被 250ms 规则卡掉（正式流程里取回时已校准，这里兜底）
   const other=snapLinesToWords(other0);
   const before=lyricCoverage(base);
-  // 补上了逐字 / 翻译 / 罗马音其中任何一样才算有增益
-  const gained=(l:Lyric)=>{const c=lyricCoverage(l);return c.wordLines>before.wordLines || c.translatedLines>before.translatedLines || c.romanLines>before.romanLines;};
+  // 补上了逐字 / 翻译 / 罗马音 / 和声 / 对唱归属其中任何一样才算有增益
+  const gained=(l:Lyric)=>{const c=lyricCoverage(l);return c.wordLines>before.wordLines || c.translatedLines>before.translatedLines || c.romanLines>before.romanLines || c.bgLines>before.bgLines || c.agentLines>before.agentLines;};
   const from={platform:other.identity?.platform || other.source || 'unknown',sourceId:other.identity?.sourceId || ''};
   const alignment=alignTimelines(base,other);
   if(!alignment){
@@ -248,7 +261,8 @@ export function enrichAligned(base:Lyric,other0:Lyric):Lyric {
   const shifted=toYrc(timedLines(other.yrc || ''),offset);
   // 按固定偏移挪好的对方（罗马音一起挪），逐行补逐字、补罗马音都用它
   const shiftRoman=parseLrc(other.romalrc || other.romanRaw || '').filter(l=>l.timeMs+offset>=0).map(l=>lrcAt(l.timeMs+offset,l.text)).join('\n');
-  const moved={...other,lines:other.lines.map(l=>({...l,timeMs:l.timeMs+offset})),yrc:shifted,romalrc:shiftRoman || undefined,romanRaw:shiftRoman || undefined};
+  // 和声词时间也是绝对毫秒，跟着整条时间轴一起挪
+  const moved={...other,lines:other.lines.map(l=>({...l,timeMs:l.timeMs+offset,...(l.bg?{bg:shiftBg(l.bg,offset)}:{})})),yrc:shifted,romalrc:shiftRoman || undefined,romanRaw:shiftRoman || undefined};
   if(lyricCoverage({...next,yrc:shifted}).wordLines>lyricCoverage(next).wordLines)next.yrc=shifted;
   else if(shifted){
     // 整份换成对方逐字没有更多（本平台已有一部分逐字）：按固定偏移挪好对方，再逐行补本平台缺的那些行（#196）
@@ -257,7 +271,7 @@ export function enrichAligned(base:Lyric,other0:Lyric):Lyric {
   }
   next.tlyric=next.translationRaw=next.lines.filter(l=>l.text && l.translation).map(l=>lrcAt(l.timeMs,l.translation!)).join('\n');
   if(!(next.romanRaw || next.romalrc) && shiftRoman)next.romanRaw=next.romalrc=shiftRoman;
-  else next=fillTextLayers(next,moved)?.lyric ?? next; // 本平台有一部分罗马音：缺的行逐行补（#197）
+  next=fillTextLayers(next,moved)?.lyric ?? next; // 本平台有一部分罗马音：缺的行逐行补（#197）；和声、对唱归属也在这里补（#199）
   if(!gained(next))return base;
   next.provenance=[...(base.provenance || []),{...from,kind:'enrichment',...alignment}];
   return next;

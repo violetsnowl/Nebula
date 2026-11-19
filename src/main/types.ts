@@ -33,6 +33,10 @@ export interface LyricLine {
   text: string;
   /** Translation bound to the same timeline. */
   translation?: string;
+  /** 对唱时这一句是谁唱（只有一位歌手的歌不标）：v1 第一位、v2 其余、both 合唱。 */
+  agent?: 'v1' | 'v2' | 'both';
+  /** 这一句的和声（背景人声）；词时间是绝对毫秒，没有逐字时只有 text。 */
+  bg?: { text: string; words?: Array<{ text: string; startMs: number; duration: number }> };
 }
 
 export interface Lyric {
@@ -59,7 +63,7 @@ export interface Lyric {
   /** 实际取歌词的身份及跨源增强证据；UI 可用于来源探针。 */
   identity?: { platform: string; sourceId: string };
   provenance?: Array<{ platform:string; sourceId:string; kind:'primary'|'fallback'|'enrichment'; offsetMs?:number; anchors?:number }>;
-  coverage?: { wordLines:number; textLines:number; translatedLines:number; romanLines?:number };
+  coverage?: { wordLines:number; textLines:number; translatedLines:number; romanLines?:number; bgLines?:number; agentLines?:number };
   incomplete?: boolean;
 }
 

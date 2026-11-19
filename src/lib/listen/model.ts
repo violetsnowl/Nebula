@@ -36,6 +36,10 @@ export interface EngineLine {
   rb?: string[];
   /** 日语句（#172）。 */
   ja?: boolean;
+  /** 和声（背景人声，#199）：随行小字，按它自己的逐字时间扫色；units 为 null = 没有逐字时间，整句显示。 */
+  bg?: { text: string; units: EngineUnit[] | null };
+  /** 对唱（#199）：v2 换第二色，both（合唱）与 v1 用主色；v1 不用记。 */
+  agent?: 'v2' | 'both';
   /** 快歌密度 0–1：演唱时长 3.6s 以上 = 0，1.8s 以内 = 1。 */
   dens: number;
 }
@@ -141,6 +145,18 @@ function buildUnits(line: LyricLineUI): EngineUnit[] {
   return units;
 }
 
+/** 和声 / 对唱归属 → 引擎条目上的可选字段。和声没有长音效果（浮起、放大、白光只属于主唱），units 的 emph 一律关掉。 */
+function layersOf(l: LyricLineUI): Pick<EngineLine, 'bg' | 'agent'> {
+  const out: Pick<EngineLine, 'bg' | 'agent'> = {};
+  const bgText = l.bg?.text?.trim();
+  if (l.bg && bgText) {
+    const units = l.bg.words?.length ? buildUnits({ timeMs: 0, text: bgText, words: l.bg.words }).map((u) => ({ ...u, emph: false })) : [];
+    out.bg = { text: bgText, units: units.length ? units : null };
+  }
+  if (l.agent === 'v2' || l.agent === 'both') out.agent = l.agent;
+  return out;
+}
+
 /**
  * 一句歌词 → 引擎句子（逐字 / 整句）。nextStart = 下一句开始（秒），整句没有时长时用它当结束。
  * 听音空间（buildEntries）和星云上的空域歌词（LyricsLayer）共用。
@@ -157,14 +173,14 @@ export function toEngineLine(l: LyricLineUI, nextStart?: number): EngineLine {
   if (units.length) {
     const s = units[0]!.s;
     const e = units.reduce((m, u) => Math.max(m, u.e), s);
-    return { kind: 'line', s, e, text: units.map((u) => u.t).join(''), units, tr, ro, rb, ja, dens: clamp((3.6 - (e - s)) / 1.8, 0, 1) };
+    return { kind: 'line', s, e, text: units.map((u) => u.t).join(''), units, tr, ro, rb, ja, ...layersOf(l), dens: clamp((3.6 - (e - s)) / 1.8, 0, 1) };
   }
   // 没有逐字时间：整句条目，不伪造逐字
   const s = l.timeMs / 1000;
   const rawDur = l.duration && l.duration > 0 ? l.duration : ws[0]?.duration;
   const dur = rawDur && rawDur > 0 ? rawDur / 1000 : undefined;
   const e = dur != null ? s + dur : nextStart != null && nextStart > s ? nextStart : s + 4;
-  return { kind: 'line', s, e, text: (l.text ?? '').trim(), units: null, tr, ro, rb, ja, dens: clamp((3.6 - (e - s)) / 1.8, 0, 1) };
+  return { kind: 'line', s, e, text: (l.text ?? '').trim(), units: null, tr, ro, rb, ja, ...layersOf(l), dens: clamp((3.6 - (e - s)) / 1.8, 0, 1) };
 }
 
 /** 把歌词转成引擎条目；中间加入间奏 / 前奏（空档 > 4s）。 */
@@ -179,7 +195,9 @@ export function buildEntries(lines: LyricLineUI[]): EngineEntry[] {
     const cur = body[i]!;
     out.push(cur);
     const next = body[i + 1];
-    if (next && next.s - cur.e > GAP_MIN) out.push({ kind: 'gap', s: cur.e, e: next.s });
+    // 和声比主唱晚唱完时，间奏从和声唱完开始算（不然间奏三点会把这一句从「当前句」里挤掉，和声扫到一半就停）
+    const end = cur.bg?.units ? cur.bg.units.reduce((m, u) => Math.max(m, u.e), cur.e) : cur.e;
+    if (next && next.s - end > GAP_MIN) out.push({ kind: 'gap', s: end, e: next.s });
   }
   return out;
 }
