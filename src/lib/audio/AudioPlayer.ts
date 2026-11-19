@@ -51,6 +51,8 @@ export const FOREIGN_SONG_ID = -1;
 class AudioPlayer {
   el: HTMLAudioElement;
   private listeners = new Set<Listener>();
+  /** 下一首音源解析好时的通知（歌词预取用，#197）。 */
+  private upcomingListeners = new Set<(track: Track) => void>();
   private queue: Track[] = [];
   /** 当前播放顺序（queue 下标序列）：顺序模式为恒等序，随机模式为 Fisher-Yates 洗牌序。 */
   private order: number[] = [];
@@ -138,7 +140,17 @@ class AudioPlayer {
       warm.track={...track,...this.timingFor(track)};
       warm.el=new Audio();warm.el.preload='auto';warm.el.volume=this.el.volume;warm.el.muted=this.el.muted;
       warm.el.src=track.audio;warm.el.load();
+      for (const fn of this.upcomingListeners) { try { fn(warm.track); } catch { /* 预取失败不影响播放 */ } }
     }).catch(()=>{});
+  }
+
+  /** 队列里的下一首（只读，不触发解析）；单曲循环、随机放到最后一首时没有。 */
+  peekUpcoming(): Track | undefined { return this.upcoming(); }
+
+  /** 下一首的音源解析好时通知：兜底播放的歌这时才知道实际供流那首（歌词预取用，#197）。 */
+  onUpcomingResolved(fn: (track: Track) => void): () => void {
+    this.upcomingListeners.add(fn);
+    return () => this.upcomingListeners.delete(fn);
   }
 
   subscribe(fn: Listener): () => void {

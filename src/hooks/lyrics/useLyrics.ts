@@ -41,6 +41,11 @@ function normalizeLyricLines(data: unknown, title?: string, artist?: string): Ly
   return filterCreditLines(attachRoman(alignWordsToText(mergeWordLyrics(out, yrc || qrc)), roman), title, artist);
 }
 
+/** 歌曲身份（含兜底供流那首）：同一首换了供流平台要重新取歌词。 */
+const lyricKey = (s: Track) => `${s.source}:${s.sourceId}:${s.via?.platform || ''}:${s.via?.sourceId || ''}`;
+/** 通常在本平台直接出声的平台：下一首还没解析音源时，也能先按它自己取歌词（其余平台要等解析出实际供流那首）。 */
+const NATIVE_STREAM = new Set(['netease', 'qq', 'kugou', 'kuwo', 'bodian']);
+
 const DEFAULT_LYRIC_FONT_SIZE = 44;
 const LEGACY_LYRIC_FONT_SIZE = 24;
 
@@ -118,8 +123,21 @@ export function useLyrics() {
   useEffect(() => {
     let requestId='';
     const cancel=()=>{if(requestId)void window.nebulaAPI?.cancelResolve?.(requestId).catch(()=>{});requestId='';};
+    // 预取下一首的歌词（#197）：后端取完进缓存，切过去时直接命中。不带 requestId，切歌不取消它。两个时机：
+    // 1) 当前这首歌词出来 8 秒后，下一首通常在本平台出声（或已经知道供流那首）就先取——手动切下一首也能用上；
+    // 2) 临近结尾播放器解析好下一首音源时，按实际供流那首再取——兜底播放的歌这时才知道是哪首。同一首只取一次。
+    const warmed=new Set<string>();
+    let warmTimer:ReturnType<typeof setTimeout>|undefined;
+    const warmUp=(next:Track|undefined)=>{
+      if(!next?.sourceId || !hasDesktopAPI())return;
+      const key=lyricKey(next);
+      if(key===songRef.current || warmed.has(key))return;
+      warmed.add(key);if(warmed.size>64)warmed.delete(warmed.values().next().value!);
+      void window.nebulaAPI!.fetchLyric(streamTrack(next),next.via?{origin:toBackendTrack(next)}:{}).catch(()=>{});
+    };
     const load = async (song: Track | null) => {
       cancel();
+      clearTimeout(warmTimer);
       const seq = ++loadSeqRef.current;
       setLyricLines([]);setLyricDebugInfo(null);
       if (!song) {
@@ -140,6 +158,7 @@ export function useLyrics() {
         const data = res.ok ? res.data : null;
         const lines = normalizeLyricLines(data, song.title, song.artist);
         setLyricLines(lines);
+        warmTimer=setTimeout(()=>{const next=audioPlayer.peekUpcoming();if(next && (next.via || NATIVE_STREAM.has(next.source)))warmUp(next);},8000);
         if (data && typeof data === 'object') {
           const src = data as { source?: unknown; yrc?: unknown; qrc?: unknown; provenance?: unknown };
           const provenance = Array.isArray(src.provenance)
@@ -166,7 +185,7 @@ export function useLyrics() {
     };
     const check = () => {
       const s = audioPlayer.getState().song;
-      const key=s?`${s.source}:${s.sourceId}:${s.via?.platform || ''}:${s.via?.sourceId || ''}`:'';
+      const key=s?lyricKey(s):'';
       if (key !== songRef.current) {
         songRef.current = key;
         void load(s);
@@ -174,7 +193,8 @@ export function useLyrics() {
     };
     check();
     const unsubscribe=audioPlayer.subscribe(check);
-    return ()=>{loadSeqRef.current++;songRef.current='';cancel();unsubscribe();};
+    const unsubscribeUpcoming=audioPlayer.onUpcomingResolved(warmUp);
+    return ()=>{loadSeqRef.current++;songRef.current='';cancel();clearTimeout(warmTimer);unsubscribe();unsubscribeUpcoming();};
   }, []);
 
   const persistLyricSettings = useCallback((next: LyricVisualSettings) => {

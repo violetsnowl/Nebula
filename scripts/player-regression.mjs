@@ -135,6 +135,17 @@ test('预取的媒体只在下一首开始时接管，旧元素事件不回写',
   old.finish();await tick();assert.equal(p.el,warm);assert.equal(p.state.song.id,2);assert.equal(calls,2);
   old.currentTime=239;old.dispatchEvent(new Event('timeupdate'));assert.equal(p.state.currentTime,0);
 });
+test('下一首可只读查看；音源预取解析好时通知（歌词预取用，#197），供流兜底信息随之带出', async p => {
+  const songs=[track(1),track(2)];const seen=[];
+  p.emptyResolver=async t=>({...resolved(t),via:t.id===2?{platform:'qq',sourceId:'q2'}:undefined});
+  const off=p.onUpcomingResolved(t=>seen.push(t));
+  p.playSong(songs[0],songs);await tick();
+  assert.equal(p.peekUpcoming().id,2);assert.equal(seen.length,0,'离结尾还远，不预取');
+  p.el.currentTime=220;p.el.dispatchEvent(new Event('timeupdate'));await tick();
+  assert.equal(seen.length,1);assert.equal(seen[0].id,2);assert.deepEqual(seen[0].via,{platform:'qq',sourceId:'q2'});
+  off();p.el.finish();await tick();p.el.currentTime=230;p.el.dispatchEvent(new Event('timeupdate'));await tick();
+  assert.equal(seen.length,1,'退订后不再通知');
+});
 test('插队后废弃旧预取，按 FIFO 播放新下一首', async p => {
   const songs=[track(1),track(2)];p.emptyResolver=async t=>resolved(t);
   p.playSong(songs[0],songs);await tick();p.el.currentTime=220;p.el.dispatchEvent(new Event('timeupdate'));await tick();
