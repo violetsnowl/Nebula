@@ -160,6 +160,7 @@ flowchart TD
 - **和声、对唱**（#199）：只有 AMLL / Apple 的 TTML 带（`x-bg` → `LyricLine.bg`，词时间是绝对毫秒；`ttm:agent` → `LyricLine.agent` = v1 / v2 / both，整首至少两位歌手才标）。`fillTextLayers` 把它们按正文配对补到主歌词上（和声词时间随配上的行平移；对方整首至少两种归属才补 agent），算增益。主歌词已经够好时，原来直接返回、拿不到这两样，现在再按 id 查一次 AMLL（1.2 秒预算，不查 Apple、不搜别的平台）补层。缓存 schema 4。
 - **手动换歌词、时间微调**（#200）：`LyricOverrides`（userData `lyric-overrides.json`，键 = 实际供流那首）记「选中的来源 + 微调毫秒」。`fetchLyric` 有选择时先取选中那份当正文（内存里列过版本的直接用；否则按来源重取：普通平台用适配器，AMLL 按 `matchedBy:id`，Apple 把目录 id 当原曲走按 id 直取），再照常补全，补丁里跳过它；取不到就退回自动且这次不写缓存。微调在输出时整体平移（`lyricOffset.applyLyricOffset`：行、逐字、翻译 / 罗马音文本、和声词），缓存里存的是没平移的，所以改微调不重取；换来源才删这首的缓存。`listLyricVersions` 和补全共用 `gatherHits`（AMLL 两轮 / Apple / 网易云·QQ·酷狗搜索，固定顺序）。`provenance` 的补全项记 `gain`（补了逐字 / 翻译 / 罗马音 / 和声），界面据此写「QQ 补逐字」。IPC：`nebula:lyric-versions`、`nebula:lyric-choose`；前端改完派发 `nebula:lyric-reload`，`useLyrics` 保留旧歌词直到新的到。
 - **预取下一首**（#198，前端 `useLyrics`）：当前这首歌词出来 8 秒后，下一首如果通常在本平台出声（网易云、QQ、酷狗、酷我、波点）或已经知道供流那首，就先取；临近结尾播放器解析好下一首音源（`AudioPlayer.onUpcomingResolved`）时，按实际供流那首再取。不带 requestId、切歌不取消，取完进缓存，切过去直接命中。
+- **酷我、波点本平台歌词**（#204，`parsers/kuwoLyric.ts`）：两家同一曲库同一 id，共用 `kuwoAdapter.fetchKuwoLyric`（匿名、不带 Cookie、3 秒超时，`http.requestBytes` 取原始字节）。请求参数和返回都用 "yeelion" 循环异或；返回 = 文本头 + 空行 + zlib 正文，头里 `lrcx=1` 时正文再 base64 + 异或得到 LRCX 逐字，文字 GB18030。LRCX 的 `[kuwo:N]` 是八进制，十位 k1、个位 k2，字 `<a,b>` 起点 = 行首 + (a+b)/(2·k1)、时长 = (a−b)/(2·k2)；同一时间戳两行时全 `<0,0>` 那行是翻译。没有罗马音，日语照常靠补全。
 - 歌词来源细节见下面「歌词新来源（#195）」。
 
 ## 后端整修 #B3：请求与媒体生命周期

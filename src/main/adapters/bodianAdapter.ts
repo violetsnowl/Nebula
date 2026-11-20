@@ -6,6 +6,7 @@ import type { CookieStore } from '../cookieStore';
 import type { Lyric, Playlist, PlaylistSummary, PlatformAdapter, QualityOption, SongUrl, Track } from '../types';
 import { cleanMetadataText } from '../parsers/metadataText';
 import { requestScope, withRequestScope } from '../requestScope';
+import { fetchKuwoLyric } from './kuwoAdapter';
 
 /*
  * 波点音乐（bodian）。接口地址、请求头、签名与各接口参数参考 PyBodian（MIT）：
@@ -220,7 +221,9 @@ export class BodianAdapter implements PlatformAdapter {
   private api: BodianApi;
   private regionLogged = false;
 
-  constructor(_http: HttpClient, cookies: CookieStore, transport?: BodianTransport) {
+  private http?: HttpClient;
+  constructor(http: HttpClient, cookies: CookieStore, transport?: BodianTransport) {
+    this.http = http;
     this.api = new BodianApi(cookies, transport);
   }
 
@@ -315,9 +318,9 @@ export class BodianAdapter implements PlatformAdapter {
     ];
   }
 
-  /** 暂不接波点歌词；LyricService 在主源没有歌词时会去其他平台找。 */
-  async fetchLyric(_songId: string): Promise<Lyric | null> {
-    return null;
+  /** 本平台歌词（#204）：波点和酷我同一套曲库、歌曲 id 相同，用酷我的歌词接口（逐字 + 翻译，匿名）。 */
+  async fetchLyric(songId: string): Promise<Lyric | null> {
+    return this.http ? fetchKuwoLyric(this.http, songId) : null;
   }
 
   /** 我的歌单：红心歌单（排第一）、自建歌单、收藏的歌单（不含专辑）。失败返回 []。 */

@@ -9,6 +9,7 @@ export * from './audioProbe';
 export * from './ncm/ncmApi';
 export * from './encrypt/ncmCrypto';
 export * from './parsers/lyricParser';
+export * from './parsers/kuwoLyric';
 export * from './adapters/mappers';
 export * from './adapters/index';
 export * from './adapters/neteaseAdapter';

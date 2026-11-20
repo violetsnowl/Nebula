@@ -2,6 +2,7 @@ import type { HttpClient } from '../http';
 import type { CookieStore } from '../cookieStore';
 import type { Lyric, Playlist, PlaylistSummary, PlatformAdapter, QualityOption, SongUrl, Track } from '../types';
 import { cleanMetadataText } from '../parsers/metadataText';
+import { decodeKuwoLyric, kuwoLyricUrl, parseKuwoLyric } from '../parsers/kuwoLyric';
 
 const PLAYLIST_API = 'http://nplserver.kuwo.cn/pl.svc';
 const SONG_URL_API = 'http://antiserver.kuwo.cn/anti.s';
@@ -78,6 +79,18 @@ export function mapKuwoMyPlaylists(items: Array<Record<string, any>>): PlaylistS
       cover: kuwoCoverUrl(p.pic),
       trackCount: Number(p.musicnum) || 0,
     }));
+}
+
+/** 酷我 / 波点共用的歌词请求（两家歌曲 id 相同）。 */
+export async function fetchKuwoLyric(http: HttpClient, songId: string): Promise<Lyric | null> {
+  if (!/^\d+$/.test(songId)) return null;
+  try {
+    const buf = await http.requestBytes(kuwoLyricUrl(songId), { platform: 'kuwo', cookie: '', timeoutMs: 3000 });
+    const text = decodeKuwoLyric(buf);
+    return text ? parseKuwoLyric(text) : null;
+  } catch {
+    return null;
+  }
 }
 
 export class KuwoAdapter implements PlatformAdapter {
@@ -169,9 +182,9 @@ export class KuwoAdapter implements PlatformAdapter {
     return [{ level: '128', label: '标准 128k' }];
   }
 
-  /** 首版不接酷我歌词；LyricService 在主源没有歌词时会去其他平台找。 */
-  async fetchLyric(_songId: string): Promise<Lyric | null> {
-    return null;
+  /** 本平台歌词（#204）：逐字 + 翻译，接口匿名（不带登录信息）。取不到返回 null，LyricService 会去别的平台补。 */
+  async fetchLyric(songId: string): Promise<Lyric | null> {
+    return fetchKuwoLyric(this.http, songId);
   }
 
   /** 我的歌单：用 cookie 里的 userid（有 sid 时一并带上，可能含私密歌单）。失败返回 []。 */

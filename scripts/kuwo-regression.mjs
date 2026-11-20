@@ -155,4 +155,59 @@ await test('封面 / 音频域名：酷我保持 http，音频走 kuwo 代理白
  assert.equal(audioPlatform(new URL('https://evilkuwo.cn/a.mp3')),null);
  assert.equal(mapKuwoMyPlaylists([{id:1,title:''}]).length,0);
 });
+/* ---------- #204 酷我 / 波点歌词（句子全部编造） ---------- */
+const {parseKuwoLyric,decodeKuwoLyric,kuwoLyricUrl,fetchKuwoLyric,BodianAdapter,timedLines,lyricCoverage}=api;
+const zlib=require('node:zlib');
+const KEY=Buffer.from('yeelion'),xorB=b=>Buffer.from(b.map((v,i)=>v^KEY[i%KEY.length]));
+const LRCX=['[ti:编的歌]','[kuwo:066]','[offset:0]',
+ // k=066(八进制)=54 → k1=5、k2=4：起点=(a+b)/10，时长=(a-b)/8
+ '[00:01.000]<0,0>编的<0,0>译文',
+ '[00:01.000]<800,-800>编<1300,700>的<1700,1300>第一句',
+ '[00:05.500]<400,-400>made <900,100>up <1400,600>line',
+ '[00:09.000]<0,0>只有<0,0>翻译行',
+ '[00:09.000]<0,0>',
+ '[00:12.000]<0,0> <0,0> ',
+ '[00:12.000]<600,-600>编的<1000,200>第三句',
+].join('\n');
+await test('#204 酷我 LRCX：[kuwo:八进制] 换算逐字时间；全是 <0,0> 的同时间行当翻译；空行跳过',()=>{
+ const l=parseKuwoLyric(LRCX);
+ assert.deepEqual(l.lines.map(x=>x.text),['编的第一句','made up line','编的第三句']);
+ assert.equal(l.lines[0].translation,'编的译文');
+ assert.equal(l.lines[2].translation,undefined,'空白翻译行不算');
+ const w=timedLines(l.yrc);
+ assert.deepEqual(w[0].words.map(x=>[x.text,x.startMs,x.duration]),[['编',1000,200],['的',1200,75],['第一句',1300,50]]);
+ assert.deepEqual(w[1].words.map(x=>x.text),['made ','up ','line'],'英文词间空格留在前一个词末尾');
+ assert.equal(lyricCoverage(l).wordLines,3);assert.equal(lyricCoverage(l).translatedLines,1);
+ // 普通 LRC（没有逐字）：只有整句
+ const plain=parseKuwoLyric('[00:01.00]编的整句\n[00:04.50]第二句');
+ assert.equal(plain.lines.length,2);assert.equal(plain.yrc,undefined);
+ assert.equal(parseKuwoLyric('[ti:只有头]'),null);
+});
+await test('#204 酷我歌词解码：请求参数异或 + base64；lrcx=1 时正文 zlib → base64 → 异或；格式不对返回 null',()=>{
+ const url=new URL(kuwoLyricUrl('123'));
+ assert.equal(url.host,'newlyric.kuwo.cn');
+ assert.match(xorB(Buffer.from(url.search.slice(1),'base64')).toString(),/rid=MUSIC_123&lrcx=1$/);
+ const text='[kuwo:066]\n[00:01.000]<800,-800>made <1300,700>up';
+ const lrcx=Buffer.concat([Buffer.from('tp=content\r\nlrcx=1\r\n\r\n'),zlib.deflateSync(Buffer.from(xorB(Buffer.from(text)).toString('base64')))]);
+ assert.equal(decodeKuwoLyric(lrcx),text);
+ const plain=Buffer.concat([Buffer.from('tp=content\r\nlrcx=0\r\n\r\n'),zlib.deflateSync(Buffer.from('[00:01.00]made up'))]);
+ assert.equal(decodeKuwoLyric(plain),'[00:01.00]made up');
+ assert.equal(decodeKuwoLyric(Buffer.from('no header')),null);
+ assert.equal(decodeKuwoLyric(Buffer.from('a=1\r\n\r\nnot-zlib')),null);
+});
+await test('#204 酷我、波点适配器都用同一个歌词接口：匿名（不带 cookie）、3 秒、非数字 id / 网络失败返回 null',async()=>{
+ // 正文是 GB18030：「编的」= B1E0 B5C4
+ const gb=Buffer.concat([Buffer.from('[kuwo:066]'+String.fromCharCode(10)+'[00:01.000]<800,-800>'),Buffer.from([0xb1,0xe0]),Buffer.from('<1300,700>'),Buffer.from([0xb5,0xc4])]);
+ const body=Buffer.concat([Buffer.from('lrcx=1'+String.fromCharCode(13,10,13,10)),zlib.deflateSync(Buffer.from(xorB(gb).toString('base64')))]);
+ const calls=[];
+ const http={requestBytes:async(url,opts)=>{calls.push({url,opts});if(url.includes('fail'))throw new Error('x');return body;}};
+ const k=new KuwoAdapter(http,newStore(LOGGED));
+ assert.equal((await k.fetchLyric('42')).lines[0].text,'编的');
+ assert.equal(calls[0].opts.cookie,'','不带登录信息');assert.equal(calls[0].opts.timeoutMs,3000);
+ const b=new BodianAdapter(http,newStore());
+ assert.equal((await b.fetchLyric('42')).lines[0].text,'编的');
+ assert.equal(calls.length,2);
+ assert.equal(await k.fetchLyric('abc'),null);assert.equal(calls.length,2,'非数字 id 不发请求');
+ assert.equal(await fetchKuwoLyric({requestBytes:async()=>{throw new Error('net');}},'1'),null);
+});
 console.log(`酷我回归 ${passed}/${passed}`);

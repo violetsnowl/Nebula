@@ -82,6 +82,19 @@ export class HttpClient {
     return res.text;
   }
 
+  /** 取二进制响应（酷我歌词是压缩数据，按文本读会被破坏）。只发 GET；非 2xx 抛错。 */
+  async requestBytes(url: string, opts: RequestOptions): Promise<Buffer> {
+    const headers: Record<string, string> = { ...PLATFORM_HEADERS[opts.platform], ...opts.headers };
+    const cookie = opts.cookie ?? this.cookies.getHeader(opts.platform);
+    if (cookie) headers.Cookie = cookie;
+    return withRequestScope(opts.timeoutMs ?? 12000, async () => {
+      throwIfCancelled();
+      const res = await fetch(url, { headers, signal: requestScope()!.signal });
+      if (!res.ok) throw new Error(`HTTP ${res.status} ${res.statusText}`);
+      return Buffer.from(await res.arrayBuffer());
+    });
+  }
+
   /** 返回原始响应（含响应头，QQ 扫码等场景需要读取 Set-Cookie）。 */
   async requestRaw(
     url: string,
