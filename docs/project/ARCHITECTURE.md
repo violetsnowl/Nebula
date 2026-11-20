@@ -194,6 +194,11 @@ flowchart TD
   - 版本词包括「版」和伴奏 / 语种 / 器乐 / 剪辑 / 倍速类词。
   - 中日韩文括注当译名；英文标题后认不出的英文括注保守算版本。
   - `searchKeyword(track)` 生成跨平台搜索词：去掉译名、Explicit 括注和歌手末尾的读音别名。
+  - #205 放宽（用户 2026-11-19 定，放宽的排在完全一致的后面）：
+    - 版本：「original ver. / Album Version / 原版」不算版本；出处说明（From …、Soundtrack、Music from …、电影 / 动画 / 《》）不算版本，除非里面带 Live / Remix / 伴奏这类硬版本词；「 - 副标题」和「（副标题）」同等对待；「カラオケ / 翻自 / 歌ってみた」算版本。
+    - 歌手（`artistFit`）：exact 名单一致；loose 一方是另一方的子集且写得全那边的主唱在另一边，或两边每位歌手名都互为开头（YouTube 频道名）；script 歌名含中日韩文、时长相同（差 <1 秒）、两边歌手名是不同文字（一边全拉丁字母、一边全中日韩文）。歌手按 `\`、`;`、`；` 也拆。
+    - `rank` = 歌手 exact 0 / loose 2 / script 4，不同专辑 +1；各调用方按 rank 再按分数挑。
+  - 兜底搜索（`SongResolver.fallback`）第一次返回空列表或超时，隔 min(250ms, 搜索预算 / 4) 再搜一次，阶段记 `search-retry`。
 - **歌词补全对齐**（`lyricAlignment.ts`）：
   - 先试固定偏移对齐 `alignTimelines`。
   - 失败再用 `retimeByText` 按正文逐行配对，同时满足以下条件才改用对方的行时间和逐字时间轴：

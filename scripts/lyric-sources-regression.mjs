@@ -286,13 +286,14 @@ await test('Apple 歌词：没有目录 id 时按「歌名 + 第一个歌手」�
     lyrics: { '304': ttmlDoc({ split: 2 }), '305': ttmlDoc() },
   });
   const lyrics = new AppleMusicLyrics(a.client, a.cookies);
-  const hit = await lyrics.lookup(song({ artists: ['编的歌手', '另一个'], artist: '编的歌手 / 另一个' }));
-  assert.equal(hit, null, '歌手集合不同（目标有两位歌手）：全部排除');
+  // #205 起一方只写主唱也认（排在后面）；这里目标的主唱是「另一个」，候选只有「编的歌手」，仍全部排除
+  const hit = await lyrics.lookup(song({ artists: ['另一个', '编的歌手'], artist: '另一个 / 编的歌手' }));
+  assert.equal(hit, null, '歌手集合不同且主唱不在候选里：全部排除');
   const hit2 = await lyrics.lookup(song());
   assert.equal(hit2.via, 'search');
   assert.equal(hit2.catalogId, '305', '同专辑同时长（rank 0）胜出');
   assert.equal(hit2.duration, 20);
-  const search = a.bridge.calls.find((c) => /search$/.test(c.path));
+  const search = a.bridge.calls.filter((c) => /search$/.test(c.path)).at(-1);
   assert.equal(search.query.term, '编的歌 编的歌手');
   assert.equal(search.query.types, 'songs');
   assert.deepEqual(a.bridge.calls.filter((c) => /syllable/.test(c.path)).map((c) => c.path), ['/v1/catalog/cn/songs/305/syllable-lyrics'], '只取最好的那一个的歌词');

@@ -7,7 +7,8 @@ const cases=[];
 for(const [title,artist,duration] of samples){
  const t={title,artist,duration,album:'原版专辑',platform:'netease',sourceId:'target',id:'target',originalUrl:'',fallbackUrl:'',cover:''};
  cases.push({kind:'正确',target:t,candidate:{...t,platform:'qq',duration:duration+1},expected:true});
- cases.push({kind:'同名歌手',target:t,candidate:{...t,platform:'qq',artist:'其他歌手'},expected:false});
+ // 时长 +1 秒：只测歌手门禁（时长完全相同、歌手名不同文字时 #205 起按「script」放行，另有专门的用例）
+ cases.push({kind:'同名歌手',target:t,candidate:{...t,platform:'qq',artist:'其他歌手',duration:duration+1},expected:false});
  for(const version of ['Live','Remix','Instrumental','Cover','2011 Remaster','2019 Mix'])cases.push({kind:version,target:t,candidate:{...t,platform:'qq',title:title+' ('+version+')'},expected:false});
  cases.push({kind:'错误时长',target:t,candidate:{...t,platform:'qq',duration:duration+15},expected:false});
 }
@@ -17,7 +18,9 @@ cases.push({kind:'任务书翻唱',target:cases[0].target,candidate:{...cases[0]
 cases.push({kind:'全半角',target:{...cases[0].target,title:'ＨＥＬＬＯ'},candidate:{...cases[0].candidate,title:'hello'},expected:true});
 cases.push({kind:'假名',target:{...cases[0].target,title:'サクラ'},candidate:{...cases[0].candidate,title:'さくら'},expected:true});
 cases.push({kind:'繁简',target:{...cases[0].target,title:'愛的夢'},candidate:{...cases[0].candidate,title:'爱的梦'},expected:true});
-cases.push({kind:'合作歌手缺失',target:{...cases[0].target,artists:['甲','乙']},candidate:{...cases[0].candidate,artist:'甲'},expected:false});
+// #205（用户 2026-11-19 定）：一方只写主唱、另一方写全合作歌手也认，但排在歌手完全一致的候选后面（见文件末尾的排位断言）
+cases.push({kind:'合作歌手缺失（放宽，排后）',target:{...cases[0].target,artists:['甲','乙']},candidate:{...cases[0].candidate,artist:'甲'},expected:true});
+cases.push({kind:'合作歌手缺失但主唱不在',target:{...cases[0].target,artists:['甲','乙']},candidate:{...cases[0].candidate,artist:'乙'},expected:false});
 cases.push({kind:'已核对的本曲译名与歌手括注',target:cases[0].target,candidate:{...cases[0].candidate,title:'丸ノ内サディスティック (丸之内虐待狂)',artist:'椎名林檎 (しいな りんご)'},expected:true});
 const round2 = [];
 function pair(kind,title,artist,candidate,expected=true) {
@@ -54,8 +57,35 @@ assert.equal(api.searchKeyword({title:'The Other Side Of Paradise（天堂彼岸
 pair('合并复核酷狗kwinst不顶替Explicit原曲','Dancing in My Room (Explicit)','347aidan',{title:'Dancing in My Room (kwinst)'},false);
 pair('合并复核英文标题未知英文括注保守拦截','Demons','Imagine Dragons',{title:'Demons (SingleVersion)'},false);
 pair('合并复核中文标题英文译名不算版本','再见','G.E.M.邓紫棋',{title:'再见（good bye）'});
+// #205 放宽规则（数据来自 261 首跨平台找不到的歌，歌名歌手为公开元数据）
+pair('原版说明不算版本','前前前世','RADWIMPS',{title:'前前前世 [original ver.]'});
+pair('专辑版说明不算版本','群青','YOASOBI',{title:'群青 (Album Version)'});
+pair('「 - 出处」等同括注','City Of Stars - From "La La Land" Soundtrack','Ryan Gosling / Emma Stone',{title:'City Of Stars (From "La La Land" Soundtrack)',artist:'Ryan Gosling/Emma Stone'});
+pair('「 - 副标题」当说明','Self Love - Spider-Man: Across the Spider-Verse','Metro Boomin / Coi Leray',{title:'Self Love',artist:'Metro Boomin/Coi Leray'});
+pair('「 - feat.」当说明','Send It - feat. Rich Homie Quan','Austin Mahone / Rich Homie Quan',{title:'Send It (feat. Rich Homie Quan)'});
+pair('「 - Live」仍是版本','Hello - Live','Adele',{title:'Hello'},false);
+pair('出处里带 Live 仍是版本','Hello (From X Live)','Adele',{title:'Hello'},false);
+pair('卡拉OK算版本','すずめ feat.十明 (カラオケ)','RADWIMPS',{title:'すずめ feat.十明'},false);
+pair('翻自算版本','空山新雨后（翻自 音阙诗听）','音阙诗听',{title:'空山新雨后'},false);
+pair('反斜杠拆歌手','lavender','JVKE\\Pink Sweat$',{artist:'JVKE/Pink Sweat$'});
+pair('分号拆歌手','GOD\'S SON','梅田サイファー;KOPERU',{artist:'梅田サイファー/KOPERU'});
+pair('频道名带后缀','Daisy','Aimer Official YouTube Channel',{artist:'Aimer'});
+pair('频道名带英文名','恋','星野源 Gen Hoshino',{artist:'星野源'});
+pair('太短的开头不算','Fire','Al',{artist:'Alan Walker'},false);
+pair('不同文字的歌手名、时长相同','海の幽霊','Kenshi Yonezu',{artist:'米津玄師',duration:220});
+pair('不同文字的歌手名、时长差 1 秒','彩色的黑','Jike Junyi',{artist:'光天翌',duration:221},false);
+pair('同文字不同歌手、时长相同','不该','周杰伦',{artist:'程橙',duration:220},false);
+pair('英文歌名不走不同文字规则','Hello','Adele',{artist:'阿黛尔',duration:220},false);
+pair('歌手名混写不走不同文字规则','彩色的黑','Jike Junyi',{artist:'温妮娅Wenina',duration:220},false);
 cases.push(...round2);
 for(const c of cases)assert.equal(api.recordingMatch(c.candidate,c.target).ok,c.expected,c.kind);
+{
+ // 排位：歌手完全一致 < 子集 / 开头相同 < 不同文字；同一档里同专辑优先
+ const t={...cases[0].target,title:'夜に駆ける',artist:'YOASOBI',artists:['YOASOBI','Ayase'],duration:220,album:'THE BOOK'};
+ const r=(c)=>api.recordingMatch({...t,platform:'qq',...c},t).rank;
+ const exact=r({}),exactOther=r({album:'其他'}),loose=r({artist:'YOASOBI',artists:['YOASOBI']}),script=r({artist:'ヨルシカ',artists:['ヨルシカ'],album:'其他'});
+ assert.ok(exact<exactOther && exactOther<loose && loose<script,`排位 ${[exact,exactOther,loose,script]}`);
+}
 console.log(`严格录音匹配 ${cases.length}/${cases.length}`);
 if(fs.existsSync('dist-main/round1.cjs')){
  const previous=require('../dist-main/round1.cjs');
@@ -84,6 +114,14 @@ assert.equal(found[0].title,'In The End');assert.equal(found[0].artist,'Linkin P
 const target={...round2[0].target,album:'Hybrid Theory'};
 const resolver=new api.SongResolver({netease:{fetchSongUrl:async()=>null},qq:{searchSongs:async()=>[]},kugou:{searchSongs:async()=>found,fetchSongUrl:async()=>({url:'https://test/same'})}},()=>{},async()=>true);
 assert.equal((await resolver.resolve(target)).platform,'kugou');
+{
+ // #205：搜索第一次返回空列表时隔一下重试一次
+ let searches=0;
+ const retry=new api.SongResolver({netease:{fetchSongUrl:async()=>null},qq:{searchSongs:async()=>[]},kugou:{searchSongs:async()=>(++searches===1?[]:found),fetchSongUrl:async()=>({url:'https://test/same'})}},()=>{},async()=>true);
+ const got=await retry.resolve(target);
+ assert.equal(got.platform,'kugou');assert.equal(searches,2);
+ assert.ok(got.timings.some(t=>t.stage==='search-retry'&&t.platform==='kugou'));
+}
 const qqMapped=api.mapQQTrack({mid:'same',name:'<em>歌名</em>',singer:[{name:'<em>歌手</em>'}],album:{name:'<em>专辑</em>'}});
 assert.deepEqual([qqMapped.title,qqMapped.artist,qqMapped.artists[0],qqMapped.album],['歌名','歌手','歌手','专辑']);
-console.log('搜索适配器清理与真实路由门禁 2/2');
+console.log("搜索适配器清理、真实路由门禁、空结果重试 3/3");

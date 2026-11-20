@@ -166,7 +166,11 @@ export class SongResolver {
         let candidates: Track[];
         if (hit && Date.now()-hit.at<24*3600_000) candidates=hit.tracks;
         else {
-          const rows=await this.stage(timings,'search',platform,this.policy.searchMs,()=>this.adapters[platform].searchSongs!(searchKeyword(track),12));
+          const search=(stage:string)=>this.stage(timings,stage,platform,this.policy.searchMs,()=>this.adapters[platform].searchSongs!(searchKeyword(track),12));
+          let rows:Track[]=[];
+          try { rows=await search('search'); } catch { throwIfCancelled(); }
+          // 平台搜索偶尔返回空列表或超时（#205：261 首找不到的歌里 14 首重搜一次就找到了），隔一下再搜一次
+          if (!rows.length) { await new Promise(r=>setTimeout(r,Math.min(250,this.policy.searchMs/4))); throwIfCancelled(); rows=await search('search-retry'); }
           candidates=rows.map(c=>({c,score:matchScore(c,track),guard:filterCandidate(c,track)}))
             .filter(x=>x.guard.ok && x.score>=.55).sort((a,b)=>a.guard.rank-b.guard.rank || b.score-a.score).slice(0,2).map(x=>x.c);
           if (candidates.length) remember(this.matches,matchKey,{at:Date.now(),tracks:candidates},512);
