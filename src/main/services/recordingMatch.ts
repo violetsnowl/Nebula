@@ -28,7 +28,8 @@ const rawArtists=(t:Track):string[]=>[...(t.artists?.length?t.artists:[t.artist]
 function artistPieces(t:Track):string[] {
   const source=rawArtists(t);
   const feat=cleanMetadataText(t.title).match(/(?:feat\.?|featuring)\s+([^()（）\[\]]+)/i);if(feat)source.push(feat[1]!);
-  return source.flatMap(s=>withoutArtistAlias(s).split(/\s*(?:\/|\\|;|；|、|，|,|&|\bfeat\.?\b|\bfeaturing\b|\bx\b)\s*/i))
+  // 拆的时候保留末尾括号（QQ 的原名 / 读音，见 artistForms）；归一化名 canonicalArtist 自己会去掉它
+  return source.flatMap(s=>cleanMetadataText(s).normalize('NFKC').split(/\s*(?:\/|\\|;|；|、|，|,|&|\bfeat\.?\b|\bfeaturing\b|\bx\b)\s*/i))
     .filter((s,i,all)=>{const id=canonicalArtist(s);return id && !/^(未知歌手|unknownartist|variousartists)$/.test(id) && all.findIndex(x=>canonicalArtist(x)===id)===i;});
 }
 // 频道名前后缀（#206）：「Official Blue」「EminemMusic」「Aimer Official YouTube Channel」「VEVO」「- Topic」「公式」
@@ -41,6 +42,9 @@ const CJK_RUN=/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Ha
 function artistForms(piece:string):string[] {
   const id=canonicalArtist(piece),forms=new Set([id]);
   const bare=id.replace(CHANNEL_AFFIX,'');if(bare.length>=2)forms.add(bare);
+  // QQ 把原名 / 读音写在括号里（「脸红的思春期 (볼빨간사춘기)」「Aimer (エメ)」）：括号里的也算这位的写法（#211）
+  const paren=cleanMetadataText(piece).normalize('NFKC').match(/\(([^()]+)\)\s*$/);
+  if (paren && !/\b(?:feat\.?|featuring|with)\b/i.test(paren[1]!)) {const f=canonicalArtist(paren[1]!);if(f.length>=2)forms.add(f);}
   const runs=withoutArtistAlias(piece).normalize('NFKC').match(CJK_RUN)||[];
   if (runs.length>1 && runs.some(r=>CJK.test(r)) && runs.some(r=>!CJK.test(r)))
     for (const r of runs) {const f=canonicalArtist(r).replace(CHANNEL_AFFIX,'');if(f.length>=2)forms.add(f);}
@@ -52,7 +56,8 @@ const VERSION=/\b(live|remix|mix|remaster(?:ed)?|acoustic|instrumental|inst\.?|o
 const EXTRA_VERSION=/カラオケ|翻自|歌ってみた|弾いてみた|原曲歌手|\bcovered\s+by\b/i;
 // #205：只说「原版 / 专辑版」的不算版本（网易云「前前前世 [original ver.]」就是原曲）
 // （Single Version 常是剪短的单曲版，仍算版本）
-const PLAIN_VERSION=/^\s*(?:(?:original|album)\s*(?:ver\.?|version)?|原版|原曲|专辑版|專輯版)\s*$/i;
+// （「Original Mix」是电子乐的原版，#211 起也不算版本；Radio Edit / Extended Mix 仍算）
+const PLAIN_VERSION=/^\s*(?:(?:original|album)\s*(?:ver\.?|version|mix)?|原版|原曲|专辑版|專輯版)\s*$/i;
 // #205：出处说明不算版本（「 - From "La La Land" Soundtrack」「（Music from the FIFA World Cup …）」）
 const SOURCE_NOTE=/^\s*(?:from\b|theme\s+(?:song\s+)?(?:from|of)\b|(?:original\s+)?(?:motion\s+picture\s+)?soundtrack|ost\b|music\s+from\b|电影|電影|电视剧|電視劇|动画|動畫|《)/i;
 const HARD_VERSION=/\b(?:live|remix|mix|instrumental|inst\.?|karaoke|acoustic|cover|off\s*vocal)\b|现场|現場|伴奏|翻唱|カラオケ/i;
@@ -61,6 +66,10 @@ function versionText(s:string):string {
   return identityText(s.replace(/现场(?:版)?|現場(?:版)?|演唱[会會](?:版)?/g,'live').replace(/remastered/gi,'remaster').replace(/伴奏(?:版)?/g,'instrumental'));
 }
 const CJK=/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]/u;
+const CJK_ALL=/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+/gu;
+// 中日文括注里的版本词要在末尾（「钢琴版」「2014 某某现场」），整句译名里碰巧含「伴奏」等字的不算（「任命友人A为我的伴奏者」，#211）
+const CJK_VERSION_END=/(?:版|现场|現場|演唱会|演唱會|伴奏|纯音乐|純音樂|翻唱|混音|重制|重製|重录|重錄|不插电|不插電|加速|降速|改编|改編|钢琴|鋼琴|吉他|女声|女聲|男声|男聲|片段|铃声|鈴聲)\s*$/;
+const VERSION_LATIN=/\b(live|remix|mix|remaster(?:ed)?|acoustic|instrumental|inst\.?|off\s*vocal|karaoke|cover|demo|edit|ver\.?|version|dj|the\s+first\s+take|tv\s*size|short|extended|clean|piano|guitar|orchestral?|sped\s*up|slowed|mono|stereo|\d+(?:\.\d+)?x)\b/i;
 const NOTES=/\(([^()]*)\)|\[([^\[\]]*)\]|【([^【】]*)】/g;
 /**
  * 括注是否构成版本约束：版本词一定算；feat / Explicit 不算；
@@ -71,16 +80,20 @@ function versionNote(note:string,full:string):boolean {
   const s=note.trim();
   if (!s || /^(?:feat\.?|featuring|with)\s/i.test(s) || /^explicit$/i.test(s)) return false;
   if (notVersion(s)) return false;
-  if (VERSION.test(s) || EXTRA_VERSION.test(s)) return true;
-  if (CJK.test(s)) return false;
+  if (EXTRA_VERSION.test(s)) return true;
+  if (CJK.test(s)) return VERSION_LATIN.test(s.replace(CJK_ALL,' ')) || CJK_VERSION_END.test(s) || (s.length<=4 && VERSION.test(s));
+  if (VERSION.test(s)) return true;
   return !CJK.test(full.replace(NOTES,''));
 }
 function title(t:Track):{names:Set<string>;version:string;cjk:boolean} {
-  const versions:string[]=[];
+  const versions:string[]=[],alt:string[]=[];
   const full=cleanMetadataText(t.title).normalize('NFKC');
+  const plainCjk=CJK.test(full.replace(NOTES,' '));
   let base=full.replace(NOTES,(_whole,...groups)=>{
     const s=groups.slice(0,3).find(x=>typeof x==='string' && x) || '';
     if (versionNote(s,full)) versions.push(versionText(s));
+    // 另一种文字的括注多是译名（「행복 (Happiness)」「ダンスホール（Dance Hall）」「The Other Side（天堂彼岸）」），也算歌名的一种写法（#211）
+    else if (s.trim() && !/^(?:feat\.?|featuring|with)\s/i.test(s.trim()) && !/^explicit$/i.test(s.trim()) && CJK.test(s)!==plainCjk) alt.push(s);
     return ' ';
   });
   const suffix=base.match(/\s[-–—]\s(.+)$/);
@@ -93,7 +106,7 @@ function title(t:Track):{names:Set<string>;version:string;cjk:boolean} {
   const bare=base.match(/\s+(live|remix|remaster(?:ed)?|instrumental|karaoke|acoustic|demo|the\s+first\s+take|dj(?:\s*版)?|网友改编|純音樂|纯音乐|伴奏|\d{4}\s+mix)\s*$/i);
   if (bare) {versions.push(versionText(bare[1]!));base=base.slice(0,bare.index);}
   const aliases=Array.isArray(t.extra?.titleAliases)?t.extra.titleAliases.filter((x):x is string=>typeof x==='string'):[];
-  return {names:new Set([base,...aliases].map(identityText).filter(Boolean)),version:versions.filter(Boolean).sort().join('|'),cjk:CJK.test(base)};
+  return {names:new Set([base,...alt,...aliases].map(identityText).filter(Boolean)),version:versions.filter(Boolean).sort().join('|'),cjk:CJK.test(base)};
 }
 /** 兜底搜索词：去掉译名、Explicit 等不构成版本的括注和歌手末尾的读音别名；版本括注保留。 */
 export function searchKeyword(t:Track):string {
@@ -111,10 +124,10 @@ const cjkOnly=(s:string):boolean=>CJK.test(s) && !LATIN.test(s);
  * - loose：歌手名按宽松写法比（见下）后，一方是另一方的子集，且写得全的那边的主唱在另一边
  *   （Spotify 写全合作歌手、对方只写主唱，或反过来；「甲 / 乙」对「甲」认，对「乙」不认）。
  *   宽松写法 = artistForms 里任一写法相同，或一方是另一方的开头（频道名「Aimer Official YouTube Channel」对「Aimer」）。
- * - script：名单对不上，但歌名含中日韩文、时长相同（差 <1 秒）、两边歌手名是不同文字
+ * - script：名单对不上，但时长相同（差 <1 秒）、两边歌手人数相同、两边歌手名是不同文字（#211 起不再要求歌名含中日韩文）
  *   （一边全是拉丁字母、一边全是中日韩文，如 Kenshi Yonezu / 米津玄師）。
  */
-function artistFit(c:Track,t:Track,cjkTitle:boolean,diff:number|null):'exact'|'loose'|'script'|null {
+function artistFit(c:Track,t:Track,diff:number|null):'exact'|'loose'|'script'|null {
   const cp=artistPieces(c),tp=artistPieces(t);
   const ca=new Set(cp.map(canonicalArtist)),ta=new Set(tp.map(canonicalArtist));
   if (!ca.size || !ta.size) return null;
@@ -126,8 +139,10 @@ function artistFit(c:Track,t:Track,cjkTitle:boolean,diff:number|null):'exact'|'l
   const [small,large]=cf.length<tf.length?[cf,tf]:[tf,cf];
   if (small.every(s=>large.some(l=>near(s,l))) && small.some(s=>near(s,large[0]!))) return 'loose';
   const rc=rawArtists(c).join(' '),rt=rawArtists(t).join(' ');
-  // 时长要相同（差 <1 秒）：#205 实测认对的 23 首里 22 首差 0 秒，认错的翻唱差 1 秒
-  if (cjkTitle && diff!==null && diff<1 && ((latinOnly(rc)&&cjkOnly(rt))||(cjkOnly(rc)&&latinOnly(rt)))) return 'script';
+  // 时长要相同（差 <1 秒）：#205 实测认对的 23 首里 22 首差 0 秒，认错的翻唱差 1 秒。
+  // 两边歌手人数要相同（#211）：英文歌名也放开后（Apple 中国区把西方歌手写成中文名：艾薇儿 / Avril Lavigne），
+  // 261 首候选里认对 12 首；认错的「三位原唱 → 单人翻唱、时长恰好相同」人数都不一样。
+  if (diff!==null && diff<1 && cp.length===tp.length && ((latinOnly(rc)&&cjkOnly(rt))||(cjkOnly(rc)&&latinOnly(rt)))) return 'script';
   return null;
 }
 /** 共用的录音身份门禁：标题、歌手、版本、时长都满足才打分。rank 越小越优先：歌手 exact 0 / loose 2 / script 4，不同专辑再 +1。 */
@@ -138,7 +153,7 @@ export function recordingMatch(candidate:Track,target:Track):MatchDecision {
   if (a.version!==b.version) return no('version');
   const duration=Number(target.duration),other=Number(candidate.duration),known=duration>0 && other>0;
   const diff=Math.abs(duration-other);
-  const fit=artistFit(candidate,target,a.cjk && b.cjk,known?diff:null);
+  const fit=artistFit(candidate,target,known?diff:null);
   if (!fit) return no('artists');
   if (known && diff>Math.max(2,Math.min(6,duration*.02))) return no('duration');
   const album=identityText(target.album),sameAlbum=!!album && album===identityText(candidate.album);

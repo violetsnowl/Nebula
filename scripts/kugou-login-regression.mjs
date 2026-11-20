@@ -306,5 +306,14 @@ await test('probeVip：手机端票据走手机端会员接口，会员档位进
  assert.equal(v.isVip,true);assert.equal(v.isSvip,false);
  assert.deepEqual((await adapter.listQualities()).map(x=>x.level),['128','320','flac']);
 });
+await test('歌名「歌手1、歌手2 - 歌名」：左边全是这首的歌手才去掉（#211）；不是歌手的「 - 副标题」保留',()=>{
+ const f=api.stripKugouFileName;
+ assert.equal(f('编的甲、编的乙 - 编的歌','编的甲 / 编的乙'),'编的歌');
+ assert.equal(f('Some Band, Other One - Made Up Song','Some Band / Other One'),'Made Up Song');
+ assert.equal(f('编的甲 - 编的歌.mp3','编的甲'),'编的歌');
+ assert.equal(f('编的歌 - 现场版','编的甲'),'编的歌 - 现场版','左边不是歌手不动');
+ assert.equal(f('编的甲、路人 - 编的歌','编的甲 / 编的乙'),'编的甲、路人 - 编的歌','左边有一位不是这首的歌手也不动');
+ assert.equal(f('编的甲编的歌','编的甲'),'编的歌','老规则：歌手直接连着歌名');
+});
 fs.rmSync(tmp,{recursive:true,force:true});
 console.log(`酷狗登录回归全部通过：${passed} 项`);

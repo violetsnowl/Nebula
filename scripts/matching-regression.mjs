@@ -75,7 +75,14 @@ pair('太短的开头不算','Fire','Al',{artist:'Alan Walker'},false);
 pair('不同文字的歌手名、时长相同','海の幽霊','Kenshi Yonezu',{artist:'米津玄師',duration:220});
 pair('不同文字的歌手名、时长差 1 秒','彩色的黑','Jike Junyi',{artist:'光天翌',duration:221},false);
 pair('同文字不同歌手、时长相同','不该','周杰伦',{artist:'程橙',duration:220},false);
-pair('英文歌名不走不同文字规则','Hello','Adele',{artist:'阿黛尔',duration:220},false);
+pair('英文歌名也走不同文字规则（#211，Apple 中国区中文歌手名）','Hello','Adele',{artist:'阿黛尔',duration:220});
+pair('不同文字但人数不同不认（三位原唱 → 单人翻唱）','MORE','编的甲 / Other One / Third One',{artist:'编的乙',duration:220},false);
+pair('不同文字但时长差 1 秒不认（英文歌名）','Hello','Adele',{artist:'阿黛尔',duration:221},false);
+pair('中文译名括注里含伴奏两字不算版本（#211）','友人A君を私の伴奏者に任命します (任命友人A为我的伴奏者)','横山克',{title:'友人A君を私の伴奏者に任命します'});
+pair('中文括注末尾是现场仍是版本','Dance Hall (2023 某某现场)','某乐队',{title:'Dance Hall'},false);
+pair('QQ 括号里的原名算歌手写法','Seoul','볼빨간사춘기',{artist:'脸红的思春期 (볼빨간사춘기)'});
+pair('另一种文字的括注当歌名写法','Happiness','Red Velvet',{title:'행복 (Happiness)'});
+pair('同文字的括注不当歌名写法','Happiness','Red Velvet',{title:'Other Song (Happiness)'},false);
 pair('歌手名混写不走不同文字规则','彩色的黑','Jike Junyi',{artist:'温妮娅Wenina',duration:220},false);
 // #206 歌手名的几种写法
 pair('中英文写在一起的歌手名','Orion','Kenshi Yonezu  米津玄師',{artist:'米津玄師'});
@@ -87,6 +94,8 @@ pair('重音符号','Take Me Hand (feat. Cecile Corbel)','DAISHI DANCE',{title:'
 pair('中英文写在一起但都对不上','Orion','Kenshi Yonezu  米津玄師',{artist:'ヨルシカ',duration:230},false);
 pair('频道名去后缀后主唱仍不在','The Monster','EminemMusic',{artist:'Rihanna'},false);
 pair('同样多的歌手、有一位对不上','合唱作品','甲 / 乙',{artist:'甲 / 丙',artists:['甲','丙']},false);
+pair('Original Mix 是原版（#211）','Collapsing World (Original Mix)','Lightscape',{title:'Collapsing World'});
+pair('Extended Mix 仍是版本','Collapsing World (Extended Mix)','Lightscape',{title:'Collapsing World'},false);
 cases.push(...round2);
 for(const c of cases)assert.equal(api.recordingMatch(c.candidate,c.target).ok,c.expected,c.kind);
 {

@@ -19,9 +19,18 @@ function decodeKugouDisplayText(text: string): string {
   if (/%[0-9a-fA-F]{2}/.test(raw) && !/[\u3400-\u9fff]/.test(raw)) { try { raw = decodeURIComponent(raw.replace(/\+/g, ' ')); } catch { /* */ } }
   return raw.trim();
 }
-function stripKugouFileName(raw: string, fallbackArtist: string): string {
+export function stripKugouFileName(raw: string, fallbackArtist: string): string {
   let name = stripKugouHtml(raw || '').replace(/\.(mp3|flac|m4a|wav|ape|ogg)$/i, '').trim();
   const artist = stripKugouHtml(fallbackArtist || '');
+  // 「歌手1、歌手2 - 歌名」：左边那段拆开后全是这首的歌手就去掉（#211：歌手用「、」连、而 artistLabel 用「 / 」连，
+  // 以前对不上，歌名带着歌手，跨平台按歌名永远找不到同一首；2026-11-19 真实播放实测酷狗 30 首里 4 首因此放不了）
+  const norm = (s: string) => s.normalize('NFKC').toLowerCase().replace(/\s+/g, '');
+  const names = new Set(artist.split(/\s*\/\s*/).map(norm).filter(Boolean));
+  const dash = name.match(/^(.+?)\s+[-–—]\s+(.+)$/);
+  if (dash && names.size) {
+    const left = dash[1]!.split(/\s*(?:、|\/|,|，|&|\bfeat\.?|\bft\.?|\bx\b)\s*/i).map(norm).filter(Boolean);
+    if (left.length && left.every((x) => names.has(x))) return dash[2]!.trim();
+  }
   if (artist && name.indexOf(artist) === 0) name = name.slice(artist.length).replace(/^[\s\-–—]+/, '').trim();
   return name || stripKugouHtml(raw || '');
 }
