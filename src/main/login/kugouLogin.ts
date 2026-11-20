@@ -11,9 +11,11 @@ import {
   kugouSignedQuery,
   kugouWebSign,
   type KugouListResult,
+  type KugouVipInfo,
   parseKugouQrStatus,
   parseKugouTicket,
   requestKugouMyPlaylists,
+  requestKugouVip,
 } from '../adapters/kugouAdapter';
 
 const require_ = createRequire(__filename);
@@ -197,15 +199,25 @@ export class KugouLogin {
     }
     if (avatar) avatar = avatar.replace(/^http:\/\//, 'https://');
 
+    // 会员：只有手机端票据认这个接口（网页老票据本来就多半已被拒绝）；查询失败按非会员处理，不影响登录态判断。
+    let vip: KugouVipInfo = { isVip: false, isSvip: false, vipType: 0, expireTime: 0 };
+    if (ticket.mobile) {
+      try {
+        vip = await requestKugouVip(this.http, ticket, 10000);
+      } catch (err) {
+        console.warn('[KugouLogin] 会员查询失败，按非会员处理:', err instanceof Error ? err.message : '');
+      }
+    }
+
     return {
       loggedIn: true,
       authStatus: result?.kind === 'ok' ? 'valid' : 'unknown',
       userId: ticket.userid,
       nickname: nickname || '酷狗用户',
       avatarUrl: avatar,
-      vipType: 0,
-      isVip: false,
-      isSvip: false,
+      vipType: vip.vipType,
+      isVip: vip.isVip,
+      isSvip: vip.isSvip,
     };
   }
 }

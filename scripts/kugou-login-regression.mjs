@@ -7,7 +7,7 @@ import path from 'node:path';
 // 酷狗手机端扫码登录回归：假 http，不联网。依赖 pnpm build:main 产物。
 const require=createRequire(import.meta.url);
 const api=require('../dist-main/index.cjs');
-const {CookieStore,KugouAdapter,KugouLogin,kugouWebSign,kugouMobileSign,parseKugouQrStatus,parseKugouTicket,KugouApiError}=api;
+const {CookieStore,KugouAdapter,KugouLogin,kugouWebSign,kugouMobileSign,parseKugouVip,parseKugouQrStatus,parseKugouTicket,KugouApiError}=api;
 const md5=s=>crypto.createHash('md5').update(s).digest('hex');
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'kugou-regression-'));
 let seq=0;
@@ -217,6 +217,94 @@ await test('手机端歌单歌曲接口出错带错误码抛出，fetchPlaylistT
  const adapter=new KugouAdapter({requestJson:async()=>({status:0,error_code:20017})},newStore(MOBILE_COOKIE));
  assert.deepEqual(await adapter.fetchPlaylistTracks('collection_3_42_7_0'),[]);
  assert.ok(KugouApiError);
+});
+await test('第四路（手机端网关 /v5/url）：签名是 "k=v" 直接拼接、无请求体，不再是旧 androidSign 的 & 拼接',async()=>{
+ const calls=[];
+ const http={requestJson:async(url,o)=>{calls.push({url,o});return {status:1,url:['http://cdn.example.invalid/a.mp3','http://cdn.example.invalid/b.mp3'],bitRate:320000}}};
+ const adapter=new KugouAdapter(http,newStore(MOBILE_COOKIE));
+ const r=await adapter.fetchGateway('HASHAAA','999','320','42','fixture-token','123456','fixture-dfid');
+ assert.deepEqual({...r},{url:'https://cdn.example.invalid/a.mp3',quality:'320'});
+ const {url,o}=calls[0];
+ assert.equal(new URL(url).origin+new URL(url).pathname,'https://gateway.kugou.com/v5/url');
+ const q=query(url);
+ const salt='OIlwieks28dk2k092lksi2UIkp';
+ const sorted=Object.keys(withoutSig(q)).sort().map(k=>k+'='+q[k]);
+ assert.equal(q.signature,md5(salt+sorted.join('')+salt));
+ assert.notEqual(q.signature,md5(salt+sorted.join('&')+salt));
+ assert.equal(q.signature,kugouMobileSign(withoutSig(q)));
+ assert.equal(q.appid,'1005');assert.equal(q.clientver,'20489');assert.equal(q.token,'fixture-token');assert.equal(q.userid,'42');
+ assert.equal(q.hash,'HASHAAA');assert.equal(q.quality,'320');assert.equal(q.srcappid,undefined);
+ assert.equal(q.key,md5('HASHAAA'+'57ae12eb6890223e355ccfcb74edf70d'+'1005'+'123456'+'42'));
+ assert.equal(o.headers['x-router'],'trackercdn.kugou.com');
+ assert.equal(o.headers['User-Agent'],'Android15-1070-11083-46-0-DiscoveryDRADProtocol-wifi');
+ assert.equal(o.cookie,'');
+});
+await test('第四路：url 为字符串也能取；status 不是 1（如 2 需付费）或没有 url 返回 null；缺票据直接跳过不发请求',async()=>{
+ const make=resp=>new KugouAdapter({requestJson:async()=>resp},newStore(MOBILE_COOKIE));
+ const ok=await make({status:1,url:'http://cdn.example.invalid/c.flac',bitRate:1000000}).fetchGateway('H','','flac','42','t','1','d');
+ assert.deepEqual({...ok},{url:'https://cdn.example.invalid/c.flac',quality:'flac'});
+ assert.equal(await make({status:2,url:''}).fetchGateway('H','','320','42','t','1','d'),null);
+ assert.equal(await make({status:1,url:[]}).fetchGateway('H','','320','42','t','1','d'),null);
+ let sent=0;
+ const none=new KugouAdapter({requestJson:async()=>{sent++;return {}}},newStore(MOBILE_COOKIE));
+ assert.equal(await none.fetchGateway('H','','320','','','1','d'),null);
+ assert.equal(sent,0);
+});
+await test('会员字段映射（假数据）：非会员 / 普通会员 / 超级会员 / 已过期 / 接口出错',()=>{
+ const now=Date.parse('2030-01-01T00:00:00+08:00');
+ const free={status:1,error_code:0,data:{is_vip:0,vip_type:0,vip_end_time:'',su_vip_end_time:'',busi_vip:[{is_vip:0,product_type:'',vip_end_time:''},{}]}};
+ assert.deepEqual({...parseKugouVip(free,now)},{isVip:false,isSvip:false,vipType:0,expireTime:0});
+ const vip={status:1,error_code:0,data:{is_vip:1,vip_end_time:'2030-06-01 12:00:00',su_vip_end_time:'',busi_vip:[{is_vip:1,product_type:'tvip',vip_end_time:'2030-06-01 12:00:00'}]}};
+ assert.deepEqual({...parseKugouVip(vip,now)},{isVip:true,isSvip:false,vipType:1,expireTime:Date.parse('2030-06-01T12:00:00+08:00')});
+ const svipBusi={status:1,error_code:0,data:{is_vip:1,vip_end_time:'2030-03-01 00:00:00',busi_vip:[{is_vip:1,product_type:'svip',vip_end_time:'2031-01-01 00:00:00'}]}};
+ const s1=parseKugouVip(svipBusi,now);
+ assert.equal(s1.isVip,true);assert.equal(s1.isSvip,true);assert.equal(s1.vipType,2);assert.equal(s1.expireTime,Date.parse('2031-01-01T00:00:00+08:00'));
+ const svipSu={status:1,error_code:0,data:{is_vip:0,su_vip_end_time:'2030-09-09 09:09:09'}};
+ const s2=parseKugouVip(svipSu,now);
+ assert.equal(s2.isVip,true);assert.equal(s2.isSvip,true);assert.equal(s2.vipType,2);
+ const expired={status:1,error_code:0,data:{is_vip:1,vip_end_time:'2029-12-31 23:59:59',su_vip_end_time:'2029-01-01 00:00:00',busi_vip:[{is_vip:1,product_type:'svip',vip_end_time:'2029-01-01 00:00:00'}]}};
+ assert.deepEqual({...parseKugouVip(expired,now)},{isVip:false,isSvip:false,vipType:0,expireTime:0});
+ assert.equal(parseKugouVip({status:1,error_code:0,data:{is_vip:1}},now).isVip,true);
+ assert.equal(parseKugouVip({status:0,error_code:20017},now),null);
+ assert.equal(parseKugouVip({status:1,error_code:20006,data:{is_vip:1}},now),null);
+ assert.equal(parseKugouVip(null,now),null);
+});
+await test('getAccount 带会员：手机端票据请求会员接口（手机端签名，不带手机端标识头），字段进 isVip / isSvip / vipType',async()=>{
+ const calls=[];
+ const http={requestJson:async(url,o)=>{
+  calls.push({url,o});
+  if(url.includes('/v1/get_union_vip'))return {status:1,error_code:0,data:{is_vip:1,vip_end_time:'2099-01-01 00:00:00',su_vip_end_time:'2099-01-01 00:00:00'}};
+  return {status:1,data:{info:[]}};
+ }};
+ const a=await new KugouLogin(newStore(MOBILE_COOKIE),http).getAccount();
+ assert.equal(a.loggedIn,true);assert.equal(a.isVip,true);assert.equal(a.isSvip,true);assert.equal(a.vipType,2);
+ const v=calls.find(c=>c.url.includes('/v1/get_union_vip'));
+ assert.equal(new URL(v.url).origin,'https://kugouvip.kugou.com');
+ const q=query(v.url);
+ assert.equal(q.appid,'1005');assert.equal(q.token,'fixture-token');assert.equal(q.userid,'42');
+ assert.equal(q.signature,kugouMobileSign(withoutSig(q)));
+ assert.equal(v.o.cookie,'');assert.equal(v.o.headers,undefined);
+ // 普通会员
+ const normal=await new KugouLogin(newStore(MOBILE_COOKIE),{requestJson:async(url)=>url.includes('get_union_vip')?{status:1,error_code:0,data:{is_vip:1,vip_end_time:'2099-01-01 00:00:00'}}:{status:1,data:{info:[]}}}).getAccount();
+ assert.equal(normal.isVip,true);assert.equal(normal.isSvip,false);assert.equal(normal.vipType,1);
+});
+await test('getAccount 会员查询失败（接口错误码 / 网络异常）按非会员处理，登录态不受影响；网页老票据不查会员',async()=>{
+ const base={status:1,data:{info:[{listid:2,name:'我喜欢',list_create_userid:42,list_create_username:'昵称'}]}};
+ const bad=await new KugouLogin(newStore(MOBILE_COOKIE),{requestJson:async(url)=>url.includes('get_union_vip')?{status:0,error_code:20017}:base}).getAccount();
+ assert.equal(bad.loggedIn,true);assert.equal(bad.authStatus,'valid');assert.equal(bad.isVip,false);assert.equal(bad.vipType,0);
+ const net=await new KugouLogin(newStore(MOBILE_COOKIE),{requestJson:async(url)=>{if(url.includes('get_union_vip'))throw Error('fixture-network');return base}}).getAccount();
+ assert.equal(net.loggedIn,true);assert.equal(net.isVip,false);assert.equal(net.isSvip,false);
+ const urls=[];
+ const web=await new KugouLogin(newStore(WEB_COOKIE),{requestJson:async(url)=>{urls.push(url);return base}}).getAccount();
+ assert.equal(web.loggedIn,true);assert.equal(web.isVip,false);
+ assert.equal(urls.some(u=>u.includes('get_union_vip')),false);
+});
+await test('probeVip：手机端票据走手机端会员接口，会员档位进可选音质',async()=>{
+ const http={requestJson:async()=>({status:1,error_code:0,data:{is_vip:1,vip_end_time:'2099-01-01 00:00:00'}})};
+ const adapter=new KugouAdapter(http,newStore(MOBILE_COOKIE));
+ const v=await adapter.probeVip();
+ assert.equal(v.isVip,true);assert.equal(v.isSvip,false);
+ assert.deepEqual((await adapter.listQualities()).map(x=>x.level),['128','320','flac']);
 });
 fs.rmSync(tmp,{recursive:true,force:true});
 console.log(`酷狗登录回归全部通过：${passed} 项`);

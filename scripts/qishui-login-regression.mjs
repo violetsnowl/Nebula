@@ -159,4 +159,32 @@ await test('2046：验证进行中用户关掉弹窗 → 跑取消脚本，验�
   await assert.rejects(pending, /已取消/);
 });
 
+await test('getAccount 会员：my_info.is_vip / vip_stage 映射到 isVip / isSvip / vipType（假数据）', async () => {
+  const realFetch = globalThis.fetch;
+  const accountFor = async (myInfo) => {
+    globalThis.fetch = async () => ({ json: async () => ({ my_info: { id: '9', nickname: '假昵称', ...myInfo } }) });
+    const store = { get: () => ({ cookies: 'sessionid=fixture' }), set() {} };
+    const login = new api.QishuiLogin(store, { WebContentsView: class {}, session: {}, present: () => null });
+    return login.getAccount();
+  };
+  try {
+    const free = await accountFor({ is_vip: false, vip_stage: 'free' });
+    assert.deepEqual([free.isVip, free.isSvip, free.vipType, free.nickname], [false, false, 0, '假昵称']);
+    const vip = await accountFor({ is_vip: true, vip_stage: 'vip' });
+    assert.deepEqual([vip.isVip, vip.isSvip, vip.vipType], [true, false, 1]);
+    const byStage = await accountFor({ is_vip: false, vip_stage: 'paid' });
+    assert.deepEqual([byStage.isVip, byStage.isSvip, byStage.vipType], [true, false, 1]);
+    const svip = await accountFor({ is_vip: true, vip_stage: 'svip' });
+    assert.deepEqual([svip.isVip, svip.isSvip, svip.vipType], [true, true, 2]);
+    const none = await accountFor({});
+    assert.deepEqual([none.isVip, none.isSvip, none.vipType], [false, false, 0]);
+    globalThis.fetch = async () => { throw new Error('断网'); };
+    const store = { get: () => ({ cookies: 'sessionid=fixture' }), set() {} };
+    const offline = await new api.QishuiLogin(store, { WebContentsView: class {}, session: {}, present: () => null }).getAccount();
+    assert.deepEqual([offline.loggedIn, offline.isVip, offline.vipType], [true, false, 0]);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
 print(`汽水扫码登录回归 ${n}/${n}`);

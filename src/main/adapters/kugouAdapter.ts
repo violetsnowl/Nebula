@@ -54,12 +54,6 @@ function h5Sign(params: Record<string, string>, bodyObj?: Record<string, unknown
   return md5(H5_SALT + parts.join('') + H5_SALT);
 }
 
-/** Android 签名：md5(ANDROID_SALT + sorted k=v + body + ANDROID_SALT) */
-function androidSign(params: Record<string, string>, body: string): string {
-  const sorted = Object.keys(params).sort().map(k => k + '=' + params[k]).join('&');
-  return md5(ANDROID_SALT + sorted + body + ANDROID_SALT);
-}
-
 /** mobile 云 key：md5(hash + 'kgcloud') */
 function mobileKey(hash: string): string {
   return md5(hash + 'kgcloud');
@@ -241,6 +235,67 @@ export async function requestKugouMyPlaylists(http: JsonRequester, ticket: Kugou
   const raw: any = data?.data;
   const items: Array<Record<string, any>> = raw?.info ?? raw?.list ?? (data as any)?.info ?? [];
   return { kind: 'ok', items: Array.isArray(items) ? items : [] };
+}
+
+export interface KugouVipInfo {
+  isVip: boolean;
+  isSvip: boolean;
+  /** 0 非会员，1 会员，2 超级会员。 */
+  vipType: number;
+  /** 当前有效的会员到期时间（毫秒时间戳），无会员或无到期信息为 0。 */
+  expireTime: number;
+}
+
+/** 酷狗接口的到期时间是北京时间 "YYYY-MM-DD HH:mm:ss"；空串 / 非法返回 null。 */
+function parseKugouTime(raw: unknown): number | null {
+  const s = String(raw ?? '').trim();
+  const m = s.match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{2}):(\d{2}):(\d{2})$/);
+  if (!m) return null;
+  const t = Date.parse(`${m[1]}-${m[2]}-${m[3]}T${m[4]}:${m[5]}:${m[6]}+08:00`);
+  return Number.isFinite(t) ? t : null;
+}
+
+/**
+ * 解析 get_union_vip 的返回：
+ * - 顶层 is_vip / vip_end_time：普通会员；su_vip_end_time：超级会员到期（没有单独标志位，到期时间在未来才算）；
+ * - busi_vip[]：各业务线会员，product_type 为 svip 的是超级会员；
+ * - 有标志位但到期时间已过，视为已过期；标志位为 1 但没有到期时间，按有效处理。
+ * 返回不是成功响应时为 null（调用方当作「不知道」，不要当成「不是会员」缓存）。
+ */
+export function parseKugouVip(resp: any, now = Date.now()): KugouVipInfo | null {
+  const d = resp?.data;
+  if (!d || typeof d !== 'object' || resp?.status === 0 || Number(resp?.error_code ?? 0) !== 0) return null;
+  const ends: number[] = [];
+  const live = (flag: unknown, end: unknown): boolean => {
+    if (Number(flag) !== 1) return false;
+    const t = parseKugouTime(end);
+    if (t == null) return true;
+    if (t <= now) return false;
+    ends.push(t);
+    return true;
+  };
+  const entries: any[] = Array.isArray(d.busi_vip) ? d.busi_vip.filter((e: any) => e && typeof e === 'object') : [];
+  const suEnd = parseKugouTime(d.su_vip_end_time);
+  let isSvip = suEnd != null && suEnd > now;
+  if (isSvip) ends.push(suEnd!);
+  for (const e of entries) {
+    if (String(e.product_type) === 'svip' && live(e.is_vip, e.vip_end_time)) isSvip = true;
+  }
+  const isVip = live(d.is_vip, d.vip_end_time) || isSvip || entries.some(e => live(e.is_vip, e.vip_end_time));
+  return { isVip, isSvip, vipType: isSvip ? 2 : isVip ? 1 : 0, expireTime: ends.length ? Math.max(...ends) : 0 };
+}
+
+/**
+ * 查会员（GET kugouvip.kugou.com/v1/get_union_vip，手机端公共参数 + 手机端签名，与「我的歌单」同一套票据）。
+ * 业务错误抛 KugouApiError（20017 表示票据失效）；网络异常直接抛出。不带手机端标识头：这个主机收到它们会直接断连。
+ */
+export async function requestKugouVip(http: JsonRequester, ticket: KugouTicket, timeoutMs?: number): Promise<KugouVipInfo> {
+  const params = kugouCommonParams(ticket, { busi_type: 'concept', opt_product_types: 'dvip,qvip', product_type: 'svip' });
+  const qs = kugouSignedQuery(params, p => kugouMobileSign(p));
+  const resp = await http.requestJson<any>(`https://kugouvip.kugou.com/v1/get_union_vip?${qs}`, { platform: 'kugou', cookie: '', timeoutMs });
+  const info = parseKugouVip(resp);
+  if (!info) throw new KugouApiError(Number(resp?.error_code ?? 0) || -1, '酷狗会员接口返回异常');
+  return info;
 }
 
 /** get_all_list 条目 → 歌单摘要。 */
@@ -510,6 +565,14 @@ export class KugouAdapter implements PlatformAdapter {
       return anon;
     }
     try {
+      const ticket = parseKugouTicket(this.cookies.get('kugou')?.cookies);
+      if (ticket?.mobile) {
+        // 手机端票据：网页的 roleinfo 接口不认（返回 20017），走手机端会员接口。
+        const v = await requestKugouVip(this.http, ticket);
+        const result: VipStatus = { isVip: v.isVip, isSvip: v.isSvip, expireTime: v.expireTime, probedAt: Date.now() };
+        this.vipCache = result;
+        return result;
+      }
       const ts = Math.floor(Date.now() / 1000);
       const data = await this.http.requestJson<{
         data?: { is_vip?: number; is_svip?: number; vip_expire_time?: number };
@@ -733,48 +796,42 @@ export class KugouAdapter implements PlatformAdapter {
     return null;
   }
 
+  /**
+   * 第四路：手机端网关 /v5/url。公共参数（appid 1005）+ 取链参数，签名用 kugouMobileSign
+   * （"k=v" 直接拼接、GET 无请求体），请求头带手机端标识和 x-router。
+   * 手机端票据才被这个网关认可；网页票据会被拒绝，这一路自然落空，由其余三路补。
+   */
   private async fetchGateway(hash: string, albumId: string | undefined, quality: string | undefined, userid: string, token: string, mid: string, dfid: string): Promise<SongUrl | null> {
     if (!userid || !token) return null;
-    const clienttime = String(Date.now());
-    const params: Record<string, string> = {
-      srcappid: String(ANDROID_APPID),
-      clientver: String(ANDROID_CLIENTVER),
-      clienttime, mid, uuid: mid, dfid,
-      appid: String(ANDROID_APPID), token, userid,
-      area_code: '1', hash,
-      ssa_flag: 'is_fromtrack', version: '11430',
+    const params = kugouCommonParams({ mid, dfid, userid, token }, {
+      area_code: 1, hash,
+      ssa_flag: 'is_fromtrack', version: 11430,
       quality: quality || '320',
       album_audio_id: albumId || '',
-      behavior: 'play', pid: '2', cmd: '26', pidversion: '3001',
-      IsFreePart: '0', cdnBackup: '1', module: '',
-    };
-    params.key = md5(hash + SIGN_KEY_SALT + params.appid + mid + (userid || '0'));
-    const body = Object.entries(params).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
-    params.signature = androidSign(params, body);
-    const qs = Object.entries(params).map(([k, v]) => k + '=' + encodeURIComponent(v)).join('&');
+      behavior: 'play', pid: 2, cmd: 26, pidversion: 3001,
+      IsFreePart: 0, cdnBackup: 1, module: '',
+    });
+    params.key = md5(hash + SIGN_KEY_SALT + params.appid + mid + userid);
+    const qs = kugouSignedQuery(params, p => kugouMobileSign(p));
     const data = await this.http.requestJson<{
       status?: number;
-      url?: string;
+      url?: string | string[];
       bitRate?: number;
     }>(
       `https://gateway.kugou.com/v5/url?${qs}`,
       {
         platform: 'kugou',
-        headers: {
-          'User-Agent': ANDROID_UA,
-          dfid, mid,
-          'kg-rc': '1',
-          'kg-thash': '5d816a0',
-          'kg-rec': '1',
-          'kg-rf': 'B9EDA08A64250DEFFBCADDEE00F8F25F',
-        },
+        cookie: '',
+        headers: { ...kugouMobileHeaders(mid, dfid || '-', params.clienttime), 'x-router': 'trackercdn.kugou.com' },
       },
     );
-    if (data?.status === 1 && data.url) {
+    // 网关的 url 可能是字符串，也可能是候选数组，取第一个非空的。
+    const rawUrl = Array.isArray(data?.url) ? data.url.find(Boolean) : data?.url;
+    if (data?.status === 1 && rawUrl) {
       const bitrate=Number(data.bitRate || 0);
       const kbps=bitrate>10000?bitrate/1000:bitrate;
       const q=kbps>=900?'flac':kbps>=256?'320':kbps>0?'128':'';
-      return { url: data.url.replace(/^http:/, 'https:'), quality: q };
+      return { url: String(rawUrl).replace(/^http:/, 'https:'), quality: q };
     }
     return null;
   }

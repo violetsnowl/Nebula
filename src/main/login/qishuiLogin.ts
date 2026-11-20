@@ -621,6 +621,8 @@ export class QishuiLogin {
     let nickname = '';
     let avatar = '';
     let apiUserId = '';
+    let isVip = false;
+    let isSvip = false;
     try {
       const me = await this.fetchMeInfo(cookie);
       console.log("[QishuiLogin] getAccount: fetchMeInfo 返回:");
@@ -628,6 +630,8 @@ export class QishuiLogin {
         nickname = me.nickname || '';
         avatar = me.avatar || '';
         apiUserId = me.id || '';
+        isVip = !!me.isVip;
+        isSvip = !!me.isSvip;
       }
     } catch (err) {
       console.log("[QishuiLogin] getAccount: fetchMeInfo 异常:");
@@ -638,14 +642,14 @@ export class QishuiLogin {
       userId: apiUserId || userId,
       nickname: nickname || '汽水用户',
       avatarUrl: avatar,
-      vipType: 0,
-      isVip: false,
-      isSvip: false,
+      vipType: isSvip ? 2 : isVip ? 1 : 0,
+      isVip,
+      isSvip,
     };
   }
 
   /** 调用 /luna/pc/me 获取账号信息 */
-  private async fetchMeInfo(cookie: string): Promise<{ nickname?: string; avatar?: string; id?: string } | null> {
+  private async fetchMeInfo(cookie: string): Promise<{ nickname?: string; avatar?: string; id?: string; isVip?: boolean; isSvip?: boolean } | null> {
     try {
       const params = this.pcAppParams();
       const qs = Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
@@ -661,7 +665,7 @@ export class QishuiLogin {
         },
       });
       const json = await res.json() as any;
-      // 实测结构：{ status_info, my_info: { id, nickname, larger_avatar_url: { urls: [...] } } }
+      // 实测结构：{ status_info, my_info: { id, nickname, is_vip, vip_stage('free' 为非会员), larger_avatar_url: { urls: [...] } } }
       const data = json?.my_info || json?.data?.my_info || json || {};
       const avatarObj = data.larger_avatar_url || data.avatar_url || data.avatar || {};
       const avatarUrls = avatarObj.urls || avatarObj.url_list || [];
@@ -669,10 +673,16 @@ export class QishuiLogin {
       const avatarUri = String(avatarObj.uri || '');
       if (avatar && avatarUri && !avatar.includes(avatarUri)) avatar += avatarUri;
       if (!avatar && /^https?:\/\//i.test(avatarUri)) avatar = avatarUri;
+      // 会员：my_info.is_vip；vip_stage 非 'free' 也算（实测非会员为 is_vip=false + vip_stage='free'，会员的取值没见过，只能这样宽松判）。
+      const stage = String(data.vip_stage || '').trim().toLowerCase();
+      const isSvip = /svip|super/.test(stage);
+      const isVip = data.is_vip === true || isSvip || (!!stage && stage !== 'free');
       return {
         id: String(data.id || ''),
         nickname: data.nickname || data.nick_name || data.public_name || '',
         avatar,
+        isVip,
+        isSvip,
       };
     } catch {
       return null;

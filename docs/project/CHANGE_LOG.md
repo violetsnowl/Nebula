@@ -6,6 +6,52 @@
 
 ---
 
+## #208 — 2026-11-19 — 酷狗手机端第四路签名修正；酷狗、汽水会员进登录信息
+
+**改动**（implementer 完成，主对话抽查）
+- `kugouAdapter.ts`：第四路（手机网关 `/v5/url`）删掉 `androidSign`（排序后 k=v 用 `&` 拼接、GET 还带请求体），改用和扫码登录同一套的手机端公共参数 + 签名（直接拼接）+ 请求头加 `x-router: trackercdn.kugou.com`；返回的 url 兼容字符串和数组。扫码登录、我的歌单原来就用 `kugouWebSign` / `kugouMobileSign`，没受影响。
+- 酷狗会员：旧网页接口 `roleinfo` 对手机端票据返回 20017（一直判非会员），改查 `kugouvip.kugou.com/v1/get_union_vip`（手机端签名，不带 `kg-*` 头，否则断连）；`parseKugouVip` 映射会员 / 超级会员（到期时间按北京时间）；`getAccount` 只对手机端票据查，失败按非会员，不影响登录态。`probeVip` 同走新接口，所以手机端会员账号音质列表会多出无损（超级会员再多 Hi-Res）。
+- `qishuiLogin.ts`：`/luna/pc/me` 的 `is_vip` / `vip_stage` 接到 `getAccount`。
+
+**验证**
+- `kugou-login-regression` 23/23（新增 6）、`qishui-login-regression` 9/9（新增 1）；全套 `pnpm build`、`pnpm qa`、`pnpm qa:backend` 绿（与 #206、#207 同一工作区一起跑）。
+- 用户真实账号 cookies 副本（Spotify 已删），取链共 6 次：改前 2 次都是 HTTP 502；改后 4 次（3 首）都是正常业务响应 `status:2`（需付费），没拿到地址。会员查询各 1 次：酷狗、汽水都是非会员。副本已删。
+
+**遗留**：第四路在会员账号、可播歌曲上能否取到地址未验证；会员 / 超级会员的真实返回样本没见过。
+
+## #207 — 2026-11-19 — 酷我、波点接搜歌并参与跨平台兜底；酷我会员
+
+**改动**（implementer 完成，主对话抽查并补了一处）
+- `kuwoAdapter.searchSongs`：匿名网页搜索 `https://www.kuwo.cn/search/searchMusicBykeyWord`（http 会 301；`search.kuwo.cn/r.s` 是单引号伪 JSON，不用），结果整理成歌单字段后走同一个 `mapKuwoTrack`；标题用带「(Live)」等后缀的 `SONGNAME`；失败返回 []。
+- `bodianAdapter.searchSongs`：波点自家 `bd-api.kuwo.cn/api/search/music/list`（匿名），走 `mapBodianTrack`。实测「晴天 周杰伦」前 10 条两家 9 条 id 相同。
+- `platformRouter.ts`：兜底顺序加酷我、波点。主对话补：波点没登录取不到整曲（`fetchSongUrl` 未登录直接返回 null），游客状态下不进兜底，免得每次白搜一次。
+- `kuwoLogin.ts`：`getAccount` 查会员接口（`vip1.kuwo.cn/vip/v2/user/vip`，1.5 秒），各档到期时间晚于服务器时间才算；`electron/main.cjs` 构造时传入 http。
+- 登录过期提示没做：酷我歌单、会员接口用假 sid 照常返回，找不到失效信号；按字段猜会把没歌单的新账号误判过期。
+
+**验证**
+- `kuwo-regression` 17/17、`bodian-regression` 21/21、`router-regression` 22/22；全套 `pnpm build`、`pnpm qa`、`pnpm qa:backend` 绿。
+- 匿名实测：两家各搜两个词，各 10 条、都带时长；乱码词 0 条不报错。波点匿名 `checkRight` 认搜到的 id（仅试听）。酷我匿名取地址 3 首都返回 null（原因未查）。
+
+**遗留**：酷我登录后能否出声、波点登录后整曲，以真实播放实测为准；酷我会员各字段对应哪档未用会员账号核对。
+
+## #206 — 2026-11-19 — 歌手名的几种写法；QQ 等平台出声的歌也补和声 / 对唱；酷我加入歌词补全
+
+**改动**
+- `recordingMatch.ts`：
+  - `identityText` 去掉拉丁字母重音（Sofía / Sofia、JAŸ-Z / JAY-Z；只删 U+0300–036F，日文浊点不动），歌词逐行配对也受益。
+  - 歌手写法 `artistForms`：归一化名、去频道前后缀（Official / Music / VEVO / Topic / Channel / 公式）、中英文写在一起的按文字拆成各段（「Kenshi Yonezu 米津玄師」「星野源 Gen Hoshino」「볼빨간사춘기 BOL4」）。
+  - 「子集」和「开头相同」合成一条 loose：宽松写法下一方是另一方的子集，且写得全那边的主唱在另一边（修掉 #205 开头规则只看候选一边的漏洞）。
+- `lyricService.ts`：
+  - 不是网易云出声、没有网易云 id、注入了 AMLL 时，一开始并行搜一次网易云同一首（1.5 秒）；主歌词够好时用它的 id 查 AMLL 补和声 / 对唱，不够好时补全复用这次搜索（网易云只搜一次）。
+  - 补全来源加酷我（排在酷狗后；本平台是酷我 / 波点时不搜）；挑同一首按 #205 排位（以前只按分数，放宽认上的可能排到完全一致的前面）。
+- `LyricSourceProbe.tsx`（开发者面板）补酷我、波点名字。
+
+**验证**
+- `matching-regression` 188 项（新增 9）、`lyric-sources-regression` 39/39（新增 3；4 处「够好时不搜别家」改为「只为拿网易云 id 搜一次」）；全套 `pnpm build`、`pnpm qa`、`pnpm qa:backend` 绿。
+- 261 首候选上找回 127 → 141 首（汽水 19、Spotify 27、Apple 11、YouTube Music 84），新增 10 对逐对人工看过都是同一录音。
+
+**遗留**：QQ 等平台出声的歌每首多一次网易云搜索；够好时最多多等约 1.5 秒（和主歌词并行，通常远小于此）。
+
 ## #205 — 2026-11-19 — 跨平台找同一录音放宽一档，搜索空结果重试一次
 
 **背景**：#203 抽样里汽水 57、Spotify 48、Apple Music 24、YouTube Music 132 首在网易云 / QQ 找不到同一录音，这些歌在 app 里多半直接放不了。用户 2026-11-19 要求单独排查；看过量化结果后定「按推荐改，放开，但排在完全一致的候选后面」。
