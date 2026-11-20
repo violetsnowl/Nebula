@@ -51,3 +51,32 @@ console.log(`韩语罗马音回归 ${total}/${total}`);
   assert.equal(api.withKoreanRoman({ raw: '', lines: [{ timeMs: 0, text: '中文歌' }, { timeMs: 1000, text: '사랑' }] }).romanGenerated, undefined);
   console.log('韩语罗马音接入歌词流程 2/2');
 }
+
+// #209 日语本地罗马音（kuromoji 分词 + 平文式）。例句是日常短语，不是歌词。
+{
+  const { kanaToRomaji, romanizeTokens, romanizeJapaneseLines, withJapaneseRoman, lrcAt } = api;
+  for (const [kana, want] of [['きゃく', 'kyaku'], ['しゃしん', 'shashin'], ['ちょっと', 'chotto'], ['まって', 'matte'], ['マッチ', 'matchi'], ['ラーメン', 'raamen'], ['ふぁん', 'fan'], ['ティー', 'tii'], ['きっぷ', 'kippu'], ['つづく', 'tsuzuku']])
+    assert.equal(kanaToRomaji(kana), want, kana);
+  const tok = (surface_form, reading, pos = '名詞', pos_detail_1 = '一般') => ({ surface_form, reading, pos, pos_detail_1 });
+  assert.equal(romanizeTokens([tok('君', 'キミ'), tok('は', 'ハ', '助詞', '係助詞'), tok('どこ', 'ドコ'), tok('へ', 'ヘ', '助詞', '格助詞')]), 'kimi wa doko e', '助詞は / へ');
+  assert.equal(romanizeTokens([tok('思っ', 'オモッ', '動詞', '自立'), tok('て', 'テ', '助詞', '接続助詞'), tok('る', 'ル', '動詞', '非自立')]), 'omotteru', '接续助词、非自立贴前');
+  assert.equal(romanizeTokens([tok('謎', undefined)]), null, '汉字没读音整行放弃');
+  assert.equal(romanizeTokens([tok('Hello', undefined), tok('、', undefined, '記号', '読点'), tok('せかい', undefined)]), 'Hello、 sekai');
+  // 真词典（本地，不联网）
+  const lines = await romanizeJapaneseLines(['君の名前は', 'ちょっと待って', '東京タワー']);
+  assert.deepEqual(lines, ['kimi no namae wa', 'chotto matte', 'toukyou tawaa']);
+  const lyric = { raw: '', lines: [
+    { timeMs: 0, text: '作詞：だれか' },
+    { timeMs: 1000, text: '君の名前は' },
+    { timeMs: 2000, text: 'ちょっと待って' },
+    { timeMs: 3000, text: 'またあした' },
+  ], romalrc: lrcAt(1000, 'kimi no namae wa (platform)') };
+  const r = await withJapaneseRoman(lyric);
+  assert.equal(r.romanGenerated, 2);
+  assert.ok(r.romalrc.includes('kimi no namae wa (platform)'), '平台给了的行不动');
+  assert.ok(r.romalrc.includes('chotto matte') && r.romalrc.includes('mata ashita'));
+  assert.ok(!r.romalrc.includes('dareka'), '署名行不转');
+  const zh = { raw: '', lines: [{ timeMs: 0, text: '我们的歌' }, { timeMs: 1000, text: '在这里' }] };
+  assert.equal(await withJapaneseRoman(zh), zh, '中文歌不动');
+  console.log('日语罗马音 6/6');
+}

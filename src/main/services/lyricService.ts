@@ -13,13 +13,14 @@ import type {
 import { creditsFromLrc, parseLrc } from '../parsers/lyricParser';
 import { lrcAt } from '../parsers/timedLyrics';
 import { hasHangul, romanizeKorean } from '../parsers/romanizeKorean';
+import { romanizeJapaneseLines } from '../parsers/romanizeJapanese';
 import { recordingMatch, searchKeyword } from './recordingMatch';
 import { normalizeQuery, titleSimilarity } from '../adapters/mappers';
 import { LyricCache } from './lyricCache';
 import { LyricOverrides, clampLyricOffset } from './lyricOverrides';
 import { applyLyricOffset } from './lyricOffset';
 import { withRequestScope, throwIfCancelled, requestScope } from '../requestScope';
-import { closeBrackets, enrichAligned, lyricComplete, lyricCoverage, lyricTruncated, snapLinesToWords } from './lyricAlignment';
+import { closeBrackets, enrichAligned, lyricComplete, lyricCoverage, lyricScript, lyricTruncated, snapLinesToWords } from './lyricAlignment';
 import type { AmllSource } from './amllLyrics';
 import type { AppleLyricsSource } from './appleMusicLyrics';
 import { LYRIC_ID_ORDER, lyricIdsOf, mergeLyricIds, type LyricIdKey, type LyricIds } from './lyricSourceIds';
@@ -56,6 +57,25 @@ export function withKoreanRoman(l: Lyric): Lyric {
   const romalrc = merged.map((r) => lrcAt(r.timeMs, r.text)).join('\n');
   return { ...l, romalrc, romanRaw: romalrc, romanGenerated: missing.length };
 }
+
+/**
+ * 日语歌缺罗马音的行用本地转写补上（#209，kuromoji 分词 + 平文式）：只补别家补完后仍缺的行，平台给了的不动。
+ * 整首按语种判定是日语才做；署名行（「作词：…」）不转；某行有汉字查不到读音就跳过那行。补了多少行累加到 romanGenerated。
+ */
+export async function withJapaneseRoman(l: Lyric): Promise<Lyric> {
+  if (lyricScript(l) !== 'ja') return l;
+  const rows = l.lines.filter((x) => x.text.trim() && /[ぁ-ヿ\p{Script=Han}]/u.test(x.text) && !/^[^:：]{1,24}[:：]/.test(x.text.trim()));
+  const existing = parseLrc(l.romalrc || l.romanRaw || '').filter((r) => r.text.trim());
+  const missing = rows.filter((r) => !existing.some((e) => Math.abs(e.timeMs - r.timeMs) <= 250));
+  if (!missing.length) return l;
+  const romans = await romanizeJapaneseLines(missing.map((r) => r.text));
+  const made = missing.map((r, i) => ({ timeMs: r.timeMs, text: romans[i] })).filter((r): r is { timeMs: number; text: string } => !!r.text);
+  if (!made.length) return l;
+  const romalrc = [...existing, ...made].sort((a, b) => a.timeMs - b.timeMs).map((r) => lrcAt(r.timeMs, r.text)).join('\n');
+  return { ...l, romalrc, romanRaw: romalrc, romanGenerated: (l.romanGenerated || 0) + made.length };
+}
+/** 本地补罗马音：韩语（同步转写）、日语（词典分词）。 */
+const withLocalRoman = (l: Lyric): Promise<Lyric> => withJapaneseRoman(withKoreanRoman(l));
 
 /** 逐字歌词的额外来源（构造时注入，测试里可以换成假的）。 */
 export interface LyricExtraSources {
@@ -192,7 +212,7 @@ export class LyricService {
   /** 自动合并的歌词（缓存里存的就是这一份，没有时间微调）；用户指定了来源就用指定的那份做正文。 */
   private async fetchLyricBase(track: Track, signal?:AbortSignal, origin?: Track): Promise<Lyric|null> {
     if(signal?.aborted)return null;
-    const cached=this.cache?.get(track.platform,track.sourceId);if(cached)return withKoreanRoman(cached);
+    const cached=this.cache?.get(track.platform,track.sourceId);if(cached)return withLocalRoman(cached);
     const key=this.keyOf(track);
     const pending=this.lyricJobs.get(key);if(pending && !pending.control.signal.aborted)return this.consumeLyric(pending,signal);
     const job={control:new AbortController(),users:0,done:false,promise:Promise.resolve(null) as Promise<Lyric|null>};
@@ -264,11 +284,12 @@ export class LyricService {
         });
       }
       return best;
-    },{detached:true,signal:job.control.signal}).catch(()=>best).then(lyric=>{
+    },{detached:true,signal:job.control.signal}).catch(()=>best).then(async lyric=>{
       if(!lyric || job.control.signal.aborted)return null;
       const coverage=lyricCoverage(lyric);
       const incomplete=!!lyric.incomplete || !lyricComplete(lyric) || lyricTruncated(lyric,track.duration);
-      const result=withKoreanRoman({...lyric,coverage,incomplete});
+      const result=await withLocalRoman({...lyric,coverage,incomplete});
+      if(job.control.signal.aborted)return null;
       // 选中的那份这次没取到、退回了自动：不写缓存，否则自动结果会盖住用户的选择最长 30 天；下次再按选择重试
       if(!(chosen && !manual))this.cache?.set(track.platform,track.sourceId,result);
       return result;

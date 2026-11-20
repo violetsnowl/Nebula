@@ -7,7 +7,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "build:main": "esbuild src/main/index.ts --bundle --platform=node --format=cjs --target=node18 --outfile=dist-main/index.cjs --log-level=warning --external:@neteasecloudmusicapienhanced/* --external:qrcode",
+    "build:main": "esbuild src/main/index.ts --bundle --platform=node --format=cjs --target=node18 --outfile=dist-main/index.cjs --log-level=warning --external:@neteasecloudmusicapienhanced/* --external:qrcode --external:kuromoji",
     "build:desktop": "tsc --noEmit && vite build --outDir dist && pnpm build:main",
     "desktop": "node scripts/desktop-check.mjs && electron .",
     "qa:backend": "pnpm build:main && node scripts/backend-smoke.mjs && node scripts/player-regression.mjs && node scripts/router-regression.mjs && node scripts/matching-regression.mjs && node scripts/source-lifetime-regression.mjs && node scripts/qq-session-regression.mjs && node scripts/qq-renew-regression.mjs &&node scripts/lyric-regression.mjs && node scripts/metadata-regression.mjs && node scripts/import-regression.mjs && node scripts/romanize-regression.mjs && node scripts/kugou-login-regression.mjs && node scripts/kuwo-regression.mjs && node scripts/bodian-regression.mjs && node scripts/ytmusic-regression.mjs && node scripts/applemusic-regression.mjs && node scripts/applemusic-engine-regression.mjs && node scripts/ttml-regression.mjs && node scripts/lyric-sources-regression.mjs && node scripts/qishui-login-regression.mjs && node scripts/embedded-sheet-regression.mjs && node scripts/spotify-auth-regression.mjs",
@@ -27,6 +27,7 @@
   },
   "dependencies": {
     "@neteasecloudmusicapienhanced/api": "4.40.0",
+    "kuromoji": "0.1.2",
     "motion": "^13.1.0",
     "music-metadata": "^11.14.0",
     "qrc-decoder": "1.0.2",
@@ -35,6 +36,7 @@
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
+    "@types/kuromoji": "0.1.3",
     "@types/node": "^22.10.2",
     "@types/qrcode": "^1.5.6",
     "@types/react": "^18.3.12",

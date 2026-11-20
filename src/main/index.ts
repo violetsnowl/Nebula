@@ -49,5 +49,6 @@ export * from './services/lyricAlignment';
 export * from './services/coverService';
 
 export { romanizeKorean, hasHangul } from './parsers/romanizeKorean';
+export { kanaToRomaji, romanizeTokens, romanizeJapaneseLines } from './parsers/romanizeJapanese';
 
 export { qishuiCoverUrl, QISHUI_TRACK_COVER } from './adapters/qishuiAdapter';
