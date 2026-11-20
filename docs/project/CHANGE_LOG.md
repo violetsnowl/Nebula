@@ -6,6 +6,21 @@
 
 ---
 
+## #216 — 2026-11-20 — 汽水歌词改从车机曲目信息取（逐字 + 中文翻译，不需要授权）
+
+**背景**：用户 2026-11-20 验收 #215：《whatever it takes》《Relax》《Sound of Walking Away》都能放了，但都没有歌词。这几首在别家找不到同一录音，只能靠汽水自己的歌词；而汽水本平台歌词接口（网页 SEO `seo_track`）现在只回 `status_info`、没有歌词，等于每首汽水歌都拿不到汽水自己的歌词。
+
+**改动**
+- `qishuiCar.fetchCarLyric`：`/media/mget/` 曲目信息里的 `display_info.lyric_info`——原文 `lyric_entity`（实测 type=krc，明文逐字）、翻译 `lang_translations['ZH-HANS-CN']`（type=lrc）。**不需要授权**：有授权用授权的设备和账号，没有就用内存里随机生成的设备 id（匿名实测 3/3 有逐字和翻译）。失败返回 null。
+- `qishuiAdapter.fetchLyric`：先取车机歌词（KRC 走现有 `fromTimed`，带翻译），取不到才退回 SEO / PC 接口。
+- `lyricService.gatherHits`：原曲是汽水、实际从别的平台出声时，也按汽水 id 取一份汽水自家歌词（同一录音，排在最后），和 Spotify（#210）同一条路。
+
+**验证**
+- 用户报的 3 首，匿名走完整歌词服务：正文 103 / 16 / 33 行，逐字和翻译都是 100%，判「够好」，0.4–1.1 秒。
+- `qishui-car-regression` 24 项（新增 1）、`lyric-sources-regression` 41/41（新增 1）；`pnpm build`、`pnpm qa`、`pnpm qa:backend` 全绿。
+
+**遗留**：没有罗马音（日语歌照常靠别家 / 本地生成补）。
+
 ## #215 — 2026-11-20 — 汽水整曲取音频不带 qishui.com 的 Referer（用户扫码后实测 CDN 403）
 
 **背景**：用户 2026-11-20 在汽水账号详情里用抖音扫码授权了整曲播放，问怎么验收。主对话用真实授权的副本（只拷 `qishui-car` 一条；离过期约 6 小时，不会触发续期；用完删）跑取链：5 首里 4 首拿到地址（2 首整曲、2 首只有试听、1 首无版权），但对地址做音频探测全部 403。

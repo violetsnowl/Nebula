@@ -1,7 +1,8 @@
 import type { HttpClient } from '../http';
 import type { CookieStore } from '../cookieStore';
 import type { Lyric, Playlist, PlaylistSummary, PlatformAdapter, QualityOption, SongUrl, Track } from '../types';
-import { parseLrc } from '../parsers/lyricParser';
+import { mergeLyric, parseLrc } from '../parsers/lyricParser';
+import { fromTimed } from '../parsers/timedLyrics';
 import { QishuiCar } from './qishuiCar';
 
 const PC_APP_PARAMS: Record<string, string> = {
@@ -330,7 +331,15 @@ export class QishuiAdapter implements PlatformAdapter {
 
   /** 歌词三源兜底 */
   async fetchLyric(trackId: string): Promise<Lyric | null> {
-    // 1) SEO seo_track（免登录，原生逐字，首选）
+    // 0) 车机协议的曲目信息（#216，不需要授权）：原文是明文 KRC 逐字，翻译是 LRC
+    const car = await this.car.fetchCarLyric(trackId);
+    if (car) {
+      const lyric = car.type === 'krc' ? fromTimed(car.content, 'krc', car.translation ?? '') : null;
+      if (lyric?.lines?.length) return { ...lyric, source: 'qishui' };
+      const lines = mergeLyric(car.content, car.translation ?? '');
+      if (lines.length) return { raw: car.content, lrc: car.content, lines, tlyric: car.translation, translationRaw: car.translation, source: 'qishui' };
+    }
+    // 1) SEO seo_track（免登录；2026-11-20 实测只回 status_info、没有歌词，留着兜底）
     try {
       const seoUrl = `https://beta-luna.douyin.com/luna/h5/seo_track?id=${trackId}`;
       const seoData = await this.http.requestJson<any>(seoUrl, {

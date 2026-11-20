@@ -599,6 +599,33 @@ export class QishuiCar {
     }
   }
 
+  // ----- 歌词 -----
+
+  /** 没有授权时读公开曲目信息用的设备 id（只在内存里，不落盘）。 */
+  private anonDeviceId?: string;
+  /**
+   * 汽水歌词（#216）：/media/mget/ 曲目信息里的 display_info.lyric_info——原文 lyric_entity（实测 type=krc，明文逐字）
+   * 和翻译 lang_translations（type=lrc）。不需要授权（2026-11-20 匿名实测 3/3 有逐字和中文翻译）：有授权用授权的设备，
+   * 没有就用内存里随机生成的设备 id。网页 SEO 接口（seo_track）现在只回 status_info、没有歌词。失败返回 null，不抛。
+   */
+  async fetchCarLyric(trackId: string): Promise<{ type: string; content: string; translation?: string } | null> {
+    try {
+      if (!/^\d{1,30}$/.test(String(trackId))) return null;
+      const own = this.loadCredential();
+      const credential = own && own.expiresAt > this.now() ? own : ({ deviceId: (this.anonDeviceId ??= createCarDeviceId()) } as CarCredential);
+      const data = await this.publicRead('/media/mget/', credential, { media_list: [{ id: String(trackId), type: 'track' }], card_context: {} });
+      const list = Array.isArray(data?.media_list) ? data.media_list : [];
+      const media = list.find((m: any) => String(m?.media_id || m?.track_entity?.base_info?.id) === String(trackId)) ?? list.find((m: any) => m?.track_entity);
+      const info = media?.track_entity?.display_info?.lyric_info;
+      const entity = info?.lyric_entity;
+      if (!entity?.content || typeof entity.content !== 'string') return null;
+      const trans = Object.entries(info.lang_translations ?? {}).find(([k]) => /^ZH/i.test(k))?.[1] as { content?: string } | undefined;
+      return { type: String(entity.type || ''), content: entity.content, ...(typeof trans?.content === 'string' && trans.content ? { translation: trans.content } : {}) };
+    } catch {
+      return null;
+    }
+  }
+
   // ----- 取链 -----
 
   /**

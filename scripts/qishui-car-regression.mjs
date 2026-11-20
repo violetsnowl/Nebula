@@ -475,4 +475,31 @@ await test('IPC：四个通道已注册，返回 { ok, data }；没有车机授�
   assert.equal((await bare.get('nebula:login:qishui-car:qr')({}, {})).ok, false);
 });
 
+await test('歌词（#216）：曲目信息里的 KRC 原文 + 中文翻译，不需要授权（匿名设备 id）；适配器转成逐字歌词；没有歌词 / 出错返回 null', async () => {
+  const krc = ['[1000,2000]<0,500,0>编的<500,500,0>第一<1000,1000,0>句', '[4000,2000]<0,1000,0>编的<1000,1000,0>第二句'].join(String.fromCharCode(10));
+  const lyricTrack = (info) => ({ base_info: { id: '700' }, display_info: { lyric_info: info }, player_info: {} });
+  const server = fakeServer({ '/api/luna/v1/platform/media/mget/': (call) => resp({ data: { media_list: [{ media_id: call.body.media_list[0].id, track_entity: lyricTrack({ lyric_entity: { type: 'krc', content: krc, lang: 'ZH' }, lang_translations: { 'ZH-HANS-CN': { type: 'lrc', content: ['[00:01.00]译一', '[00:04.00]译二'].join(String.fromCharCode(10)) } } }) }] } }) });
+  const car = new QishuiCar(newStore(), { fetch: server.fetch, now: () => NOW });
+  const got = await car.fetchCarLyric('700');
+  assert.equal(got.type, 'krc');
+  assert.ok(got.translation.includes('译一'));
+  const mget = server.calls.find((c) => c.path.endsWith('/media/mget/'));
+  assert.deepEqual(mget.body.common_params, {}, '没有授权：不带 user_id');
+  const adapter = createAdapters({ requestJson: async () => { throw new Error('不该走 SEO'); } }, newStore()).qishui;
+  adapter.car = car;
+  const lyric = await adapter.fetchLyric('700');
+  assert.deepEqual(lyric.lines.map((l) => [l.timeMs, l.text, l.translation]), [[1000, '编的第一句', '译一'], [4000, '编的第二句', '译二']]);
+  assert.ok(lyric.yrc, '带逐字');
+  assert.equal(lyric.source, 'qishui');
+  // 没有歌词、接口出错：null
+  const empty = new QishuiCar(newStore(), { fetch: fakeServer({ '/api/luna/v1/platform/media/mget/': (call) => resp({ data: { media_list: [{ media_id: '700', track_entity: lyricTrack(undefined) }] } }) }).fetch, now: () => NOW });
+  assert.equal(await empty.fetchCarLyric('700'), null);
+  const broken = new QishuiCar(newStore(), { fetch: async () => { throw new Error('boom'); }, now: () => NOW });
+  assert.equal(await broken.fetchCarLyric('700'), null);
+  assert.equal(await car.fetchCarLyric('abc'), null, '非数字 id 不请求');
+  // 有授权时用授权账号
+  const { car: authed, server: s2 } = await authorized(confirmedOver);
+  await authed.fetchCarLyric('700');
+  assert.deepEqual(s2.calls.filter((c) => c.path.endsWith('/media/mget/')).pop().body.common_params, { user_id: '9001' });
+});
 print(`\n汽水车机协议回归：${n} 项全部通过`);

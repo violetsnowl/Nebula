@@ -181,9 +181,12 @@ export class LyricService {
       const ids=mergeLyricIds(lyricIdsOf(track),lyricIdsOf(origin));
       // AMLL 第一轮可能已经在取主歌词时并行发出（见 fetchLyricBase），直接复用
       const amllFirst=preAmll ?? this.amllHit(ids,AMLL_BUDGET_MS),apple=this.appleHit(track,origin);
-      // Spotify 自家歌词（#210）：原曲是 Spotify 歌时按它的 id 取（同一录音，只有逐行），排在所有来源最后
-      const sp=[origin,track].find(t=>t?.platform==='spotify');
-      const spotify=sp && this.adapters.spotify ? this.fetchOne(sp,'fallback').catch(()=>null) : Promise.resolve(null);
+      // 原曲平台自家的歌词，按原曲 id 取（同一录音）：Spotify（#210，只有逐行）、汽水（#216，车机曲目信息里的逐字 + 翻译，不需要授权）；
+      // 实际出声那首就是它时已经是主歌词，不重复取。排在所有来源最后
+      const own=origin && origin!==track && origin.platform!==track.platform && (origin.platform==='spotify' || origin.platform==='qishui') ? origin
+        : track.platform==='spotify' ? track : undefined;
+      const sp=own;
+      const spotify=sp && this.adapters[sp.platform] ? this.fetchOne(sp,'fallback').catch(()=>null) : Promise.resolve(null);
       const candidates=await Promise.all(sources.map(async platform=>{
         try{
           // 网易云那一路可能已经提前搜过（见 fetchLyricBase：补和声 / 对唱要的网易云 id），直接复用
@@ -209,7 +212,7 @@ export class LyricService {
       }
       const appleResult=await apple,spotifyLyric=await spotify;
       throwIfCancelled();
-      // 固定顺序合并：AMLL → Apple → 网易云 → QQ → 酷狗 → 酷我 → Spotify，网络完成顺序不改变结果。
+      // 固定顺序合并：AMLL → Apple → 网易云 → QQ → 酷狗 → 酷我 → 原曲平台（Spotify / 汽水），网络完成顺序不改变结果。
       return [amll,appleResult,...candidates.map(c=>c?.lyric?{lyric:c.lyric,duration:Number(c.from.duration),trusted:false}:null),
         spotifyLyric?{lyric:spotifyLyric,duration:Number(sp!.duration)||0,trusted:true}:null];
   }

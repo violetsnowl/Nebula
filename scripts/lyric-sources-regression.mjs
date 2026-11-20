@@ -1004,4 +1004,16 @@ await test('Spotify 歌词（#210）：color-lyrics 只要逐行同步的（去 
   await new LyricService(map).fetchLyric(song());
   assert.equal(asked, null);
 });
+await test('原曲是汽水（#216）：实际出声那首没歌词、别家也没有时，按汽水 id 取汽水自家歌词；出声的就是汽水时不重复取', async () => {
+  let asked = 0;
+  const qishui = { fetchLyric: async (id) => { asked++; assert.equal(id, '700'); return fromTtml(ttmlDoc({ trans: true }), 'amll'); } };
+  const map = { qq: { fetchLyric: async () => null }, netease: { searchSongs: async () => [], fetchLyric: async () => null }, kugou: {}, qishui };
+  const r = await new LyricService(map).fetchLyric(song(), undefined, song({ platform: 'qishui', sourceId: '700', id: 'qishui:700' }));
+  assert.equal(asked, 1);
+  assert.equal(r.lines.length, 4);
+  assert.ok(r.provenance.some((x) => x.platform === 'qishui'));
+  asked = 0;
+  await new LyricService(map).fetchLyric(song({ platform: 'qishui', sourceId: '700', id: 'qishui:700' }));
+  assert.equal(asked, 1, '本平台出声：只作为主歌词取一次');
+});
 say(`歌词新来源回归 ${passed}/${passed}`);
