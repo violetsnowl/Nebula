@@ -318,6 +318,29 @@ export class BodianAdapter implements PlatformAdapter {
     ];
   }
 
+  /**
+   * 关键词搜歌（跨平台兜底用）：波点自己的搜索接口，匿名即可（不带登录票据，票据过期也不影响搜索），
+   * 返回的歌曲 id 和歌单里的一致（同一曲库），字段与歌单歌曲同形，所以走同一个 mapBodianTrack。
+   * 标题用 songName（带「(Live)」等版本后缀），name 是不带后缀的歌名。失败 / 无结果返回 []。
+   */
+  async searchSongs(keyword: string, pageSize = 10): Promise<Track[]> {
+    const word = String(keyword ?? '').trim();
+    if (!word) return [];
+    try {
+      const res = await this.api.call('/api/search/music/list', {
+        session: null,
+        params: { pn: 0, rn: Math.max(1, Math.min(50, Math.floor(pageSize) || 10)), keyword: word, correct: 1 },
+        timeoutMs: 6000,
+      });
+      if (res.code !== 200) throw new Error(`错误码 ${res.code}`);
+      const rows: Array<Record<string, any>> = Array.isArray(res.data?.resultList) ? res.data.resultList : [];
+      return rows.map(row => mapBodianTrack({ ...row, name: row?.songName || row?.name })).filter((t): t is Track => !!t);
+    } catch (err) {
+      console.warn('[BodianAdapter] 搜索失败:', err instanceof Error ? err.message : '');
+      return [];
+    }
+  }
+
   /** 本平台歌词（#204）：波点和酷我同一套曲库、歌曲 id 相同，用酷我的歌词接口（逐字 + 翻译，匿名）。 */
   async fetchLyric(songId: string): Promise<Lyric | null> {
     return this.http ? fetchKuwoLyric(this.http, songId) : null;

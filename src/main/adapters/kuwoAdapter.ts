@@ -7,6 +7,9 @@ import { decodeKuwoLyric, kuwoLyricUrl, parseKuwoLyric } from '../parsers/kuwoLy
 const PLAYLIST_API = 'http://nplserver.kuwo.cn/pl.svc';
 const SONG_URL_API = 'http://antiserver.kuwo.cn/anti.s';
 const COMMON_QUERY = 'encode=utf8&keyset=pl2012&identity=kuwo&pcmp4=1&vipver=MUSIC_9.0.5.0_W1&newver=1';
+/** 网页搜索接口（https 才返回合法 JSON；http 会 301，而 search.kuwo.cn/r.s 返回的是单引号伪 JSON）。 */
+const SEARCH_API = 'https://www.kuwo.cn/search/searchMusicBykeyWord';
+const SEARCH_QUERY = 'vipver=1&client=kt&ft=music&cluster=0&strategy=2012&encoding=utf8&rformat=json&mobi=1&issubtitle=1&show_copyright_off=1';
 const PAGE_SIZE = 100;
 const MAX_PAGES = 60;
 /** 未授权 / 无版权的歌曲，取链接口仍返回 code 200，但给的是同一段短提示音（实测 181521 字节，约 11 秒）。 */
@@ -67,6 +70,26 @@ function mapKuwoTrack(item: Record<string, any>): Track | null {
       durationSec: Number(item.duration) || 0,
     },
   };
+}
+
+/**
+ * 搜索结果一行 → Track：先整理成歌单接口的字段形状，再走同一个 mapKuwoTrack（字段口径一致）。
+ * 标题用 SONGNAME（带「(Live)」「(DJ版)」等版本后缀，跨平台匹配要靠它区分录音），NAME 是不带后缀的歌名，只作兜底；
+ * 歌曲 id 取 DC_TARGETID，没有就从 MUSICRID（MUSIC_123）里取。封面接口只给短路径（120/s3s94/…），拼上专辑图域名后同样放大到 500。
+ */
+function mapKuwoSearchRow(row: Record<string, any>): Track | null {
+  const short = String(row?.web_albumpic_short ?? '').trim();
+  const albumpic = /^https?:\/\//i.test(short) ? short : short ? `http://img1.kuwo.cn/star/albumcover/${short.replace(/^\/+/, '')}` : '';
+  return mapKuwoTrack({
+    id: String(row?.DC_TARGETID || '').trim() || String(row?.MUSICRID ?? '').replace(/^MUSIC_/i, ''),
+    name: row?.SONGNAME || row?.NAME,
+    artist: row?.ARTIST || row?.FARTIST,
+    album: row?.ALBUM,
+    albumpic,
+    duration: row?.DURATION,
+    albumid: row?.ALBUMID,
+    artistid: row?.ARTISTID,
+  });
 }
 
 /** getuserlist 条目 → 歌单摘要：丢掉没有标题的系统占位列表（PC_DEFAULT / RADIO / ORDER 等）。 */
@@ -180,6 +203,25 @@ export class KuwoAdapter implements PlatformAdapter {
 
   async listQualities(): Promise<QualityOption[]> {
     return [{ level: '128', label: '标准 128k' }];
+  }
+
+  /**
+   * 关键词搜歌（跨平台兜底用）：匿名（不带登录信息）的网页搜索接口，返回合法 JSON、带时长与专辑图。
+   * 失败 / 无结果返回 []，由调用方换别的平台。
+   */
+  async searchSongs(keyword: string, pageSize = 10): Promise<Track[]> {
+    const word = String(keyword ?? '').trim();
+    if (!word) return [];
+    try {
+      const data = await this.http.requestJson<{ abslist?: Array<Record<string, any>> }>(
+        `${SEARCH_API}?${SEARCH_QUERY}&pn=0&rn=${Math.max(1, Math.min(50, Math.floor(pageSize) || 10))}&all=${encodeURIComponent(word)}`,
+        { platform: 'kuwo', cookie: '', timeoutMs: 6000 },
+      );
+      return (Array.isArray(data?.abslist) ? data.abslist : []).map(mapKuwoSearchRow).filter((t): t is Track => !!t);
+    } catch (err) {
+      console.warn('[KuwoAdapter] 搜索失败:', err instanceof Error ? err.message : '');
+      return [];
+    }
   }
 
   /** 本平台歌词（#204）：逐字 + 翻译，接口匿名（不带登录信息）。取不到返回 null，LyricService 会去别的平台补。 */

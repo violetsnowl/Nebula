@@ -7,7 +7,7 @@ import path from 'node:path';
 // 波点适配器 / 登录回归：假传输层，不联网（所有 ID、token 都是合成的）。依赖 pnpm build:main 产物。
 const require=createRequire(import.meta.url);
 const api=require('../dist-main/index.cjs');
-const {CookieStore,BodianAdapter,BodianLogin,bodianSelfFromPlaylists,bodianSign,encodeBodianQuery,parseBodianSession,parseBodianPlaylistId,createAdapters,resolveAdapterByUrl,validatePlatformCookie,normalizeCookieHeader,coverCandidates,audioPlatform}=api;
+const {CookieStore,KuwoAdapter,BodianAdapter,BodianLogin,bodianSelfFromPlaylists,bodianSign,encodeBodianQuery,parseBodianSession,parseBodianPlaylistId,createAdapters,resolveAdapterByUrl,validatePlatformCookie,normalizeCookieHeader,coverCandidates,audioPlatform}=api;
 const tmp=fs.mkdtempSync(path.join(os.tmpdir(),'bodian-regression-'));
 let seq=0;
 const UID='424242',TOKEN='0123456789abcdef0123456789abcdef',DEV='a'.repeat(32);
@@ -286,7 +286,7 @@ await test('取链：地区限制 407 返回 null、只记一次日志、不清�
 await test('接入：createAdapters 含 bodian；歌词 null；音质；链接识别（分享页 → bodian，酷我链接仍是 kuwo）',async()=>{
  const adapters=createAdapters({},newStore());
  assert.equal(adapters.bodian.platform,'bodian');assert.equal(await adapters.bodian.fetchLyric('1'),null);
- assert.equal(adapters.bodian.searchSongs,undefined);
+ assert.equal(typeof adapters.bodian.searchSongs,'function');assert.equal(typeof adapters.kuwo.searchSongs,'function');
  assert.deepEqual((await adapters.bodian.listQualities()).map(q=>q.level),['128','320','flac']);
  const share=(q)=>`https://h5app.kuwo.cn/m/bodian/collection.html?${q}`;
  assert.deepEqual(resolveAdapterByUrl(share('uid=111&playlistId=222&source=4&ownerId=')),{platform:'bodian',id:'222:4'});
@@ -303,5 +303,44 @@ await test('封面 / 音频域名：波点封面保持原协议；*.kuwo.cn 音�
  assert.deepEqual(coverCandidates({platform:'bodian',cover:'http://img1.kwcdn.kuwo.cn/star/userpl2015/1/2/3_700.jpg'}),['http://img1.kwcdn.kuwo.cn/star/userpl2015/1/2/3_700.jpg']);
  assert.deepEqual(coverCandidates({platform:'bodian',cover:'https://img4.kuwo.cn/star/albumcover/800/a/b/1.webp'}),['https://img4.kuwo.cn/star/albumcover/800/a/b/1.webp']);
  assert.equal(audioPlatform(new URL('https://ga-sycdn.kuwo.cn/a/b.mp3')),'kuwo');
+});
+/* ---------- 搜索（跨平台兜底用，数据全部编造） ---------- */
+const srow=(i,extra={})=>({...track(i),songName:`编的歌${i} (Live)`,name:`编的歌${i}`,...extra});
+await test('搜索：匿名（不带票据）；字段与歌单歌曲一致，platform 为 bodian，标题带版本后缀，时长为秒',async()=>{
+ const f=fake({'/api/search/music/list':()=>ok({total:3,resultList:[srow(1,{album:'专辑&nbsp;一',artists:undefined,artist:'歌手甲&amp;歌手乙'}),srow(2,{songName:''}),{id:'x',name:'坏 id'},{id:5}]})});
+ const a=new BodianAdapter({},newStore(LOGGED),f.transport);
+ const rows=await a.searchSongs('编的歌 歌手甲',12);
+ assert.equal(f.calls.length,1);
+ const c=f.calls[0];
+ assert.equal(c.method,'GET');assert.equal(c.q.get('keyword'),'编的歌 歌手甲');assert.equal(c.q.get('rn'),'12');assert.equal(c.q.get('pn'),'0');
+ assert.equal(c.q.get('uid'),'-1','匿名：不带登录 uid');assert.equal(c.q.get('token'),'');assert.ok(!JSON.stringify(c.headers).includes(TOKEN));
+ assert.equal(rows.length,2,'无效 id / 无标题的行丢掉');
+ const t=rows[0];
+ assert.deepEqual([t.id,t.sourceId,t.platform,t.title,t.artist,t.album,t.duration,t.originalUrl],['bodian:900001','900001','bodian','编的歌1 (Live)','歌手甲 / 歌手乙','专辑 一',201,'']);
+ assert.deepEqual(t.artists,['歌手甲','歌手乙']);assert.equal(t.cover,'https://img4.kuwo.cn/star/albumcover/800/a/b/1.webp');
+ assert.deepEqual([t.extra.albumId,t.extra.artistId,t.extra.durationSec],['77','5',201]);
+ assert.equal(rows[1].title,'编的歌2','没有 songName 时用 name');
+ // 和歌单里同一首歌（同 id）的映射口径一致：除了标题后缀，其余字段相同
+ const pl=await new BodianAdapter({},newStore(LOGGED),fake({'/api/service/playlist/info/1':()=>ok({}),'/api/service/playlist/1/musicList':(r,q)=>ok({total:1,list:q.get('pn')==='1'?[{...srow(1),songName:undefined}]:[]})}).transport).fetchPlaylist('1');
+ const [same]=await new BodianAdapter({},newStore(LOGGED),fake({'/api/search/music/list':()=>ok({resultList:[srow(1)]})}).transport).searchSongs('x');
+ const {title:_a,...rest}=same,{title:_b,...restPl}=pl.tracks[0];assert.deepEqual(rest,restPl);assert.equal(pl.tracks[0].title,'编的歌1');
+});
+await test('搜索：失败 / 空词 / 无结果 / 业务码非 200 都返回 []，条数夹在 1..50；票据失效不影响搜索',async()=>{
+ const seen=[];
+ const run=async(handler,kw='x',n)=>{const f=fake({'/api/search/music/list':handler});const rows=await new BodianAdapter({},newStore(LOGGED),f.transport).searchSongs(kw,n);return {rows,calls:f.calls};};
+ assert.deepEqual((await run(()=>{throw new Error('网络断了');})).rows,[]);
+ assert.deepEqual((await run(()=>({code:500,msg:'err'}))).rows,[]);
+ assert.deepEqual((await run(()=>({code:-101,msg:'token'}))).rows,[]);
+ assert.deepEqual((await run(()=>ok({resultList:[]}))).rows,[]);
+ assert.deepEqual((await run(()=>ok({}))).rows,[]);
+ assert.deepEqual((await run(()=>ok({resultList:'坏'}))).rows,[]);
+ assert.deepEqual((await run(()=>ok({}),'   ')).calls,[],'空词不发请求');
+ assert.equal((await run(()=>ok({}),'x',999)).calls[0].q.get('rn'),'50');assert.equal((await run(()=>ok({}),'x',0)).calls[0].q.get('rn'),'10');
+});
+await test('搜索：酷我和波点各自标注自己的 platform，同一个数字 id 互不混淆',async()=>{
+ const k=new KuwoAdapter({requestJson:async()=>({abslist:[{DC_TARGETID:'900001',SONGNAME:'编的歌1',ARTIST:'歌手甲',DURATION:'201'}]})},newStore());
+ const b=new BodianAdapter({},newStore(),fake({'/api/search/music/list':()=>ok({resultList:[track(1)]})}).transport);
+ const [kr]=await k.searchSongs('x'),[br]=await b.searchSongs('x');
+ assert.deepEqual([kr.platform,kr.id,kr.sourceId],['kuwo','kuwo:900001','900001']);assert.deepEqual([br.platform,br.id,br.sourceId],['bodian','bodian:900001','900001']);
 });
 console.log(`波点回归 ${passed}/${passed}`);

@@ -78,6 +78,43 @@ await test('会员刷新在后台，不阻塞路由，并排除无供流平台',
  const p=createFallbackPriorityProvider(Object.fromEntries(['qq','netease','kugou','spotify'].map(k=>[k,{getAccount:()=>new Promise(()=>{})}])));
  const at=Date.now(),order=await p();assert.ok(Date.now()-at<30);assert.equal(order.length,3);assert.ok(!order.some(t=>t.platform==='spotify'));p.invalidate();
 });
+await test('兜底顺序含酷我、波点：默认游客顺序在酷狗之后；登录会员的排前面；波点没登录不进（取不到整曲）',async()=>{
+ const logins=(accounts={})=>Object.fromEntries(['qq','netease','kugou','kuwo','bodian','spotify','qishui'].map(k=>[k,{getAccount:async()=>accounts[k]??null}]));
+ const p=createFallbackPriorityProvider(logins());
+ assert.deepEqual((await p()).map(t=>t.platform),['netease','qq','kugou','kuwo']);
+ assert.ok((await p()).every(t=>t.tier==='guest'));
+ await wait(20); // 后台刷新完成：全部游客，顺序不变（波点游客仍不进）
+ assert.deepEqual((await p()).map(t=>t.platform),['netease','qq','kugou','kuwo']);
+ p.invalidate();
+ const v=createFallbackPriorityProvider(logins({kuwo:{loggedIn:true,isVip:true},bodian:{loggedIn:true,isVip:true,isSvip:true},qq:{loggedIn:true}}));
+ await v();await wait(20);
+ assert.deepEqual((await v()).map(t=>[t.platform,t.tier]),[['bodian','svip'],['kuwo','vip'],['qq','free'],['netease','guest'],['kugou','guest']]);
+ // 没有登录适配器的平台不进顺序；被排除的不进
+ assert.deepEqual((await createFallbackPriorityProvider({kuwo:{getAccount:async()=>null}})()).map(t=>t.platform),['kuwo']);
+ assert.deepEqual((await createFallbackPriorityProvider(logins(),['qishui','spotify','kuwo'])()).map(t=>t.platform),['netease','qq','kugou']);
+});
+await test('酷我 / 波点候选能被兜底选中：有 searchSongs 才参与；主源失败时酷我的同一录音出声',async()=>{
+ const a=adapters();
+ a.qq.fetchSongUrl=async()=>null;
+ // 没有 searchSongs 的酷我 / 波点不参与（旧行为）
+ a.kuwo={platform:'kuwo',fetchSongUrl:async()=>({url:'https://test/should-not-be-used'})};
+ assert.equal((await make(a).resolve(song)).playable,false);
+ const kuwoTrack={...song,id:'kuwo:77',sourceId:'77',platform:'kuwo',album:'测试专辑',extra:{durationSec:240}};
+ let searched='',fetched=null;
+ a.kuwo={platform:'kuwo',searchSongs:async kw=>{searched=kw;return [{...kuwoTrack,sourceId:'76',title:'完全无关的歌',artist:'别人'},kuwoTrack];},
+  fetchSongUrl:async(id,album,quality,extra)=>{fetched={id,extra};return id==='77'?{url:'https://test/kuwo-77',quality:'128'}:null;}};
+ a.bodian={platform:'bodian',searchSongs:async()=>[],fetchSongUrl:async()=>null};
+ const r=await make(a).resolve(song);
+ assert.equal(r.playable,true);assert.equal(r.fallback,true);assert.equal(r.platform,'kuwo');assert.equal(r.url,'https://test/kuwo-77');
+ assert.match(searched,/测试曲/);assert.equal(fetched.id,'77');assert.equal(fetched.extra.durationSec,240);
+ // 经优先级提供器排序后同样能选中
+ const resolver=make(a);resolver.setFallbackTargets(createFallbackPriorityProvider({qq:{},netease:{},kugou:{},kuwo:{},bodian:{}}));
+ assert.equal((await resolver.resolve({...song,sourceId:'y'})).platform,'kuwo');
+ // 波点候选同理
+ const b=adapters();b.qq.fetchSongUrl=async()=>null;
+ b.bodian={platform:'bodian',searchSongs:async()=>[{...song,id:'bodian:88',sourceId:'88',platform:'bodian'}],fetchSongUrl:async id=>id==='88'?{url:'https://test/bodian-88',quality:'320'}:null};
+ const rb=await make(b).resolve(song);assert.equal(rb.platform,'bodian');assert.equal(rb.quality,'320');
+});
 await test('audio MIME 的 HTML 伪音频拒绝',async()=>{assert.equal(looksLikeAudio(Buffer.from('<html>blocked</html>'),'audio/mpeg'),false)});
 let seen=[],closed=false,connections=0;
 const data=Buffer.concat([Buffer.from('ID3'),Buffer.alloc(4093,1)]);

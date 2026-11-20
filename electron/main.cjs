@@ -595,7 +595,7 @@ app.whenReady().then(async () => {
         placeholder: '正在加载安全验证…',
       }),
   });
-  const kuwoLogin = new KuwoLogin(cookies);
+  const kuwoLogin = new KuwoLogin(cookies, http);
   const bodianLogin = new BodianLogin(cookies);
   // YouTube Music：设备码登录；与适配器共用同一个协议客户端，令牌续期全局只有一个在进行
   const ytmusicLogin = new YtmusicLogin(cookies, adapters.ytmusic.client);

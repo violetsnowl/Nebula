@@ -210,4 +210,49 @@ await test('#204 酷我、波点适配器都用同一个歌词接口：匿名（
  assert.equal(await k.fetchLyric('abc'),null);assert.equal(calls.length,2,'非数字 id 不发请求');
  assert.equal(await fetchKuwoLyric({requestBytes:async()=>{throw new Error('net');}},'1'),null);
 });
+
+/* ---------- 搜索（跨平台兜底用，数据全部编造） ---------- */
+const srow=(i,extra={})=>({DC_TARGETID:String(5000+i),MUSICRID:'MUSIC_'+(5000+i),NAME:`编的歌${i}`,SONGNAME:`编的歌${i} (Live)`,ARTIST:'歌手甲&amp;歌手乙',ALBUM:'专辑&nbsp;一',ALBUMID:'88',ARTISTID:'9',DURATION:'215',web_albumpic_short:'120/s3s94/93/1.jpg',...extra});
+await test('搜索：匿名 https 网页接口；字段与歌单歌曲一致，HTML 实体解码，时长为秒，封面放大',async()=>{
+ const calls=[];
+ const http={requestJson:async(url,opts)=>{calls.push({url,opts});return {abslist:[srow(1),srow(2,{DC_TARGETID:'',MUSICRID:'MUSIC_777',SONGNAME:'',web_albumpic_short:''}),srow(3,{DC_TARGETID:'',MUSICRID:'bad'}),srow(4,{SONGNAME:'',NAME:''})]};}};
+ const rows=await new KuwoAdapter(http,newStore(LOGGED)).searchSongs('编的歌 歌手甲',12);
+ const u=new URL(calls[0].url);
+ assert.equal(u.origin+u.pathname,'https://www.kuwo.cn/search/searchMusicBykeyWord');
+ assert.equal(u.searchParams.get('all'),'编的歌 歌手甲');assert.equal(u.searchParams.get('rn'),'12');assert.equal(u.searchParams.get('pn'),'0');assert.equal(u.searchParams.get('rformat'),'json');
+ assert.equal(calls[0].opts.platform,'kuwo');assert.equal(calls[0].opts.cookie,'','匿名：不带登录信息');
+ assert.equal(rows.length,2,'无 id / 无标题的行丢掉');
+ const t=rows[0];
+ assert.deepEqual([t.id,t.sourceId,t.platform,t.title,t.artist,t.album,t.duration,t.originalUrl],['kuwo:5001','5001','kuwo','编的歌1 (Live)','歌手甲 / 歌手乙','专辑 一',215,'']);
+ assert.deepEqual(t.artists,['歌手甲','歌手乙']);
+ assert.equal(t.cover,'http://img1.kuwo.cn/star/albumcover/500/s3s94/93/1.jpg');
+ assert.deepEqual([t.extra.albumId,t.extra.artistId,t.extra.durationSec],['88','9',215]);
+ assert.deepEqual([rows[1].sourceId,rows[1].title,rows[1].cover],['777','编的歌2','']);
+});
+await test('搜索：失败 / 空词 / 无结果都返回 []，条数夹在 1..50',async()=>{
+ let calls=0;const seen=[];
+ const http={requestJson:async url=>{calls++;seen.push(new URL(url).searchParams.get('rn'));if(calls===1)throw new Error('HTTP 500');return {abslist:[]};}};
+ const a=new KuwoAdapter(http,newStore());
+ assert.deepEqual(await a.searchSongs('x'),[]);
+ assert.deepEqual(await a.searchSongs('x',999),[]);assert.deepEqual(await a.searchSongs('x',0),[]);
+ assert.deepEqual(seen,['10','50','10']);
+ assert.deepEqual(await a.searchSongs('   '),[]);assert.equal(calls,3,'空词不发请求');
+ assert.deepEqual(await new KuwoAdapter({requestJson:async()=>({})},newStore()).searchSongs('x'),[]);
+ assert.deepEqual(await new KuwoAdapter({requestJson:async()=>({abslist:'坏'})},newStore()).searchSongs('x'),[]);
+});
+await test('会员：有 http 才查；到期晚于服务器时间才算；接口失败不影响登录态',async()=>{
+ const NOW=1795140071384,vip=o=>({data:{time:String(NOW),vipExpire:'0',vipLuxuryExpire:'0',vip3Expire:'0',vipmExpire:'0',svipExpire:'0',vipAdExpire:String(NOW+1e9),...o},meta:{code:200}});
+ const mk=reply=>{const calls=[];return {calls,http:{requestJson:async(url,opts)=>{calls.push({url,opts});if(reply instanceof Error)throw reply;return reply;}}};};
+ let m=mk(vip({vipLuxuryExpire:String(NOW+1000)}));
+ let acc=await new KuwoLogin(newStore(LOGGED),m.http).getAccount();
+ assert.deepEqual([acc.isVip,acc.isSvip,acc.vipType,acc.loggedIn,acc.authStatus],[true,false,1,true,'unknown']);
+ const q=new URL(m.calls[0].url);assert.equal(q.origin+q.pathname,'https://vip1.kuwo.cn/vip/v2/user/vip');assert.equal(q.searchParams.get('uid'),'424242');assert.equal(m.calls[0].opts.cookie,'');
+ acc=await new KuwoLogin(newStore(LOGGED),mk(vip({svipExpire:String(NOW+1000)})).http).getAccount();assert.deepEqual([acc.isVip,acc.isSvip,acc.vipType],[true,true,2]);
+ acc=await new KuwoLogin(newStore(LOGGED),mk(vip({vipExpire:String(NOW-1000)})).http).getAccount();assert.deepEqual([acc.isVip,acc.isSvip,acc.vipType],[false,false,0],'已过期不算；去广告会员不算');
+ for(const bad of [new Error('timeout'),{meta:{code:500}},{meta:{code:200}},null]){
+  acc=await new KuwoLogin(newStore(LOGGED),mk(bad).http).getAccount();
+  assert.deepEqual([acc.loggedIn,acc.authStatus,'isVip' in acc],[true,'unknown',false]);
+ }
+ acc=await new KuwoLogin(newStore('sid=x'),m.http).getAccount();assert.equal(acc.authStatus,'missing');assert.equal(m.calls.length,1,'cookie 不完整不发请求');
+});
 console.log(`酷我回归 ${passed}/${passed}`);

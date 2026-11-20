@@ -6,8 +6,10 @@ export type PriorityProvider = (() => Promise<FallbackTarget[]>) & { invalidate(
 
 /** 权益在后台并发刷新；点播立即使用上一次结果或可播放平台的游客顺序。 */
 export function createFallbackPriorityProvider(loginAdapters: Record<string, LoginAdapter>, excluded: string[] = ['qishui','spotify']): PriorityProvider {
-  const platforms = ['netease','qq','kugou'].filter(p => loginAdapters[p] && !excluded.includes(p));
-  const defaults = (): FallbackTarget[] => platforms.map(platform => ({ platform, tier:'guest' }));
+  const platforms = ['netease','qq','kugou','kuwo','bodian'].filter(p => loginAdapters[p] && !excluded.includes(p));
+  // 没登录就取不到整曲地址的平台（波点：fetchSongUrl 未登录直接返回 null），游客状态下不进兜底，免得每次白搜一次
+  const loginOnly = new Set(['bodian']);
+  const defaults = (): FallbackTarget[] => platforms.filter(p => !loginOnly.has(p)).map(platform => ({ platform, tier:'guest' }));
   let order = defaults(), updated = 0, version = 0, pending = false;
   const get = (async () => {
     if (!pending && Date.now() - updated > 300000) {
@@ -20,7 +22,7 @@ export function createFallbackPriorityProvider(loginAdapters: Record<string, Log
       })).then(rows => {
         if (epoch !== version) return;
         const rank = { svip:0, vip:1, free:2, guest:3 };
-        order = rows.sort((a,b) => rank[a.tier] - rank[b.tier]);
+        order = rows.filter(r => !(loginOnly.has(r.platform) && r.tier === 'guest')).sort((a,b) => rank[a.tier] - rank[b.tier]);
         updated = Date.now();
       }).finally(() => { pending = false; });
     }
