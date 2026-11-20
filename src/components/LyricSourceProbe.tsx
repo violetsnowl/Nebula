@@ -22,6 +22,8 @@ const SOURCE_LABELS: Record<string, string> = {
   netease: '网易云',
   qq: 'QQ 音乐',
   kugou: '酷狗',
+  kuwo: '酷我',
+  bodian: '波点',
 };
 const sourceLabel = (p: string): string => SOURCE_LABELS[p] ?? p;
 

@@ -353,7 +353,7 @@ const amllHit = (xml, over = {}) => ({ lyric: fromTtml(xml, 'amll'), matchedBy: 
 const fakeApple = (impl) => { const calls = []; return { calls, lookup: async (track, origin) => { calls.push({ track, origin }); return impl(track, origin); } }; };
 const appleHit = (xml, over = {}) => ({ lyric: fromTtml(xml, 'applemusic'), catalogId: '111', via: 'id', ...over });
 
-await test('LyricService：主歌词已经够好（逐字和翻译都 ≥80%）时只按已知 id 查一次 AMLL（补和声 / 对唱），不查 Apple，也不搜别的平台', async () => {
+await test('LyricService：主歌词已经够好（逐字和翻译都 ≥80%）时只查一次 AMLL（补和声 / 对唱），不查 Apple；只为拿网易云 id 搜一次网易云（#206）', async () => {
   const full = fromTtml(ttmlDoc({ trans: true }), 'amll');
   const { map, calls } = adapters({ primary: full });
   const amll = fakeAmll(() => amllHit(ttmlDoc()));
@@ -362,7 +362,8 @@ await test('LyricService：主歌词已经够好（逐字和翻译都 ≥80%）�
   assert.equal(r.lines.length, 4);
   assert.deepEqual(amll.calls, [{ qq: '1', spotify: SPOTIFY_ID }], '只查一次，只用第一轮的 id');
   assert.equal(apple.calls.length, 0);
-  assert.equal(calls.search, 0);
+  assert.equal(calls.search, 1, '没有网易云 id：提前搜一次网易云（这里没搜到同一首）');
+  assert.equal(calls.neteaseFetch, 0, '只拿 id，不取网易云歌词');
   assert.equal(r.provenance.length, 1, 'AMLL 没带来新东西：不记 enrichment');
 });
 
@@ -384,7 +385,7 @@ await test('LyricService：主歌词够好时，AMLL 带和声 / 对唱就补上
   const r = await new LyricService(map, undefined, { amll, appleMusic: apple }).fetchLyric(song({ extra: { songId: 1 } }));
   assert.equal(amll.calls.length, 1);
   assert.equal(apple.calls.length, 0);
-  assert.equal(calls.search, 0);
+  assert.equal(calls.search, 1);
   assert.deepEqual(r.lines.map((l) => l.agent), ['v1', 'v2', 'v1', 'v2']);
   assert.deepEqual(r.lines.map((l) => l.bg?.text), ['哦0耶', '哦1耶', '哦2耶', undefined]);
   assert.deepEqual(r.lines[0].bg.words.map((w) => [w.text, w.startMs]), [['哦0', 2000], ['耶', 2500]]);
@@ -404,7 +405,7 @@ await test('LyricService：主歌词够好时 AMLL 没命中 / 抛错 / 卡住�
     const amll = fakeAmll(impl);
     const t0 = Date.now();
     const r = await new LyricService(map, undefined, { amll }).fetchLyric(song({ extra: { songId: 1 } }));
-    assert.equal(calls.search, 0);
+    assert.equal(calls.search, 1);
     return { r, amll, took: Date.now() - t0 };
   };
   for (const impl of [() => null, () => { throw new Error('boom'); }, () => ({ lyric: null })]) {
@@ -424,6 +425,57 @@ await test('LyricService：主歌词够好时 AMLL 没命中 / 抛错 / 卡住�
   const r = await new LyricService({ ...none.map, kuwo: { fetchLyric: async () => full } }, undefined, { amll }).fetchLyric(song({ id: 'kuwo:1', platform: 'kuwo', sourceId: '1' }));
   assert.equal(amll.calls.length, 0);
   assert.ok(r.lines.every((l) => !l.bg));
+});
+
+await test('LyricService（#206）：QQ 出声、主歌词够好，AMLL 只按网易云 id 收录：提前搜到网易云同一首，用它的 id 补上和声 / 对唱', async () => {
+  const full = fromTtml(ttmlDoc({ trans: true }), 'amll');
+  const { map, calls } = adapters({ primary: full, neteaseLyric: baseLyric() });
+  const amll = fakeAmll((ids) => (ids.ncm === '900' ? amllHit(duetDoc()) : null));
+  const r = await new LyricService(map, undefined, { amll }).fetchLyric(song({ extra: { songId: 1 } }));
+  assert.equal(calls.search, 1);
+  assert.equal(calls.neteaseFetch, 0, '够好时不取网易云歌词，只用它的 id');
+  assert.deepEqual(amll.calls, [{ ncm: '900', qq: '1' }]);
+  assert.deepEqual(r.lines.map((l) => l.agent), ['v1', 'v2', 'v1', 'v2']);
+  assert.equal(lyricCoverage(r).bgLines, 3);
+  // 网易云出声、或已经有网易云 id 的：不提前搜
+  const ne = adapters({ primary: full, platform: 'netease' });
+  await new LyricService(ne.map, undefined, { amll: fakeAmll(() => null) }).fetchLyric(song({ id: 'netease:5', platform: 'netease', sourceId: '5' }));
+  const known = adapters({ primary: full });
+  await new LyricService(known.map, undefined, { amll: fakeAmll(() => null) }).fetchLyric(song({ extra: { songId: 1 } }), undefined, song({ id: 'netease:7', platform: 'netease', sourceId: '7' }));
+  assert.equal(known.calls.search, 0, '原曲带网易云 id 就不搜');
+  // 没注入 AMLL：不提前搜
+  const plain = adapters({ primary: full });
+  await new LyricService(plain.map).fetchLyric(song({ extra: { songId: 1 } }));
+  assert.equal(plain.calls.search, 0);
+});
+
+await test('LyricService（#206）：主歌词不够好时，补全复用提前那次网易云搜索（网易云只搜一次）', async () => {
+  const { map, calls } = adapters({ neteaseLyric: fromTtml(ttmlDoc(), 'amll') });
+  const r = await new LyricService(map, undefined, { amll: fakeAmll(() => null) }).fetchLyric(song({ extra: { songId: 1 } }));
+  assert.equal(calls.search, 1);
+  assert.equal(calls.neteaseFetch, 1);
+  assert.equal(lyricCoverage(r).wordLines, 4);
+});
+
+await test('LyricService（#206）：酷我参与补全（排在酷狗后）；本平台是酷我 / 波点时不搜酷我；补全按 #205 排位挑同一首', async () => {
+  let kuwoSearch = 0;
+  const kuwo = { searchSongs: async () => { kuwoSearch++; return [song({ id: 'kuwo:3', platform: 'kuwo', sourceId: '3' })]; }, fetchLyric: async () => fromTtml(ttmlDoc(), 'amll') };
+  const { map } = adapters();
+  const r = await new LyricService({ ...map, kuwo }).fetchLyric(song());
+  assert.equal(kuwoSearch, 1);
+  assert.equal(lyricCoverage(r).wordLines, 4, '酷我的逐字补上');
+  assert.ok(r.provenance.some((p) => p.platform === 'kuwo'));
+  const bodian = { fetchLyric: async () => baseLyric() };
+  kuwoSearch = 0;
+  await new LyricService({ ...adapters().map, kuwo, bodian }).fetchLyric(song({ id: 'bodian:1', platform: 'bodian', sourceId: '1' }));
+  assert.equal(kuwoSearch, 0, '波点和酷我同一曲库，不再搜酷我');
+  // 排位：同一次搜索里，只写主唱的（loose）和歌手完全一致的都过线时，挑完全一致的
+  const exact = song({ id: 'netease:11', platform: 'netease', sourceId: '11', album: '别的专辑' });
+  const loose = song({ id: 'netease:12', platform: 'netease', sourceId: '12', artists: [song().artist, '合作者'], artist: song().artist + ' / 合作者' });
+  const fetched = [];
+  const pick = { ...adapters().map, netease: { searchSongs: async () => [loose, exact], fetchLyric: async (id) => { fetched.push(String(id)); return fromTtml(ttmlDoc(), 'amll'); } } };
+  await new LyricService(pick).fetchLyric(song());
+  assert.deepEqual(fetched, ['11']);
 });
 
 await test('LyricService：主歌词只有行级时，AMLL 补上逐字（provenance 记 amll）；没注入新来源时行为不变', async () => {
@@ -472,8 +524,9 @@ await test('LyricService（#197）：日语歌逐字、翻译都齐，只缺罗�
   const zh = adapters({ primary: fromTtml(ttmlDoc(), 'amll'), neteaseLyric: { ...mk(true), source: 'netease' } });
   const amll = fakeAmll(() => null);
   const rz = await new LyricService(zh.map, undefined, { amll }).fetchLyric(song({ extra: { songId: 1 } }));
-  assert.equal(zh.calls.search, 0);
-  assert.equal(amll.calls.length, 1, '够好时只按 id 查一次 AMLL（补和声 / 对唱），不搜别的平台');
+  assert.equal(zh.calls.search, 1, '#206：没有网易云 id 时为补和声 / 对唱搜一次网易云拿 id');
+  assert.equal(zh.calls.neteaseFetch, 0, '够好时不取别家歌词');
+  assert.equal(amll.calls.length, 1, '够好时只查一次 AMLL（补和声 / 对唱）');
   assert.equal(rz.incomplete, false);
 });
 

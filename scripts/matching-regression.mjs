@@ -77,6 +77,16 @@ pair('不同文字的歌手名、时长差 1 秒','彩色的黑','Jike Junyi',{a
 pair('同文字不同歌手、时长相同','不该','周杰伦',{artist:'程橙',duration:220},false);
 pair('英文歌名不走不同文字规则','Hello','Adele',{artist:'阿黛尔',duration:220},false);
 pair('歌手名混写不走不同文字规则','彩色的黑','Jike Junyi',{artist:'温妮娅Wenina',duration:220},false);
+// #206 歌手名的几种写法
+pair('中英文写在一起的歌手名','Orion','Kenshi Yonezu  米津玄師',{artist:'米津玄師'});
+pair('中英文写在一起（英文那段）','Orion','Kenshi Yonezu  米津玄師',{artist:'Kenshi Yonezu'});
+pair('韩文英文写在一起','여행','볼빨간사춘기 BOL4',{artist:'BOL4'});
+pair('频道名前缀 Official','U Make Me Wanna','Official Blue',{artist:'Blue'});
+pair('频道名后缀 Music 且只写主唱','The Monster','EminemMusic',{artist:'Eminem / Rihanna',artists:['Eminem','Rihanna']});
+pair('重音符号','Take Me Hand (feat. Cecile Corbel)','DAISHI DANCE',{title:'Take Me Hand',artist:'DAISHI DANCE / Cécile Corbel',artists:['DAISHI DANCE','Cécile Corbel']});
+pair('中英文写在一起但都对不上','Orion','Kenshi Yonezu  米津玄師',{artist:'ヨルシカ',duration:230},false);
+pair('频道名去后缀后主唱仍不在','The Monster','EminemMusic',{artist:'Rihanna'},false);
+pair('同样多的歌手、有一位对不上','合唱作品','甲 / 乙',{artist:'甲 / 丙',artists:['甲','丙']},false);
 cases.push(...round2);
 for(const c of cases)assert.equal(api.recordingMatch(c.candidate,c.target).ok,c.expected,c.kind);
 {

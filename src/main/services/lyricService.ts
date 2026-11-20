@@ -13,7 +13,6 @@ import type {
 import { creditsFromLrc, parseLrc } from '../parsers/lyricParser';
 import { lrcAt } from '../parsers/timedLyrics';
 import { hasHangul, romanizeKorean } from '../parsers/romanizeKorean';
-import { matchScore } from './songResolver';
 import { recordingMatch, searchKeyword } from './recordingMatch';
 import { normalizeQuery, titleSimilarity } from '../adapters/mappers';
 import { LyricCache } from './lyricCache';
@@ -72,6 +71,8 @@ const AMLL_SECOND_BUDGET_MS = 2500;
 const APPLE_BUDGET_MS = 4200;
 /** 主歌词已经够好时顺手再查一次 AMLL（只为补和声 / 对唱归属，#199）：预算很小，不能拖慢一首本来就齐的歌。 */
 const AMLL_RICH_BUDGET_MS = 1200;
+/** 提前搜网易云同一首（拿网易云 id 查 AMLL 的和声 / 对唱）的预算：和主歌词并行，够好时最多多等这么久。 */
+const NCM_PRESEARCH_MS = 1500;
 
 /** 待合并的一份歌词：trusted = 按 id 确认是同一录音（AMLL、Apple 目录 id），不再要求时长差 ≤2 秒。 */
 interface LyricHit { lyric: Lyric; duration: number; trusted: boolean }
@@ -149,18 +150,23 @@ export class LyricService {
 
   /**
    * 收集别家的候选歌词（fetchLyric 的补全与 listLyricVersions 共用同一段）：AMLL / Apple 和网易云 / QQ / 酷狗（排除本平台）的搜索并行；
-   * 新来源失败或超时只当没有，不影响其余。固定顺序 [AMLL, Apple, 网易云, QQ, 酷狗]，网络完成顺序不改变结果；没有的位置是 null。
+   * 新来源失败或超时只当没有，不影响其余。固定顺序 [AMLL, Apple, 网易云, QQ, 酷狗, 酷我]，网络完成顺序不改变结果；没有的位置是 null。
    * 必须在 withRequestScope 里调用（取消 / 整体截止由外层负责）。
    */
-  private async gatherHits(track: Track, origin?: Track): Promise<Array<LyricHit|null>> {
-      const sources=(['netease','qq','kugou'] as Platform[]).filter(p=>p!==track.platform && this.adapters[p]?.searchSongs);
+  private async gatherHits(track: Track, origin?: Track, preNetease?: Promise<Track[]|null>): Promise<Array<LyricHit|null>> {
+      // 酷我（#206 接搜歌后加入；逐字覆盖约 93%）放最后；酷我 / 波点同一曲库，本平台是其中一家时不再搜酷我
+      const sameCatalog=(p:Platform)=>p===track.platform || (p==='kuwo' && track.platform==='bodian');
+      const sources=(['netease','qq','kugou','kuwo'] as Platform[]).filter(p=>!sameCatalog(p) && this.adapters[p]?.searchSongs);
       // AMLL / Apple 和网易云 / QQ / 酷狗的搜索并行；新来源失败或超时只当没有，不影响其余。
       const ids=mergeLyricIds(lyricIdsOf(track),lyricIdsOf(origin));
       const amllFirst=this.amllHit(ids,AMLL_BUDGET_MS),apple=this.appleHit(track,origin);
       const candidates=await Promise.all(sources.map(async platform=>{
         try{
-          const rows=await withRequestScope(1800,()=>this.adapters[platform].searchSongs!(searchKeyword(track),10));
-          const match=rows.map(t=>({t,score:matchScore(t,track)})).filter(x=>x.score>=.9).sort((a,b)=>b.score-a.score)[0];
+          // 网易云那一路可能已经提前搜过（见 fetchLyricBase：补和声 / 对唱要的网易云 id），直接复用
+          const rows=platform==='netease' && preNetease ? await preNetease : await withRequestScope(1800,()=>this.adapters[platform].searchSongs!(searchKeyword(track),10));
+          if(!rows)return null;
+          // 和取链兜底同一套排位（#205）：歌手完全一致的优先，放宽认上的排后
+          const match=rows.map(t=>({t,m:recordingMatch(t,track)})).filter(x=>x.m.ok && x.m.score>=.9).sort((a,b)=>a.m.rank-b.m.rank || b.m.score-a.m.score)[0];
           const lyric=match?await this.fetchOne(match.t,'fallback'):null;
           return match?{lyric,from:match.t}:null;
         }catch{return null;}
@@ -179,7 +185,7 @@ export class LyricService {
       }
       const appleResult=await apple;
       throwIfCancelled();
-      // 固定顺序合并：AMLL → Apple → 网易云 → QQ → 酷狗，网络完成顺序不改变结果。
+      // 固定顺序合并：AMLL → Apple → 网易云 → QQ → 酷狗 → 酷我，网络完成顺序不改变结果。
       return [amll,appleResult,...candidates.map(c=>c?.lyric?{lyric:c.lyric,duration:Number(c.from.duration),trusted:false}:null)];
   }
 
@@ -196,6 +202,12 @@ export class LyricService {
     let manual=false;
     const isChosen=(l:Lyric|undefined)=>manual && !!chosen && l?.identity?.platform===chosen.platform && l.identity.sourceId===chosen.sourceId;
     const task=withRequestScope(8500,async()=>{
+      // AMLL 大多只按网易云 id 收录：不是网易云出声、手上也没有网易云 id 的歌，一开始就并行搜一次网易云同一首（#206）。
+      // 主歌词够好时用它的 id 查 AMLL 补和声 / 对唱；不够好时补全直接复用这次搜索，不多发请求。
+      const ids=mergeLyricIds(lyricIdsOf(track),lyricIdsOf(origin));
+      const ne=this.adapters.netease;
+      const preNetease=!ids.ncm && this.extra.amll && track.platform!=='netease' && ne?.searchSongs
+        ? withRequestScope(NCM_PRESEARCH_MS,()=>ne.searchSongs!(searchKeyword(track),10)).catch(()=>null) : undefined;
       if(chosen){
         best=await this.fetchPicked(track,chosen);
         throwIfCancelled();
@@ -205,12 +217,14 @@ export class LyricService {
       // 够好就不去别家补：判定按语种（中文不要求翻译，日语要罗马音，见 lyricComplete）
       if(best && lyricComplete(best) && !lyricTruncated(best,track.duration)){
         // 只按已知 id 查一次 AMLL（不查 Apple、不搜别的平台）：它带和声 / 对唱归属，主歌词没有这两样；只补缺的层，不动已有的。没命中 / 失败照旧返回
-        const {hit}=await this.amllHit(mergeLyricIds(lyricIdsOf(track),lyricIdsOf(origin)),AMLL_RICH_BUDGET_MS);
+        const rows=preNetease?await preNetease:null;
+        const same=(rows||[]).map(t=>({t,m:recordingMatch(t,track)})).filter(x=>x.m.ok).sort((a,b)=>a.m.rank-b.m.rank || b.m.score-a.m.score)[0];
+        const {hit}=await this.amllHit(mergeLyricIds(ids,same?lyricIdsOf(same.t):undefined),AMLL_RICH_BUDGET_MS);
         throwIfCancelled();
         return hit && !isChosen(hit.lyric)?enrichAligned(best,hit.lyric):best;
       }
       // 补丁里跳过选中的那一份（它已经是正文）
-      let hits=(await this.gatherHits(track,origin)).map(h=>h && isChosen(h.lyric)?null:h);
+      let hits=(await this.gatherHits(track,origin,preNetease)).map(h=>h && isChosen(h.lyric)?null:h);
       // 主歌词被截断（#201）：别家有一份明显更全的（句数多一半以上、往后多出 20 秒以上）就改用它做正文——合并只往已有的句子上补，补不出缺的后半段。
       // 手动选的不换。更全的那份挪到最前面当正文，其余照固定顺序补；截断的主歌词不再参与。
       if(best && !manual && lyricTruncated(best,track.duration)){

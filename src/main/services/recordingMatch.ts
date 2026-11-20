@@ -6,7 +6,8 @@ const ALIASES = [['椎名林檎','しいなりんご','シイナリンゴ','Shii
 const TRAD='愛樂風雲夢時後來說聽見過還這個為與無聲會開關讓淚從滿飛遠離憶';
 const SIMP='爱乐风云梦时后来说听见过还这个为与无声会开关让泪从满飞远离忆';
 export function identityText(text: string): string {
-  return cleanMetadataText(text).normalize('NFKC').toLowerCase()
+  // 去掉拉丁字母的重音符号（Sofía / Sofia、Cécile / Cecile；#206）。只删 U+0300–036F，日文浊点 U+3099 不动
+  return cleanMetadataText(text).normalize('NFKC').normalize('NFD').replace(/[̀-ͯ]/g,'').normalize('NFC').toLowerCase()
     .replace(/[ァ-ヶ]/g,c=>String.fromCharCode(c.charCodeAt(0)-0x60))
     .replace(/[\p{L}\p{N}]/gu,c=>{const i=TRAD.indexOf(c);return i<0?c:SIMP[i]!})
     .replace(/[^\p{L}\p{N}]/gu,'');
@@ -23,11 +24,27 @@ function withoutArtistAlias(value:string):string {
 }
 const canonicalArtist=(s:string):string=>aliasMap.get(identityText(withoutArtistAlias(s))) || identityText(withoutArtistAlias(s));
 const rawArtists=(t:Track):string[]=>[...(t.artists?.length?t.artists:[t.artist])].map(s=>String(s??''));
-/** 歌手名单，按出现顺序（第一位当主唱）。#205 起 `\`、`;`、`；` 也拆（汽水 / QQ 有这样拼的）。 */
-function artistList(t:Track):string[] {
+/** 拆开后的每位歌手（未归一化），按出现顺序（第一位当主唱）。#205 起 `\`、`;`、`；` 也拆（汽水 / QQ 有这样拼的）。 */
+function artistPieces(t:Track):string[] {
   const source=rawArtists(t);
   const feat=cleanMetadataText(t.title).match(/(?:feat\.?|featuring)\s+([^()（）\[\]]+)/i);if(feat)source.push(feat[1]!);
-  return source.flatMap(s=>withoutArtistAlias(s).split(/\s*(?:\/|\\|;|；|、|，|,|&|\bfeat\.?\b|\bfeaturing\b|\bx\b)\s*/i)).map(s=>canonicalArtist(s)).filter(s=>s && !/^(未知歌手|unknownartist|variousartists)$/.test(s));
+  return source.flatMap(s=>withoutArtistAlias(s).split(/\s*(?:\/|\\|;|；|、|，|,|&|\bfeat\.?\b|\bfeaturing\b|\bx\b)\s*/i))
+    .filter((s,i,all)=>{const id=canonicalArtist(s);return id && !/^(未知歌手|unknownartist|variousartists)$/.test(id) && all.findIndex(x=>canonicalArtist(x)===id)===i;});
+}
+// 频道名前后缀（#206）：「Official Blue」「EminemMusic」「Aimer Official YouTube Channel」「VEVO」「- Topic」「公式」
+const CHANNEL_AFFIX=/^(?:official)+|(?:official|youtube|channel|vevo|topic|music|公式チャンネル|公式|オフィシャル)+$/;
+const CJK_RUN=/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}ー々]+|[\p{Script=Latin}\p{N}][\p{Script=Latin}\p{N}\s.'’&+-]*/gu;
+/**
+ * 一位歌手的几种写法（#206）：归一化名、去掉频道前后缀的名；中英文写在一起的（「Kenshi Yonezu 米津玄師」「星野源 Gen Hoshino」
+ * 「볼빨간사춘기 BOL4」）再按文字拆成各段，每段都算这位歌手的写法。
+ */
+function artistForms(piece:string):string[] {
+  const id=canonicalArtist(piece),forms=new Set([id]);
+  const bare=id.replace(CHANNEL_AFFIX,'');if(bare.length>=2)forms.add(bare);
+  const runs=withoutArtistAlias(piece).normalize('NFKC').match(CJK_RUN)||[];
+  if (runs.length>1 && runs.some(r=>CJK.test(r)) && runs.some(r=>!CJK.test(r)))
+    for (const r of runs) {const f=canonicalArtist(r).replace(CHANNEL_AFFIX,'');if(f.length>=2)forms.add(f);}
+  return [...forms];
 }
 // 「版」和伴奏 / 语种 / 器乐 / 剪辑类词都算版本：国语版≠粤语版，Off Vocal 与原曲同长也不能顶替。
 const VERSION=/\b(live|remix|mix|remaster(?:ed)?|acoustic|instrumental|inst\.?|off\s*vocal|karaoke|cover|demo|edit|ver\.?|version|dj|the\s+first\s+take|tv\s*size|short|extended|clean|piano|guitar|orchestral?|sped\s*up|slowed|mono|stereo|\d+(?:\.\d+)?x)\b|版|现场|現場|演唱会|演唱會|伴奏|纯音乐|純音樂|翻唱|混音|重制|重製|重录|重錄|不插电|不插電|加速|降速|改编|改編|钢琴|鋼琴|吉他|女声|女聲|男声|男聲|片段|铃声|鈴聲|抖音/i;
@@ -91,21 +108,23 @@ const cjkOnly=(s:string):boolean=>CJK.test(s) && !LATIN.test(s);
 /**
  * 歌手怎么对上的（#205，用户 2026-11-19 定：放宽的排在完全一致的后面）：
  * - exact：两边名单一样。
- * - loose：一方是另一方的子集，且写得全的那边的主唱在另一边（Spotify 写全合作歌手、对方只写主唱，或反过来）；
- *   或每位歌手名都是对方某位的开头（YouTube 频道名「Aimer Official YouTube Channel」对「Aimer」）。
+ * - loose：歌手名按宽松写法比（见下）后，一方是另一方的子集，且写得全的那边的主唱在另一边
+ *   （Spotify 写全合作歌手、对方只写主唱，或反过来；「甲 / 乙」对「甲」认，对「乙」不认）。
+ *   宽松写法 = artistForms 里任一写法相同，或一方是另一方的开头（频道名「Aimer Official YouTube Channel」对「Aimer」）。
  * - script：名单对不上，但歌名含中日韩文、时长相同（差 <1 秒）、两边歌手名是不同文字
  *   （一边全是拉丁字母、一边全是中日韩文，如 Kenshi Yonezu / 米津玄師）。
  */
 function artistFit(c:Track,t:Track,cjkTitle:boolean,diff:number|null):'exact'|'loose'|'script'|null {
-  const cl=artistList(c),tl=artistList(t),ca=new Set(cl),ta=new Set(tl);
+  const cp=artistPieces(c),tp=artistPieces(t);
+  const ca=new Set(cp.map(canonicalArtist)),ta=new Set(tp.map(canonicalArtist));
   if (!ca.size || !ta.size) return null;
   if (ca.size===ta.size && [...ca].every(n=>ta.has(n))) return 'exact';
-  // 写得全的那边的主唱（第一位）必须在另一边：「甲 / 乙」对「甲」认，对「乙」不认
-  const [small,large,main]=ca.size<=ta.size?[ca,ta,tl[0]!]:[ta,ca,cl[0]!];
-  if ([...small].every(n=>large.has(n)) && small.has(main)) return 'loose';
   const longEnough=(x:string,y:string)=>Math.min(x.length,y.length)>=(CJK.test(x+y)?2:3);
-  const covers=(xs:string[],ys:string[])=>xs.every(x=>ys.some(y=>(x.startsWith(y)||y.startsWith(x)) && longEnough(x,y)));
-  if (covers(cl,tl) && covers(tl,cl)) return 'loose';
+  const near=(x:string[],y:string[])=>x.some(a=>y.some(b=>a===b || ((a.startsWith(b)||b.startsWith(a)) && longEnough(a,b))));
+  const cf=cp.map(artistForms),tf=tp.map(artistForms);
+  // 写得全的那边（人数多；一样多时取目标）当 large，它的第一位是主唱
+  const [small,large]=cf.length<tf.length?[cf,tf]:[tf,cf];
+  if (small.every(s=>large.some(l=>near(s,l))) && small.some(s=>near(s,large[0]!))) return 'loose';
   const rc=rawArtists(c).join(' '),rt=rawArtists(t).join(' ');
   // 时长要相同（差 <1 秒）：#205 实测认对的 23 首里 22 首差 0 秒，认错的翻唱差 1 秒
   if (cjkTitle && diff!==null && diff<1 && ((latinOnly(rc)&&cjkOnly(rt))||(cjkOnly(rc)&&latinOnly(rt)))) return 'script';
