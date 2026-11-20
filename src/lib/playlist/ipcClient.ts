@@ -255,6 +255,11 @@ export interface DesktopApi {
   kugouLoginWindow: () => IpcResult<{ ok: boolean; message?: string; error?: string }>;
   kuwoLoginWindow: () => IpcResult<{ ok: boolean; message?: string; error?: string }>;
   applemusicLoginWindow: () => IpcResult<{ ok: boolean; message?: string; error?: string }>;
+  /** 汽水车机协议的抖音扫码授权（#212）：授权后汽水的歌能在汽水本平台出声（只有标准音质）。和汽水登录互相独立。 */
+  qishuiCarLoginQr?: () => IpcResult<{ unikey: string; payload: string; imageDataUrl?: string; expiresIn?: number }>;
+  qishuiCarLoginPoll?: (unikey: string) => IpcResult<{ ok: boolean; message: string; final?: boolean; state?: string }>;
+  qishuiCarLoginStatus?: () => IpcResult<{ state: 'authorized' | 'unauthorized' | 'expired'; nickname?: string; isVip?: boolean; expiresAt?: number }>;
+  qishuiCarLogout?: () => IpcResult<boolean>;
   openLocalDirectory: () => IpcResult<{ tracks: DesktopTrack[]; canceled?: boolean }>;
   openExternal: (url: string) => IpcResult<boolean>;
   wallpaperList: () => IpcResult<DesktopWallpaperItem[]>;

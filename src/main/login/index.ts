@@ -16,6 +16,8 @@ export interface LoginAdapter {
 export { NeteaseLogin } from './neteaseLogin';
 export { KugouLogin } from './kugouLogin';
 export { QishuiLogin } from './qishuiLogin';
+export { createQishuiCarLogin } from './qishuiCarLogin';
+export type { QishuiCarLogin } from './qishuiCarLogin';
 export { QqLogin, hash33 } from './qqLogin';
 export { KuwoLogin, kuwoAvatarUrl } from './kuwoLogin';
 export { BodianLogin, bodianSelfFromPlaylists } from './bodianLogin';

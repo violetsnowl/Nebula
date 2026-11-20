@@ -152,4 +152,20 @@ try {
   assert.ok(connections-before<=1,`新增连接数 ${connections-before}`);
  });
 } finally {proxy.dispose();upstream.closeAllConnections();await new Promise(r=>upstream.close(r))}
+await test('汽水（#212）：本平台先走车机取链（主源）；不给别的平台兜底；车机音频 CDN 归到汽水，接口域名不进代理',async()=>{
+ const api=require('../dist-main/index.cjs');
+ const a=adapters();let asked=0;
+ a.qishui.fetchSongUrl=async(id,_al,q)=>{asked++;assert.equal(q,'standard');return {url:'https://v3.douyinvod.com/x.mp3',quality:'standard'}};
+ const r=make(a);
+ const got=await r.resolve({...song,id:'qishui:9',platform:'qishui',sourceId:'9'});
+ assert.equal(got.platform,'qishui');assert.equal(asked,1);
+ // 别的平台的歌失败时，不拿汽水兜底（汽水不在兜底名单）
+ asked=0;a.qq.fetchSongUrl=async()=>null;a.qishui.searchSongs=async()=>[{...song,id:'qishui:9',platform:'qishui',sourceId:'9'}];
+ await make(a).resolve({...song,sourceId:'other'});assert.equal(asked,0);
+ if(api.audioPlatform){
+  assert.equal(api.audioPlatform(new URL('https://v26.zjcdn.com/a.mp3')),'qishui');
+  assert.equal(api.audioPlatform(new URL('https://api.qishui.com/x')),null);
+  assert.equal(api.audioPlatform(new URL('https://www.douyin.com/x')),null);
+ }
+});
 console.log(`路由与代理回归 ${passed}/${passed}`);

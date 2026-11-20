@@ -8,6 +8,10 @@ const HOSTS: Array<[string, Platform]> = [
   ['music.163.com','netease'], ['music.126.net','netease'],
   ['qq.com','qq'], ['gtimg.cn','qq'], ['gtimg.com','qq'], ['qpic.cn','qq'],
   ['kugou.com','kugou'], ['kugou.com.cn','kugou'], ['kugou.net','kugou'],
+  // 汽水车机协议的音频 CDN（#212）：只放 CDN 域名，接口域名（douyin.com / qishui.com 等）不进代理
+  ['douyinvod.com','qishui'], ['zjcdn.com','qishui'], ['bytefcdn.com','qishui'], ['365yg.com','qishui'], ['douyinscdn.com','qishui'],
+  ['bytecdn.cn','qishui'], ['byteicdn.com','qishui'], ['ibytedtos.com','qishui'], ['pstatp.com','qishui'], ['bytetos.com','qishui'],
+  ['volcvideo.com','qishui'], ['volccdn.com','qishui'],
   ['kuwo.cn','kuwo'], // 波点（bodian）的试听地址也在 *.kuwo.cn；整曲域名待真实登录验证，见 bodianAdapter.fetchSongUrl 的 TODO
 ];
 export function audioPlatform(url: URL): Platform | null {
@@ -85,7 +89,8 @@ export class AudioProxy {
         if (!platform || !['http:','https:'].includes(current.protocol) || current.username || current.password) { fail(403,'host not allowed'); return; }
         const headers: Record<string,string> = {...PLATFORM_HEADERS[platform],Accept:'*/*'};
         // 跨域跳转不转发上一跳 Cookie；只按新域名读取对应平台。
-        const cookie=this.cookies.getHeader(platform);
+        // 汽水 CDN 不需要 PC 登录 Cookie，不往外发（#212）
+        const cookie=platform==='qishui'?'':this.cookies.getHeader(platform);
         if (cookie) headers.Cookie=cookie;
         if (range) headers.Range=range;
         const next = await new Promise<URL | null>(resolve => {

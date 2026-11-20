@@ -975,6 +975,105 @@ function PlatformLogin({
   );
 }
 
+/**
+ * 汽水整曲播放授权（#212）：车机协议要单独用抖音扫码授权，授权后汽水的歌直接在汽水出声（只有标准音质）；
+ * 不授权时照常从别的平台找同一首。和汽水登录（导入歌单用）互相独立，所以登录前后都显示。
+ */
+function QishuiCarAuth() {
+  const api = window.nebulaAPI;
+  const [state, setState] = useState<'authorized' | 'unauthorized' | 'expired' | null>(null);
+  const [nick, setNick] = useState('');
+  const [qr, setQr] = useState<string | null>(null);
+  const [status, setStatus] = useState('');
+  const unikeyRef = useRef<string | null>(null);
+  const pollRef = useRef<number | null>(null);
+  const inflightRef = useRef(false);
+  const stopPoll = useCallback(() => {
+    if (pollRef.current !== null) {
+      window.clearInterval(pollRef.current);
+      pollRef.current = null;
+    }
+  }, []);
+  const load = useCallback(async () => {
+    const r = await api?.qishuiCarLoginStatus?.();
+    if (r?.ok) {
+      setState(r.data.state);
+      setNick(r.data.nickname ?? '');
+    }
+  }, [api]);
+  useEffect(() => {
+    void load();
+    return stopPoll;
+  }, [load, stopPoll]);
+  const start = useCallback(async () => {
+    if (!api?.qishuiCarLoginQr) return;
+    stopPoll();
+    setQr(null);
+    setStatus('正在生成二维码…');
+    const res = await api.qishuiCarLoginQr();
+    if (!res.ok) {
+      setStatus(`获取二维码失败：${res.error}`);
+      return;
+    }
+    unikeyRef.current = res.data.unikey;
+    if (res.data.imageDataUrl) setQr(res.data.imageDataUrl);
+    else {
+      try {
+        setQr(await QRCode.toDataURL(res.data.payload, { width: 296, margin: 1 }));
+      } catch {
+        setStatus('二维码生成失败，请刷新重试');
+        return;
+      }
+    }
+    setStatus('用抖音 App 扫码授权');
+    inflightRef.current = false;
+    pollRef.current = window.setInterval(async () => {
+      if (!unikeyRef.current || inflightRef.current) return;
+      inflightRef.current = true;
+      try {
+        const r = await api.qishuiCarLoginPoll!(unikeyRef.current);
+        if (!r.ok) return;
+        setStatus(r.data.message);
+        if (r.data.ok) {
+          stopPoll();
+          setQr(null);
+          void load();
+        } else if (r.data.final) stopPoll();
+      } catch {
+        /* ignore */
+      } finally {
+        inflightRef.current = false;
+      }
+    }, 2000);
+  }, [api, load, stopPoll]);
+  if (!api?.qishuiCarLoginStatus || state === null) return null;
+  if (state === 'authorized')
+    return (
+      <div className="group">
+        <p className="rp-how" role="status">
+          已授权整曲播放{nick ? `（抖音账号 ${nick}）` : ''}：汽水的歌直接在汽水出声，只有标准音质
+        </p>
+        <button type="button" className="btn" onClick={() => api.qishuiCarLogout?.().then(load)}>
+          取消播放授权
+        </button>
+      </div>
+    );
+  return (
+    <div className="group">
+      <p className="rp-how">
+        {state === 'expired' ? '整曲播放授权已过期。' : ''}用抖音扫码授权后，汽水的歌能直接在汽水出声（标准音质）；不授权时照常从别的平台找同一首
+      </p>
+      <div className="rp-flow">
+        {qr ? <img className="rp-qr" src={qr} alt="抖音授权二维码" /> : null}
+        {status ? <div className="rp-flow-status">{status}</div> : null}
+        <button type="button" className="btn full" onClick={start}>
+          {qr ? '刷新二维码' : '抖音扫码授权整曲播放'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /** 账号详情：已登录 = 账号信息 + 刷新 / 退出；未登录 = 该平台既有的登录流程。 */
 function AccountDetail({
   platform,
@@ -1008,6 +1107,7 @@ function AccountDetail({
         <div className="group">
           <RefreshRow loading={account.loading} onRefresh={() => onRefresh(platform)} />
         </div>
+        {platform === 'qishui' && <QishuiCarAuth />}
         <button
           type="button"
           className="btn danger"
@@ -1031,6 +1131,7 @@ function AccountDetail({
       )}
       <p className="rp-how">{LOGIN_HOW[platform] ?? '登录后可以导入这个平台的歌单'}</p>
       {info ? <PlatformLogin platform={platform} info={info} onRefresh={onRefresh} lapsed={!!account?.auth} /> : null}
+      {platform === 'qishui' && <QishuiCarAuth />}
     </div>
   );
 }

@@ -6,6 +6,7 @@ import type { SongResolver } from './services/songResolver';
 import type { LyricService } from './services/lyricService';
 import type { Platform, PlaylistSummary, Track } from './types';
 import type { LoginAdapter } from './login/index';
+import type { QishuiCarLogin } from './login/qishuiCarLogin';
 import type { AudioProxy } from './audioProxy';
 import { CoverService,coverCandidates } from './services/coverService';
 import type { WallpaperLibrary } from './services/wallpaperLibrary';
@@ -34,6 +35,8 @@ export interface IpcDeps {
   kugouLoginWindow?: () => Promise<{ ok: boolean; message?: string; error?: string }>;
   kuwoLoginWindow?: () => Promise<{ ok: boolean; message?: string; error?: string }>;
   applemusicLoginWindow?: () => Promise<{ ok: boolean; message?: string; error?: string }>;
+  /** 汽水车机协议授权（抖音扫码，和 PC 扫码登录互相独立）。 */
+  qishuiCar?: QishuiCarLogin;
   /**
    * Optional hook invoked after a platform cookie is cleared (e.g. purge Electron partition sessions).
    * previous 是清除前的记录（YouTube Music 退出时要拿续期令牌去撤销）。
@@ -244,7 +247,8 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
     console.log("[IPC] cookie:set SUCCESS for");
     return true;
   });
-  safe('nebula:cookie:get', async ({ platform }: { platform: Platform }) => deps.cookies.get(platform) ?? null);
+  // 汽水车机票据（qishui-car）含签名私钥，只在主进程用，不给渲染进程读（#212）；它的状态走 nebula:login:qishui-car:status
+  safe('nebula:cookie:get', async ({ platform }: { platform: Platform }) => (String(platform) === 'qishui-car' ? null : deps.cookies.get(platform) ?? null));
   safe('nebula:cookie:clear', async ({ platform }: { platform: Platform }) => {
     const previous = deps.cookies.get(platform);
     deps.cookies.clear(platform);
@@ -305,5 +309,22 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
   safe('nebula:login:applemusic:window', async () => {
     if (!deps.applemusicLoginWindow) throw new Error('Apple Music 登录窗口不可用');
     return deps.applemusicLoginWindow();
+  });
+  // 汽水车机协议授权：取二维码 / 轮询 / 状态 / 退出。票据存 qishui-car 条目，不进渲染进程。
+  safe('nebula:login:qishui-car:qr', async () => {
+    if (!deps.qishuiCar) throw new Error('汽水车机授权不可用');
+    return deps.qishuiCar.createCarQr();
+  });
+  safe('nebula:login:qishui-car:poll', async ({ unikey }: { unikey: string }) => {
+    if (!deps.qishuiCar) throw new Error('汽水车机授权不可用');
+    return deps.qishuiCar.pollCarQr(unikey);
+  });
+  safe('nebula:login:qishui-car:status', async () => {
+    if (!deps.qishuiCar) return { state: 'unauthorized' };
+    return deps.qishuiCar.carStatus();
+  });
+  safe('nebula:login:qishui-car:logout', async () => {
+    if (!deps.qishuiCar) return true;
+    return deps.qishuiCar.carLogout();
   });
 }

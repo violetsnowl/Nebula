@@ -15,6 +15,7 @@ export * from './adapters/index';
 export * from './adapters/neteaseAdapter';
 export * from './adapters/qqAdapter';
 export * from './adapters/kugouAdapter';
+export * from './adapters/qishuiCar';
 export * from './adapters/kuwoAdapter';
 export * from './adapters/bodianAdapter';
 export * from './adapters/spotifyAdapter';

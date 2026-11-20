@@ -51,6 +51,9 @@ export function normalizeCookieHeader(input: string): string {
   return out.join('; ');
 }
 
+/** CookieStore 的条目键：平台，外加汽水车机协议的独立票据（和汽水 PC 扫码登录的 qishui 条目互不覆盖）。 */
+export type CookieKey = Platform | 'qishui-car';
+
 export type CookieValidation = { ok: true } | { ok: false; error: string };
 
 /** 平台 Cookie 有效性校验（不探测，仅结构检查）。 */
@@ -119,18 +122,18 @@ export function setCookieDataDir(dir: string): void {
  */
 export class CookieStore {
   private file: string;
-  private data: Partial<Record<Platform, CookieRecord>> = {};
-  private listeners = new Set<(platform: Platform) => void>();
-  onChange(fn: (platform: Platform) => void): () => void { this.listeners.add(fn); return () => this.listeners.delete(fn); }
+  private data: Partial<Record<CookieKey, CookieRecord>> = {};
+  private listeners = new Set<(platform: CookieKey) => void>();
+  onChange(fn: (platform: CookieKey) => void): () => void { this.listeners.add(fn); return () => this.listeners.delete(fn); }
 
   constructor(filePath?: string) {
     this.file = filePath || path.join(dataDir, 'cookies.json');
     this.load();
   }
 
-  set(platform: Platform, cookies: string, token?: string, nickname?: string): void {
-    // Spotify / YouTube Music 存的是访问令牌（Bearer），不是 Cookie 头；Apple Music 只存一条「page-session」标记（登录态在页面分区里）；按 Cookie 格式清洗会把它们洗成空串。
-    const normalized = platform === 'spotify' || platform === 'ytmusic' || platform === 'applemusic' ? String(cookies || '').trim() : normalizeCookieHeader(cookies);
+  set(platform: CookieKey, cookies: string, token?: string, nickname?: string): void {
+    // Spotify / YouTube Music 存的是访问令牌（Bearer），不是 Cookie 头；Apple Music 只存一条「page-session」标记（登录态在页面分区里）；汽水车机票据是一段 JSON；按 Cookie 格式清洗会把它们洗成空串。
+    const normalized = platform === 'spotify' || platform === 'ytmusic' || platform === 'applemusic' || platform === 'qishui-car' ? String(cookies || '').trim() : normalizeCookieHeader(cookies);
     this.data[platform] = {
       cookies: normalized,
       token,
@@ -141,12 +144,12 @@ export class CookieStore {
     this.listeners.forEach(fn => fn(platform));
   }
 
-  get(platform: Platform): CookieRecord | undefined {
+  get(platform: CookieKey): CookieRecord | undefined {
     return this.data[platform];
   }
 
   /** 生成可直接写入请求头的 Cookie 字符串。 */
-  getHeader(platform: Platform): string | undefined {
+  getHeader(platform: CookieKey): string | undefined {
     const raw = this.data[platform]?.cookies;
     if (!raw) return undefined;
     // ||| delimiter used for KuGoo-safe storage (KuGoo value contains & separators)
@@ -156,11 +159,11 @@ export class CookieStore {
     return raw;
   }
 
-  has(platform: Platform): boolean {
+  has(platform: CookieKey): boolean {
     return !!this.data[platform]?.cookies;
   }
 
-  clear(platform: Platform): void {
+  clear(platform: CookieKey): void {
     delete this.data[platform];
     this.save();
     this.listeners.forEach(fn => fn(platform));
@@ -173,7 +176,7 @@ export class CookieStore {
   private load(): void {
     try {
       const raw = fs.readFileSync(this.file, 'utf-8');
-      this.data = JSON.parse(raw) as Partial<Record<Platform, CookieRecord>>;
+      this.data = JSON.parse(raw) as Partial<Record<CookieKey, CookieRecord>>;
     } catch {
       this.data = {};
     }

@@ -31,6 +31,7 @@ const {
   QqRenewService,
   qqSession,
   createQishuiLoginAdapter,
+  createQishuiCarLogin,
   createKuwoLoginAdapter,
   createAppleMusicLoginAdapter,
   AudioProxy,
@@ -564,7 +565,7 @@ app.whenReady().then(async () => {
     adapters,
     (m) => console.warn("[SongResolver]"),
     (url, platform, signal) =>
-      probeAudioUrl(url, { platform, cookie: cookies.getHeader(platform), signal }).then((r) => r.ok),
+      probeAudioUrl(url, { platform, cookie: platform === 'qishui' ? '' : cookies.getHeader(platform), signal }).then((r) => r.ok),
   );
   // 歌词磁盘缓存 + 自定义覆盖（存 userData，跨重启保留）
   const lyricCache = new LyricCache(app.getPath('userData'));
@@ -700,6 +701,8 @@ app.whenReady().then(async () => {
       if (r.ok) cookies.set('applemusic', 'page-session', '', 'Apple Music');
       return r.ok ? { ok: true, message: 'Apple Music 登录成功' } : r;
     },
+    // 汽水车机协议授权（抖音扫码）：适配器里的 QishuiCar 实例，取链也用同一个
+    qishuiCar: createQishuiCarLogin(adapters.qishui.car),
     wallpaperLibrary,
     // 退出登录时同步清空 QQ / 酷我官方登录窗口独立分区的 Cookie，
     // 确保 CookieStore 与浏览器会话一并干净退出。

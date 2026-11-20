@@ -9,10 +9,13 @@ import { sourceTiming } from '../../lib/audio/sourceLifetime';
 import { QQ_AUTH_EXPIRED } from './qqSession';
 
 const PLAYABLE: Platform[] = ['netease', 'qq', 'kugou', 'kuwo', 'bodian'];
+/** 能当本平台主源的：可兜底的五家 + 汽水（#212 车机协议；抖音扫码授权后才有地址，不参与给别的平台兜底）。 */
+const PRIMARY: Platform[] = [...PLAYABLE, 'qishui'];
 const LEVELS: Record<string, string[]> = {
   netease: ['jymaster','hires','lossless','exhigh','standard'], qq: ['flac','320k','128k'], kugou: ['hires','flac','320','128'],
   kuwo: ['128'], // 实测匿名只有 128k；高档位待真实账号核验后再加
-  bodian: ['flac','320','128'], // 对应 flac/2000kflac、mp3/320kmp3、mp3/128kmp3；取不到时适配器自己依次降档
+  bodian: ['flac','320','128'],
+  qishui: ['standard'], // 车机协议只给未加密的标准音质 // 对应 flac/2000kflac、mp3/320kmp3、mp3/128kmp3；取不到时适配器自己依次降档
 };
 export type UrlProbe = (url: string, platform: Platform, signal?: AbortSignal) => Promise<boolean>;
 export interface ResolveOptions { signal?: AbortSignal; forceRefresh?: boolean }
@@ -136,7 +139,7 @@ export class SongResolver {
   private async run(track: Track, quality?: string, fallbackOnly = false,traceId=`play-${++sequence}`,timings:Timings=[]): Promise<ResolveResult> {
     let direct: ResolveResult | null = null, result: ResolveResult;
     try {
-      if (!fallbackOnly && PLAYABLE.includes(track.platform)) {
+      if (!fallbackOnly && PRIMARY.includes(track.platform)) {
         try { direct=await this.stage(timings,'primary',track.platform,this.policy.primaryMs,()=>this.source(track,track.platform,quality,false,timings)); } catch { throwIfCancelled(); }
       }
       result = direct?.code==='AUTH_EXPIRED' || direct?.url && !direct.trial ? direct : await this.fallback(track,quality,timings) || direct || failure(track);

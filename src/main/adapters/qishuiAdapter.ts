@@ -2,6 +2,7 @@ import type { HttpClient } from '../http';
 import type { CookieStore } from '../cookieStore';
 import type { Lyric, Playlist, PlaylistSummary, PlatformAdapter, QualityOption, SongUrl, Track } from '../types';
 import { parseLrc } from '../parsers/lyricParser';
+import { QishuiCar } from './qishuiCar';
 
 const PC_APP_PARAMS: Record<string, string> = {
   aid: '386088',
@@ -88,11 +89,15 @@ function coverUsable(coverUrl: string): boolean {
 
 export class QishuiAdapter implements PlatformAdapter {
   readonly platform = 'qishui' as const;
+  /** 车机协议（抖音扫码授权 + 未加密取链），票据在 CookieStore 的 qishui-car 条目，和 PC 登录互相独立。 */
+  readonly car: QishuiCar;
 
   constructor(
     private http: HttpClient,
     private cookies: CookieStore,
-  ) {}
+  ) {
+    this.car = new QishuiCar(cookies);
+  }
 
   /** 获取登录 cookie */
   private getCookie(): string {
@@ -198,6 +203,13 @@ export class QishuiAdapter implements PlatformAdapter {
 
   /** 获取播放 URL（多音质） */
   async fetchSongUrl(songId: string, _albumId?: string, quality?: string, _extra?: Record<string, unknown>): Promise<SongUrl | null> {
+    // 车机协议优先：用户扫过抖音授权码就走这条（只有标准音质，但网页 / PC 接口按出口 IP 风控，这条不受影响）。
+    // 没有票据或取不到都返回 null，落回下面的 PC 接口（没有 PC 登录时直接失败，由 SongResolver 走跨平台兜底）。
+    const car = await this.car.fetchCarSongUrl(songId, quality);
+    if (car) return car;
+    // #212：取不到就直接交给跨平台兜底。下面的网页 / PC 接口按出口 IP 风控（#66），从来没接进播放，不再试，免得拖慢兜底
+    if (songId) return null;
+
     const cookie = this.getCookie();
     if (!cookie) throw new Error('汽水取链需要登录');
 
