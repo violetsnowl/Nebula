@@ -301,5 +301,29 @@ await test('歌词版本文案：时间微调数值与档位（0.1 秒一档、�
  assert.equal(lv.stepLyricOffset(5000,1),5000);assert.equal(lv.stepLyricOffset(-5000,-1),-5000);assert.equal(lv.stepLyricOffset(100,-1),0);
  let v=0;for(let i=0;i<30;i++)v=lv.stepLyricOffset(v,1);assert.equal(v,3000,'连点 30 次正好 +3.0 秒，无浮点误差');
 });
+await test('#214 逐行补逐字再配四种：对方拆两行、本平台拆两句、对方一行里的一段、正文相同而前后之间只有这一行（时间差大）',()=>{
+ const yl=(start,words)=>`[${start},${words.reduce((m,w)=>Math.max(m,w[1]+w[2]),0)-start}]`+words.map(([t,ws,wd])=>`(${ws},${wd},0)${t}`).join('');
+ const one=(start,text)=>yl(start,[[text,start,900]]);
+ const rows=[[1000,'编的甲句'],[5000,'编的乙句'],[9000,'编的丙句'],[13000,'编的丁句前半编的丁句后半'],[17000,'编的戊一'],[19000,'编的戊二'],[23000,'编的己句'],[27000,'编的庚句'],[31000,'编的辛句'],[35000,'编的壬句']].map(([timeMs,text])=>({timeMs,text}));
+ const yrc=[one(1200,'编的甲句'),one(5200,'编的乙句'),one(9200,'编的丙句'),
+  one(13200,'编的丁句前半'),one(15200,'编的丁句后半'),
+  yl(17200,[['编的',17200,500],['戊一',17700,500],['编的',19200,500],['戊二',19700,500]]),
+  yl(23200,[['编的',23200,400],['己句',23600,400],['啊哦',24000,400]]),
+  one(27200,'编的庚句'),one(33500,'编的辛句'),one(35200,'编的壬句')].join(String.fromCharCode(10));
+ const own={raw:'',lines:rows},sup={raw:'',lines:[],yrc};
+ const r=b.mergeWordsByLine(own,sup);
+ assert.ok(r,'有增益');
+ assert.equal(b.lyricCoverage(r.lyric).wordLines,10,'十行全部挂上逐字');
+ const words=b.timedLines(r.lyric.yrc);
+ const at=(text)=>words.find(w=>b.identityText(w.text)===b.identityText(text));
+ assert.deepEqual(at('编的丁句前半编的丁句后半').words.length,2,'对方两行合成一行');
+ assert.equal(at('编的戊二').timeMs,19200,'对方一行按字拆开，后一句从它自己的第一个字开始');
+ assert.deepEqual(at('编的己句').words.map(w=>w.text),['编的','己句'],'只取正好是本行的那一段字');
+ assert.equal(at('编的辛句').timeMs,33500,'前后之间只有这一行正文相同：时间差 2.5 秒也认');
+ // 有两行正文相同时不靠「只有这一行」去猜
+ const dup=[...rows.slice(0,8),{timeMs:31000,text:'编的辛句'},{timeMs:32000,text:'编的辛句'},{timeMs:35000,text:'编的壬句'}];
+ const r2=b.mergeWordsByLine({raw:'',lines:dup},sup);
+ assert.ok(b.lyricCoverage(r2.lyric).wordLines<11,'两行正文相同、对方只有一行：不硬配');
+});
 console.log(`歌词回归 ${count}/${count}`);
 }finally{fs.rmSync(temp,{recursive:true,force:true})}

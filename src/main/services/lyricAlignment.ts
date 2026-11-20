@@ -165,6 +165,105 @@ export function pairRowsToWords<T extends {timeMs:number;text:string}=TimedLine>
   return out;
 }
 
+const LATIN_END=/[A-Za-z0-9'’]$/,LATIN_START=/^[A-Za-z0-9]/;
+/** 两行逐字拼成一行（对方把本平台一句拆成了两行）；英文词之间补空格。 */
+function joinTimed(a:TimedLine,b:TimedLine):TimedLine {
+  const aw=a.words.map(w=>({...w})),bw=b.words.map(w=>({...w}));
+  const last=aw[aw.length-1],first=bw[0];
+  if(last && first && LATIN_END.test(last.text) && LATIN_START.test(first.text))last.text+=' ';
+  const words=[...aw,...bw];
+  return {timeMs:a.timeMs,duration:Math.max(1,b.timeMs+b.duration-a.timeMs),text:words.map(w=>w.text).join(''),words};
+}
+/** 对方一行里连续几个字拼起来正好是 key（归一化后相同）：取这几个字组成一行，否则 null。 */
+function segmentTimed(w:TimedLine,key:string):TimedLine|null {
+  const ws=w.words;
+  for(let a=0;a<ws.length;a++){
+    let acc='';
+    for(let b=a;b<ws.length;b++){
+      acc+=ws[b]!.text;
+      const id=identityText(acc);
+      if(!key.startsWith(id))break;
+      if(id===key){
+        if(a===0 && b===ws.length-1)return null; // 整行相同的情况前面已经处理
+        const seg=ws.slice(a,b+1),last=seg[seg.length-1]!;
+        return {timeMs:seg[0]!.startMs,duration:Math.max(1,last.startMs+last.duration-seg[0]!.startMs),text:seg.map(x=>x.text).join('').trim(),words:seg};
+      }
+    }
+  }
+  return null;
+}
+/** 对方一行按字拆成两行（本平台把它拆成了两句）：前一段的字拼起来正好是 first 才拆，否则 null。 */
+function splitTimed(w:TimedLine,first:string):[TimedLine,TimedLine]|null {
+  const key=identityText(first);
+  let acc='';
+  for(let k=0;k<w.words.length-1;k++){
+    acc+=w.words[k]!.text;
+    const id=identityText(acc);
+    if(id.length>key.length)return null;
+    if(id!==key)continue;
+    const a=w.words.slice(0,k+1),b=w.words.slice(k+1);
+    const mk=(ws:TimedLine['words']):TimedLine=>({timeMs:ws[0]!.startMs,duration:Math.max(1,ws[ws.length-1]!.startMs+ws[ws.length-1]!.duration-ws[0]!.startMs),text:ws.map(x=>x.text).join('').trim(),words:ws});
+    return [mk(a),mk(b)];
+  }
+  return null;
+}
+/**
+ * 逐行配对之后，配不上的行再试三种（#214，只用来补逐字）。网易云 300 首里逐字不到八成的 74 首逐行诊断：
+ * 缺逐字的行里，对方把一句拆成两行的 412 行、本平台拆成两句的 157 行、正文相同但时间差超过 1.2 秒的 203 行。
+ * - 对方拆成两行：本行正文 = 对方相邻两行拼起来 → 两行逐字合成一行；
+ * - 本平台拆成两句：对方一行 = 本平台相邻两句拼起来 → 按字把对方那行拆开；
+ * - 时间差大：正文相同，且和前后已配上的行的时间差（局部偏移）相差 ≤400ms（最远 8 秒）。
+ * 新配上的对方行，时间必须落在前后已配上那两行的对方时间之间（顺序一致），用过的对方行不再用。
+ */
+function extraPairs(rows:LyricLine[],words:TimedLine[],pairs:Array<[LyricLine,TimedLine]>):Array<[LyricLine,TimedLine]> {
+  const used=new Set<TimedLine>(pairs.map(p=>p[1])),done=new Set<LyricLine>(pairs.map(p=>p[0]));
+  const anchors=[...pairs].sort((a,b)=>a[0].timeMs-b[0].timeMs);
+  const around=(t:number)=>{
+    let prev:[LyricLine,TimedLine]|undefined,next:[LyricLine,TimedLine]|undefined;
+    for(const p of anchors){if(p[0].timeMs<t)prev=p;else if(p[0].timeMs>t){next=p;break;}}
+    return {prev,next};
+  };
+  const out:Array<[LyricLine,TimedLine]>=[];
+  for(let k=0;k<rows.length;k++){
+    const row=rows[k]!;
+    if(done.has(row))continue;
+    const key=identityText(row.text);if(key.length<2)continue;
+    const {prev,next}=around(row.timeMs);
+    const ds=[prev,next].filter((p):p is [LyricLine,TimedLine]=>!!p).map(p=>p[1].timeMs-p[0].timeMs);
+    if(!ds.length)continue;
+    const expected=row.timeMs+ds.reduce((a,b)=>a+b,0)/ds.length;
+    const lo=prev?prev[1].timeMs:-Infinity,hi=next?next[1].timeMs:Infinity;
+    const inOrder=(w:TimedLine)=>!used.has(w) && w.timeMs>lo && w.timeMs<hi;
+    // 时间差大：正文相同、合局部偏移
+    const far=words.find(w=>inOrder(w) && identityText(w.text)===key && Math.abs(w.timeMs-expected)<=400 && Math.abs(w.timeMs-row.timeMs)<=8000);
+    if(far){out.push([row,far]);used.add(far);done.add(row);continue;}
+    // 连着好几行没配上时局部偏移估不准：前后两个已配上的行之间、对方正文相同的只有这一行，就是它（时间差最多 3 秒）
+    const same=words.filter(w=>inOrder(w) && identityText(w.text)===key);
+    if(same.length===1 && Math.abs(same[0]!.timeMs-row.timeMs)<=3000 && rows.filter(r=>!done.has(r) && r.timeMs>(prev?prev[0].timeMs:-Infinity) && r.timeMs<(next?next[0].timeMs:Infinity) && identityText(r.text)===key).length===1){
+      out.push([row,same[0]!]);used.add(same[0]!);done.add(row);continue;
+    }
+    // 对方拆成两行
+    const j=words.findIndex((w,q)=>q+1<words.length && inOrder(w) && inOrder(words[q+1]!) && Math.abs(w.timeMs-expected)<=600 && identityText(w.text+words[q+1]!.text)===key);
+    if(j>=0){out.push([row,joinTimed(words[j]!,words[j+1]!)]);used.add(words[j]!);used.add(words[j+1]!);done.add(row);continue;}
+    // 对方一行里有一段正好是本行（对方把两句写成一行、或多了词）：取那一段字的逐字（时间就是那几个字自己的）
+    for(const w of words){
+      if(w.timeMs>expected+600 || w.timeMs+w.duration<expected-600 || w.timeMs<=lo-(w.duration||0) || w.timeMs>=hi)continue;
+      const seg=segmentTimed(w,key);
+      if(seg && seg.timeMs>lo && seg.timeMs<hi && Math.abs(seg.timeMs-expected)<=600){out.push([row,seg]);done.add(row);break;}
+    }
+    if(done.has(row))continue;
+    // 本平台拆成两句
+    const row2=rows[k+1];
+    if(row2 && !done.has(row2)){
+      const both=identityText(row.text+row2.text);
+      const w=words.find(x=>inOrder(x) && Math.abs(x.timeMs-expected)<=600 && identityText(x.text)===both);
+      const parts=w?splitTimed(w,row.text):null;
+      if(w && parts && identityText(parts[1].text)===identityText(row2.text)){out.push([row,parts[0]],[row2,parts[1]]);used.add(w);done.add(row);done.add(row2);k++;}
+    }
+  }
+  return out;
+}
+
 /** 按行改时间后重建 lrc / 翻译 / 罗马音文本；罗马音行跟着它挂的那句（原时间 ±300ms）一起挪。 */
 function rebuildTimed(l:Lyric,lines:LyricLine[],moved:Map<number,number>):Lyric {
   const sorted=[...lines].sort((a,b)=>a.timeMs-b.timeMs);
@@ -210,10 +309,12 @@ export function mergeWordsByLine(base:Lyric,other:Lyric):{lyric:Lyric;pairs:numb
   const otherWords=timedLines(other.yrc || '');
   const rows=textRows(base).sort((a,b)=>a.timeMs-b.timeMs);
   if(!otherWords.length || rows.length<3)return null;
-  const pairs=pairRowsToWords(rows,otherWords);
-  if(pairs.length<3)return null;
-  const deltas=pairs.map(([r,w])=>Math.abs(w.timeMs-r.timeMs)).sort((a,b)=>a-b);
+  const direct=pairRowsToWords(rows,otherWords);
+  if(direct.length<3)return null;
+  const deltas=direct.map(([r,w])=>Math.abs(w.timeMs-r.timeMs)).sort((a,b)=>a-b);
   if(deltas[Math.floor(deltas.length/2)]!>600)return null;
+  // 直接配上的之外，再按「对方拆两行 / 本平台拆两句 / 局部偏移大」补配（#214）
+  const pairs=[...direct,...extraPairs(rows,otherWords,direct)];
   const own=timedLines(base.yrc || '');
   const hasOwn=(r:LyricLine)=>own.some(w=>Math.abs(w.timeMs-r.timeMs)<=250 && identityText(w.text)===identityText(r.text));
   const otherRows=textRows(other),otherRoman=parseLrc(other.romalrc || other.romanRaw || ''),baseRoman=parseLrc(base.romalrc || base.romanRaw || '');
@@ -312,11 +413,14 @@ export function enrichAligned(base:Lyric,other0:Lyric):Lyric {
   const shiftRoman=parseLrc(other.romalrc || other.romanRaw || '').filter(l=>l.timeMs+offset>=0).map(l=>lrcAt(l.timeMs+offset,l.text)).join('\n');
   // 和声词时间也是绝对毫秒，跟着整条时间轴一起挪
   const moved={...other,lines:other.lines.map(l=>({...l,timeMs:l.timeMs+offset,...(l.bg?{bg:shiftBg(l.bg,offset)}:{})})),yrc:shifted,romalrc:shiftRoman || undefined,romanRaw:shiftRoman || undefined};
-  if(lyricCoverage({...next,yrc:shifted}).wordLines>lyricCoverage(next).wordLines)next.yrc=shifted;
-  else if(shifted){
-    // 整份换成对方逐字没有更多（本平台已有一部分逐字）：按固定偏移挪好对方，再逐行补本平台缺的那些行（#196）
+  // 两条路都算：整份换成对方逐字，或按固定偏移挪好对方后逐行补（#196；#214 起逐行补还会配「拆成两行 / 局部偏移大」的行），
+  // 哪个补上的逐字行多用哪个。以前整份换只要比现在多就直接用，逐行补能配上的拆句永远用不上。
+  if(shifted){
+    const wNow=lyricCoverage(next).wordLines,wWhole=lyricCoverage({...next,yrc:shifted}).wordLines;
     const byLine=mergeWordsByLine(next,{...moved,romalrc:undefined,romanRaw:undefined});
-    if(byLine && lyricCoverage(byLine.lyric).wordLines>lyricCoverage(next).wordLines)next=byLine.lyric;
+    const wLine=byLine?lyricCoverage(byLine.lyric).wordLines:-1;
+    if(byLine && wLine>wWhole && wLine>wNow)next=byLine.lyric;
+    else if(wWhole>wNow)next.yrc=shifted;
   }
   next.tlyric=next.translationRaw=next.lines.filter(l=>l.text && l.translation).map(l=>lrcAt(l.timeMs,l.translation!)).join('\n');
   if(!(next.romanRaw || next.romalrc) && shiftRoman)next.romanRaw=next.romalrc=shiftRoman;
