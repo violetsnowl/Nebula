@@ -434,7 +434,7 @@ await test('LyricService（#206）：QQ 出声、主歌词够好，AMLL 只按�
   const r = await new LyricService(map, undefined, { amll }).fetchLyric(song({ extra: { songId: 1 } }));
   assert.equal(calls.search, 1);
   assert.equal(calls.neteaseFetch, 0, '够好时不取网易云歌词，只用它的 id');
-  assert.deepEqual(amll.calls, [{ ncm: '900', qq: '1' }]);
+  assert.deepEqual(amll.calls, [{ qq: '1' }, { ncm: '900' }], '#213：已知 id 那一轮和主歌词并行先查；没收录再用搜到的网易云 id 查');
   assert.deepEqual(r.lines.map((l) => l.agent), ['v1', 'v2', 'v1', 'v2']);
   assert.equal(lyricCoverage(r).bgLines, 3);
   // 网易云出声、或已经有网易云 id 的：不提前搜
@@ -526,7 +526,7 @@ await test('LyricService（#197）：日语歌逐字、翻译都齐，只缺罗�
   const rz = await new LyricService(zh.map, undefined, { amll }).fetchLyric(song({ extra: { songId: 1 } }));
   assert.equal(zh.calls.search, 1, '#206：没有网易云 id 时为补和声 / 对唱搜一次网易云拿 id');
   assert.equal(zh.calls.neteaseFetch, 0, '够好时不取别家歌词');
-  assert.equal(amll.calls.length, 1, '够好时只查一次 AMLL（补和声 / 对唱）');
+  assert.deepEqual(amll.calls, [{ qq: '1' }, { ncm: '900' }], '够好时只为补和声 / 对唱查 AMLL：已知 id 一轮（和主歌词并行），没收录再按搜到的网易云 id 一轮（#213）');
   assert.equal(rz.incomplete, false);
 });
 

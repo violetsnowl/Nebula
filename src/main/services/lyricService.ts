@@ -173,13 +173,14 @@ export class LyricService {
    * 新来源失败或超时只当没有，不影响其余。固定顺序 [AMLL, Apple, 网易云, QQ, 酷狗, 酷我, Spotify]，网络完成顺序不改变结果；没有的位置是 null。
    * 必须在 withRequestScope 里调用（取消 / 整体截止由外层负责）。
    */
-  private async gatherHits(track: Track, origin?: Track, preNetease?: Promise<Track[]|null>): Promise<Array<LyricHit|null>> {
+  private async gatherHits(track: Track, origin?: Track, preNetease?: Promise<Track[]|null>, preAmll?: ReturnType<LyricService['amllHit']>): Promise<Array<LyricHit|null>> {
       // 酷我（#206 接搜歌后加入；逐字覆盖约 93%）放最后；酷我 / 波点同一曲库，本平台是其中一家时不再搜酷我
       const sameCatalog=(p:Platform)=>p===track.platform || (p==='kuwo' && track.platform==='bodian');
       const sources=(['netease','qq','kugou','kuwo'] as Platform[]).filter(p=>!sameCatalog(p) && this.adapters[p]?.searchSongs);
       // AMLL / Apple 和网易云 / QQ / 酷狗的搜索并行；新来源失败或超时只当没有，不影响其余。
       const ids=mergeLyricIds(lyricIdsOf(track),lyricIdsOf(origin));
-      const amllFirst=this.amllHit(ids,AMLL_BUDGET_MS),apple=this.appleHit(track,origin);
+      // AMLL 第一轮可能已经在取主歌词时并行发出（见 fetchLyricBase），直接复用
+      const amllFirst=preAmll ?? this.amllHit(ids,AMLL_BUDGET_MS),apple=this.appleHit(track,origin);
       // Spotify 自家歌词（#210）：原曲是 Spotify 歌时按它的 id 取（同一录音，只有逐行），排在所有来源最后
       const sp=[origin,track].find(t=>t?.platform==='spotify');
       const spotify=sp && this.adapters.spotify ? this.fetchOne(sp,'fallback').catch(()=>null) : Promise.resolve(null);
@@ -232,6 +233,8 @@ export class LyricService {
       const ne=this.adapters.netease;
       const preNetease=!ids.ncm && this.extra.amll && track.platform!=='netease' && ne?.searchSongs
         ? withRequestScope(NCM_PRESEARCH_MS,()=>ne.searchSongs!(searchKeyword(track),10)).catch(()=>null) : undefined;
+      // AMLL 按已知 id 的那一轮和取主歌词同时发（#213）：够好时补和声 / 对唱不再多等一整轮；不够好时补全复用它
+      const amllEarly=this.amllHit(ids,AMLL_BUDGET_MS);
       if(chosen){
         best=await this.fetchPicked(track,chosen);
         throwIfCancelled();
@@ -241,14 +244,21 @@ export class LyricService {
       // 够好就不去别家补：判定按语种（中文不要求翻译，日语要罗马音，见 lyricComplete）
       if(best && lyricComplete(best) && !lyricTruncated(best,track.duration)){
         // 只按已知 id 查一次 AMLL（不查 Apple、不搜别的平台）：它带和声 / 对唱归属，主歌词没有这两样；只补缺的层，不动已有的。没命中 / 失败照旧返回
-        const rows=preNetease?await preNetease:null;
-        const same=(rows||[]).map(t=>({t,m:recordingMatch(t,track)})).filter(x=>x.m.ok).sort((a,b)=>a.m.rank-b.m.rank || b.m.score-a.m.score)[0];
-        const {hit}=await this.amllHit(mergeLyricIds(ids,same?lyricIdsOf(same.t):undefined),AMLL_RICH_BUDGET_MS);
+        // 主歌词回来后最多再等 AMLL_RICH_BUDGET_MS（它早就在路上了）
+        const early=await Promise.race([amllEarly,new Promise<null>(r=>setTimeout(()=>r(null),AMLL_RICH_BUDGET_MS))]);
+        let hit=early?.hit??null;
+        if(!hit && early && !early.failed){
+          // 按已知 id 没收录：用提前搜到的网易云同一首的 id 再查一次（AMLL 大多只按网易云 id 收录）
+          const rows=preNetease?await preNetease:null;
+          const same=(rows||[]).map(t=>({t,m:recordingMatch(t,track)})).filter(x=>x.m.ok).sort((a,b)=>a.m.rank-b.m.rank || b.m.score-a.m.score)[0];
+          const ncm=same?lyricIdsOf(same.t).ncm:undefined;
+          if(ncm && ncm!==ids.ncm)hit=(await this.amllHit({ncm},AMLL_RICH_BUDGET_MS)).hit;
+        }
         throwIfCancelled();
         return hit && !isChosen(hit.lyric)?enrichAligned(best,hit.lyric):best;
       }
       // 补丁里跳过选中的那一份（它已经是正文）
-      let hits=(await this.gatherHits(track,origin,preNetease)).map(h=>h && isChosen(h.lyric)?null:h);
+      let hits=(await this.gatherHits(track,origin,preNetease,amllEarly)).map(h=>h && isChosen(h.lyric)?null:h);
       // 主歌词被截断（#201）：别家有一份明显更全的（句数多一半以上、往后多出 20 秒以上）就改用它做正文——合并只往已有的句子上补，补不出缺的后半段。
       // 手动选的不换。更全的那份挪到最前面当正文，其余照固定顺序补；截断的主歌词不再参与。
       if(best && !manual && lyricTruncated(best,track.duration)){
