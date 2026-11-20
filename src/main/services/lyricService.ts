@@ -170,7 +170,7 @@ export class LyricService {
 
   /**
    * 收集别家的候选歌词（fetchLyric 的补全与 listLyricVersions 共用同一段）：AMLL / Apple 和网易云 / QQ / 酷狗（排除本平台）的搜索并行；
-   * 新来源失败或超时只当没有，不影响其余。固定顺序 [AMLL, Apple, 网易云, QQ, 酷狗, 酷我]，网络完成顺序不改变结果；没有的位置是 null。
+   * 新来源失败或超时只当没有，不影响其余。固定顺序 [AMLL, Apple, 网易云, QQ, 酷狗, 酷我, Spotify]，网络完成顺序不改变结果；没有的位置是 null。
    * 必须在 withRequestScope 里调用（取消 / 整体截止由外层负责）。
    */
   private async gatherHits(track: Track, origin?: Track, preNetease?: Promise<Track[]|null>): Promise<Array<LyricHit|null>> {
@@ -180,6 +180,9 @@ export class LyricService {
       // AMLL / Apple 和网易云 / QQ / 酷狗的搜索并行；新来源失败或超时只当没有，不影响其余。
       const ids=mergeLyricIds(lyricIdsOf(track),lyricIdsOf(origin));
       const amllFirst=this.amllHit(ids,AMLL_BUDGET_MS),apple=this.appleHit(track,origin);
+      // Spotify 自家歌词（#210）：原曲是 Spotify 歌时按它的 id 取（同一录音，只有逐行），排在所有来源最后
+      const sp=[origin,track].find(t=>t?.platform==='spotify');
+      const spotify=sp && this.adapters.spotify ? this.fetchOne(sp,'fallback').catch(()=>null) : Promise.resolve(null);
       const candidates=await Promise.all(sources.map(async platform=>{
         try{
           // 网易云那一路可能已经提前搜过（见 fetchLyricBase：补和声 / 对唱要的网易云 id），直接复用
@@ -203,10 +206,11 @@ export class LyricService {
         const durationOf=(k:LyricIdKey,id:string)=>Number(candidates.find(c=>c && lyricIdsOf(c.from)[k]===id)?.from.duration)||0;
         if(LYRIC_ID_ORDER.some(k=>found[k]!==ids[k]) && left>=500)amll=(await this.amllHit(found,Math.min(AMLL_SECOND_BUDGET_MS,left),durationOf)).hit;
       }
-      const appleResult=await apple;
+      const appleResult=await apple,spotifyLyric=await spotify;
       throwIfCancelled();
-      // 固定顺序合并：AMLL → Apple → 网易云 → QQ → 酷狗 → 酷我，网络完成顺序不改变结果。
-      return [amll,appleResult,...candidates.map(c=>c?.lyric?{lyric:c.lyric,duration:Number(c.from.duration),trusted:false}:null)];
+      // 固定顺序合并：AMLL → Apple → 网易云 → QQ → 酷狗 → 酷我 → Spotify，网络完成顺序不改变结果。
+      return [amll,appleResult,...candidates.map(c=>c?.lyric?{lyric:c.lyric,duration:Number(c.from.duration),trusted:false}:null),
+        spotifyLyric?{lyric:spotifyLyric,duration:Number(sp!.duration)||0,trusted:true}:null];
   }
 
   /** 自动合并的歌词（缓存里存的就是这一份，没有时间微调）；用户指定了来源就用指定的那份做正文。 */

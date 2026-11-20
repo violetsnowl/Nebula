@@ -6,6 +6,18 @@
 
 ---
 
+## #210 — 2026-11-19 — Spotify 自家歌词（逐行）作为最后一个补全来源
+
+**改动**
+- `spotifyAdapter.fetchLyric`：Spotify app 同一个 color-lyrics 接口（`spclient.wg.spotify.com/color-lyrics/v2/track/{id}`，带登录令牌，走 `authedRequest` 的续期规则）；`mapSpotifyLyric` 只要 `LINE_SYNCED`，去掉「♪」空行；没登录 / 没收录 / 出错返回 null。
+- `lyricService.gatherHits`：原曲或实际出声那首是 Spotify 歌时，按 Spotify id 取一份（同一录音，trusted），固定排在所有来源最后（AMLL → Apple → 网易云 → QQ → 酷狗 → 酷我 → Spotify）；别家都没有时当正文。「歌词版本」里也会列出它。
+
+**验证**
+- 副本只留访问令牌、去掉续期令牌（不可能续期，不影响真实登录），探 3 首：都返回 200、逐行同步（来源 syncpower，39 / 64 / 78 行），没有逐字和翻译。
+- `lyric-sources-regression` 40/40（新增 1）；`pnpm build`、`pnpm qa`、`pnpm qa:backend` 全绿。
+
+**遗留**：只有逐行，补不了逐字 / 翻译；它主要兜「别家都没有歌词」的 Spotify 歌。
+
 ## #209 — 2026-11-19 — 日语罗马音本地生成（别家补完仍缺的行）
 
 **背景**：用户 2026-11-18 定「歌词来源穷尽后仍有缺口再考虑本地读音词典」；#204–#206 接完酷我 / 波点本平台歌词、酷我补全后，用户 2026-11-19 要求把列出的问题都做了。

@@ -2,6 +2,8 @@ import type { CookieStore } from '../cookieStore';
 import type { HttpClient } from '../http';
 import type { AlbumDetail, Lyric, Playlist, PlatformAdapter, SongUrl, Track } from '../types';
 import { withRequestScope } from '../requestScope';
+import { mergeLyric } from '../parsers/lyricParser';
+import { lrcAt } from '../parsers/timedLyrics';
 
 const API = 'https://api.spotify.com/v1';
 /**
@@ -15,6 +17,18 @@ export const SPOTIFY_REDIRECT_PORT = 5588;
 export const SPOTIFY_RENEW_AFTER_MS = 55 * 60_000;
 export const SPOTIFY_SCOPES = 'playlist-read-private playlist-read-collaborative user-library-read user-read-private user-read-email';
 type PlaylistPage={items?:Array<{track?:Record<string,any>;item?:Record<string,any>}>;next?:string|null;total?:number};
+
+/** color-lyrics 的返回 → Lyric（只要逐行同步的；「♪」这类空行去掉）。导出给回归用。 */
+export function mapSpotifyLyric(raw: unknown): Lyric | null {
+  const l = (raw as { lyrics?: { syncType?: string; lines?: Array<{ startTimeMs?: string | number; words?: string }> } } | null)?.lyrics;
+  if (!l || l.syncType !== 'LINE_SYNCED' || !Array.isArray(l.lines)) return null;
+  const rows = l.lines
+    .map((x) => ({ timeMs: Math.max(0, Math.round(Number(x.startTimeMs) || 0)), text: String(x.words ?? '').trim() }))
+    .filter((x) => x.text && !/^[♪♫\s]+$/.test(x.text));
+  if (!rows.length) return null;
+  const lrc = rows.map((x) => lrcAt(x.timeMs, x.text)).join('\n');
+  return { raw: lrc, lrc, lines: mergeLyric(lrc, ''), source: 'spotify' };
+}
 
 function mapSpotifyTrack(raw: Record<string, any> | undefined | null): Track | null {
   try {
@@ -200,8 +214,21 @@ export class SpotifyAdapter implements PlatformAdapter {
     return null;
   }
 
-  async fetchLyric(): Promise<Lyric | null> {
-    return null;
+  /**
+   * Spotify 自家歌词（#210，app 里同一个 color-lyrics 接口；登录令牌即可，2026-11-19 副本实测 3/3 返回逐行同步、来源 syncpower）。
+   * 只有逐行时间，没有逐字和翻译；不同步的（UNSYNCED）没有时间轴，不要。没登录 / 没收录 / 出错都返回 null。
+   */
+  async fetchLyric(songId?: string): Promise<Lyric | null> {
+    const id = String(songId ?? '').trim();
+    if (!/^[A-Za-z0-9]{22}$/.test(id) || !this.cookies.get('spotify')?.cookies) return null;
+    try {
+      const res = await this.authedRequest<unknown>(`https://spclient.wg.spotify.com/color-lyrics/v2/track/${id}?format=json&vocalRemoval=false&market=from_token`, {
+        headers: { 'app-platform': 'WebPlayer', Accept: 'application/json' },
+      });
+      return mapSpotifyLyric(res);
+    } catch {
+      return null;
+    }
   }
 
   async searchSongs(keyword: string, pageSize = 10): Promise<Track[]> {

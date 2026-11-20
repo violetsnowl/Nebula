@@ -983,4 +983,25 @@ await test('IPC：nebula:lyric-versions / nebula:lyric-choose 参数校验，off
 });
 
 fs.rmSync(tmp, { recursive: true, force: true });
+
+await test('Spotify 歌词（#210）：color-lyrics 只要逐行同步的（去 ♪ 空行），不同步 / 空 / 垃圾返回 null；原曲是 Spotify 歌时排在最后补，别家都没有时当正文', async () => {
+  const { mapSpotifyLyric } = api;
+  const ok = mapSpotifyLyric({ lyrics: { syncType: 'LINE_SYNCED', lines: [{ startTimeMs: '1000', words: '编的第一句' }, { startTimeMs: '2500', words: '♪' }, { startTimeMs: '4000', words: '编的第二句' }] } });
+  assert.deepEqual(ok.lines.map((l) => [l.timeMs, l.text]), [[1000, '编的第一句'], [4000, '编的第二句']]);
+  assert.equal(ok.source, 'spotify');
+  assert.equal(mapSpotifyLyric({ lyrics: { syncType: 'UNSYNCED', lines: [{ startTimeMs: '0', words: '编的' }] } }), null);
+  for (const bad of [null, {}, { lyrics: { syncType: 'LINE_SYNCED', lines: [] } }, 'x']) assert.equal(mapSpotifyLyric(bad), null);
+  // 实际出声那首（QQ）没歌词、别家也没有：用 Spotify 原曲的歌词当正文
+  let asked = null;
+  const spotify = { fetchLyric: async (id) => { asked = id; return ok; } };
+  const map = { qq: { fetchLyric: async () => null }, netease: { searchSongs: async () => [], fetchLyric: async () => null }, kugou: {}, spotify };
+  const r = await new LyricService(map).fetchLyric(song({ title: '编的歌', duration: 20 }), undefined, song({ platform: 'spotify', sourceId: SPOTIFY_ID, id: 'spotify:' + SPOTIFY_ID }));
+  assert.equal(asked, SPOTIFY_ID);
+  assert.deepEqual(r.lines.map((l) => l.text), ['编的第一句', '编的第二句']);
+  assert.ok(r.provenance.some((p) => p.platform === 'spotify'));
+  // 原曲不是 Spotify：不问
+  asked = null;
+  await new LyricService(map).fetchLyric(song());
+  assert.equal(asked, null);
+});
 say(`歌词新来源回归 ${passed}/${passed}`);
