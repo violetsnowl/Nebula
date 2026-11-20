@@ -1,7 +1,7 @@
 import http from 'node:http';
 import https from 'node:https';
 import type { CookieStore } from './cookieStore';
-import { PLATFORM_HEADERS } from './http';
+import { mediaHeaders } from './http';
 import type { Platform } from './types';
 
 const HOSTS: Array<[string, Platform]> = [
@@ -87,7 +87,7 @@ export class AudioProxy {
         if (res.destroyed) return;
         const platform=this.classify(current);
         if (!platform || !['http:','https:'].includes(current.protocol) || current.username || current.password) { fail(403,'host not allowed'); return; }
-        const headers: Record<string,string> = {...PLATFORM_HEADERS[platform],Accept:'*/*'};
+        const headers: Record<string,string> = {...mediaHeaders(platform),Accept:'*/*'};
         // 跨域跳转不转发上一跳 Cookie；只按新域名读取对应平台。
         // 汽水 CDN 不需要 PC 登录 Cookie，不往外发（#212）
         const cookie=platform==='qishui'?'':this.cookies.getHeader(platform);

@@ -168,4 +168,10 @@ await test('汽水（#212）：本平台先走车机取链（主源）；不给�
   assert.equal(api.audioPlatform(new URL('https://www.douyin.com/x')),null);
  }
 });
+await test('汽水取音频不带 Referer / Origin（#215：车机 CDN 带 qishui.com 的 Referer 回 403）；其他平台的头不变',async()=>{
+ const api=require('../dist-main/index.cjs');
+ const q=api.mediaHeaders('qishui');assert.equal(q.Referer,undefined);assert.equal(q.Origin,undefined);assert.ok(q['User-Agent']);
+ assert.deepEqual(api.mediaHeaders('netease'),api.PLATFORM_HEADERS.netease);
+ assert.equal(api.PLATFORM_HEADERS.qishui.Referer,'https://www.qishui.com/','接口请求的头不动');
+});
 console.log(`路由与代理回归 ${passed}/${passed}`);

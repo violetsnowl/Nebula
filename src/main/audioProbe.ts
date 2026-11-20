@@ -2,7 +2,7 @@ import http from 'node:http';
 import https from 'node:https';
 import { createHash } from 'node:crypto';
 import type { Platform } from './types';
-import { PLATFORM_HEADERS } from './http';
+import { mediaHeaders } from './http';
 import { audioPlatform } from './audioProxy';
 import { requestScope, withRequestScope } from './requestScope';
 
@@ -23,7 +23,7 @@ export function looksLikeAudio(buf:Buffer,_contentType?:string):boolean {
 async function sample(url:URL,opts:ProbeOptions,limit:number,hop=0):Promise<{status:number;type:string;bytes:Buffer}> {
   const platform=(opts.classify || audioPlatform)(url);
   if (!platform || !['https:','http:'].includes(url.protocol) || url.username || url.password) throw new Error('invalid audio host');
-  const headers:Record<string,string>={...PLATFORM_HEADERS[platform],Range:`bytes=0-${limit-1}`,Accept:'*/*'};
+  const headers:Record<string,string>={...mediaHeaders(platform),Range:`bytes=0-${limit-1}`,Accept:'*/*'};
   // probe 只拿到了原平台凭证；跨平台跳转不携带它。
   if (platform===opts.platform && opts.cookie) headers.Cookie=opts.cookie;
   return new Promise((resolve,reject)=> {

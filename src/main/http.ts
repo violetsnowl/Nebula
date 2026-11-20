@@ -63,6 +63,16 @@ export const PLATFORM_HEADERS: Record<Platform, Record<string, string>> = {
 };
 
 /**
+ * 取音频（探测 / 代理）用的请求头。汽水车机协议的音频 CDN 带上 `Referer: https://www.qishui.com/` 就回 403
+ * （2026-11-20 用户扫码后实测：不带头、只带 Origin、只带 UA 都是 206 音频），所以汽水取音频不带 Referer / Origin（#215）。
+ */
+export function mediaHeaders(platform: Platform): Record<string, string> {
+  const base = { ...(PLATFORM_HEADERS[platform] ?? {}) };
+  if (platform === 'qishui') { delete base.Referer; delete base.Origin; }
+  return base;
+}
+
+/**
  * 统一网络层：自动附加平台 Referer/UA + CookieStore 凭证。
  * 所有适配器都通过它发起请求，保证 header 伪造与凭证注入单一收口。
  */
