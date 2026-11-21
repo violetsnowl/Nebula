@@ -184,6 +184,8 @@
   top: calc(var(--ls-y) + var(--ls-cv) + 30px);
   width: calc(var(--ls-cv) + 24px);
   display: grid;
+  /* 列宽锁在这一栏里：默认的 auto 列会被长歌名 / 专辑名撑宽，max-width:100% 跟着失效，文字越界压到歌词栏（2026-11-21） */
+  grid-template-columns: minmax(0, 1fr);
   gap: 4px;
   justify-items: start;
 }
@@ -261,8 +263,11 @@
 .ls-root[data-font='sans'] .ls-title {
   font-family: var(--ls-sans);
 }
-.ls-title span {
+/* 歌名、专辑行最多两行，再长省略；歌手一行省略 */
+.ls-title span,
+.ls-album span {
   white-space: normal;
+  overflow-wrap: anywhere;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
