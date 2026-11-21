@@ -140,7 +140,8 @@ class AudioPlayer {
       this.state.mode = p.mode;
     }
     this.bindMedia(this.el, true);
-    if (typeof window !== 'undefined') window.addEventListener('pagehide', () => this.savePosition());
+    // 测试环境的模拟 window 可能没有 addEventListener（player-regression）
+    if (typeof window !== 'undefined' && typeof window.addEventListener === 'function') window.addEventListener('pagehide', () => this.savePosition());
   }
 
   private savePrefs(): void {

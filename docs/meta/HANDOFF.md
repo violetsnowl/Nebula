@@ -27,7 +27,7 @@
 1. **重大改动先沟通，确认后执行**。用户的惯例是：改动量大、方向性强时要求"先沟通明确项目需求，等我确认之后再做下一步执行"。小改动 / 明确请求直接做，不要反复确认。
 2. **架构与重构：行为零变化**。重构只做结构整理，不改变视觉与行为；每步 `pnpm build` + `pnpm check:arch` + `pnpm qa` 全绿后独立提交，再继续下一步。
 3. **UI 以冻结真源为准**。全局 UI 的视觉与参数以 `docs/design/NEBULA_UI_SYSTEM.md` 为唯一真源（2026-11 起，取代"以现有实现为真源"）；其中没写到的，以现有实现为准，不要自由发挥。项目曾发生过"参考 Prototype 重新设计导致整合爆炸"的教训：视觉样张只用于做决定，实现必须在分支里原生编写，不允许为了"适配"而改变已确认的视觉结构。
-4. **不要输出截图 png**。用户明确不需要 output 目录里的截图产物。
+4. **不要输出截图 png**。用户明确不需要 output 目录里的截图产物。用户主动要截图验收时（2026-11-21 起），截图放草稿目录直接发给用户，不进仓库。
 5. **git 每步提交 + 推送**。远程 `origin/main`（`github.com/violetsnowl/Nebula.git`，2026-11-14 改名；旧地址 `violetsnowl/nebula`、`a161858970-ux/nebula` 会自动重定向）；文档与代码一起提交。
 6. **文档同步**：每次改动追加 `docs/project/CHANGE_LOG.md`；踩坑更新 `docs/project/NOTES.md`；架构变化更新 `docs/project/ARCHITECTURE.md`；全局 UI 规范变化更新 `docs/design/NEBULA_UI_SYSTEM.md`（已冻结，改动须经用户确认）。
 7. **搜索优先 `rg`**；本项目 Windows PowerShell 下不可用时改用 `Select-String`。

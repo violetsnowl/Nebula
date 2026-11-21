@@ -25,6 +25,19 @@
 - **构建产物在仓库外**：`pnpm build` 输出到同级目录 `../nebula-outputs/index.html`（本机 `E:\CUFE\vibecoding\nebula-outputs`）；而 `pnpm qa` 正是读取这个文件，所以**必须先 build 再 qa**。
 - 项目已接入 git；远程为 `github.com/violetsnowl/Nebula`（2026-11-14 改名；旧地址 `violetsnowl/nebula`、`a161858970-ux/nebula` 自动重定向，本地 origin 已更新）；文档随提交维护（docs/）。
 
+### 前端小坑（2026-11-21，#217–#221）
+
+- **给带裁剪的容器整体缩放会露空**（#217）：`.stage-3d` 自带 `overflow:hidden`，星层画布和挂卡片范围都只有一屏大；整体 CSS `scale(0.86)` 后可见范围跟着缩，四周露空、边缘卡片被切。要「整片后退」就在舞台帧循环里按屏幕坐标算（`lens.applyXf`），和散开 / 退潮同一条路。
+- **网格的 auto 列会被长文字撑宽**（#219）：`display:grid` 不写 `grid-template-columns` 时，子元素的 `max-width:100%` 会跟着失效、文字越界。锁成 `minmax(0, 1fr)`。
+- **居中的父级会让列表也居中**（#221）：账号详情页 `.rp-detail` 是 `text-align:center`，里面的 `ol` 继承后序号和文字错位。列表、说明要自己写 `text-align:left`。末行只剩一个字用 `text-wrap: pretty`（Electron 支持）。
+- **尾韵颜色要往「更亮」走**（#217）：同色系模式唱过 = 白、没唱 = 主色；尾韵若往主色褪，扫白的字会先变回主色再二次变白。
+- **播放器里碰 `window` 要判断方法存在**（#220）：`scripts/player-regression.mjs` 用的模拟 window 没有 `addEventListener`，直接调用会让 `qa:backend` 挂掉。**改 `src/lib/audio/` 也要跑 `pnpm qa:backend`**（播放器回归在里面），不只是前端 QA。
+
+### 不碰用户登录的截图 / 实测方法（2026-11-21）
+
+- **看未登录界面的截图**：用户登录着、不方便退出时，仿 `scripts/electron-regression.cjs`：写一个 bootstrap 先 `app.setPath('userData', 空目录)`，再把 `BrowserWindow` 包成 `show:false`、1440×900，用 playwright 的 `_electron.launch` 启动 `electron/main.cjs`，对 `.sd-panel.sd-right` 截图。先 `pnpm build:desktop`（加载的是 `dist/`）。浏览器预览（`pnpm dev`）没有 `window.nebulaAPI`，登录页只显示标题，看不出真实样子。截图放草稿目录、用 SendUserFile 发给用户，**不进仓库**。
+- **前端逻辑在真实数据上量化**（#218 长音统计）：把 `%APPDATA%\music-nebula\lyric-cache.json` 复制到草稿目录（最近听过的歌、最终合并后的歌词，最多 500 首），写一个 TS 脚本直接 import `src/lib/lyrics.ts` 的 `normalizeLyricLines` 和 `src/lib/listen/model.ts`，用仓库里的 `node_modules/.bin/esbuild --bundle --platform=node` 打包后跑。不联网、不碰真实配置。缓存样本偏 QQ 和英日文，韩语、小语种很少。
+
 ### 前端样式与舞台渲染（2026-11 沉淀）
 
 - **全局元素选择器会污染新组件**：`button:hover` 这类全局规则会层叠到所有按钮上（P1 播放条的"乱发光"就是这样来的）。新组件的状态写在组件自己的类上，不要依赖全局规则兜底。

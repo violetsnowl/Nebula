@@ -119,6 +119,23 @@ view blocks（同层互不依赖，组合只由 App 完成）
 - [x] 8. 视图第二阶段（三 Context 落地 + 区块化：Playback / InterfaceSettings / VisualAtmosphere；LyricsLayer / NowPlayingPanel 叶子化；OverlayStack props 收敛；check-arch 修扩展名解析）
 - [x] 9. `useStage`（最后，最高风险：hovered/visible/failed/liked/渐进揭示/PanController/虚拟化数据全部收敛；App 仅剩组合接线）
 
+## 8. 重开后保留的状态（2026-11-21，#220 补齐）
+
+加新设置时照这张表决定存哪里；一次性状态（面板开合、「下一首播放」插队）有意不存。
+
+| 内容 | 存在哪 | 谁读写 |
+|---|---|---|
+| 登录（各平台 Cookie / 令牌） | userData `cookies.json`（Apple 在分区 `Partitions\applemusic-login`） | 主进程 CookieStore |
+| 歌单、当前歌、插播歌与接回位置 | localStorage `music-nebula.session` | App.tsx 写，useStage / usePlaylist 读 |
+| 音量、静音、播放顺序 | `music-nebula.player` | AudioPlayer（构造时读，`volumechange` / `setMode` 写） |
+| 播放位置（当前这首 + 秒数） | `music-nebula.position` | AudioPlayer（播放中每 2 秒、暂停、`pagehide` 写；`restore` 同一首时读，开头 3 秒内、结尾 5 秒内不恢复） |
+| 音质档位 | `music-nebula.quality` | preferences / desktopPlayback |
+| 歌词设置、翻译开关 | `music-nebula.lyric-settings`、`music-nebula.lyric-translate` | useLyrics |
+| 听音空间设置（字体、视觉模式、读音等） | lib/listen/settings | 同左 |
+| 星云排法、背景、材质、界面开关 | lib/space/lab、lib/backgrounds、lib/glass/materials、useInterfaceSettings | 同左 |
+| 手动换歌词 / 微调、歌词缓存 | userData `lyric-overrides.json`、`lyric-cache.json` | 主进程 |
+| 主窗口大小、位置、是否最大化 | userData `window-state.json` | electron/main.cjs（位置不在任何屏幕上时只沿用大小） |
+
 
 ## 后端链路总览（2026-11-19，#195；新会话先看这一节）
 
