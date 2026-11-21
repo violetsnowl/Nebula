@@ -280,6 +280,40 @@ function lapseText(a: AccountState | undefined): string | null {
 
 /* ---------- 登录流程（逻辑 / IPC 与原来一致，外观换成新语言） ---------- */
 
+/**
+ * 登录页统一版式（2026-11-21 #221）：标题下一句话（LOGIN_HOW）→ 三步说明（左对齐、圆形序号）→ 主按钮 → 状态（有事才说）。
+ * 三步的写法统一：第 1 步「点哪个按钮、会打开什么」，第 2 步「在那边做什么」，第 3 步「完成后会怎样」，每步一句、句号结尾。
+ */
+function LoginSteps({ steps }: { steps: ReactNode[] }) {
+  return (
+    <ol className="rp-steps">
+      {steps.map((s, i) => (
+        <li key={i}>{s}</li>
+      ))}
+    </ol>
+  );
+}
+
+/** App 扫码的三步（网易云 / 酷狗 / 波点 / 汽水共用）。 */
+const scanSteps = (app: string): ReactNode[] => [
+  '点「显示二维码」。',
+  `打开${app} App，用「扫一扫」扫描二维码，并在手机上确认。`,
+  '确认后自动完成登录。',
+];
+
+/** 扫码区：二维码出来之前只有三步说明和按钮，点了按钮才出现二维码（不再先摆一块空方框）。 */
+function ScanFlow({ app, qr, status, onStart }: { app: string; qr: string | null; status: string; onStart: () => void }) {
+  return (
+    <div className="rp-flow">
+      {qr ? <img className="rp-qr" src={qr} alt={`${app}登录二维码`} /> : <LoginSteps steps={scanSteps(app)} />}
+      {status && <div className="rp-flow-status">{status}</div>}
+      <button type="button" className={`btn ${qr ? 'sec' : 'primary'} full`} onClick={onStart}>
+        {qr ? '刷新二维码' : '显示二维码'}
+      </button>
+    </div>
+  );
+}
+
 /** 网易云：官方库二维码登录（主项目既有实现）。 */
 function NeteaseLogin({ onSuccess }: { onSuccess: () => void }) {
   const [qr, setQr] = useState<string | null>(null);
@@ -316,7 +350,7 @@ function NeteaseLogin({ onSuccess }: { onSuccess: () => void }) {
         return;
       }
     }
-    setStatus('请使用网易云 App 扫码登录');
+    setStatus('打开网易云音乐 App，用「扫一扫」扫描上面的二维码');
     failRef.current = 0;
     pollRef.current = window.setInterval(async () => {
       if (!unikeyRef.current) return;
@@ -348,19 +382,11 @@ function NeteaseLogin({ onSuccess }: { onSuccess: () => void }) {
 
   useEffect(() => stopPoll, [stopPoll]);
 
-  return (
-    <div className="rp-flow">
-      {qr ? <img className="rp-qr" src={qr} alt="网易云登录二维码" /> : <div className="rp-qr is-empty" />}
-      <div className="rp-flow-status">{status || '未登录网易云'}</div>
-      <button type="button" className="btn primary full" onClick={start}>
-        {qr ? '刷新二维码' : '开始扫码登录'}
-      </button>
-    </div>
-  );
+  return <ScanFlow app="网易云音乐" qr={qr} status={status} onStart={start} />;
 }
 
 /** QQ 音乐：官方登录页 + 粘贴 Cookie（主项目既有实现）。 */
-function QqLogin({ onSuccess, lapsed = false }: { onSuccess: () => void; lapsed?: boolean }) {
+function QqLogin({ onSuccess }: { onSuccess: () => void; lapsed?: boolean }) {
   const [cookieMode, setCookieMode] = useState(false);
   const [cookieText, setCookieText] = useState('');
   const [busy, setBusy] = useState(false);
@@ -369,7 +395,7 @@ function QqLogin({ onSuccess, lapsed = false }: { onSuccess: () => void; lapsed?
   const openWindow = useCallback(async () => {
     if (!window.nebulaAPI) return;
     setBusy(true);
-    setStatus('已打开官方登录页，请在窗口内用手机 QQ 扫码并确认…');
+    setStatus('已打开登录页，用手机 QQ 扫码并确认');
     try {
       const r = await window.nebulaAPI.qqLoginWindow();
       const data = r.ok ? r.data : null;
@@ -404,21 +430,30 @@ function QqLogin({ onSuccess, lapsed = false }: { onSuccess: () => void; lapsed?
 
   return (
     <div className="rp-flow">
+      <LoginSteps
+        steps={[
+          '点「打开 QQ 音乐登录页」，登录页会在软件里打开。',
+          '用手机 QQ 扫描页面上的二维码，并在手机上确认。',
+          '确认后登录页自动关闭，完成登录。',
+        ]}
+      />
+      {status && <div className="rp-flow-status">{status}</div>}
       <button type="button" className="btn primary full" disabled={busy} onClick={openWindow}>
-        {busy ? '等待官方页登录…' : '打开官方登录页（扫码）'}
+        {busy ? '等待登录…' : '打开 QQ 音乐登录页'}
       </button>
       <button
         type="button"
         className="btn text"
         onClick={() => {
           setCookieMode((v) => !v);
-          setStatus('粘贴 QQ 音乐 Cookie（需含 uin 与 music_key / p_skey / skey）');
+          setStatus('');
         }}
       >
-        {cookieMode ? '收起 Cookie 粘贴' : '粘贴 Cookie 登录'}
+        {cookieMode ? '收起' : '改用 Cookie 登录'}
       </button>
       {cookieMode && (
         <>
+          <p className="rp-note">粘贴 QQ 音乐网页版的 Cookie，需要包含 uin 和 music_key（或 p_skey / skey）。</p>
           <textarea
             className="rp-cookie-input"
             rows={4}
@@ -428,11 +463,10 @@ function QqLogin({ onSuccess, lapsed = false }: { onSuccess: () => void; lapsed?
             spellCheck={false}
           />
           <button type="button" className="btn sec full" disabled={busy || !cookieText.trim()} onClick={importCookie}>
-            导入并验证
+            验证并登录
           </button>
         </>
       )}
-      {(status || !lapsed) && <div className="rp-flow-status">{status || '未登录 QQ 音乐'}</div>}
     </div>
   );
 }
@@ -441,7 +475,7 @@ function SpotifyLogin({ onSuccess }: { onSuccess: () => void }) {
   const [status, setStatus] = useState('');
   const start = useCallback(async () => {
     if (!window.nebulaAPI) return;
-    setStatus('已在浏览器打开 Spotify 授权页，完成后会自动回到这里');
+    setStatus('已在浏览器打开授权页，授权后回到这里');
     const r = await window.nebulaAPI.spotifyLoginStart();
     if (!r.ok) {
       setStatus(r.error || '授权未完成，请重试');
@@ -456,10 +490,17 @@ function SpotifyLogin({ onSuccess }: { onSuccess: () => void }) {
   }, [onSuccess]);
   return (
     <div className="rp-flow">
+      <LoginSteps
+        steps={[
+          '点「在浏览器中授权」，默认浏览器会打开 Spotify 授权页。',
+          '登录 Spotify 账号，并同意授权。',
+          '授权后回到这里，自动完成登录。',
+        ]}
+      />
+      {status && <div className="rp-flow-status">{status}</div>}
       <button type="button" className="btn primary full" onClick={start}>
-        使用 Spotify 授权登录
+        在浏览器中授权
       </button>
-      <div className="rp-flow-status">{status || '未登录 Spotify'}</div>
     </div>
   );
 }
@@ -500,7 +541,7 @@ function KugouLogin({ onSuccess }: { onSuccess: () => void }) {
         return;
       }
     }
-    setStatus('用酷狗音乐 App 扫码登录');
+    setStatus('打开酷狗音乐 App，用「扫一扫」扫描上面的二维码');
     failRef.current = 0;
     pollRef.current = window.setInterval(async () => {
       if (!unikeyRef.current) return;
@@ -533,13 +574,7 @@ function KugouLogin({ onSuccess }: { onSuccess: () => void }) {
   useEffect(() => stopPoll, [stopPoll]);
 
   return (
-    <div className="rp-flow">
-      {qr ? <img className="rp-qr" src={qr} alt="酷狗登录二维码" /> : <div className="rp-qr is-empty" />}
-      <div className="rp-flow-status">{status || '未登录酷狗音乐'}</div>
-      <button type="button" className="btn primary full" onClick={start}>
-        {qr ? '刷新二维码' : '开始扫码登录'}
-      </button>
-    </div>
+    <ScanFlow app="酷狗音乐" qr={qr} status={status} onStart={start} />
   );
 }
 
@@ -579,7 +614,7 @@ function BodianLogin({ onSuccess }: { onSuccess: () => void }) {
         return;
       }
     }
-    setStatus('用波点音乐 App 扫码登录');
+    setStatus('打开波点音乐 App，用「扫一扫」扫描上面的二维码');
     failRef.current = 0;
     pollRef.current = window.setInterval(async () => {
       if (!unikeyRef.current) return;
@@ -612,13 +647,7 @@ function BodianLogin({ onSuccess }: { onSuccess: () => void }) {
   useEffect(() => stopPoll, [stopPoll]);
 
   return (
-    <div className="rp-flow">
-      {qr ? <img className="rp-qr" src={qr} alt="波点登录二维码" /> : <div className="rp-qr is-empty" />}
-      <div className="rp-flow-status">{status || '未登录波点音乐'}</div>
-      <button type="button" className="btn primary full" onClick={start}>
-        {qr ? '刷新二维码' : '开始扫码登录'}
-      </button>
-    </div>
+    <ScanFlow app="波点音乐" qr={qr} status={status} onStart={start} />
   );
 }
 
@@ -737,48 +766,55 @@ function YtmusicLogin({ onSuccess }: { onSuccess: () => void }) {
             {code.userCode}
             <small>{copied === 'code' ? '已复制' : '点击复制代码'}</small>
           </button>
-          <ol className="rp-steps">
-            <li>
-              点下面的按钮，在默认浏览器打开 Google 授权页（也可以点链接或复制链接自己打开）：
-              <span className="rp-link-row">
-                <a
-                  href={code.verificationUrl}
-                  className="rp-link"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    void openBrowser();
-                  }}
-                >
-                  {linkText}
-                </a>
-                <button type="button" className="rp-link-copy" onClick={() => void copy(code.verificationUrl, 'link')}>
-                  {copied === 'link' ? '已复制' : '复制链接'}
-                </button>
-              </span>
-            </li>
-            <li>在网页的输入框里粘贴代码（打开时已自动复制，也可以点上面的代码再复制一次），按页面提示继续。</li>
-            <li>选择你的 Google 账号，点「允许」。浏览器里显示完成后回到这里，几秒内会自动登录。</li>
-          </ol>
+          <LoginSteps
+            steps={[
+              '点「复制代码并打开授权页」，默认浏览器会打开 Google 授权页。',
+              '在授权页粘贴代码，选择 Google 账号并点「允许」。',
+              '授权后回到这里，几秒内自动完成登录。',
+            ]}
+          />
+          {status && <div className="rp-flow-status">{status}</div>}
           <button type="button" className="btn primary full" onClick={() => void openBrowser()}>
             复制代码并打开授权页
           </button>
-          <button type="button" className="btn sec full" disabled={busy} onClick={start}>
-            代码过期了？重新获取
-          </button>
+          <p className="rp-note rp-note-center">
+            也可以手动打开{' '}
+            <a
+              href={code.verificationUrl}
+              className="rp-link"
+              onClick={(e) => {
+                e.preventDefault();
+                void openBrowser();
+              }}
+            >
+              {linkText}
+            </a>
+            <span className="rp-sep">·</span>
+            <button type="button" className="rp-link-copy" onClick={() => void copy(code.verificationUrl, 'link')}>
+              {copied === 'link' ? '已复制' : '复制链接'}
+            </button>
+            <span className="rp-sep">·</span>
+            <button type="button" className="rp-link-copy" disabled={busy} onClick={start}>
+              重新获取代码
+            </button>
+          </p>
         </>
       ) : (
         <>
-          <ol className="rp-steps">
-            <li>点「获取登录代码」，这里会显示一串代码。</li>
-            <li>在默认浏览器打开 Google 授权页，粘贴代码，选择账号并允许。</li>
-            <li>回到这里，几秒内自动登录。用的是你浏览器里已经登录的 Google 账号，不用在软件里输密码。</li>
-          </ol>
+          <LoginSteps
+            steps={[
+              '点「获取登录代码」，这里会显示一串代码。',
+              '在浏览器打开的 Google 授权页里粘贴代码，选择账号并点「允许」。',
+              '授权后回到这里，自动完成登录。',
+            ]}
+          />
+          {status && <div className="rp-flow-status">{status}</div>}
           <button type="button" className="btn primary full" disabled={busy} onClick={start}>
             获取登录代码
           </button>
+          <p className="rp-note">使用浏览器里已登录的 Google 账号，不需要在软件里输入密码。</p>
         </>
       )}
-      <div className="rp-flow-status">{status || '未登录 YouTube Music'}</div>
     </div>
   );
 }
@@ -820,7 +856,7 @@ function QishuiLogin({ onSuccess }: { onSuccess: () => void }) {
         return;
       }
     }
-    setStatus('用汽水音乐 App 扫码登录');
+    setStatus('打开汽水音乐 App，用「扫一扫」扫描上面的二维码');
     failRef.current = 0;
     inflightRef.current = false;
     pollRef.current = window.setInterval(async () => {
@@ -858,13 +894,7 @@ function QishuiLogin({ onSuccess }: { onSuccess: () => void }) {
   useEffect(() => stopPoll, [stopPoll]);
 
   return (
-    <div className="rp-flow">
-      {qr ? <img className="rp-qr" src={qr} alt="汽水登录二维码" /> : <div className="rp-qr is-empty" />}
-      <div className="rp-flow-status">{status || '未登录汽水音乐'}</div>
-      <button type="button" className="btn primary full" onClick={start}>
-        {qr ? '刷新二维码' : '开始扫码登录'}
-      </button>
-    </div>
+    <ScanFlow app="汽水音乐" qr={qr} status={status} onStart={start} />
   );
 }
 
@@ -876,7 +906,7 @@ function KuwoLogin({ onSuccess }: { onSuccess: () => void }) {
   const openWindow = useCallback(async () => {
     if (!window.nebulaAPI) return;
     setBusy(true);
-    setStatus('正在打开酷我登录页…');
+    setStatus('');
     try {
       const r = await window.nebulaAPI.kuwoLoginWindow();
       const data = r.ok ? r.data : null;
@@ -893,10 +923,17 @@ function KuwoLogin({ onSuccess }: { onSuccess: () => void }) {
 
   return (
     <div className="rp-flow">
+      <LoginSteps
+        steps={[
+          '点「打开酷我音乐登录页」，登录页会在软件里打开。',
+          '用账号密码、短信验证码或 QQ / 微信登录。',
+          '登录后登录页自动关闭，完成登录。',
+        ]}
+      />
+      {status && <div className="rp-flow-status">{status}</div>}
       <button type="button" className="btn primary full" disabled={busy} onClick={openWindow}>
-        {busy ? '等待登录…' : '打开酷我登录页'}
+        {busy ? '等待登录…' : '打开酷我音乐登录页'}
       </button>
-      <div className="rp-flow-status">{status || '未登录酷我音乐'}</div>
     </div>
   );
 }
@@ -909,7 +946,7 @@ function AppleMusicLogin({ onSuccess }: { onSuccess: () => void }) {
   const openWindow = useCallback(async () => {
     if (!window.nebulaAPI) return;
     setBusy(true);
-    setStatus('正在打开 Apple Music…');
+    setStatus('');
     try {
       const r = await window.nebulaAPI.applemusicLoginWindow();
       const data = r.ok ? r.data : null;
@@ -926,16 +963,18 @@ function AppleMusicLogin({ onSuccess }: { onSuccess: () => void }) {
 
   return (
     <div className="rp-flow">
-      <ol className="rp-steps">
-        <li>点下面的按钮，在软件里打开 Apple 官方页面。</li>
-        <li>点页面右上角的「登录」，用 Apple ID 登录（可能需要双重认证）。</li>
-        <li>登录完成后窗口会自动关闭。</li>
-      </ol>
-      <div className="rp-flow-status">读取我的歌单需要有效的 Apple Music 订阅；没有订阅时仍可导入公开歌单链接。</div>
+      <LoginSteps
+        steps={[
+          '点「打开 Apple Music 登录页」，登录页会在软件里打开。',
+          '点页面右上角的「登录」，用 Apple ID 登录（可能需要双重认证）。',
+          '登录后登录页自动关闭，完成登录。',
+        ]}
+      />
+      {status && <div className="rp-flow-status">{status}</div>}
       <button type="button" className="btn primary full" disabled={busy} onClick={openWindow}>
         {busy ? '等待登录…' : '打开 Apple Music 登录页'}
       </button>
-      <div className="rp-flow-status">{status || '未登录 Apple Music'}</div>
+      <p className="rp-note">读取「我的歌单」需要有效的 Apple Music 订阅；没有订阅也可以导入公开歌单链接。</p>
     </div>
   );
 }
@@ -1025,7 +1064,7 @@ function QishuiCarAuth() {
         return;
       }
     }
-    setStatus('用抖音 App 扫码授权');
+    setStatus('打开抖音 App，用「扫一扫」扫描上面的二维码');
     inflightRef.current = false;
     pollRef.current = window.setInterval(async () => {
       if (!unikeyRef.current || inflightRef.current) return;
@@ -1047,27 +1086,32 @@ function QishuiCarAuth() {
     }, 2000);
   }, [api, load, stopPoll]);
   if (!api?.qishuiCarLoginStatus || state === null) return null;
+  // 和上面的登录分开成独立一块（#221）：细线分隔 + 小标题「整曲播放 · 可选」，说明左对齐占满宽度
   if (state === 'authorized')
     return (
-      <div className="group">
-        <p className="rp-how" role="status">
-          已授权整曲播放{nick ? `（抖音账号 ${nick}）` : ''}：汽水的歌直接在汽水出声，只有标准音质
+      <div className="rp-extra">
+        <div className="rp-extra-head">
+          整曲播放<span>已授权</span>
+        </div>
+        <p className="rp-note" role="status">
+          {nick ? `抖音账号 ${nick}。` : ''}汽水的歌会直接在汽水播放（标准音质）。
         </p>
-        <button type="button" className="btn" onClick={() => api.qishuiCarLogout?.().then(load)}>
+        <button type="button" className="btn sec full" onClick={() => api.qishuiCarLogout?.().then(load)}>
           取消播放授权
         </button>
       </div>
     );
   return (
-    <div className="group">
-      <p className="rp-how">
-        {state === 'expired' ? '整曲播放授权已过期。' : ''}用抖音扫码授权后，汽水的歌能直接在汽水出声（标准音质）；不授权时照常从别的平台找同一首
-      </p>
+    <div className="rp-extra">
+      <div className="rp-extra-head">
+        整曲播放<span>{state === 'expired' ? '授权已过期' : '可选'}</span>
+      </div>
+      <p className="rp-note">用抖音扫码授权后，汽水的歌可以直接在汽水播放（标准音质）。不授权时，会从其他平台找同一首歌播放。</p>
       <div className="rp-flow">
         {qr ? <img className="rp-qr" src={qr} alt="抖音授权二维码" /> : null}
         {status ? <div className="rp-flow-status">{status}</div> : null}
-        <button type="button" className="btn full" onClick={start}>
-          {qr ? '刷新二维码' : '抖音扫码授权整曲播放'}
+        <button type="button" className="btn sec full" onClick={start}>
+          {qr ? '刷新二维码' : '用抖音扫码授权'}
         </button>
       </div>
     </div>

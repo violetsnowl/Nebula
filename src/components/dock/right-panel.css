@@ -122,10 +122,10 @@
 }
 
 .sd-panel .rp-how {
-  margin: -4px 0 0;
-  font-size: 12px;
+  margin: -6px 0 4px;
+  font-size: 12.5px;
   color: var(--fg-3s);
-  max-width: 26ch;
+  max-width: 30ch;
 }
 
 .sd-panel .rp-acct-av {
@@ -192,9 +192,6 @@
   display: block;
 }
 
-.sd-panel .rp-qr.is-empty {
-  background: rgba(255, 255, 255, 0.06);
-}
 
 /* 设备码登录（YouTube Music）：大号等宽登录代码，整块可点击复制；hover 只让文字变亮 */
 .sd-panel .rp-code {
@@ -230,16 +227,91 @@
   user-select: none;
 }
 
-/* 设备码登录步骤：编号列表，左对齐 */
+/* 登录三步（#221，所有平台同一版式）：左对齐（详情页整体居中，这里必须重设），序号是 18px 的圆形小号数字，
+   文字悬挂缩进对齐在序号右边；序号底色是静态标记，不是悬停反馈 */
 .sd-panel .rp-steps {
-  margin: 0;
-  padding-left: 18px;
+  margin: 2px 0 6px;
+  padding: 0;
+  list-style: none;
+  counter-reset: rp-step;
+  /* 不让最后一行只剩一两个字 */
+  text-wrap: pretty;
   display: flex;
   flex-direction: column;
-  gap: 6px;
-  font-size: 12px;
-  line-height: 1.55;
+  gap: 8px;
+  font-size: 12.5px;
+  line-height: 1.6;
   color: var(--fg-2);
+  text-align: left;
+}
+
+.sd-panel .rp-steps li {
+  counter-increment: rp-step;
+  position: relative;
+  padding-left: 28px;
+}
+
+.sd-panel .rp-steps li::before {
+  content: counter(rp-step);
+  position: absolute;
+  left: 0;
+  top: 1px;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--fg);
+  background: rgba(255, 255, 255, 0.1);
+}
+
+/* 补充说明（订阅要求、Cookie 格式、不需要输密码等）：小一号、弱文字、左对齐 */
+.sd-panel .rp-note {
+  margin: 0;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--fg-3s);
+  text-align: left;
+  text-wrap: pretty;
+}
+
+.sd-panel .rp-note-center {
+  text-align: center;
+}
+
+.sd-panel .rp-sep {
+  margin: 0 6px;
+  color: var(--fg-3);
+}
+
+/* 登录之外的附加项（汽水整曲播放授权）：细线分隔，小标题 + 状态小字，说明左对齐占满宽度 */
+.sd-panel .rp-extra {
+  width: 100%;
+  margin-top: 6px;
+  padding-top: 16px;
+  border-top: 1px solid var(--hair);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  text-align: left;
+}
+
+.sd-panel .rp-extra-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.sd-panel .rp-extra-head span {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--fg-3s);
 }
 
 .sd-panel .rp-link-row {

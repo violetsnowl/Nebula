@@ -37,14 +37,18 @@ export function platformMeta(id: string): PlatformMeta {
 }
 
 /** 各平台登录说明（一句话）：账号详情页顶部和内嵌登录弹窗的页头共用。 */
+/**
+ * 登录页标题下的一句话（2026-11-21 #221 统一文案）：只说「用什么、在哪里登录」，不带句号；
+ * 具体步骤写在各平台的三步说明里（AccountDock 的 LoginSteps）。
+ */
 export const LOGIN_HOW: Record<string, string> = {
   netease: '用网易云音乐 App 扫码登录',
-  qq: '在官方登录页用手机 QQ 扫码，登录后自动回到这里',
+  qq: '用手机 QQ 扫码登录',
   kugou: '用酷狗音乐 App 扫码登录',
   qishui: '用汽水音乐 App 扫码登录',
-  spotify: '在浏览器里授权，授权完成后自动回到这里',
-  kuwo: '在酷我官网登录：账号密码、短信或 QQ / 微信',
+  spotify: '在浏览器里授权 Spotify 账号',
+  kuwo: '在酷我音乐官方登录页登录',
   bodian: '用波点音乐 App 扫码登录',
-  ytmusic: '在默认浏览器输入代码登录 Google 账号',
-  applemusic: '在软件里打开 Apple 官方页面，用 Apple ID 登录',
+  ytmusic: '在浏览器里用代码授权 Google 账号',
+  applemusic: '在 Apple Music 官方登录页登录',
 };
