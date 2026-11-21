@@ -32,6 +32,31 @@ export class PlaybackResolutionError extends Error {
   constructor(message:string,readonly terminal=false){super(message);this.name='PlaybackResolutionError';}
 }
 
+/** 播放偏好（音量、静音、播放顺序）的持久化：localStorage，读不到 / 私密模式时用默认值。 */
+const PREFS_KEY = 'music-nebula.player';
+/** 上次在放的那首和位置（#220）。 */
+const POS_KEY = 'music-nebula.position';
+interface PlayerPrefs { volume: number; muted: boolean; mode: PlayMode }
+function readPlayerPrefs(): PlayerPrefs | null {
+  try {
+    const raw = typeof localStorage !== 'undefined' ? localStorage.getItem(PREFS_KEY) : null;
+    if (!raw) return null;
+    const o = JSON.parse(raw) as Partial<PlayerPrefs>;
+    const volume = typeof o.volume === 'number' && Number.isFinite(o.volume) ? Math.min(1, Math.max(0, o.volume)) : 0.9;
+    const mode: PlayMode = o.mode === 'random' || o.mode === 'repeat-one' ? o.mode : 'sequential';
+    return { volume, muted: o.muted === true, mode };
+  } catch {
+    return null;
+  }
+}
+function writePlayerPrefs(p: PlayerPrefs): void {
+  try {
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ volume: Math.round(p.volume * 1000) / 1000, muted: p.muted, mode: p.mode }));
+  } catch {
+    /* 私密模式 */
+  }
+}
+
 export function formatTime(sec: number): string {
   if (!Number.isFinite(sec) || sec < 0) return '0:00';
   const m = Math.floor(sec / 60);
@@ -104,7 +129,51 @@ class AudioPlayer {
     this.el = new Audio();
     this.el.preload = 'auto';
     this.el.volume = 0.9;
+    // 音量、静音、播放顺序随重开保留（2026-11-21，#220）：先读回上次的值再挂事件，读回本身不触发保存
+    const p = readPlayerPrefs();
+    if (p) {
+      this.el.volume = p.volume;
+      this.el.muted = p.muted;
+      this.mode = p.mode;
+      this.state.volume = p.volume;
+      this.state.muted = p.muted;
+      this.state.mode = p.mode;
+    }
     this.bindMedia(this.el, true);
+    if (typeof window !== 'undefined') window.addEventListener('pagehide', () => this.savePosition());
+  }
+
+  private savePrefs(): void {
+    writePlayerPrefs({ volume: this.el.volume, muted: this.el.muted, mode: this.mode });
+  }
+
+  /** 播放位置随重开保留（#220）：只记当前这首在放的位置；重开恢复同一首时，进度条停在那里，第一次点播放从那里接着放。 */
+  private posSavedAt = 0;
+  /** 会话恢复后还没加载过音源：第一次点播放从 state.currentTime（恢复的位置，或之后拖到的位置）开始。 */
+  private resumeFromState = false;
+  private savePosition(): void {
+    const song = this.state.song;
+    if (!song || !this.activeSource) return;
+    this.posSavedAt = Date.now();
+    try {
+      localStorage.setItem(POS_KEY, JSON.stringify({ id: this.identity(song), t: Math.round(this.state.currentTime * 10) / 10, d: Math.round(this.state.duration) }));
+    } catch {
+      /* 私密模式 */
+    }
+  }
+  /** 恢复出来的这首如果就是上次在放的那首，把进度设回上次的位置（开头 3 秒内、离结尾不到 5 秒的不恢复）。 */
+  private restorePosition(track: Track): void {
+    this.resumeFromState = true;
+    try {
+      const o = JSON.parse(localStorage.getItem(POS_KEY) ?? 'null') as { id?: string; t?: number; d?: number } | null;
+      if (!o || o.id !== this.identity(track) || typeof o.t !== 'number' || !Number.isFinite(o.t)) return;
+      const d = this.state.duration || o.d || 0;
+      if (o.t < 3 || (d > 0 && o.t > d - 5)) return;
+      if (!(this.state.duration > 0) && o.d) this.state.duration = o.d;
+      this.state.currentTime = o.t;
+    } catch {
+      /* ignore */
+    }
   }
 
   private bindMedia(el: HTMLAudioElement, add: boolean): void {
@@ -275,6 +344,7 @@ class AudioPlayer {
     this.state.loading = false;
     this.state.failed = false;
     this.state.error = null;
+    this.restorePosition(track);
     this.emit();
   }
 
@@ -301,12 +371,18 @@ class AudioPlayer {
     const idx = this.queue.findIndex((t) => t.id === track.id);
     this.pos = idx < 0 ? 0 : idx;
     this.state.song = this.queue[this.pos] ?? track;
+    // 上次停在随机播放：恢复出来的这首放在洗牌序的第一位（和切到随机时一样）
+    if (this.mode === 'random') {
+      this.order = this.buildRandomOrder(true);
+      this.pos = 0;
+    }
     this.state.currentTime = 0;
     this.state.duration = this.state.song.duration ?? 0;
     this.state.playing = false;
     this.state.loading = false;
     this.state.failed = false;
     this.state.error = null;
+    this.restorePosition(this.state.song);
     this.emit();
   }
 
@@ -404,8 +480,11 @@ class AudioPlayer {
     // 会话恢复（restore）只设状态、不加载音源：第一次点播放时走完整的加载流程（解析音源、卡顿计时），
     // 以前直接对空 src 调 play()，会卡在「播放中 + 加载中」且没有声音
     if (!this.el.getAttribute('src')) {
+      // 会话恢复后的第一次播放：从恢复的位置（或之后拖到的位置）接着放（#220）
+      const at = this.resumeFromState ? this.state.currentTime || 0 : 0;
       // 换歌单后留下的那首（pos < 0）不在队列里：直接加载屏幕上显示的这首
-      if (this.pos < 0) this.loadTrack(this.state.song);
+      if (this.pos < 0) this.loadTrack(this.state.song, at);
+      else if (at > 0 && this.pos < this.order.length && this.queue[this.order[this.pos]!]) this.loadTrack(this.queue[this.order[this.pos]!]!, at);
       else this.loadAtOrder(this.pos);
       return;
     }
@@ -512,6 +591,7 @@ class AudioPlayer {
       }
     }
     this.state.mode = mode;
+    this.savePrefs();
     this.emit();
   }
 
@@ -651,6 +731,7 @@ class AudioPlayer {
   }
 
   private loadTrack(track: Track, at = 0, forceRefresh = false, play = true): void {
+    this.resumeFromState = false;
     const refresh = forceRefresh || this.expired(track);
     const warm=!forceRefresh && this.warm?.key===this.identity(track) && this.warm.track && !this.expired(this.warm.track) && !this.warm.el?.error ? this.warm : null;
     if (warm) this.warm=null;
@@ -742,6 +823,7 @@ class AudioPlayer {
       this.endTrial();
       return;
     }
+    if (Date.now() - this.posSavedAt > 2000) this.savePosition();
     this.emit();
   };
 
@@ -779,6 +861,7 @@ class AudioPlayer {
 
   private onPause = (): void => {
     if (!this.activeSource || !this.el.paused) return;
+    this.savePosition();
     this.state.playing = false;
     if (!this.wantsPlay) this.state.loading = false;
     this.emit();
@@ -820,6 +903,7 @@ class AudioPlayer {
   private onVolume = (): void => {
     this.state.volume = this.el.volume;
     this.state.muted = this.el.muted;
+    this.savePrefs();
     this.emit();
   };
 

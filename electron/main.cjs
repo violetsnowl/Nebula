@@ -1,4 +1,4 @@
-const { app, BrowserWindow, WebContentsView, session, ipcMain, shell, dialog, protocol } = require('electron');
+const { app, BrowserWindow, WebContentsView, session, ipcMain, shell, dialog, protocol, screen } = require('electron');
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
@@ -384,10 +384,58 @@ function createKuwoLoginWindow(cookies) {
   });
 }
 
+/**
+ * 主窗口的大小、位置、是否最大化随重开保留（2026-11-21，#220）：userData/window-state.json。
+ * 上次的位置已经不在任何屏幕上（拔了副屏、改了分辨率）时只沿用大小、交给系统居中。
+ */
+const WINDOW_STATE_FILE = () => path.join(app.getPath('userData'), 'window-state.json');
+function readWindowState() {
+  try {
+    const s = JSON.parse(fs.readFileSync(WINDOW_STATE_FILE(), 'utf8'));
+    const width = Math.max(1024, Math.round(Number(s.width) || 1440));
+    const height = Math.max(700, Math.round(Number(s.height) || 900));
+    const out = { width, height, maximized: s.maximized === true };
+    if (Number.isFinite(s.x) && Number.isFinite(s.y)) {
+      const area = screen.getDisplayMatching({ x: s.x, y: s.y, width, height }).workArea;
+      // 标题栏那一条（顶部 40px）至少有一半落在这块屏幕里，才认上次的位置
+      const visibleW = Math.min(s.x + width, area.x + area.width) - Math.max(s.x, area.x);
+      const titleIn = s.y >= area.y - 10 && s.y + 40 <= area.y + area.height;
+      if (visibleW >= width / 2 && titleIn) Object.assign(out, { x: Math.round(s.x), y: Math.round(s.y) });
+    }
+    return out;
+  } catch {
+    return { width: 1440, height: 900, maximized: false };
+  }
+}
+function trackWindowState(win) {
+  let timer = null;
+  const save = () => {
+    timer = null;
+    if (win.isDestroyed() || win.isMinimized() || win.isFullScreen()) return;
+    const b = win.getNormalBounds();
+    try {
+      fs.writeFileSync(WINDOW_STATE_FILE(), JSON.stringify({ x: b.x, y: b.y, width: b.width, height: b.height, maximized: win.isMaximized() }));
+    } catch {
+      /* 写不进去就下次用默认值 */
+    }
+  };
+  const later = () => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(save, 400);
+  };
+  for (const ev of ['resize', 'move', 'maximize', 'unmaximize']) win.on(ev, later);
+  win.on('close', () => {
+    if (timer) clearTimeout(timer);
+    save();
+  });
+}
+
 function createWindow() {
+  const ws = readWindowState();
   const win = new BrowserWindow({
-    width: 1440,
-    height: 900,
+    width: ws.width,
+    height: ws.height,
+    ...(ws.x !== undefined ? { x: ws.x, y: ws.y } : {}),
     minWidth: 1024,
     minHeight: 700,
     backgroundColor: '#0a0b15',
@@ -399,6 +447,8 @@ function createWindow() {
     },
   });
   mainWindow = win;
+  if (ws.maximized) win.maximize();
+  trackWindowState(win);
   win.on('closed', () => {
     if (mainWindow === win) mainWindow = null;
   });

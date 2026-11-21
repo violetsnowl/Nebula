@@ -1513,6 +1513,25 @@ async function main() {
   const idleOk = idleStart.panel && idleInPanel.listening && idleInPanel.panelStill;
   log('设置面板里静止也进入聆听', JSON.stringify({ idleStart, idleInPanel }));
 
+  // #220 播放偏好随重开保留：音量、静音、播放顺序写进 localStorage，刷新后读回
+  const prefsSet = await page.evaluate(() => {
+    const p = window.__nebula.player;
+    p.setVolume(0.37);
+    if (!p.getState().muted) p.toggleMute();
+    p.setMode('random');
+    return JSON.parse(localStorage.getItem('music-nebula.player') || 'null');
+  });
+  await page.reload({ waitUntil: 'load' });
+  await page.waitForFunction(() => !!window.__nebula?.player, null, { timeout: 10000 });
+  const prefsBack = await page.evaluate(() => {
+    const s = window.__nebula.player.getState();
+    return { volume: s.volume, muted: s.muted, mode: s.mode };
+  });
+  const prefsOk =
+    prefsSet?.volume === 0.37 && prefsSet?.muted === true && prefsSet?.mode === 'random' &&
+    Math.abs(prefsBack.volume - 0.37) < 0.001 && prefsBack.muted === true && prefsBack.mode === 'random';
+  log('播放偏好随重开保留（音量 / 静音 / 顺序）', JSON.stringify({ prefsSet, prefsBack }));
+
   log('演示音频由本地 WAV 代替的次数(应≥1)', demoAudioServed);
   log('控制台错误数', errors.length);
   if (errors.length) console.log(errors.join('\n'));
@@ -1520,6 +1539,7 @@ async function main() {
   await browser.close();
 
   const failed =
+    !prefsOk ||
     !romanOk ||
     !lyricVerOk ||
     !lapseOk ||
