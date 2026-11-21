@@ -17,7 +17,7 @@ import { preferredQuality } from '../../lib/preferences';
 import type { ImportStatus } from '../../lib/playlistTypes';
 import { getSpaceLab, registerSpaceCommand, setSpaceLab, useSpaceLab, type StageLayout } from '../../lib/space/lab';
 import { buildChroma, buildCluster, buildRandom, queryRect, zoomFloor, type SpaceWorld } from '../../lib/space/world';
-import { camCenter, lensDelta, project, worldPerPixel, type Proj } from '../../lib/space/lens';
+import { applyXf, camCenter, lensDelta, project, worldPerPixel, type Proj, type ScreenXf } from '../../lib/space/lens';
 import { ensureTones, oklabToRgb, toneOf, useToneProgress } from '../../lib/space/tone';
 import { airAlpha, domShare, frameAlphaBuffer, MIN_CARD_PX, setActiveWorld } from '../../lib/space/active';
 import { StarField, type StarFrame } from '../../lib/space/stars';
@@ -223,16 +223,20 @@ export function useStage({
     mountedA.fill(0);
     const p = projRef.current;
     const pool = pickPoolRef.current;
+    // 聆听「沉降」：整片星云往下沉、后退（缩到 86%、下移 4vh，中心在 50% / 45%），在屏幕坐标上算（见 lens.applyXf）
+    const sinkK = listenBus.style === 'sink' ? listenBus.k : 0;
+    const xf: ScreenXf | null = sinkK > 0.0005 ? { f: 1 - 0.14 * sinkK, ox: vw / 2, oy: vh * 0.45, ty: vh * 0.04 * sinkK } : null;
+    const qk = xf ? 1 / xf.f : 1; // 缩小后一屏装得下更大一片世界，查询范围跟着放大
     let np = 0;
     if (z > 0.12) {
       const was = visibleRef.current;
       const cand = candRef.current;
       cand.length = 0;
       // 画布首尾相接（#136）：查镜头周围一个屏幕大小（加一圈余量）的矩形，取每首歌离镜头最近的那一份
-      queryRect(world, cx, cy, vw / (2 * z) + QUERY_PAD + 120 / z, vh / (2 * z) + QUERY_PAD * 1.2 + 120 / z, cand);
+      queryRect(world, cx, cy, (vw * qk) / (2 * z) + QUERY_PAD + 120 / z, (vh * qk) / (2 * z) + QUERY_PAD * 1.2 + 120 / z, cand);
       for (const id of cand) {
         if (id >= revealedRef.current) continue;
-        project(world.px[id]!, world.py[id]!, frame, delta, p, world.period);
+        applyXf(project(world.px[id]!, world.py[id]!, frame, delta, p, world.period), xf);
         const size = CARD_WIDTH * p.s;
         // 小于 56px 的交给画布（这时 DOM 卡片本来就淡到 0 了，挂着只是白白重算样式）
         if (size < MIN_CARD_PX) continue;
@@ -282,7 +286,7 @@ export function useStage({
     const spawnSet = spawnFromCenterRef.current;
     const partK = listenBus.style === 'part' ? listenBus.k : 0;
     const ebbK = listenBus.style === 'ebb' ? listenBus.k : 0;
-    partActiveRef.current = partK > 0 || ebbK > 0;
+    partActiveRef.current = partK > 0 || ebbK > 0 || xf !== null;
     const metaPool = metaPoolRef.current;
     let metaN = 0;
     const liveA = frameAlphaBuffer(n);
@@ -361,6 +365,7 @@ export function useStage({
     sf.mounted = mountedA;
     sf.boxH = cardBoxHRef.current;
     sf.match = matchSetRef.current;
+    sf.xf = xf;
     sf.currentId = currentSongIdRef.current;
     sf.toneVersion = hazeVersionRef.current;
     starsRef.current?.draw(sf);
@@ -577,11 +582,11 @@ export function useStage({
 
   useEffect(() => initGlassGlow(), []);
 
-  // 交接进行中每帧刷新一次卡片位置（「散开」「退潮」会移动卡片；切走时再刷新一次把卡片放回原位）
+  // 交接进行中每帧刷新一次卡片位置（「沉降」「散开」「退潮」都会移动卡片；切走时再刷新一次把卡片放回原位）
   useEffect(
     () =>
       onListenFrame(() => {
-        if (listenBus.style === 'part' || listenBus.style === 'ebb' || partActiveRef.current) controllerRef.current?.refresh();
+        if (listenBus.style === 'sink' || listenBus.style === 'part' || listenBus.style === 'ebb' || partActiveRef.current) controllerRef.current?.refresh();
       }),
     [controllerRef],
   );

@@ -79,6 +79,26 @@ export function project(wx: number, wy: number, f: CamLike, delta: number, out: 
   return out;
 }
 
+/**
+ * 投影之后再做的一次屏幕变换（聆听「沉降」：整片星云以 (ox, oy) 为中心缩到 f 倍、再下移 ty）。
+ * 以前沉降是给整个舞台容器做 CSS 缩放，容器自带裁剪、画布也只有一屏大，缩小后四周露空（2026-11-21）；
+ * 改成在屏幕坐标上算，挂卡片、画小封面都按变换后的位置判断，屏幕外的卡片自然补进来。u 不变（透明度、层级照旧按原投影）。
+ */
+export interface ScreenXf {
+  f: number;
+  ox: number;
+  oy: number;
+  ty: number;
+}
+
+export function applyXf(p: Proj, xf: ScreenXf | null): Proj {
+  if (!xf) return p;
+  p.sx = xf.ox + (p.sx - xf.ox) * xf.f;
+  p.sy = xf.oy + (p.sy - xf.oy) * xf.f + xf.ty;
+  p.s *= xf.f;
+  return p;
+}
+
 /** 屏幕上某点附近，拖动 1 屏幕像素对应多少世界坐标（拖到哪里，手下的那张卡就跟着手走）。 */
 export function worldPerPixel(sx: number, sy: number, f: CamLike, delta: number): number {
   const hw = f.vw / 2;

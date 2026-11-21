@@ -1,6 +1,6 @@
 import type { Track } from '../catalog';
 import { CARD_HEIGHT, CARD_WIDTH } from '../layout';
-import { project, type CamLike, type Proj } from './lens';
+import { applyXf, project, type CamLike, type Proj, type ScreenXf } from './lens';
 import { thumbOf } from './thumbs';
 import { oklabToRgb, toneOf } from './tone';
 import { placeholderFill } from '../coverPlaceholder';
@@ -37,6 +37,8 @@ export interface StarFrame {
   boxH: number;
   match: ReadonlySet<number> | null;
   currentId: number | null;
+  /** 投影之后的屏幕变换（聆听「沉降」），没有为 null */
+  xf: ScreenXf | null;
   /** 封面色调的版本（取完一批加一） */
   toneVersion: number;
 }
@@ -92,7 +94,7 @@ export class StarField {
     const n = f.world.cards.length;
     for (let i = 0; i < n; i++) {
       if (f.mounted[i]! > 0.5) continue;
-      project(f.world.px[i]!, f.world.py[i]!, f.cam, f.delta, p, f.world.period);
+      applyXf(project(f.world.px[i]!, f.world.py[i]!, f.cam, f.delta, p, f.world.period), f.xf);
       const size = CARD_WIDTH * p.s;
       if (size < 8) continue;
       const cy = this.coverY(p, f.boxH);
@@ -120,7 +122,7 @@ export class StarField {
     for (let i = 0; i < n; i++) {
       const left = 1 - mounted[i]!;
       if (left <= 0.02) continue;
-      project(world.px[i]!, world.py[i]!, cam, delta, p, world.period);
+      applyXf(project(world.px[i]!, world.py[i]!, cam, delta, p, world.period), f.xf);
       const size = Math.max(3, CARD_WIDTH * p.s);
       const half = size * 0.6 + 4;
       if (p.sx < -half || p.sy < -half || p.sx > cam.vw + half || p.sy > cam.vh + half) continue;
@@ -165,7 +167,7 @@ export class StarField {
       for (const c of world.clusters) {
         const L = c.label;
         if (!L) continue;
-        project(L.x, L.y, cam, delta, p, world.period);
+        applyXf(project(L.x, L.y, cam, delta, p, world.period), f.xf);
         if (p.sx < -400 || p.sy < -80 || p.sx > cam.vw + 400 || p.sy > cam.vh + 80) continue;
         let size = labelFontPx(L.font, p.s);
         ctx.font = `600 ${size.toFixed(1)}px Inter, "Segoe UI", "Noto Sans SC", "Microsoft YaHei", sans-serif`;

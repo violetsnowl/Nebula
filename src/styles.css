@@ -4205,11 +4205,15 @@ body {
 }
 
 /* 三种让开各有情绪（#124）：沉降是暗，散开是让，退潮是淡。
-   沉降：整片星云往下沉、后退、压暗 */
+   沉降：整片星云往下沉、后退、压暗。下沉和后退（缩到 86%、下移 4vh）由舞台帧循环在屏幕坐标上算
+   （useStage 的 sinkK / lens.applyXf）：不再给 .stage-3d 整体缩放——它自带裁剪、星层画布也只有一屏大，
+   缩小后四周露空、边上的卡片被截断（2026-11-21）。这里只压暗；交接进行中关掉位移过渡，免得卡片拖在曲线后面 */
 .app[data-listen-style='sink'][data-lk] .stage-3d {
-  transform: translateY(calc(4vh * var(--lk))) scale(calc(1 - 0.14 * var(--lk)));
-  transform-origin: 50% 45%;
   filter: brightness(calc(1 - 0.62 * var(--lk))) saturate(calc(1 - 0.45 * var(--lk)));
+}
+
+.app[data-listen-style='sink'][data-lk] .music-card {
+  transition: filter 0.45s ease;
 }
 
 /* 散开：卡片位移由舞台帧循环计算；交接进行中关掉位移过渡，免得卡片拖在曲线后面 */
