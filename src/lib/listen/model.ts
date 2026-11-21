@@ -16,7 +16,7 @@ export interface EngineUnit {
   cjk: boolean;
   /** 这个单位后面是否跟空格（对照该行 text 推断，YRC 的英文 word 常被 trim 掉空格）。 */
   sp: boolean;
-  /** 长音：逐字时长 ≥1000ms，且是中日韩单字或 2–7 个字母的拉丁词。 */
+  /** 长音（规则见 markEmph：门槛随这首歌的字速，多字单位只给最后一个字，每句最多 2 个）。 */
   emph: boolean;
 }
 
@@ -92,16 +92,91 @@ export function detectScript(lines: LyricLineUI[]): 'zh' | 'en' | 'ja' | 'ko' {
   return 'en';
 }
 
-/** 长音判定：只看逐字时长（≥1000ms）+ 字数规则。 */
-function isEmph(t: string, s: number, e: number, cjk: boolean): boolean {
-  if (e - s < 1.0) return false;
-  if (cjk) return [...t.replace(/[^\p{L}\p{N}]/gu, '')].length === 1;
-  const letters = t.replace(/[^A-Za-z]/g, '').length;
-  return letters >= 2 && letters <= 7;
+/**
+ * 长音判定（2026-11-21 起，#218；用户在真实缓存 113 首上看过统计后拍板）。以前固定「唱满 1 秒」：
+ * 慢歌长音扎堆、快歌一个没有；韩语 / 部分日语按词给时间永远不触发；只认 a–z、单字母不算。现在：
+ *   - 门槛跟着这首歌的字速走：max(0.8s, 3 × 每字中位时长)，但唱满 1.3s 一定算；
+ *   - 中日韩多字单位估算最后一个字唱了多久（总时长 − 前面几个字 × 每字中位时长），够长就把这个单位拆开、只给最后一个字长音；
+ *   - 拉丁词认所有字母（含重音字母、西里尔字母），单字母（"I"）也算，长词不再排除；
+ *   - 单个字超过 10 秒不算（来源把间奏 / 下一段并进了这个字，实测 14–33 秒的都是这种；4–10 秒的大多是真长音）；
+ *   - 每句最多 2 个，挑最长的。
+ */
+const EMPH_FLOOR = 0.8;
+const EMPH_MUL = 3;
+const EMPH_SURE = 1.3;
+const EMPH_CAP = 10;
+const EMPH_PER_LINE = 2;
+/** 没给字速时的默认值：门槛正好 1 秒（和旧规则一致）。 */
+const DEFAULT_PACE = 1 / 3;
+
+const voiced = (t: string) => [...t.replace(/[^\p{L}\p{N}]/gu, '')].length;
+
+/** parseYrcText 对没有逐字数据的行会把整行塞成「一个词」：这不是真的逐字。 */
+const fakeWords = (l: LyricLineUI) => {
+  const ws = l.words ?? [];
+  return ws.length === 0 || (ws.length === 1 && [...ws[0]!.text.trim()].length > 1);
+};
+
+/**
+ * 一首歌的字速：每个字的中位时长（秒），中日韩多字单位按字数摊开。长音门槛按它算；
+ * 听音空间、星云歌词、设置预览都要用同一首歌的值（按整首算，不按一句算）。
+ */
+export function songPace(lines: LyricLineUI[]): number {
+  const per: number[] = [];
+  for (const l of lines) {
+    if (fakeWords(l)) continue;
+    for (const w of l.words!) {
+      const t = (w.text ?? '').trim();
+      const n = voiced(t);
+      if (!n || !(w.duration > 0)) continue;
+      const k = CJK.test(t) ? n : 1;
+      for (let i = 0; i < k; i++) per.push(w.duration / 1000 / k);
+    }
+  }
+  if (per.length < 8) return DEFAULT_PACE;
+  per.sort((a, b) => a - b);
+  return per[Math.floor(per.length / 2)]!;
+}
+
+/** 给一句的单位标长音（见上面的规则）；中日韩多字单位命中时拆成「前面几个字 + 最后一个字」，返回新的单位列表。 */
+function markEmph(units: EngineUnit[], pace: number): EngineUnit[] {
+  const th = Math.min(EMPH_SURE, Math.max(EMPH_FLOOR, EMPH_MUL * pace));
+  const cand: { u: EngineUnit; hold: number }[] = [];
+  for (const u of units) {
+    const d = u.e - u.s;
+    if (d > EMPH_CAP) continue;
+    const n = voiced(u.t);
+    if (!n) continue;
+    const hold = u.cjk ? d - (n - 1) * pace : d;
+    if (hold >= th) cand.push({ u, hold });
+  }
+  if (!cand.length) return units;
+  cand.sort((a, b) => b.hold - a.hold);
+  const hit = new Map(cand.slice(0, EMPH_PER_LINE).map((c) => [c.u, c.hold]));
+  const out: EngineUnit[] = [];
+  for (const u of units) {
+    const hold = hit.get(u);
+    if (hold === undefined) {
+      out.push(u);
+      continue;
+    }
+    if (!u.cjk || voiced(u.t) === 1) {
+      out.push({ ...u, emph: true });
+      continue;
+    }
+    // 最后一个字（连同它后面的标点）单独成一个长音单位，前面的字按字速唱完
+    const chs = [...u.t];
+    let cut = chs.length - 1;
+    while (cut > 0 && !/[\p{L}\p{N}]/u.test(chs[cut]!)) cut--;
+    const mid = u.e - hold;
+    out.push({ ...u, t: chs.slice(0, cut).join(''), e: mid, sp: false, emph: false });
+    out.push({ ...u, t: chs.slice(cut).join(''), s: mid, cjk: CJK.test(chs.slice(cut).join('')), emph: true });
+  }
+  return out;
 }
 
 /** 逐字句的单位列表。 */
-function buildUnits(line: LyricLineUI): EngineUnit[] {
+function buildUnits(line: LyricLineUI, pace = DEFAULT_PACE): EngineUnit[] {
   const words = line.words ?? [];
   const text = line.text ?? '';
   const units: EngineUnit[] = [];
@@ -137,12 +212,9 @@ function buildUnits(line: LyricLineUI): EngineUnit[] {
       if (!a.cjk && !b.cjk) a.sp = true;
     }
   }
-  for (const u of units) {
-    u.sp = u.sp && !/[（(]$/.test(u.t);
-    u.emph = isEmph(u.t, u.s, u.e, u.cjk);
-  }
+  for (const u of units) u.sp = u.sp && !/[（(]$/.test(u.t);
   if (units.length) units[units.length - 1]!.sp = false;
-  return units;
+  return markEmph(units, pace);
 }
 
 /** 和声 / 对唱归属 → 引擎条目上的可选字段。和声没有长音效果（浮起、放大、白光只属于主唱），units 的 emph 一律关掉。 */
@@ -159,17 +231,16 @@ function layersOf(l: LyricLineUI): Pick<EngineLine, 'bg' | 'agent'> {
 
 /**
  * 一句歌词 → 引擎句子（逐字 / 整句）。nextStart = 下一句开始（秒），整句没有时长时用它当结束。
- * 听音空间（buildEntries）和星云上的空域歌词（LyricsLayer）共用。
+ * 听音空间（buildEntries）和星云上的空域歌词（LyricsLayer）共用。pace = 这首歌的字速（songPace），长音门槛按它算。
  */
-export function toEngineLine(l: LyricLineUI, nextStart?: number): EngineLine {
+export function toEngineLine(l: LyricLineUI, nextStart?: number, pace = DEFAULT_PACE): EngineLine {
   const tr = l.translation?.trim() || undefined;
   const ro = l.roman?.trim() || undefined;
   const rb = l.ruby?.length ? l.ruby : undefined;
   const ja = l.ja || undefined;
   // parseYrcText 对没有逐字数据的行会把整行塞成「一个词」：这不是真的逐字，按整句处理
   const ws = l.words ?? [];
-  const fake = ws.length === 0 || (ws.length === 1 && [...ws[0]!.text.trim()].length > 1);
-  const units = fake ? [] : buildUnits(l);
+  const units = fakeWords(l) ? [] : buildUnits(l, pace);
   if (units.length) {
     const s = units[0]!.s;
     const e = units.reduce((m, u) => Math.max(m, u.e), s);
@@ -188,7 +259,8 @@ export function buildEntries(lines: LyricLineUI[]): EngineEntry[] {
   const out: EngineEntry[] = [];
   // 先转成句子，再统一插间奏
   const src = lines.filter((l) => (l.text ?? '').trim() !== '' || (l.words?.length ?? 0) > 0);
-  const body: EngineLine[] = src.map((l, i) => toEngineLine(l, src[i + 1] ? src[i + 1]!.timeMs / 1000 : undefined));
+  const pace = songPace(src);
+  const body: EngineLine[] = src.map((l, i) => toEngineLine(l, src[i + 1] ? src[i + 1]!.timeMs / 1000 : undefined, pace));
   body.sort((a, b) => a.s - b.s);
   if (body.length && body[0]!.s > GAP_MIN) out.push({ kind: 'gap', s: 0, e: body[0]!.s });
   for (let i = 0; i < body.length; i++) {

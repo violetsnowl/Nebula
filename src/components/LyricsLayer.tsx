@@ -4,7 +4,7 @@ import { useAudioPlayer } from '../lib/audio/useAudioPlayer';
 import { useInterfaceSettingsContext } from '../hooks/interfaceSettings/InterfaceSettingsContext';
 import { currentLyricIndex, type LyricLineUI } from '../lib/lyrics';
 import { listenBus } from '../lib/listenMode';
-import { detectScript, toEngineLine, type EngineLine } from '../lib/listen/model';
+import { detectScript, songPace, toEngineLine, type EngineLine } from '../lib/listen/model';
 import { useListenSettings } from '../lib/listen/settings';
 import {
   TYPO,
@@ -194,10 +194,11 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
   // 每句的引擎数据（逐字单位 / 整句、快歌密度），与 lines 下标对齐；不可用的行为 null
   const engineLines = useMemo(() => {
     const out: Array<EngineLine | null> = new Array(lines.length).fill(null);
+    const pace = songPace(lines); // 长音门槛按整首歌的字速（与听音空间同一个值）
     for (let i = 0; i < lines.length; i++) {
       if (!usable(lines[i])) continue;
       const n = usableNext(lines, i);
-      out[i] = toEngineLine(lines[i]!, n >= 0 ? lines[n]!.timeMs / 1000 : undefined);
+      out[i] = toEngineLine(lines[i]!, n >= 0 ? lines[n]!.timeMs / 1000 : undefined, pace);
     }
     return out;
   }, [lines]);

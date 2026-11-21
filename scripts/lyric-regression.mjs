@@ -235,6 +235,36 @@ await test('#199 前端：normalizeLyricLines 把 agent / bg 带出来（防御�
  const entries=model.buildEntries([{timeMs:1000,text:'甲',words:[{text:'甲',startMs:1000,duration:500}],bg:{text:'和',words:[{text:'和',startMs:2000,duration:1500}]}},{timeMs:20000,text:'乙'}]);
  const gap=entries.find((e,i)=>e.kind==='gap'&&i>0);assert.ok(gap);assert.equal(gap.s,3.5);
 });
+await test('#218 长音判定：门槛随字速（max(0.8, 3×每字中位)，满 1.3 秒一定算）、中日韩多字单位只给最后一个字、所有字母和单字母、超过 10 秒不算、每句最多 2 个',()=>{
+ // 一句逐字：[文字, 时长秒]，从 10 秒起依次排
+ const L=(ws)=>{let t=10000;return {timeMs:t,text:ws.map(w=>w[0]).join(' '),words:ws.map(([text,d])=>{const w={text,startMs:t,duration:Math.round(d*1000)};t+=w.duration;return w;})};};
+ // 句首垫一个 0.1 秒的字：只有一个多字词的行会被当成「没有逐字」（parseYrcText 的整行假词）
+ const E=(ws,pace)=>model.toEngineLine(L([['·',0.1],...ws]),undefined,pace).units.slice(1);
+ const emph=(us)=>us.filter(u=>u.emph).map(u=>u.t);
+ // 字速：多字单位按字数摊开取中位
+ assert.ok(Math.abs(model.songPace([L([['我',0.2],['们',0.2],['一起',0.4],['走',0.2],['吧',0.2],['好',0.2],['不',0.2],['好',0.2]])])-0.2)<1e-9);
+ assert.ok(Math.abs(model.songPace([L([['短',1]])])-1/3)<1e-9,'逐字太少时用默认字速（门槛 1 秒）');
+ // 快歌（每字 0.2s）：0.85s 就算；慢歌（每字 0.5s）：1.2s 不算、1.35s 算（满 1.3 秒一定算）
+ assert.deepEqual(emph(E([['甲',0.2],['乙',0.85]],0.2)),['乙']);
+ assert.deepEqual(emph(E([['甲',0.5],['乙',1.2]],0.5)),[]);
+ assert.deepEqual(emph(E([['甲',0.5],['乙',1.35]],0.5)),['乙']);
+ // 中日韩多字单位：估算最后一个字的时长，够长就拆开只给最后一个字
+ const ko=E([['나도',0.6],['싶어',1.5]],0.3);
+ assert.deepEqual(ko.map(u=>u.t),['나도','싶','어']);assert.deepEqual(emph(ko),['어']);
+ const tail=ko.find(u=>u.emph);assert.ok(Math.abs(tail.e-tail.s-1.2)<1e-6,'最后一个字 = 总时长 − 前面字 × 字速');
+ assert.equal(ko.map(u=>u.t).join(''),'나도싶어','拆开后文字不变');
+ assert.deepEqual(emph(E([['돌아보면',1.9]],0.4)),[],'4 个字 1.9 秒：平均每字不长，不算');
+ assert.deepEqual(emph(E([['振り払ってい',1.1]],0.3)),[],'词组按词给时间：不算');
+ assert.deepEqual(E([['会いたい、',2.0]],0.3).map(u=>u.t),['会いた','い、'],'最后一个字连同后面的标点一起拆出');
+ // 拉丁：单字母、长词、重音字母都算；超过 10 秒不算
+ assert.deepEqual(emph(E([['I',1.1],['love',0.3]],0.3)),['I']);
+ assert.deepEqual(emph(E([['invitation',2.0]],0.3)),['invitation']);
+ assert.deepEqual(emph(E([['corazón',1.2]],0.3)),['corazón']);
+ assert.deepEqual(emph(E([['live',32.7]],0.3)),[],'来源把间奏并进了这个字');
+ assert.deepEqual(emph(E([['side',6.1]],0.3)),['side'],'6–10 秒的真长音照算');
+ // 每句最多 2 个，挑最长的
+ assert.deepEqual(emph(E([['oh',1.1],['my',1.5],['love',1.3],['yeah',0.2]],0.3)),['my','love']);
+});
 await test('#202 只有左括号的句子补上右括号：正文和同一句的逐字都补，成对的、句中括号、普通句不动',()=>{
  const l={raw:'',lines:[{timeMs:1000,text:'（编的和声'},{timeMs:5000,text:'(made up echo'},{timeMs:9000,text:'（成对的）'},{timeMs:13000,text:'编的（句中'},{timeMs:17000,text:'普通句'}],
   yrc:['[1000,2000](1000,1000,0)（(2000,1000,0)编的和声','[5000,1000](5000,1000,0)(made up echo','[9000,1000](9000,1000,0)（成对的）'].join('\n')};

@@ -17,7 +17,7 @@ import { IconCheck, IconChevronLeft, IconChevronRight, IconExternal, IconImage, 
 import { setListenSettings as setListenSpaceSettings, useListenSettings as useListenSpaceSettings } from '../lib/listen/settings';
 import { ListenPreview } from './listen/ListenPreview';
 import { setSpaceLab, useSpaceLab, type StageLayout } from '../lib/space/lab';
-import { detectScript, toEngineLine, type EngineLine } from '../lib/listen/model';
+import { detectScript, songPace, toEngineLine, type EngineLine } from '../lib/listen/model';
 import { TYPO, measureUnits, renderUnits, unitFrame, waveOf, wholeLift, type UnitRt } from '../lib/listen/words';
 import './listen/lyric-words.css';
 import './dock/right-panel.css';
@@ -1205,13 +1205,14 @@ function LyricPreview({
   const pickRef = useRef(pick);
   pickRef.current = pick;
 
+  const pace = useMemo(() => songPace(lines), [lines]);
   const line: EngineLine = useMemo(() => {
     // 切歌先清空/替换歌词，pick 要到 effect 才更新；旧下标不保证仍存在。
     const current = lines[pick.idx];
     if (!current) return SAMPLE_LINE;
     const nx = nextUsable(lines, pick.idx);
-    return toEngineLine(current, nx ? nx.timeMs / 1000 : undefined);
-  }, [lines, pick.idx]);
+    return toEngineLine(current, nx ? nx.timeMs / 1000 : undefined, pace);
+  }, [lines, pick.idx, pace]);
   const lineDataRef = useRef(line);
   lineDataRef.current = line;
   const nextText = pick.idx >= 0 ? (nextUsable(lines, pick.idx)?.text ?? '') : PREVIEW_NEXT;
