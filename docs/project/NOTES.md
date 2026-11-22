@@ -25,6 +25,13 @@
 - **构建产物在仓库外**：`pnpm build` 输出到同级目录 `../nebula-outputs/index.html`（本机 `E:\CUFE\vibecoding\nebula-outputs`）；而 `pnpm qa` 正是读取这个文件，所以**必须先 build 再 qa**。
 - 项目已接入 git；远程为 `github.com/violetsnowl/Nebula`（2026-11-14 改名；旧地址 `violetsnowl/nebula`、`a161858970-ux/nebula` 自动重定向，本地 origin 已更新）；文档随提交维护（docs/）。
 
+### 跨平台专辑兜底（2026-11-21，#223）
+
+- **QQ 专辑搜索的 type 是 8，不是 10**：`client_search_cp` 传 `t=2`、`t=10` 都不返回专辑（`data.album` 缺失），只有 `t=8` 有。字段是 `albumMID / albumName / singerName / publicTime / song_count`，歌名里带 `<em>` 高亮标签要清。搜索词带歌手名召回更准（「范特西 周杰伦」）。
+- **降权乘出来的分数会正好压在阈值上**：旧 `resolveAlbumByTitle` 在歌手对不上时乘 0.4，再 `filter(score > 0.4)`——乘完正好 0.4，一条不剩。实测搜《范特西》+ 周杰伦返回 null 就是这个原因。改打分规则时，降权系数和阈值要一起看，别让「正好等于」变成静默全灭。
+- **「有专辑接口」不等于「能用」**：`fetchAlbumDetail` 只在有 `fetchAlbumDetail` 的适配器上生效，酷狗 / 酷我 / 波点 / 汽水都没有；前端却对每个平台都调这个 IPC，所以这些平台的专辑页本来就是空白，不是接口坏了。
+- **专辑名带括注会优先撞上豪华版 / 精选集**：网易云搜 `1989` 会把 `1989 (Deluxe)` 排在前面。`albumTitleKey` 去掉括注是为了让「同名不同写法」能对上，代价是同名不同版更容易混淆；目前靠年份 ±1 和曲目数接近兜，仍不完美。
+
 ### 前端小坑（2026-11-21，#217–#221）
 
 - **给带裁剪的容器整体缩放会露空**（#217）：`.stage-3d` 自带 `overflow:hidden`，星层画布和挂卡片范围都只有一屏大；整体 CSS `scale(0.86)` 后可见范围跟着缩，四周露空、边缘卡片被切。要「整片后退」就在舞台帧循环里按屏幕坐标算（`lens.applyXf`），和散开 / 退潮同一条路。

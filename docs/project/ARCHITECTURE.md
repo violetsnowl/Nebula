@@ -156,6 +156,7 @@ flowchart TD
   - 酷狗歌单的歌名常是「歌手、歌手 - 歌名」，映射时去掉（#211，`stripKugouFileName`；歌单里约三分之一的歌）。
 - **关键约定**：歌词、评论、详情都以**实际在放的那首**为准（前端 `streamTrack`），不是歌单里的原曲。原曲只作为 `origin` 提供查询用的 id（#195 起，歌词用）。
 - **评论 / 详情**（`LyricService.fetchComments` / `fetchSongDetail`）：依次兜底；翻页沿用第 0 页定下的来源。
+- **专辑页**（#223，`LyricService.fetchAlbumDetail`）：本平台有 `fetchAlbumDetail` 且取到曲目就直接用；取不到（接口异常、下架）或该平台根本没有这个接口（酷狗 / 酷我 / 波点 / 汽水 / YouTube Music / Apple Music / Spotify 的专辑接口未接）时，按「专辑名 + 歌手」转到网易云 → QQ ——这两家能直接开详情页，最多试 3 个候选，拿到有曲目的那张为止，返回标「来自 X」。挑哪张由 `services/albumMatch.ts` 决定（专辑名相似度 + 歌手命中 + 年份 ±1 + 曲目数接近）；歌手对不上、名字只是包含关系的候选不接受。前端把专辑名和歌手一起传下来（`nebula:album-detail` 的 `albumName` / `artistName`），否则转译只能靠本平台返回的专辑信息。
 
 ```mermaid
 flowchart TD

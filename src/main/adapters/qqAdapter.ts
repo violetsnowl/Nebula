@@ -229,6 +229,42 @@ export class QqAdapter implements PlatformAdapter {
   }
 
   /**
+   * 关键词搜专辑（供跨平台专辑转译与专辑页兜底）：
+   * client_search_cp 的 t=8 才是专辑搜索（t=10 / 默认 0 都不返回专辑），字段为
+   * albumMID / albumName / singerName / publicTime / song_count。
+   */
+  async searchAlbums(keyword: string, pageSize = 8): Promise<AlbumSummary[]> {
+    try {
+      const data = await this.http.requestJson<{
+        data?: { album?: { list?: Array<Record<string, any>> } };
+      }>(
+        `https://c.y.qq.com/soso/fcgi-bin/client_search_cp?w=${encodeURIComponent(keyword)}&t=8&p=1&n=${pageSize}&format=json&inCharset=utf-8&outCharset=utf-8&cr=1`,
+        { platform: 'qq' },
+      );
+      return (data?.data?.album?.list ?? [])
+        .map((a) => {
+          const mid = String(a.albumMID ?? a.album_mid ?? '');
+          const singers = Array.isArray(a.singer_list)
+            ? a.singer_list.map((s: Record<string, any>) => String(s?.name ?? '')).filter(Boolean)
+            : [];
+          return {
+            platform: 'qq' as const,
+            id: mid,
+            name: String(a.albumName ?? a.album_name ?? ''),
+            cover: mid ? `https://y.gtimg.cn/music/photo_new/T002R500x500M000${mid}.jpg` : '',
+            artist: singers.length ? singers.join('/') : String(a.singerName ?? a.singer_name ?? ''),
+            year: a.publicTime ? Number(String(a.publicTime).slice(0, 4)) || undefined : undefined,
+            songCount: Number(a.song_count ?? a.songCount) || undefined,
+          };
+        })
+        .filter((a) => a.id && a.name);
+    } catch (err) {
+      console.warn("[QqAdapter] searchAlbums failed:");
+      return [];
+    }
+  }
+
+  /**
    * QQ 逐字歌词：music.musichallSong.PlayLyricInfo/GetPlayLyricInfo
    * 返回 lyric(LRC) / trans / roma / qrc（均可能 base64），qrc 作为字级歌词返回，
    * 前端会把 qrc 映射进 yrc 统一走 parseYrcText。

@@ -582,7 +582,7 @@ function ArtistPanel({
   artistId: string;
   artistName: string;
   onPlayTrack: (track: DesktopTrack) => void;
-  onOpenAlbum: (platform: string, albumId: string, albumName: string) => void;
+  onOpenAlbum: (platform: string, albumId: string, albumName: string, artistName?: string) => void;
   onClose: () => void;
 }) {
   const [info, setInfo] = useState<DesktopArtistInfo | null>(null);
@@ -707,7 +707,7 @@ function ArtistPanel({
               type="button"
               key={a.id}
               className="mdl-album"
-              onClick={() => onOpenAlbum(platform, a.id, a.name)}
+              onClick={() => onOpenAlbum(platform, a.id, a.name, a.artist)}
               data-tip={`查看专辑《${a.name}》`}
             >
               {a.cover ? (
@@ -730,12 +730,14 @@ function AlbumPanel({
   platform,
   albumId,
   albumName,
+  artistName,
   onPlayTrack,
   onClose,
 }: {
   platform: string;
   albumId: string;
   albumName: string;
+  artistName?: string;
   onPlayTrack: (track: DesktopTrack) => void;
   onClose: () => void;
 }) {
@@ -748,7 +750,8 @@ function AlbumPanel({
     }
     let cancelled = false;
     window.nebulaAPI!
-      .albumDetail(platform, albumId)
+      // 带上专辑名和歌手：本平台取不到时，后端按这两个线索转到别家（专辑页兜底）
+      .albumDetail(platform, albumId, { name: albumName, artist: artistName })
       .then((res) => {
         if (cancelled) return;
         if (res.ok && res.data) setDetail(res.data);
@@ -758,9 +761,10 @@ function AlbumPanel({
     return () => {
       cancelled = true;
     };
-  }, [platform, albumId]);
+  }, [platform, albumId, albumName, artistName]);
 
-  const meta = [detail?.artist, detail?.year, detail ? `${detail.tracks.length} 首` : '']
+  const borrowed = detail?.source?.fallback ? sourceLabel(detail.source.platform) : '';
+  const meta = [detail?.artist, detail?.year, detail ? `${detail.tracks.length} 首` : '', borrowed]
     .filter((x) => x !== undefined && x !== null && x !== '')
     .join(' · ');
   const head = <HeroBand kicker="专辑" title={detail?.name || albumName} cover={detail?.cover} meta={meta} />;
@@ -802,6 +806,8 @@ export interface InfoPaneState {
   artistName?: string;
   albumId?: string;
   albumName?: string;
+  /** 专辑歌手（专辑页兜底时按它校验同名专辑，避免串到别人的同名专辑）。 */
+  albumArtist?: string;
 }
 
 /**
@@ -846,7 +852,16 @@ export function InfoPane({
   else if (pane.kind === 'artist' && pane.platform && pane.artistId)
     body = <ArtistPanel platform={pane.platform} artistId={pane.artistId} artistName={pane.artistName ?? ''} onOpenAlbum={onOpenAlbum} onPlayTrack={onPlayArtistTrack} onClose={onBack} />;
   else if (pane.kind === 'album' && pane.platform && pane.albumId)
-    body = <AlbumPanel platform={pane.platform} albumId={pane.albumId} albumName={pane.albumName ?? ''} onPlayTrack={onPlayArtistTrack} onClose={onBack} />;
+    body = (
+      <AlbumPanel
+        platform={pane.platform}
+        albumId={pane.albumId}
+        albumName={pane.albumName ?? ''}
+        artistName={pane.albumArtist}
+        onPlayTrack={onPlayArtistTrack}
+        onClose={onBack}
+      />
+    );
   return <PresentCtx.Provider value="pane">{body}</PresentCtx.Provider>;
 }
 
@@ -902,6 +917,7 @@ export function InfoModals({
         platform={modal.platform}
         albumId={modal.albumId}
         albumName={modal.albumName ?? ''}
+        artistName={modal.albumArtist}
         onPlayTrack={(t) => {
           onPlayArtistTrack(t);
           onClose();

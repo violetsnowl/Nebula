@@ -6,6 +6,33 @@
 
 ---
 
+## #223 — 2026-11-21 — 专辑页跨平台兜底（矩阵缺陷清单第 2 条）
+
+**背景**：矩阵「内容页」里专辑页除了网易云 / QQ 之外全写着「→ 按专辑名搜网易云」，而网易云 / QQ 本平台取失败时（歌下架、接口异常）是空白。用户本轮要求专做后端、按矩阵缺陷清单逐条补齐，这是第 1 步。
+
+**查到的真问题**（不是「没做」，是「做了但不生效」）：
+- `resolveAlbumByTitle` 只有网易云一家参与搜索，且「歌手对不上」时把分数乘 0.4、再用 `> 0.4` 过滤——乘完正好 0.4，被整批丢掉。实测搜《范特西》+ 周杰伦**返回 null**，所以从歌曲详情点专辑到别家时长期提示「未找到专辑」。
+- QQ 适配器**根本没有专辑搜索**（`searchAlbums` 不存在），所以 QQ 从未参与专辑转译。
+- `fetchAlbumDetail` 只问本平台一次，失败即 null，前端就显示「该平台专辑歌曲暂不可用」——没有任何兜底。
+- 歌手页点专辑时 `onOpenAlbum(platform, a.id, a.name)` 漏传歌手名，兜底缺少校验线索。
+
+**改动**（只动后端 + 必要的参数透传，交互语义不变）：
+- 新增 `src/main/services/albumMatch.ts`：`albumTitleKey`（去括注 / 标点）、`albumArtistHit`（多写法、合作名单子集、频道名后缀都认；空值不算对上）、`rankAlbumCandidates`（专辑名相似度 + 歌手命中 + 年份 ±1 + 曲目数接近 + 平台偏好打分；名字完全对不上的不进结果）。抽成纯函数是为了能离线回归。
+- `qqAdapter.searchAlbums`：用 `client_search_cp` 的 **t=8**（实测 t=2 / t=10 都不返回专辑），字段 albumMID / albumName / singerName / publicTime / song_count。
+- `LyricService.resolveAlbumByTitle`：网易云 + QQ 并行搜（QQ 用「专辑名 + 歌手」召回更准），交给 `rankAlbumCandidates` 排序；歌手只降权不排除。
+- `LyricService.fetchAlbumDetail(platform, albumId, hint?)`：本平台有曲目就直接用（标 `fallback: false`）；取不到或没有该接口时，用「本平台返回的专辑名/歌手」或前端给的 `hint` 转译到网易云 → QQ，最多试 3 个候选，拿到有曲目的那张为止，返回里用 `source` 标来源；歌手对不上、名字只是包含关系的候选不接受，避免串到别人的同名专辑。
+- `AlbumDetail` 加 `source`（平台 / id / fallback）；IPC `nebula:album-detail` 接收 `albumName` / `artistName`；preload、`ipcClient` 类型、`AlbumPanel`、`InfoPaneState.albumArtist`、`useOverlays.openAlbum` 一路透传；专辑页头部 meta 追加「来自 X」小字（复用既有的 `sourceLabel`，和歌曲详情同一写法）。
+
+**验证**：
+- 新增 `scripts/album-regression.mjs`（14 项，假适配器、离线）并接进 `pnpm qa:backend`：打分排序、歌手多写法、同名不同歌手降权、无详情接口转译、空专辑转译、两边都没有时不编造、不认别人的同名专辑、QQ 顶上、搜索抛错时另一家仍可用。
+- 真实网络实测（本机直连，非会员）：6 张专辑走「本平台无详情接口」路径全部兜底成功——范特西/周杰伦（QQ，10 首）、叶惠美/周杰伦（QQ，11 首）、OK Computer/Radiohead（网易云，12 首）、1989/Taylor Swift（网易云，19 首）、海阔天空/Beyond（网易云，10 首）、Lemon/米津玄師（网易云，3 首），耗时 331–1217ms。`resolveAlbumByTitle('范特西','周杰伦')` 由 null 变为 QQ `000I5jJB3blWeN`。
+- `pnpm build`、`pnpm qa`、`pnpm qa:backend` 全绿。
+
+**遗留**：
+- 专辑页兜底只走网易云 / QQ（这两家能直接开详情）；酷狗、酷我、波点、汽水、Spotify、YouTube Music、Apple Music 的本平台专辑页仍未接（矩阵里这些格子还是「→ 按专辑名搜网易云」）。
+- 本平台详情接口「返回空曲目」与「专辑确实没有曲目」无法区分，目前按「空就算取不到」处理去转译。
+- 网易云专辑名带括注时（`1989 (Deluxe)`）会优先匹配同名豪华版，未按原专辑的曲目数进一步收敛。
+
 ## #222 — 2026-11-21 — 结项交接；修 #220 让后端回归挂掉的一处
 
 **修复**：结项时跑 `pnpm qa:backend` 发现 `player-regression` 失败——#220 在 `AudioPlayer` 构造函数里调用 `window.addEventListener('pagehide')`，而回归脚本的模拟 window 没有这个方法。改为先判断方法存在。#220 当时只跑了前端 `pnpm qa`，漏跑后端回归（播放器回归在 `qa:backend` 里）；坑写进 NOTES。

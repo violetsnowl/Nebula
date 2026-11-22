@@ -198,8 +198,23 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
   safe('nebula:artist-songs-all', async ({ platform, artistId }: { platform: Platform; artistId: string }) =>
     deps.lyricService.fetchArtistAllSongs(platform, String(artistId)),
   );
-  safe('nebula:album-detail', async ({ platform, albumId }: { platform: Platform; albumId: string }) =>
-    deps.lyricService.fetchAlbumDetail(platform, String(albumId)),
+  safe(
+    'nebula:album-detail',
+    async ({
+      platform,
+      albumId,
+      albumName,
+      artistName,
+    }: {
+      platform: Platform;
+      albumId: string;
+      albumName?: string;
+      artistName?: string;
+    }) =>
+      deps.lyricService.fetchAlbumDetail(platform, String(albumId), {
+        name: albumName ? String(albumName) : undefined,
+        artist: artistName ? String(artistName) : undefined,
+      }),
   );
   safe('nebula:search-songs', async ({ keyword, pageSize }: { keyword: string; pageSize?: number }) =>
     deps.lyricService.searchSongs(String(keyword), Number(pageSize) || 8),

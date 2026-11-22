@@ -251,4 +251,6 @@ export interface AlbumDetail {
   artist?: string;
   /** 专辑内歌曲（点播走既有取链/兜底链路）。 */
   tracks: Track[];
+  /** 详情实际来自哪个平台（本平台取不到时，按专辑名 + 歌手转到别家）。 */
+  source?: ContentSource;
 }

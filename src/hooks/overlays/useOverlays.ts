@@ -15,6 +15,8 @@ export interface InfoModalState {
   artistName?: string;
   albumId?: string;
   albumName?: string;
+  /** 专辑歌手（专辑页兜底时按它校验同名专辑，避免串到别人的同名专辑）。 */
+  albumArtist?: string;
 }
 
 export interface ContextMenuState {
@@ -157,12 +159,14 @@ export function useOverlays() {
   }, [showInfo]);
 
   /**
-   * 专辑点击 → 专辑详情弹层。netease/qq 带 id 直接打开；
-   * 其他平台（酷狗/汽水/Spotify）或 id 缺失时按「专辑名 + 歌手名」转译到网易云专辑。
+   * 专辑点击 → 专辑详情弹层。netease/qq 带 id 直接打开；其他平台（酷狗/汽水/Spotify）
+   * 或 id 缺失时按「专辑名 + 歌手名」转译到网易云 / QQ 专辑。
+   * netease/qq 的专辑页本身取不到时由后端兜底（fetchAlbumDetail 会再转一次），
+   * 所以这里只要把专辑名和歌手一起交下去。
    */
   const openAlbum = useCallback((platform: string, albumId: string, albumName: string, artistName?: string) => {
     if (albumId && (platform === 'netease' || platform === 'qq')) {
-      showInfo({ kind: 'album', platform, albumId, albumName });
+      showInfo({ kind: 'album', platform, albumId, albumName, albumArtist: artistName });
       return;
     }
     if (!hasDesktopAPI()) return;
@@ -175,6 +179,7 @@ export function useOverlays() {
             platform: res.data.platform,
             albumId: res.data.id,
             albumName: res.data.name,
+            albumArtist: res.data.artist,
           });
         } else {
           setModeToast(`未找到专辑《${albumName}》`);

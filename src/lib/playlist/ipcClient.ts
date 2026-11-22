@@ -152,6 +152,8 @@ export interface DesktopAlbumDetail {
   year?: number;
   artist?: string;
   tracks: DesktopTrack[];
+  /** 详情实际来自哪个平台（本平台取不到时按专辑名 + 歌手转到别家）。 */
+  source?: { platform: string; sourceId: string; fallback: boolean };
 }
 
 /** 全网歌手搜索命中（含平台定位，可直接打开歌手页）。 */
@@ -236,7 +238,7 @@ export interface DesktopApi {
   artistSongs: (platform: string, artistId: string) => IpcResult<DesktopTrack[]>;
   artistSongsAll: (platform: string, artistId: string) => IpcResult<DesktopTrack[]>;
   artistAlbums: (platform: string, artistId: string) => IpcResult<DesktopAlbumSummary[]>;
-  albumDetail: (platform: string, albumId: string) => IpcResult<DesktopAlbumDetail | null>;
+  albumDetail: (platform: string, albumId: string, hint?: { name?: string; artist?: string }) => IpcResult<DesktopAlbumDetail | null>;
   searchSongs: (keyword: string, pageSize?: number) => IpcResult<DesktopTrack[]>;
   searchArtists: (keyword: string, pageSize?: number) => IpcResult<DesktopArtistHit[]>;
   resolveArtistByName: (name: string) => IpcResult<DesktopArtistHit | null>;

@@ -15,7 +15,8 @@ import { lrcAt } from '../parsers/timedLyrics';
 import { hasHangul, romanizeKorean } from '../parsers/romanizeKorean';
 import { romanizeJapaneseLines } from '../parsers/romanizeJapanese';
 import { recordingMatch, searchKeyword } from './recordingMatch';
-import { normalizeQuery, titleSimilarity } from '../adapters/mappers';
+import { titleSimilarity } from '../adapters/mappers';
+import { rankAlbumCandidates } from './albumMatch';
 import { LyricCache } from './lyricCache';
 import { LyricOverrides, clampLyricOffset } from './lyricOverrides';
 import { applyLyricOffset } from './lyricOffset';
@@ -505,32 +506,36 @@ export class LyricService {
   }
 
   /**
-   * 专辑转译：按专辑名在网易云搜专辑，歌手名双重校验（歌手不一致降权但不直接排除，
-   * 因为网易云专辑搜索结果里歌手字段可能为空）。
+   * 专辑转译：按「专辑名（+ 歌手名）」在网易云、QQ 两边搜专辑，按 albumMatch 打分挑最像的。
+   * 以前只有网易云一家、且歌手对不上时整批被阈值过滤（搜《范特西》+ 周杰伦 返回 null），
+   * 专辑页兜底因此长期失效；现在两边并行、歌手只降权不排除。
    */
-  async resolveAlbumByTitle(title: string, artist?: string): Promise<AlbumSummary | null> {
+  async resolveAlbumByTitle(
+    title: string,
+    artist?: string,
+    opts: { year?: number; songCount?: number } = {},
+  ): Promise<AlbumSummary | null> {
     const clean = String(title || '').trim();
     if (!clean) return null;
-    const nArtist = artist ? normalizeQuery(artist) : '';
-    const albums = this.adapters.netease.searchAlbums
-      ? await this.adapters.netease.searchAlbums(clean, 10)
-      : [];
-    const scored = albums
-      .map((a) => {
-        const score = titleSimilarity(a.name, clean);
-        if (score <= 0) return { a, score: 0 };
-        if (nArtist) {
-          const albumArtist = normalizeQuery(a.artist ?? '');
-          const artistHit =
-            !!albumArtist &&
-            (albumArtist === nArtist || albumArtist.includes(nArtist) || nArtist.includes(albumArtist));
-          if (!artistHit) return { a, score: score * 0.4 };
+    // QQ 的专辑搜索把歌手一起给定更准（「范特西 周杰伦」），网易云用纯专辑名召回更多
+    const keywordFor = (platform: 'netease' | 'qq') => (platform === 'qq' && artist ? `${clean} ${artist}` : clean);
+    const sources = await Promise.all(
+      (['netease', 'qq'] as const).map(async (platform) => {
+        const adapter = this.adapters[platform];
+        if (!adapter?.searchAlbums) return [] as AlbumSummary[];
+        try {
+          return await adapter.searchAlbums(keywordFor(platform), 10);
+        } catch {
+          console.warn('[LyricService] 专辑搜索失败');
+          return [] as AlbumSummary[];
         }
-        return { a, score };
-      })
-      .filter((x) => x.score > 0.4)
-      .sort((x, y) => y.score - x.score);
-    return scored[0]?.a ?? null;
+      }),
+    );
+    const ranked = rankAlbumCandidates(sources.flat(), { name: clean, artist, year: opts.year, songCount: opts.songCount });
+    const best = ranked[0];
+    // 只要专辑名差得太远（没有任何候选真正同名或包含）就不给结果，避免串到别的专辑
+    if (!best || best.titleScore <= 0) return null;
+    return best.album;
   }
 
   private async ownDetail(t: Track): Promise<SongDetail | null> {
@@ -611,14 +616,81 @@ export class LyricService {
     }
   }
 
-  async fetchAlbumDetail(platform: Platform, albumId: string): Promise<AlbumDetail | null> {
+  /**
+   * 专辑详情：本平台优先；本平台没有详情接口或取不到（歌下架、接口异常、平台压根没有这一页）时，
+   * 按「专辑名 + 歌手」转到网易云 → QQ 拿同一张专辑，返回里用 source 标出来源。
+   * 与歌曲详情（#163）同一套思路：宁可给别家的可用内容，也不给空白页。
+   */
+  async fetchAlbumDetail(
+    platform: Platform,
+    albumId: string,
+    hint: { name?: string; artist?: string } = {},
+  ): Promise<AlbumDetail | null> {
+    const own = await this.ownAlbumDetail(platform, albumId);
+    if (own && own.tracks.length) {
+      return { ...own, source: { platform, sourceId: String(own.id), fallback: false } };
+    }
+    // 本平台取不到：先它自己返回的空专辑（有名字/歌手可用当线索），再退回调用方给的提示
+    const name = (own?.name || hint.name || '').trim();
+    const artist = (own?.artist || hint.artist || '').trim();
+    if (!name) return own ?? null;
+    const target = await this.alternateAlbum(platform, name, artist, own);
+    return target ?? own ?? null;
+  }
+
+  /** 本平台专辑详情：接口失败 / 没有该方法一律 null，不向上抛。 */
+  private async ownAlbumDetail(platform: Platform, albumId: string): Promise<AlbumDetail | null> {
+    const adapter = this.adapters[platform];
+    if (!adapter?.fetchAlbumDetail) return null;
     try {
-      const adapter = this.adapters[platform];
-      return adapter.fetchAlbumDetail ? await adapter.fetchAlbumDetail(albumId) : null;
-    } catch (err) {
-      console.warn("[LyricService] 专辑详情失败:");
+      return await adapter.fetchAlbumDetail(String(albumId));
+    } catch {
+      console.warn('[LyricService] 专辑详情失败');
       return null;
     }
+  }
+
+  /**
+   * 换平台拿同一张专辑：网易云、QQ 都能直接开详情页，按 albumMatch 挑同名同歌手的一张，
+   * 再回来取它的详情。曲目为空的不算找到。
+   */
+  private async alternateAlbum(
+    from: Platform,
+    name: string,
+    artist: string,
+    own: AlbumDetail | null,
+  ): Promise<AlbumDetail | null> {
+    const candidates = (['netease', 'qq'] as const).filter((p) => p !== from && this.adapters[p]?.searchAlbums);
+    if (!candidates.length) return null;
+    const lists = await Promise.all(
+      candidates.map(async (p) => {
+        try {
+          return await this.adapters[p]!.searchAlbums!(p === 'qq' && artist ? `${name} ${artist}` : name, 10);
+        } catch {
+          return [] as AlbumSummary[];
+        }
+      }),
+    );
+    const ranked = rankAlbumCandidates(lists.flat(), {
+      name,
+      artist: artist || undefined,
+      year: own?.year,
+      songCount: own?.tracks.length || undefined,
+    });
+    // 最多试 3 个候选：第一次可能撞上同名精选 / 翻唱合集，取不到曲目再往下
+    for (const cand of ranked.slice(0, 3)) {
+      // 专辑名必须真的对上（包含也算），只是歌手对不上的不接受，免得给用户看错专辑
+      if (cand.titleScore <= 0) continue;
+      if (artist && !cand.artistHit && cand.titleScore < 1) continue;
+      const detail = await this.ownAlbumDetail(cand.album.platform, cand.album.id);
+      if (detail && detail.tracks.length) {
+        return {
+          ...detail,
+          source: { platform: cand.album.platform, sourceId: String(cand.album.id), fallback: from !== cand.album.platform },
+        };
+      }
+    }
+    return null;
   }
 
   /** 全网搜歌：网易云 + QQ（酷狗兜底），按页容量裁剪、去重。 */
