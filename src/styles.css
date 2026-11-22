@@ -2928,16 +2928,26 @@ body {
   transform: translate3d(0, calc(var(--lift, 0) * -1em), 0) scale(calc(1 + (var(--sc, 1) - 1) * 2.8));
 }
 
-/* 字照亮空间（样张 M）：正在唱的字身后一团很淡的歌词主色光，跟着字移动；卡片的提亮在舞台帧循环里 */
+/* 字照亮空间（样张 M）：正在唱的字身后一团很淡的歌词主色光，跟着字移动；卡片的提亮在舞台帧循环里。
+   用户验收（2026-11-22）：线性衰减在浅色封面上能看出一圈圆边 → 改成横向椭圆（和一行字相称）+ 近似高斯的缓出衰减，
+   边缘降到零之前已经几乎看不见 */
 .lyrics-layer .fl-light {
   position: absolute;
   left: 0;
   top: 0;
-  width: 720px;
-  height: 720px;
-  margin: -360px 0 0 -360px;
-  border-radius: 50%;
-  background: radial-gradient(closest-side, color-mix(in srgb, var(--lc-a) 34%, transparent), transparent);
+  width: 980px;
+  height: 600px;
+  margin: -300px 0 0 -490px;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in srgb, var(--lc-a) 26%, transparent) 0%,
+    color-mix(in srgb, var(--lc-a) 22%, transparent) 14%,
+    color-mix(in srgb, var(--lc-a) 15%, transparent) 30%,
+    color-mix(in srgb, var(--lc-a) 8.5%, transparent) 46%,
+    color-mix(in srgb, var(--lc-a) 3.8%, transparent) 62%,
+    color-mix(in srgb, var(--lc-a) 1.2%, transparent) 78%,
+    transparent 100%
+  );
   opacity: 0;
   pointer-events: none;
   will-change: transform, opacity;

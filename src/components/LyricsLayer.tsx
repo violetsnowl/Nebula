@@ -772,7 +772,7 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
         const glow = lightRef.current;
         if (glow) {
           glow.style.transform = `translate3d(${stageShapeBus.lx.toFixed(1)}px, ${stageShapeBus.ly.toFixed(1)}px, 0)`;
-          glow.style.opacity = (stageShapeBus.lk * (enabled ? k : 1) * 1.3).toFixed(3);
+          glow.style.opacity = Math.min(1, stageShapeBus.lk * (enabled ? k : 1) * 1.6).toFixed(3);
         }
         if (playingNow || relayoutNow) pokeListenFrame();
       } else if (lightRef.current && lightRef.current.style.opacity !== '0') lightRef.current.style.opacity = '0';
