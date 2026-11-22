@@ -262,7 +262,11 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
         tx.className = 'lp-tx';
         let rts: UnitRt[] | null = null;
         let whole: HTMLElement | null = null;
-        if (e.units) rts = renderUnits(tx, e.units);
+        if (e.units) {
+          rts = renderUnits(tx, e.units);
+          // 羽化宽度的数值版（lyric-page.css 按「字本身」而不是「含上色留白的盒子」铺扫光，要拿它乘字宽）
+          for (const r of rts) r.v.el.style.setProperty('--fn', r.u.cjk ? '0.42' : '0.26');
+        }
         else {
           whole = document.createElement('span');
           whole.className = 'lp-whole';
@@ -363,6 +367,7 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
     let last = performance.now();
     let lastPos = -1;
     let extrap = 0;
+    let smoothT = 0;
     let rootOp = '';
 
     // —— 转场：逐字飞入 / 飞回（用户 2026-11-22 提议；第三版「克隆替身」）——
@@ -669,7 +674,11 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
       if (playing && pos === lastPos) extrap = Math.min(0.25, extrap + dt);
       else extrap = 0;
       lastPos = pos;
-      const t = playing ? pos + extrap : pos;
+      let cand = playing ? pos + extrap : pos;
+      // 读数刚更新时可能比外推值略小：保持单调，别让波浪往回抖（同听音空间 LyricColumn）
+      if (playing && cand < smoothT && smoothT - cand < 0.15) cand = smoothT;
+      smoothT = cand;
+      const t = cand;
       const k = listenBus.enabled ? listenBus.k : 0;
       const op = k.toFixed(3);
       if (op !== rootOp) {

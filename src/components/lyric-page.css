@@ -83,7 +83,9 @@
 
 .lpm-b.is-grad .lpm-u.is-v .u:not(.has-ch),
 .lpm-b.is-grad .lpm-u.is-v .u .ch {
-  background-image: linear-gradient(180deg, var(--sung, #fff) 0, var(--sung, #fff) calc(var(--P) - var(--f, 34%)), var(--edge) var(--P), var(--un) calc(var(--P) + var(--f, 34%)));
+  --fw: calc(var(--fn, 0.3) * (100% - 0.28em));
+  --P: calc(0.12em + var(--p, 0) * (100% - 0.28em + 2 * var(--fw)) - var(--fw));
+  background-image: linear-gradient(180deg, var(--sung, #fff) 0, var(--sung, #fff) calc(var(--P) - var(--fw)), var(--edge) var(--P), var(--un) calc(var(--P) + var(--fw)));
 }
 
 /* 1600 × 900 的逻辑画幅，等比缩放到窗口中央 */
@@ -164,6 +166,19 @@
   padding: 0.12em 0.2em 0.16em;
   margin: -0.12em -0.2em -0.16em;
 }
+/* 扫光按「字本身」铺（2026-11-22 用户反馈：慢歌里一个词吞一次气口）：上面那圈留白让渐变铺在更宽的盒子上，
+   扫光的波前每个词开头、结尾都有一段时间走在空白留白里、字面上没有变化——短词、大字号时最明显，看着像每个词停顿一下。
+   这里把波前的行程换算回字本身的范围（横排左右各 .2em 留白），羽化宽度也按字本身的宽度算（--fn = 羽化占字宽的比例，
+   LyricPage 建字时写）。留白里仍有颜色：左边跟着已唱、右边跟着未唱，斜体伸出去的部分照样上色 */
+.lyric-page .is-grad .u:not(.has-ch),
+.lyric-page .is-grad .u .ch,
+.lpm-b.is-grad .u:not(.has-ch),
+.lpm-b.is-grad .u .ch {
+  --fw: calc(var(--fn, 0.3) * (100% - 0.4em));
+  --P: calc(0.2em + var(--p, 0) * (100% - 0.4em + 2 * var(--fw)) - var(--fw));
+  background-image: linear-gradient(90deg, var(--sung, #fff) 0, var(--sung, #fff) calc(var(--P) - var(--fw)), var(--edge) var(--P), var(--un) calc(var(--P) + var(--fw)));
+}
+
 .lyric-page .u.has-ch {
   padding: 0;
   margin: 0;
@@ -256,7 +271,9 @@
 .lyric-page .lp-line.is-vert.is-grad .u .ch,
 .lyric-page .is-grad .lp-seg-v .u:not(.has-ch),
 .lyric-page .is-grad .lp-seg-v .u .ch {
-  background-image: linear-gradient(180deg, var(--sung, #fff) 0, var(--sung, #fff) calc(var(--P) - var(--f, 34%)), var(--edge) var(--P), var(--un) calc(var(--P) + var(--f, 34%)));
+  --fw: calc(var(--fn, 0.3) * (100% - 0.28em));
+  --P: calc(0.12em + var(--p, 0) * (100% - 0.28em + 2 * var(--fw)) - var(--fw));
+  background-image: linear-gradient(180deg, var(--sung, #fff) 0, var(--sung, #fff) calc(var(--P) - var(--fw)), var(--edge) var(--P), var(--un) calc(var(--P) + var(--fw)));
 }
 
 @media (prefers-reduced-motion: reduce) {
