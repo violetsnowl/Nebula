@@ -173,6 +173,15 @@
   filter: drop-shadow(0 1px 2.4px rgba(4, 6, 12, 0.5)) drop-shadow(0 0 4.8px rgba(4, 6, 12, 0.26));
 }
 
+/* 正在唱的那句的字各自上合成层：波浪浮起按亚像素走，慢歌里不会一格一格地跳（同听音空间 lyric-column.css、
+   漫游歌词 .flow-lyric.is-current；2026-11-22 用户发现版面漏了这一条，慢速时波浪附近有抖动） */
+.lp-line.is-cur .u,
+.lp-line.is-cur .u .ch,
+.lpm-ctx .u,
+.lpm-ctx .u .ch {
+  will-change: transform;
+}
+
 /* 唱过：印成实色 */
 .lp-line.is-past .u,
 .lp-line.is-past .u .ch {
