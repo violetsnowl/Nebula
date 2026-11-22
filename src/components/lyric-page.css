@@ -70,19 +70,19 @@
   transform: translate3d(0, calc(var(--lift, 0) * -1em * var(--lw, 1)), 0) scale(calc(1 + (var(--sc, 1) - 1) * var(--lw, 1)));
 }
 
-/* 竖排：版面那份也按竖排排，波浪浮起向右、扫光从上往下（同 .lyric-page.is-vert） */
-.lpm-b.is-vert .lpm-u {
+/* 竖排：版面那份按目标字自己的读向排（.is-v），波浪浮起向右、扫光从上往下（同 .lp-line.is-vert） */
+.lpm-b .lpm-u.is-v {
   writing-mode: vertical-rl;
 }
 
-.lpm-b.is-vert .u,
-.lpm-b.is-vert .u .ch {
+.lpm-b .lpm-u.is-v .u,
+.lpm-b .lpm-u.is-v .u .ch {
   transform: translate3d(calc(var(--lift, 0) * 1em * var(--lw, 1)), 0, 0) scale(calc(1 + (var(--sc, 1) - 1) * var(--lw, 1)));
   transform-origin: 50% 50%;
 }
 
-.lpm-b.is-vert.is-grad .u:not(.has-ch),
-.lpm-b.is-vert.is-grad .u .ch {
+.lpm-b.is-grad .lpm-u.is-v .u:not(.has-ch),
+.lpm-b.is-grad .lpm-u.is-v .u .ch {
   background-image: linear-gradient(180deg, var(--sung, #fff) 0, var(--sung, #fff) calc(var(--P) - var(--f, 34%)), var(--edge) var(--P), var(--un) calc(var(--P) + var(--f, 34%)));
 }
 
@@ -101,6 +101,16 @@
   inset: 0;
   display: none;
   will-change: opacity, transform;
+}
+
+/* 纸面（样张 N）：封面最深的底色压得更暗、九成不透明，盖住你设的背景和沉下去的星云，只透出一点气色。
+   跟着整个版面随交接进度 --lk 升起（版面根的透明度），所以仍是同一个舞台、不是跳到新页面 */
+.lp-paper {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--ebase, rgb(12 13 18)) 42%, rgb(6 7 10));
+  opacity: 0.9;
+  pointer-events: none;
 }
 
 /* 纸面颗粒（样张 M）：一层很淡的灰度噪点，像印刷纸面；跟着整个版面一起随交接淡入 */
@@ -226,20 +236,26 @@
   color: var(--lp-tr-on);
 }
 
-/* 竖排（中文歌）：从右往左一列一句；扫光改成从上往下，波浪浮起改成往右 */
-.lyric-page.is-vert .lp-tx {
+/* 竖排（中文歌）：从右往左一列一句；扫光改成从上往下，波浪浮起改成往右。
+   样张 N 起按句（.lp-line.is-vert）或按段（.lp-seg-v：一句跨横竖两截时的竖排那截）决定，不再按整首歌 */
+.lyric-page .lp-line.is-vert .lp-tx,
+.lyric-page .lp-seg-v {
   writing-mode: vertical-rl;
   letter-spacing: 0.14em;
 }
 
-.lyric-page.is-vert .u,
-.lyric-page.is-vert .u .ch {
+.lyric-page .lp-line.is-vert .u,
+.lyric-page .lp-line.is-vert .u .ch,
+.lyric-page .lp-seg-v .u,
+.lyric-page .lp-seg-v .u .ch {
   transform: translate3d(calc(var(--lift, 0) * 1em), 0, 0) scale(var(--sc, 1));
   transform-origin: 50% 50%;
 }
 
-.lyric-page.is-vert .is-grad .u:not(.has-ch),
-.lyric-page.is-vert .is-grad .u .ch {
+.lyric-page .lp-line.is-vert.is-grad .u:not(.has-ch),
+.lyric-page .lp-line.is-vert.is-grad .u .ch,
+.lyric-page .is-grad .lp-seg-v .u:not(.has-ch),
+.lyric-page .is-grad .lp-seg-v .u .ch {
   background-image: linear-gradient(180deg, var(--sung, #fff) 0, var(--sung, #fff) calc(var(--P) - var(--f, 34%)), var(--edge) var(--P), var(--un) calc(var(--P) + var(--f, 34%)));
 }
 
@@ -248,4 +264,18 @@
   .lp-tr {
     transition: none;
   }
+}
+
+/* 排版时量的是「平排」的样子：版式的旋转先关掉，量完再打开（LyricPage.layoutAll） */
+.lp-page.is-measuring .lp-rot {
+  transform: none !important;
+}
+
+/* 版式挪出句子的翻译（脚注、右栏、书脊脚下）：跟着所属句子亮起 */
+.lp-tr.is-free {
+  position: absolute;
+}
+
+.lp-tr.is-free.is-on {
+  color: var(--lp-tr-on);
 }

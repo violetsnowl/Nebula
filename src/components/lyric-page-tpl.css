@@ -1,0 +1,113 @@
+/* 版面的大胆版式（样张 N，2026-11-22 用户定稿；版式逻辑在 components/lyric-page/）。
+   这里只管字体与装饰的样子；位置、字号由版式按 1600 × 900 的逻辑像素写在行内。
+   颜色仍然只取封面：装饰用环境强调色 --acc（没有时退到歌词主色）。 */
+
+.lyric-page {
+  --lp-acc: var(--acc, var(--lc-a));
+}
+
+/* 细线（书脊的连线、满版齐行的栏线、脚注线） */
+.lp-hair {
+  position: absolute;
+  background: color-mix(in srgb, var(--lp-acc) 55%, transparent);
+  pointer-events: none;
+}
+
+/* 分段：满版齐行 / 书脊的每一行（竖排时是每一列）是一个块 */
+.lp-seg.lp-row {
+  display: block;
+}
+
+/* ———— 一词放大：小号宽字距大写无衬线 + 唱得最久的词换大号斜体衬线 ———— */
+.lt-held .lp-tx {
+  font-family: Inter, 'Segoe UI', sans-serif;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.lt-held .u.lp-big {
+  font-family: Newsreader, Georgia, serif;
+  font-style: italic;
+  font-weight: 500;
+  font-size: 5.9em;
+  letter-spacing: -0.012em;
+  text-transform: none;
+}
+
+.is-cjk .lt-held .lp-tx {
+  font-family: var(--lc-font);
+  font-weight: 400;
+  letter-spacing: 0.12em;
+  text-transform: none;
+}
+
+.is-cjk .lt-held .u.lp-big {
+  font-family: 'Noto Serif SC', 'Noto Serif JP', 'Noto Serif KR', 'Songti SC', 'Yu Mincho', serif;
+  font-style: normal;
+  font-weight: 900;
+  font-size: 4.2em;
+  letter-spacing: 0;
+}
+
+/* ———— 粗大写（书脊、满版齐行） ———— */
+.lt-heavy .lp-tx {
+  font-family: Inter, 'Segoe UI', sans-serif;
+  font-weight: 800;
+  line-height: 0.86;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+}
+
+.is-cjk .lt-heavy .lp-tx {
+  font-family: 'Noto Sans SC', 'Noto Sans JP', 'Noto Sans KR', 'Microsoft YaHei', 'Yu Gothic', 'Malgun Gothic', sans-serif;
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.lang-zh .lt-heavy .lp-tx {
+  font-family: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+}
+
+/* 斜体衬线（书脊旁边那几句）；中日韩没有斜体，用歌词字体 */
+.lt-ital .lp-tx {
+  font-family: Newsreader, Georgia, serif;
+  font-style: italic;
+  font-weight: 600;
+}
+
+.is-cjk .lt-ital .lp-tx {
+  font-family: var(--lc-font);
+  font-style: normal;
+}
+
+/* 正文衬线（脚注页） */
+.lt-serif .lp-tx {
+  font-family: Newsreader, Georgia, 'Noto Serif SC', serif;
+  font-weight: 500;
+}
+
+/* 脚注：句末上标序号，页脚的译文前面带同一个序号 */
+.lp-fn {
+  font: 600 16px/1 Inter, sans-serif;
+  color: var(--lp-acc);
+  margin-left: 0.5em;
+  vertical-align: 1.5em;
+  -webkit-text-fill-color: currentColor;
+}
+
+.lp-tr.is-fn::before {
+  content: attr(data-n);
+  display: inline-block;
+  margin-right: 12px;
+  font: 600 12px/1 Inter, sans-serif;
+  color: var(--lp-acc);
+  vertical-align: 2px;
+}
+
+.lp-tr.is-fn.is-on {
+  color: rgba(255, 255, 255, 0.8);
+}

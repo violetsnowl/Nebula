@@ -10,8 +10,12 @@ import { useListenSettings } from '../lib/listen/settings';
 import { pageBus } from '../lib/listen/stageBus';
 import { TYPO, measureUnits, renderUnits, restUnit, unitFrame, waveOf, type UnitRt } from '../lib/listen/words';
 import { useSpaceLab } from '../lib/space/lab';
+import { flatten } from './lyric-page/kit';
+import { FALLBACK_H, newPickState, pickTpl, songHook } from './lyric-page/pools';
+import { PH, PW, type PageHooks, type TCtx, type TLine, type Tpl } from './lyric-page/types';
 import './listen/lyric-words.css';
 import './lyric-page.css';
+import './lyric-page-tpl.css';
 
 /**
  * 版面（样张 M，2026-11-22，fe/next；规格 NEBULA_UI_SYSTEM §7.1b）：聆听时的另一种主舞台。完全不飞，靠排版：
@@ -27,9 +31,6 @@ interface LyricPageProps {
   songKey?: string;
 }
 
-const PW = 1600;
-const PH = 900;
-
 const usable = (l: LyricLineUI | undefined) => !!l && (!!l.text?.trim() || !!l.words?.length);
 const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
 const smooth = (x: number) => {
@@ -37,13 +38,10 @@ const smooth = (x: number) => {
   return t * t * (3 - 2 * t);
 };
 
-interface PLine {
-  e: EngineLine;
-  el: HTMLElement;
-  tx: HTMLElement;
-  tr: HTMLElement | null;
+/** 版面上的一句：版式看到的部分（TLine）+ 引擎自己的状态。 */
+interface PLine extends TLine {
+  eng: EngineLine;
   rts: UnitRt[] | null;
-  whole: HTMLElement | null;
   state: 'future' | 'cur' | 'past';
   active: boolean;
   w: number;
@@ -55,6 +53,8 @@ interface PPage {
   lines: PLine[];
   kind: SectionKind;
   tpl: Tpl;
+  ctx: TCtx;
+  hooks: PageHooks | null;
   s: number;
   e: number;
   tIn: number;
@@ -62,131 +62,6 @@ interface PPage {
   on: boolean;
 }
 
-/** 一句在一页上的位置（逻辑像素）。 */
-interface Place {
-  left?: number;
-  right?: number;
-  /** 居中：left = 0、width = 画幅宽、文字居中。 */
-  center?: boolean;
-  top: number;
-  fs: number;
-  /** 翻译排在哪：右栏旁注 / 原文下面。 */
-  tr: 'side' | 'under';
-}
-
-/** 一套版式。f = 整页字号缩放（长句塞不下时 < 1）；w = 这句按原字号量出的宽（横排）。 */
-interface Tpl {
-  id: string;
-  italic?: boolean;
-  place: (i: number, n: number, f: number, w: number) => Place;
-  /** 第 i 句最多能占多宽（横排）/ 多高（竖排）。 */
-  room: (i: number, n: number) => number;
-}
-
-const stackTop = (n: number, step: number, fs: number) => PH / 2 - ((n - 1) * step) / 2 - fs * 0.6;
-
-// ———— 横排版式 ————
-const H: Record<string, Tpl> = {
-  // 左栏：左对齐一栏，翻译作旁注排在右栏
-  left: { id: 'left', place: (i, n, f) => ({ left: 190, top: stackTop(n, 80 * f, 42 * f) + i * 80 * f, fs: 42 * f, tr: 'side' }), room: () => 950 },
-  // 右栏：右对齐一栏，翻译排在下面
-  right: { id: 'right', place: (i, n, f) => ({ right: 190, top: stackTop(n, 96 * f, 44 * f) + i * 96 * f, fs: 44 * f, tr: 'under' }), room: () => 1150 },
-  // 居中轴
-  axis: { id: 'axis', place: (i, n, f) => ({ center: true, top: stackTop(n, 100 * f, 48 * f) + i * 100 * f, fs: 48 * f, tr: 'under' }), room: () => 1250 },
-  // 阶梯：每行往右错开
-  stairs: { id: 'stairs', place: (i, n, f) => ({ left: 190 + i * 56, top: stackTop(n, 108 * f, 64 * f) + i * 108 * f, fs: 64 * f, tr: 'under' }), room: (i) => PW - 150 - (190 + i * 56) },
-  // 反阶梯：右对齐，每行往左错开
-  stairsR: { id: 'stairsR', place: (i, n, f) => ({ right: 190 + i * 56, top: stackTop(n, 108 * f, 64 * f) + i * 108 * f, fs: 64 * f, tr: 'under' }), room: (i) => PW - 150 - (190 + i * 56) },
-  // 首句大字：第一句压满一行，其余小字跟在下面
-  headline: {
-    id: 'headline',
-    place: (i, n, f) => {
-      if (i === 0) return { left: 180, top: 210 - (n > 4 ? 40 : 0), fs: 88 * f, tr: 'under' };
-      return { left: 190, top: 210 - (n > 4 ? 40 : 0) + 150 * f + (i - 1) * 66 * f, fs: 34 * f, tr: 'side' };
-    },
-    room: (i) => (i === 0 ? PW - 330 : 950),
-  },
-  // 上下分置：前半句组在左上，后半在右下
-  split: {
-    id: 'split',
-    place: (i, n, f) => {
-      const h = Math.ceil(n / 2);
-      if (i < h) return { left: 190, top: 190 + i * 82 * f, fs: 44 * f, tr: 'under' };
-      return { right: 190, top: PH - 150 - (n - h) * 82 * f + (i - h) * 82 * f, fs: 44 * f, tr: 'under' };
-    },
-    room: () => 1050,
-  },
-  // 两栏交错：单句在左栏、双句在右栏，逐句往下走
-  columns: {
-    id: 'columns',
-    place: (i, n, f) => ({ left: i % 2 ? 840 : 190, top: stackTop(n, 74 * f, 40 * f) + i * 74 * f, fs: 40 * f, tr: 'under' }),
-    room: () => 600,
-  },
-  // 散点：一句一个位置往右下错开，留白最多（桥段）
-  scatter: {
-    id: 'scatter',
-    italic: true,
-    place: (i, n, f, w) => ({ left: Math.max(150, Math.min(200 + (i % 3) * 340, PW - 150 - w * f)), top: 230 + i * Math.min(180, 440 / Math.max(1, n - 1)), fs: 54 * f, tr: 'under' }),
-    room: () => PW - 300,
-  },
-  // 右下斜体（预副歌）
-  corner: {
-    id: 'corner',
-    italic: true,
-    place: (i, n, f) => ({ right: 190, top: Math.min(470, PH - 130 - n * 96 * f) + i * 96 * f, fs: 44 * f, tr: 'under' }),
-    room: () => 1260,
-  },
-  // 左上斜体（预副歌的另一套）
-  cornerL: {
-    id: 'cornerL',
-    italic: true,
-    place: (i, _n, f) => ({ left: 190, top: 180 + i * 90 * f, fs: 42 * f, tr: 'under' }),
-    room: () => 1150,
-  },
-  // 居中小字（尾声）
-  coda: { id: 'coda', place: (i, n, f) => ({ center: true, top: PH / 2 - 20 - (n - 1) * 55 + i * 110, fs: 38 * f, tr: 'under' }), room: () => 1300 },
-};
-
-// ———— 竖排版式（中文歌，从右往左一列一句；right = 这一列的右边） ————
-const vCol = (right: number, top: number, fs: number): Place => ({ left: right - fs, top, fs, tr: 'under' });
-const V: Record<string, Tpl> = {
-  // 右起：从右边一列列往左排
-  rightStart: { id: 'v-right', place: (i, _n, f) => vCol(1290 - i * 104 * f, 200, 50 * f), room: () => PH - 270 },
-  // 居中成组（大字）
-  group: { id: 'v-group', place: (i, n, f) => vCol(PW / 2 + ((n - 1) * 136 * f) / 2 + 36 * f - i * 136 * f, 130, 72 * f), room: () => PH - 200 },
-  // 斜阶：每列比右边一列低一截
-  steps: { id: 'v-steps', place: (i, _n, f) => vCol(1240 - i * 112 * f, 150 + i * 56, 50 * f), room: (i) => PH - 220 - i * 56 },
-  // 左起：整组靠左
-  leftStart: { id: 'v-left', place: (i, n, f) => vCol(380 + (n - 1 - i) * 100 * f + 48 * f, 220, 48 * f), room: () => PH - 290 },
-  // 首列大字：第一列压满，其余小字列在它左边
-  headline: {
-    id: 'v-headline',
-    place: (i, _n, f) => (i === 0 ? vCol(1250, 130, 92 * f) : vCol(1250 - 160 * f - (i - 1) * 80 * f, 300, 40 * f)),
-    room: (i) => (i === 0 ? PH - 200 : PH - 370),
-  },
-  // 预副歌：左半边小字
-  pre: { id: 'v-pre', place: (i, _n, f) => vCol(700 - i * 90 * f, 300, 44 * f), room: () => PH - 370 },
-  // 桥段：每列往下错开，留白最多
-  scatter: { id: 'v-scatter', place: (i, _n, f) => vCol(1120 - i * 190 * f, 170 + i * 70, 52 * f), room: (i) => PH - 240 - i * 70 },
-  // 尾声：居中小字
-  coda: { id: 'v-coda', place: (i, n, f) => vCol(PW / 2 + ((n - 1) * 96 * f) / 2 + 20 - i * 96 * f, 330, 42 * f), room: () => PH - 400 },
-};
-
-/** 每种段落可用的版式（第几次出现就用第几套）。 */
-const POOL_H: Record<SectionKind, Tpl[]> = {
-  verse: [H.left!, H.right!, H.headline!, H.columns!, H.axis!],
-  pre: [H.corner!, H.cornerL!],
-  chorus: [H.stairs!, H.stairsR!, H.headline!, H.axis!],
-  bridge: [H.scatter!, H.split!],
-  outro: [H.coda!, H.right!],
-};
-const POOL_V: Record<SectionKind, Tpl[]> = {
-  verse: [V.rightStart!, V.steps!, V.leftStart!],
-  pre: [V.pre!, V.leftStart!],
-  chorus: [V.group!, V.headline!, V.steps!],
-  bridge: [V.scatter!],
-  outro: [V.coda!],
-};
 
 /** 没唱到的字（浅灰的「先印好」）：封面色模式是白 16%，同色系带一点主色。 */
 const GHOST = {
@@ -215,11 +90,13 @@ function grain(): string {
   return grainUrl;
 }
 
-function layoutPage(pg: PPage, f: number): void {
+/** 经典版式：每句一个位置和字号（f = 整页缩放）。 */
+function layoutClassic(pg: PPage, f: number): void {
   const n = pg.lines.length;
   const hasTr = pg.lines.some((l) => l.tr);
+  const place = pg.tpl.place!;
   pg.lines.forEach((l, i) => {
-    const p = pg.tpl.place(i, n, f, l.w);
+    const p = place(i, n, f, l.w);
     const st = l.el.style;
     st.left = p.center ? '0' : p.left != null ? `${p.left}px` : '';
     st.right = !p.center && p.right != null ? `${p.right}px` : '';
@@ -232,32 +109,75 @@ function layoutPage(pg: PPage, f: number): void {
   });
 }
 
+/** 重排之前把一页恢复成「刚建好」的样子：撤销分段、清掉装饰与版式加的类名和样式，翻译放回原句。 */
+function resetPage(pg: PPage): void {
+  pg.hooks?.undo?.();
+  pg.hooks = null;
+  pg.el.querySelectorAll('.lp-deco').forEach((d) => d.remove());
+  for (const l of pg.lines) {
+    flatten(l);
+    l.el.style.cssText = '';
+    l.el.className = l.el.className
+      .split(' ')
+      .filter((c) => c && !c.startsWith('lt-') && c !== 'lp-rot' && c !== 'is-vert')
+      .join(' ');
+    delete l.el.dataset.hb;
+    l.tx.style.cssText = '';
+    for (const u of l.units) u.classList.remove('lp-big');
+    if (l.tr) {
+      if (l.tr.parentElement !== l.el) l.el.appendChild(l.tr);
+      l.tr.style.cssText = '';
+      l.tr.className = 'lp-tr';
+      delete l.tr.dataset.n;
+    }
+    l.vert = pg.ctx.vert;
+    l.el.classList.toggle('is-vert', l.vert);
+    l.rot = 0;
+  }
+}
+
+/** 一个字的读向：在竖排段里（.lp-seg-v）就是竖的，否则跟这一句。 */
+const unitVert = (l: PLine, el: HTMLElement) => (el.closest('.lp-seg-v') ? true : l.vert);
+
 /**
  * 量字的位置（波浪按它找「正在唱的位置」）：每个字的盒子带一圈上色留白、再用负边距抵消，相邻两个字的盒子互相重叠。
  * 必须按字本身的范围量（扣掉留白）：按含留白的盒子量的话，演唱位置每走到下一个字都会先倒退 0.4 个字宽，
  * 波浪峰在每个字的交界处来回跳——慢歌里就是「诡异的抖动」（2026-11-22 用户反馈，fe/next-9 之后）。
+ * 样张 N 起一句可以分成几段（几行、几列、横竖两截）：每段沿自己的读向量，段与段首尾相接累计，演唱位置跨段也只往前走。
+ * 量的时候页上的旋转都临时关掉（.is-measuring），量的是平排的样子。
  */
-function measureLine(l: PLine, vert: boolean, S: number): void {
+function measureLine(l: PLine, S: number): void {
   if (!l.rts?.length) return;
   measureUnits(l.rts);
-  const pads = l.rts.map((r) => {
-    const cs = getComputedStyle(r.v.el);
-    return vert ? [parseFloat(cs.paddingTop) || 0, parseFloat(cs.paddingBottom) || 0] : [parseFloat(cs.paddingLeft) || 0, parseFloat(cs.paddingRight) || 0];
-  });
-  // 沿阅读方向用带小数的外接框量（offsetLeft / offsetWidth 是取整的，会留下约 1px 的重叠）；
-  // 波浪浮起垂直于阅读方向，不影响这一维。外接框带画幅缩放 S，换回未缩放的像素
-  const rects = l.rts.map((r) => r.v.el.getBoundingClientRect());
-  const pos = (b: DOMRect) => (vert ? b.top : b.left) / S;
-  const len = (b: DOMRect) => (vert ? b.height : b.width) / S;
-  const base = pos(rects[0]!) + pads[0]![0]!;
+  const gap = (l.rts[0]!.fs || 36) * 0.26;
+  let seg: Element | null = null;
+  let segBase = 0;
+  let segStart = 0;
+  let end = 0;
   l.rts.forEach((r, i) => {
-    const [p0, p1] = pads[i]!;
-    r.left = pos(rects[i]!) + p0! - base;
-    r.w = len(rects[i]!) - p0! - p1!;
+    const el = r.v.el;
+    const v = unitVert(l, el);
+    const cs = getComputedStyle(el);
+    const p0 = (v ? parseFloat(cs.paddingTop) : parseFloat(cs.paddingLeft)) || 0;
+    const p1 = (v ? parseFloat(cs.paddingBottom) : parseFloat(cs.paddingRight)) || 0;
+    // 沿阅读方向用带小数的外接框量（offsetLeft / offsetWidth 是取整的，会留下约 1px 的重叠）；外接框带画幅缩放 S，换回未缩放的像素
+    const b = el.getBoundingClientRect();
+    const pos = (v ? b.top : b.left) / S + p0;
+    const len = (v ? b.height : b.width) / S - p0 - p1;
+    const sg = el.closest('.lp-seg') ?? l.tx;
+    if (sg !== seg) {
+      segStart = i === 0 ? 0 : end + gap;
+      segBase = pos;
+      seg = sg;
+    }
+    r.left = segStart + (pos - segBase);
+    r.w = len;
+    end = r.left + r.w;
   });
-  const z = l.rts[l.rts.length - 1]!;
-  for (const r of l.rts) r.lineW = z.left + z.w;
+  for (const r of l.rts) r.lineW = end;
 }
+
+
 
 export function LyricPage({ lines, songKey }: LyricPageProps) {
   const lab = useSpaceLab();
@@ -303,17 +223,25 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
     frame.textContent = '';
     const { els, shape } = model;
     const total = shape.stanzas.length;
-    // —— 建页：版式按段落种类轮换，相邻两页不重复 ——
-    const seen: Record<string, number> = {};
-    let prevTpl = '';
+    // —— 建页：版式按段落轮换（lyric-page/pools.ts：稳和险交替，大胆版式一首歌最多一次，相邻两页不重复）——
+    const lang: TCtx['lang'] = model.script === 'zh' ? 'zh' : model.script === 'ja' ? 'ja' : model.script === 'ko' ? 'ko' : 'en';
+    const cjk = lang !== 'en';
+    const chorusUnits = els.filter((_, k) => shape.sections[shape.lineSection[k] ?? -1]?.kind === 'chorus').map((e) => (e.units ?? []).map((u) => u.t));
+    const hook = songHook(chorusUnits, cjk);
+    let lastChorusSec = -1;
+    shape.sections.forEach((s, i) => {
+      if (s.kind === 'chorus') lastChorusSec = i;
+    });
+    const lastChorusStz = shape.stanzas.findIndex((z) => z.section === lastChorusSec);
+    // 量尺寸：未变换的外接框 ÷ 画幅缩放（排版时随时更新）
+    let S0 = 1;
+    const size = (el: HTMLElement) => {
+      const b = el.getBoundingClientRect();
+      return { w: b.width / S0, h: b.height / S0 };
+    };
+    const pick = newPickState();
     const pages: PPage[] = shape.stanzas.map((stz, j) => {
       const sec = shape.sections[stz.section]!;
-      const pool = (vert ? POOL_V : POOL_H)[sec.kind];
-      const nth = seen[sec.kind] ?? 0;
-      seen[sec.kind] = nth + 1;
-      let tpl = pool[nth % pool.length]!;
-      if (tpl.id === prevTpl && pool.length > 1) tpl = pool[(nth + 1) % pool.length]!;
-      prevTpl = tpl.id;
       const el = document.createElement('div');
       el.className = 'lp-page';
       // 页眉只留页码（用户 2026-11-22：不写这页是哪一段）
@@ -346,10 +274,16 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
           line.appendChild(tr);
         }
         el.appendChild(line);
-        pl.push({ e, el: line, tx, tr, rts, whole, state: 'future', active: false, w: 0, h: 0 });
+        pl.push({ eng: e, el: line, tx, tr, rts, whole, units: rts ? rts.map((r) => r.v.el) : [], eu: e.units, text: e.text, ts: e.s, te: e.e, vert, rot: 0, state: 'future', active: false, w: 0, h: 0 });
       }
       frame.appendChild(el);
-      return { el, lines: pl, kind: sec.kind, tpl, s: stz.s, e: stz.e, tIn: 0, tOut: Infinity, on: false };
+      const ctx: TCtx = { page: el, lines: pl, kind: sec.kind, vert, cjk, lang, hasTr: pl.some((l) => l.tr), hook, lastChorus: j === lastChorusStz, size };
+      let tpl = pickTpl(ctx, pick);
+      if (tpl.dir) ctx.vert = tpl.dir === 'v';
+      // 强制横排的经典版式不存在（经典竖排只给中文）：中文歌里这种页面若退到经典版式，用横排左栏
+      if (!tpl.layout && ctx.vert !== vert) tpl = FALLBACK_H;
+      el.className = `lp-page tpl-${tpl.id}${cjk ? ' is-cjk' : ''} lang-${lang}${ctx.vert ? ' is-vert' : ''}`;
+      return { el, lines: pl, kind: sec.kind, tpl, ctx, hooks: null, s: stz.s, e: stz.e, tIn: 0, tOut: Infinity, on: false };
     });
     // —— 换页时刻：长空档（间奏）里上一页唱完 1.4s 后淡出、下一页提前 2.2s 出现；否则唱完就换（最多提前 0.9s） ——
     pages.forEach((p, j) => {
@@ -375,24 +309,34 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
         frame.appendChild(el);
         return { ...g, el, dots: [...el.querySelectorAll<HTMLElement>('i')], on: false };
       });
-    // —— 排版：先按原字号排、量尺寸，再按最挤的那句整页缩小 ——
+    // —— 排版：先恢复成刚建好的样子，再按版式平排（经典版式按最挤的那句整页缩小）、量字、最后旋转 / 加装饰 ——
     const layoutAll = () => {
+      // 画幅当前的缩放（第一次排版时还没 fit，就是 1）：量出来的外接框除以它，得到未缩放的像素
+      S0 = frame.getBoundingClientRect().width / PW || 1;
       for (const pg of pages) {
         pg.el.style.display = 'block';
-        layoutPage(pg, 1);
-        let f = 1;
-        const n = pg.lines.length;
-        pg.lines.forEach((l, i) => {
-          l.w = l.tx.offsetWidth;
-          l.h = l.tx.offsetHeight;
-          const need = vert ? l.h : l.w;
-          if (need > 0) f = Math.min(f, pg.tpl.room(i, n) / need);
-        });
-        f = clamp(f, 0.45, 1);
-        layoutPage(pg, f);
-        // 画幅当前的缩放（第一次排版时还没 fit，就是 1）：量出来的外接框除以它，得到未缩放的像素
-        const S = frame.getBoundingClientRect().width / PW || 1;
-        for (const l of pg.lines) measureLine(l, vert, S);
+        resetPage(pg);
+        pg.el.classList.add('is-measuring');
+        if (pg.tpl.layout) pg.tpl.layout(pg.ctx);
+        else {
+          layoutClassic(pg, 1);
+          let f = 1;
+          const n = pg.lines.length;
+          pg.lines.forEach((l, i) => {
+            l.w = l.tx.offsetWidth;
+            l.h = l.tx.offsetHeight;
+            const need = pg.ctx.vert ? l.h : l.w;
+            if (need > 0) f = Math.min(f, pg.tpl.room!(i, n) / need);
+          });
+          f = clamp(f, 0.45, 1);
+          layoutClassic(pg, f);
+        }
+        for (const l of pg.lines) {
+          l.el.classList.toggle('is-vert', l.vert);
+          measureLine(l, S0);
+        }
+        pg.el.classList.remove('is-measuring');
+        pg.hooks = pg.tpl.finish?.(pg.ctx) || null;
         pg.el.style.display = pg.on ? 'block' : 'none';
       }
     };
@@ -442,6 +386,8 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
       /** 字形中心相对盒子中心的偏移（未缩放像素）：字距加在字后面、上色留白上下不等。 */
       gA: [number, number];
       gB: [number, number];
+      /** 版面上那个字的倾斜（度：整句倾斜，或沿弧线摆时这个字自己的角度）。 */
+      tr: number;
     }
     interface Morph {
       line: PLine;
@@ -471,6 +417,7 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
       ctx.style.fontStyle = cs.fontStyle;
       ctx.style.letterSpacing = cs.letterSpacing;
       ctx.style.lineHeight = cs.lineHeight;
+      ctx.style.textTransform = cs.textTransform;
       for (const v of ['--lc-rest', '--lp-ink', '--lc-a']) {
         const val = cs.getPropertyValue(v);
         if (val) ctx.style.setProperty(v, val);
@@ -481,7 +428,7 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
       if (!layer) return null;
       let line: PLine | null = null;
       let page: PPage | null = null;
-      for (const pg of pages) for (const l of pg.lines) if (l.e.s <= t + 0.05 && (!line || l.e.s >= line.e.s)) {
+      for (const pg of pages) for (const l of pg.lines) if (l.eng.s <= t + 0.05 && (!line || l.eng.s >= line.eng.s)) {
         line = l;
         page = pg;
       }
@@ -499,7 +446,7 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
       ctxA.className = 'lpm-ctx lpm-a';
       const ctxB = document.createElement('div');
       // 创建时就带上这一行的状态和竖排：下面量克隆的自然盒子要在最终的排版环境里量
-      ctxB.className = `lpm-ctx lpm-b ${line.el.className}${vert ? ' is-vert' : ''}`;
+      ctxB.className = `lpm-ctx lpm-b ${line.el.className}`;
       layer.append(ctxA, ctxB);
       copyType(ctxA, src[0]!);
       copyType(ctxB, tgt[0]!);
@@ -511,7 +458,10 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
         a.appendChild(ac);
         ctxA.appendChild(a);
         const b = document.createElement('span');
-        b.className = 'lpm-u';
+        // 版面那份按目标字自己的读向排（一句跨横竖两截时每个字不同），字体照抄目标字（一句里可能混两种字号字体）
+        const bv = unitVert(line, g);
+        b.className = bv ? 'lpm-u is-v' : 'lpm-u';
+        copyType(b, g);
         const bc = g.cloneNode(true) as HTMLElement;
         b.appendChild(bc);
         ctxB.appendChild(b);
@@ -526,11 +476,15 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
         const lsB = parseFloat(getComputedStyle(g).letterSpacing) || 0;
         // 版面那份：上下留白 .12em / .16em；横排字距加在右边，竖排加在下边
         const gA: [number, number] = [-lsA / 2, 0];
-        const gB: [number, number] = vert ? [0, -lsB / 2 - 0.02 * fsB] : [-lsB / 2, -0.02 * fsB];
-        return { gA, gB, src: s, tgt: g, a, b, ac, bc, fsA, fsB, aw: ra.width || s.offsetWidth, ah: ra.height || s.offsetHeight || 1, bw: rb.width || g.offsetWidth, bh: rb.height || g.offsetHeight || 1, lastS: s.getBoundingClientRect(), lastT: null };
+        const gB0: [number, number] = bv ? [0, -lsB / 2 - 0.02 * fsB] : [-lsB / 2, -0.02 * fsB];
+        const tr = rotTarget(line, g);
+        const rc = Math.cos((tr * Math.PI) / 180);
+        const rsn = Math.sin((tr * Math.PI) / 180);
+        const gB: [number, number] = [gB0[0] * rc - gB0[1] * rsn, gB0[0] * rsn + gB0[1] * rc];
+        return { gA, gB, tr, src: s, tgt: g, a, b, ac, bc, fsA, fsB, aw: ra.width || s.offsetWidth, ah: ra.height || s.offsetHeight || 1, bw: rb.width || g.offsetWidth, bh: rb.height || g.offsetHeight || 1, lastS: s.getBoundingClientRect(), lastT: null };
       });
       pageBus.morph = true;
-      pageBus.morphS = line.e.s;
+      pageBus.morphS = line.eng.s;
       pageBus.caption = caption;
       return { line, units, ctxA, ctxB, srcHost, rot: m ? Number(m) : 0 };
     };
@@ -556,6 +510,11 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
       const s = Math.sin(theta);
       return { dx: (lx * c - ly * s) * vs, dy: (lx * s + ly * c) * vs, sc: m.a || 1 };
     };
+    /** 版面上一个字的倾斜：沿弧线摆的字带自己的角度（外壳上的 data-rot），否则是整句的倾斜。 */
+    const rotTarget = (l: PLine, el: HTMLElement) => {
+      const w = el.closest<HTMLElement>('[data-rot]');
+      return w ? Number(w.dataset.rot) || 0 : l.rot;
+    };
     const rotOf = (el: HTMLElement) => Number((el.style.transform.match(/rotate\((-?[\d.]+)deg\)/) ?? [])[1] ?? 0);
     const stepMorph = (mo: Morph, k: number) => {
       const layer = morphRef.current;
@@ -564,10 +523,10 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
       mo.line.el.style.opacity = '0';
       const box = layer.getBoundingClientRect();
       // 版面这一行：未变换的盒子 × 画幅缩放 S（页的进出场只有平移）
-      const lr = mo.line.el.getBoundingClientRect();
-      const S = lr.width / (mo.line.el.offsetWidth || 1) || 1;
+      // 样张 N 起句子可能整句旋转，不能再用这一句的外接框反推：直接取画幅的缩放
+      const S = frame.getBoundingClientRect().width / PW || 1;
       mo.ctxA.classList.toggle('is-grad', mo.srcHost.classList.contains('is-grad'));
-      mo.ctxB.className = `lpm-ctx lpm-b ${mo.line.el.className}${vert ? ' is-vert' : ''}`;
+      mo.ctxB.className = `lpm-ctx lpm-b ${mo.line.el.className}`;
       // 途中 A 渐变成 B（.2 → .8），差异在运动中化掉
       const q = smooth((k - 0.2) / 0.6);
       mo.ctxA.style.opacity = (1 - q).toFixed(3);
@@ -580,9 +539,9 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
       const th = (mo.rot * Math.PI) / 180;
       const cos = Math.abs(Math.cos(th));
       const sin = Math.abs(Math.sin(th));
-      const rot = mo.rot * (1 - k);
-      const ty = vert ? 0.5 : 0.85;
       for (const u of mo.units) {
+        const rot = mo.rot * (1 - k) + u.tr * k;
+        const ty = u.b.classList.contains('is-v') ? 0.5 : 0.85;
         syncClone(u.src, u.ac);
         syncClone(u.tgt, u.bc);
         // 起点：漫游里那个字（外接框按倾斜反推视觉缩放，再扣掉它自己的浮起 / 放大）；原句被回收时用最后一次量到的
@@ -599,7 +558,7 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
         let T = u.lastT;
         const rt = u.tgt.getBoundingClientRect();
         if (rt.width > 0) {
-          const ob = ownShift(u.tgt, S, 0, u.bh, ty);
+          const ob = ownShift(u.tgt, S, (u.tr * Math.PI) / 180, u.bh, ty);
           T = { x: rt.left + rt.width / 2 - ob.dx - box.left, y: rt.top + rt.height / 2 - ob.dy - box.top, f: u.fsB * S };
           u.lastT = T;
         }
@@ -687,9 +646,10 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
             pg.on = true;
           }
           pg.el.style.opacity = vis.toFixed(3);
+          pg.hooks?.frame?.(t);
           pg.el.style.transform = `translate3d(0, ${((1 - inK) * 22 - outK * 16).toFixed(1)}px, 0)`;
           for (const l of pg.lines) {
-            const e = l.e;
+            const e = l.eng;
             const state: PLine['state'] = t > e.e + 0.9 ? 'past' : t >= e.s - 0.05 ? 'cur' : 'future';
             if (state !== l.state) {
               l.state = state;
@@ -702,6 +662,8 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
               }
             }
             if (l.whole) l.whole.classList.toggle('is-on', t >= e.s);
+            // 版式挪出句子的翻译（脚注、右栏……）：跟着所属句子亮起
+            if (l.tr && l.tr.parentElement !== l.el) l.tr.classList.toggle('is-on', state !== 'future');
             if (state !== 'cur' || !l.rts?.length) continue;
             // 正在唱（和唱完后 0.9s 的尾韵）：扫光、波浪、长音；没唱到的部分是浅灰的「先印好」
             const singing = t <= e.e + 0.3;
@@ -768,6 +730,8 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
   return (
     <>
       <div ref={rootRef} className={`lyric-page lw${vert ? ' is-vert' : ''}`} data-scheme={listen.scheme} style={vars} aria-hidden="true">
+        {/* 纸面（样张 N，2026-11-22 用户定稿）：封面最深的色、九成不透明，随交接进度和版面一起升起，压住你设的背景与星云 */}
+        <i className="lp-paper" />
         <i className="lp-grain" style={{ backgroundImage: `url(${grain()})` }} />
         <div ref={frameRef} className="lp-frame" />
       </div>
