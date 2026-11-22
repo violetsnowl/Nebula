@@ -403,27 +403,65 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
     let extrap = 0;
     let rootOp = '';
 
-    // —— 转场：逐字飞入 / 飞回（用户 2026-11-22 提议；第二版）——
-    // 交接一开始就抓住「最近开始唱的那一句」（两句之间的空档也算上一句），给每个字做一个替身，
-    // 从漫游歌词（或字幕）里那个字的位置飞到版面上对应那个字的位置：位置、字号、倾斜都随交接进度 --lk 走，
-    // 竖排时一个个字落进那一列。飞行期间两边的原句都藏着，最后 10% 替身和版面那句交叉淡化；离开聆听时原路飞回。
+    // —— 转场：逐字飞入 / 飞回（用户 2026-11-22 提议；第三版「克隆替身」）——
+    // 交接一开始就抓住「最近开始唱的那一句」（两句之间的空档也算上一句）。每个字带两份克隆：
+    //   A = 漫游歌词（或字幕）里那个字的原样复制，B = 版面上那个字的原样复制（扫光进度、长音光、颜色每帧从原字同步）；
+    // 两份沿同一条路线飞（中心、视觉字号、倾斜随交接进度 --lk 插值），途中 A 渐变成 B。
+    // B 按版面上那个字未变换时的真实盒子落位：交接走完时 B 和版面上的字逐像素重合，直接换成真字，没有落回的跳动；
+    // 离开聆听时同理，飞回去时 A 和漫游歌词逐像素重合。竖排时 B 本身按竖排排（字距、扫光方向同版面）。
+    interface MorphUnit {
+      src: HTMLElement;
+      tgt: HTMLElement;
+      a: HTMLElement;
+      b: HTMLElement;
+      ac: HTMLElement;
+      bc: HTMLElement;
+      /** 两头原字的字号（未缩放）与自然盒子。 */
+      fsA: number;
+      fsB: number;
+      aw: number;
+      ah: number;
+      bw: number;
+      bh: number;
+      lastS: DOMRect;
+      lastT: { x: number; y: number; f: number } | null;
+      /** 字形中心相对盒子中心的偏移（未缩放像素）：字距加在字后面、上色留白上下不等。 */
+      gA: [number, number];
+      gB: [number, number];
+    }
     interface Morph {
       line: PLine;
-      src: HTMLElement[];
-      tgt: HTMLElement[];
-      spans: HTMLElement[];
+      units: MorphUnit[];
+      ctxA: HTMLElement;
+      ctxB: HTMLElement;
+      srcHost: HTMLElement;
       rot: number;
-      fsS: number[];
-      fsT: number[];
-      hS: number[];
-      hT: number[];
-      lastS: DOMRect[];
-      lastT: DOMRect[];
     }
     let morph: Morph | null = null;
     let morphTried = false;
     const fsOf = (el: HTMLElement) => parseFloat(getComputedStyle(el).fontSize) || 16;
     const textOf = (els: HTMLElement[]) => els.map((e) => e.textContent ?? '').join('').replace(/\s+/g, '');
+    /** 把原字的逐帧状态（行内变量、glow 等类名，含拉丁长音拆开的字母）同步到克隆上。 */
+    const syncClone = (from: HTMLElement, to: HTMLElement) => {
+      if (to.style.cssText !== from.style.cssText) to.style.cssText = from.style.cssText;
+      if (to.className !== from.className) to.className = from.className;
+      const fc = from.children;
+      const tc = to.children;
+      for (let i = 0; i < fc.length && i < tc.length; i++) syncClone(fc[i] as HTMLElement, tc[i] as HTMLElement);
+    };
+    /** 克隆所在的排版环境：字体、字重、字距、行高、斜体、没在扫的字的颜色，照抄原字算出来的值。 */
+    const copyType = (ctx: HTMLElement, from: HTMLElement) => {
+      const cs = getComputedStyle(from);
+      ctx.style.fontFamily = cs.fontFamily;
+      ctx.style.fontWeight = cs.fontWeight;
+      ctx.style.fontStyle = cs.fontStyle;
+      ctx.style.letterSpacing = cs.letterSpacing;
+      ctx.style.lineHeight = cs.lineHeight;
+      for (const v of ['--lc-rest', '--lp-ink', '--lc-a']) {
+        const val = cs.getPropertyValue(v);
+        if (val) ctx.style.setProperty(v, val);
+      }
+    };
     const startMorph = (t: number): Morph | null => {
       const layer = morphRef.current;
       if (!layer) return null;
@@ -440,31 +478,47 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
       const src = [...host.querySelectorAll<HTMLElement>(':scope > .u, :scope > .fl-whole')];
       const tgt = line.rts ? line.rts.map((r) => r.v.el) : line.whole ? [line.whole] : [];
       if (!src.length || src.length !== tgt.length || textOf(src) !== textOf(tgt)) return null;
-      const m = (host.closest<HTMLElement>('.flow-lyric')?.style.transform.match(/rotate\((-?[\d.]+)deg\)/) ?? [])[1];
+      const srcHost = (caption ? host : host.closest<HTMLElement>('.flow-lyric')) ?? host;
+      const m = (srcHost.style.transform.match(/rotate\((-?[\d.]+)deg\)/) ?? [])[1];
       layer.textContent = '';
-      const spans = src.map((e) => {
-        const s = document.createElement('span');
-        s.className = 'lpm-u';
-        s.textContent = e.textContent;
-        layer.appendChild(s);
-        return s;
+      const ctxA = document.createElement('div');
+      ctxA.className = 'lpm-ctx lpm-a';
+      const ctxB = document.createElement('div');
+      // 创建时就带上这一行的状态和竖排：下面量克隆的自然盒子要在最终的排版环境里量
+      ctxB.className = `lpm-ctx lpm-b ${line.el.className}${vert ? ' is-vert' : ''}`;
+      layer.append(ctxA, ctxB);
+      copyType(ctxA, src[0]!);
+      copyType(ctxB, tgt[0]!);
+      const units = src.map((s, i): MorphUnit => {
+        const g = tgt[i]!;
+        const a = document.createElement('span');
+        a.className = 'lpm-u';
+        const ac = s.cloneNode(true) as HTMLElement;
+        a.appendChild(ac);
+        ctxA.appendChild(a);
+        const b = document.createElement('span');
+        b.className = 'lpm-u';
+        const bc = g.cloneNode(true) as HTMLElement;
+        b.appendChild(bc);
+        ctxB.appendChild(b);
+        const fsA = fsOf(s);
+        const fsB = fsOf(g);
+        a.style.fontSize = `${fsA}px`;
+        b.style.fontSize = `${fsB}px`;
+        // 自然盒子用定位框（还没加变换）的小数实测，不用取整的 offsetWidth
+        const ra = a.getBoundingClientRect();
+        const rb = b.getBoundingClientRect();
+        const lsA = parseFloat(getComputedStyle(s).letterSpacing) || 0;
+        const lsB = parseFloat(getComputedStyle(g).letterSpacing) || 0;
+        // 版面那份：上下留白 .12em / .16em；横排字距加在右边，竖排加在下边
+        const gA: [number, number] = [-lsA / 2, 0];
+        const gB: [number, number] = vert ? [0, -lsB / 2 - 0.02 * fsB] : [-lsB / 2, -0.02 * fsB];
+        return { gA, gB, src: s, tgt: g, a, b, ac, bc, fsA, fsB, aw: ra.width || s.offsetWidth, ah: ra.height || s.offsetHeight || 1, bw: rb.width || g.offsetWidth, bh: rb.height || g.offsetHeight || 1, lastS: s.getBoundingClientRect(), lastT: null };
       });
       pageBus.morph = true;
       pageBus.morphS = line.e.s;
       pageBus.caption = caption;
-      return {
-        line,
-        src,
-        tgt,
-        spans,
-        rot: m ? Number(m) : 0,
-        fsS: src.map(fsOf),
-        fsT: tgt.map(fsOf),
-        hS: src.map((e) => e.offsetHeight || 1),
-        hT: tgt.map((e) => e.offsetHeight || 1),
-        lastS: src.map((e) => e.getBoundingClientRect()),
-        lastT: tgt.map((e) => e.getBoundingClientRect()),
-      };
+      return { line, units, ctxA, ctxB, srcHost, rot: m ? Number(m) : 0 };
     };
     const endMorph = () => {
       const layer = morphRef.current;
@@ -476,33 +530,103 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
       morph = null;
       pageBus.morph = false;
     };
-    const stepMorph = (mo: Morph, k: number, t: number) => {
+    /** 原字自己的变换（波浪浮起、长音放大）让外接框中心偏了多少：按「没浮起时」的盒子定位，克隆同步了同样的变换。
+     *  vs = 视觉缩放，theta = 所在句子的倾斜（弧度），h = 盒子高（未缩放），oy = transform-origin 的纵向比例。 */
+    const ownShift = (el: HTMLElement, vs: number, theta: number, h: number, oy: number): { dx: number; dy: number; sc: number } => {
+      const tf = getComputedStyle(el).transform;
+      if (!tf || tf === 'none') return { dx: 0, dy: 0, sc: 1 };
+      const m = new DOMMatrixReadOnly(tf);
+      const lx = m.e;
+      const ly = m.f + (0.5 - oy) * h * (m.a - 1);
+      const c = Math.cos(theta);
+      const s = Math.sin(theta);
+      return { dx: (lx * c - ly * s) * vs, dy: (lx * s + ly * c) * vs, sc: m.a || 1 };
+    };
+    const rotOf = (el: HTMLElement) => Number((el.style.transform.match(/rotate\((-?[\d.]+)deg\)/) ?? [])[1] ?? 0);
+    const stepMorph = (mo: Morph, k: number) => {
       const layer = morphRef.current;
       if (!layer) return;
+      layer.style.opacity = '1';
+      mo.line.el.style.opacity = '0';
       const box = layer.getBoundingClientRect();
-      const lerp = (a: number, b: number) => a + (b - a) * k;
-      const u0 = mo.line.e;
-      mo.spans.forEach((sp, i) => {
-        // 两端的字可能暂时不在（原句被回收、版面换页）：用最后一次量到的位置
-        let rs = mo.src[i]!.getBoundingClientRect();
-        if (rs.width > 0 && mo.src[i]!.isConnected) mo.lastS[i] = rs;
-        else rs = mo.lastS[i]!;
-        let rt = mo.tgt[i]!.getBoundingClientRect();
-        if (rt.width > 0) mo.lastT[i] = rt;
-        else rt = mo.lastT[i]!;
-        const fs = lerp(mo.fsS[i]! * (rs.height / mo.hS[i]!), mo.fsT[i]! * (rt.height / mo.hT[i]!));
-        const cx = lerp(rs.left + rs.width / 2, rt.left + rt.width / 2) - box.left;
-        const cy = lerp(rs.top + rs.height / 2, rt.top + rt.height / 2) - box.top;
-        sp.style.fontSize = `${fs.toFixed(2)}px`;
-        sp.style.transform = `translate(${cx.toFixed(1)}px, ${cy.toFixed(1)}px) translate(-50%, -50%) rotate(${(mo.rot * (1 - k)).toFixed(2)}deg)`;
-        // 颜色跟着演唱走：唱过 = 实色，正在唱 = 波前的亮色，没唱到 = 从漫游的白 42% 过渡到版面的浅灰 16%
-        const u = mo.line.rts?.[i]?.u;
-        const sung = u ? t >= u.e : t >= u0.s;
-        const singing = u ? t >= u.s && t < u.e : false;
-        sp.style.color = sung ? 'var(--lp-ink)' : singing ? 'color-mix(in srgb, var(--lc-a) 30%, #fff)' : `rgba(255,255,255,${lerp(0.42, 0.16).toFixed(3)})`;
-      });
-      layer.style.opacity = (1 - smooth((k - 0.9) / 0.1)).toFixed(3);
-      mo.line.el.style.opacity = smooth((k - 0.9) / 0.1).toFixed(3);
+      // 版面这一行：未变换的盒子 × 画幅缩放 S（页的进出场只有平移）
+      const lr = mo.line.el.getBoundingClientRect();
+      const S = lr.width / (mo.line.el.offsetWidth || 1) || 1;
+      mo.ctxA.classList.toggle('is-grad', mo.srcHost.classList.contains('is-grad'));
+      mo.ctxB.className = `lpm-ctx lpm-b ${mo.line.el.className}${vert ? ' is-vert' : ''}`;
+      // 途中 A 渐变成 B（.2 → .8），差异在运动中化掉
+      const q = smooth((k - 0.2) / 0.6);
+      mo.ctxA.style.opacity = (1 - q).toFixed(3);
+      mo.ctxB.style.opacity = q.toFixed(3);
+      // 原字的波浪浮起 / 长音放大只在两端保留：漫游那份起飞后 .2 内收平，版面那份 .8 之后才浮起，渐变那段两份都是平的
+      mo.ctxA.style.setProperty('--lw', (1 - smooth(k / 0.2)).toFixed(3));
+      mo.ctxB.style.setProperty('--lw', smooth((k - 0.8) / 0.2).toFixed(3));
+      // 起点的倾斜每帧从原句读（交接途中换句时，被接手那句正在转出离场）
+      if (mo.srcHost.isConnected) mo.rot = rotOf(mo.srcHost);
+      const th = (mo.rot * Math.PI) / 180;
+      const cos = Math.abs(Math.cos(th));
+      const sin = Math.abs(Math.sin(th));
+      const rot = mo.rot * (1 - k);
+      const ty = vert ? 0.5 : 0.85;
+      for (const u of mo.units) {
+        syncClone(u.src, u.ac);
+        syncClone(u.tgt, u.bc);
+        // 起点：漫游里那个字（外接框按倾斜反推视觉缩放，再扣掉它自己的浮起 / 放大）；原句被回收时用最后一次量到的
+        let rs = u.src.getBoundingClientRect();
+        if (rs.width > 0 && u.src.isConnected) u.lastS = rs;
+        else rs = u.lastS;
+        const vsAll = (rs.width + rs.height) / ((u.aw + u.ah) * (cos + sin) || 1);
+        const oa = u.src.isConnected ? ownShift(u.src, vsAll, th, u.ah, 0.85) : { dx: 0, dy: 0, sc: 1 };
+        const vsA = vsAll / oa.sc;
+        const sx = rs.left + rs.width / 2 - oa.dx - box.left;
+        const sy = rs.top + rs.height / 2 - oa.dy - box.top;
+        const sf = u.fsA * vsA;
+        // 终点：版面上那个字没浮起时的盒子中心，视觉字号 = 字号 × S
+        let T = u.lastT;
+        const rt = u.tgt.getBoundingClientRect();
+        if (rt.width > 0) {
+          const ob = ownShift(u.tgt, S, 0, u.bh, ty);
+          T = { x: rt.left + rt.width / 2 - ob.dx - box.left, y: rt.top + rt.height / 2 - ob.dy - box.top, f: u.fsB * S };
+          u.lastT = T;
+        }
+        if (!T) T = { x: sx, y: sy, f: sf };
+        // 两份克隆的字形中心始终重合（G）；起点按漫游那份的盒子、终点按版面那份的盒子精确落位
+        const f = sf + (T.f - sf) * k;
+        const sA = f / u.fsA;
+        const sB = f / u.fsB;
+        const gx = sx + u.gA[0] * vsA + (T.x + u.gB[0] * S - (sx + u.gA[0] * vsA)) * k;
+        const gy = sy + u.gA[1] * vsA + (T.y + u.gB[1] * S - (sy + u.gA[1] * vsA)) * k;
+        const ax = gx - u.gA[0] * sA;
+        const ay = gy - u.gA[1] * sA;
+        const bx = gx - u.gB[0] * sB;
+        const by = gy - u.gB[1] * sB;
+        u.a.style.transform = `translate(${(ax - u.aw / 2).toFixed(3)}px, ${(ay - u.ah / 2).toFixed(3)}px) scale(${sA.toFixed(5)}) rotate(${rot.toFixed(3)}deg)`;
+        u.b.style.transform = `translate(${(bx - u.bw / 2).toFixed(3)}px, ${(by - u.bh / 2).toFixed(3)}px) scale(${sB.toFixed(5)}) rotate(${rot.toFixed(3)}deg)`;
+      }
+    };
+
+    // 测试探针（QA 用）：把替身推到交接进度 kk，量每个字和两头真字的偏差（中心 x / y、宽、高，像素）
+    const probeWin = window as unknown as { __nebulaLyricPage?: { probe: (kk: number) => number[][] | null; pair: (kk: number) => number[][] | null } };
+    probeWin.__nebulaLyricPage = {
+      probe: (kk) => {
+        if (!morph) return null;
+        stepMorph(morph, kk);
+        return morph.units.map((u) => {
+          const a = (kk >= 0.5 ? u.bc : u.ac).getBoundingClientRect();
+          const b = (kk >= 0.5 ? u.tgt : u.src).getBoundingClientRect();
+          return [a.left + a.width / 2 - (b.left + b.width / 2), a.top + a.height / 2 - (b.top + b.height / 2), a.width - b.width, a.height - b.height].map((v) => Math.round(v * 100) / 100);
+        });
+      },
+      // 两份克隆在交接进度 kk 时各自的盒子中心之差（看飞行途中会不会错位重影）
+      pair: (kk) => {
+        if (!morph) return null;
+        stepMorph(morph, kk);
+        return morph.units.map((u) => {
+          const a = u.ac.getBoundingClientRect();
+          const b = u.bc.getBoundingClientRect();
+          return [a.left + a.width / 2 - (b.left + b.width / 2), a.top + a.height / 2 - (b.top + b.height / 2), a.width, b.width, a.height, b.height].map((v) => Math.round(v * 10) / 10);
+        });
+      },
     };
 
     const tick = (now: number) => {
@@ -594,7 +718,7 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
           morphTried = true;
           morph = startMorph(t);
         }
-        if (morph) stepMorph(morph, k, t);
+        if (morph) stepMorph(morph, k);
       }
       raf = requestAnimationFrame(tick);
     };
@@ -624,7 +748,7 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
         <div ref={frameRef} className="lp-frame" />
       </div>
       {/* 转场替身：不放在版面根里（版面根的透明度随交接从 0 起，替身要一直看得见） */}
-      <div ref={morphRef} className="lp-morph" data-scheme={listen.scheme} style={vars} aria-hidden="true" />
+      <div ref={morphRef} className="lp-morph lw" data-scheme={listen.scheme} style={vars} aria-hidden="true" />
     </>
   );
 }

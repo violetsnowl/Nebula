@@ -21,8 +21,9 @@
   --lp-ink: color-mix(in srgb, var(--lc-a) 8%, #fff);
 }
 
-/* 转场替身（逐字飞入 / 飞回）：每个字一个绝对定位的 span，位置、字号、倾斜、颜色由 LyricPage 逐帧写。
-   在版面之上一层；外羽化同版面的字 */
+/* 转场替身（逐字飞入 / 飞回，第三版「克隆替身」）：每个字两份克隆——.lpm-a 是漫游歌词里那个字的原样复制，
+   .lpm-b 是版面上那个字的原样复制（排版环境照抄原字算出来的字体 / 字距 / 行高 / 斜体 / 颜色变量，逐帧状态从原字同步）。
+   .lpm-u 是定位框：位置、缩放、倾斜由 LyricPage 逐帧写，缩放以框中心为原点。在版面之上一层；外羽化同两边的字 */
 .lp-morph {
   position: absolute;
   inset: 0;
@@ -34,8 +35,11 @@
   filter: drop-shadow(0 1px 2.4px rgba(4, 6, 12, 0.5)) drop-shadow(0 0 4.8px rgba(4, 6, 12, 0.26));
 }
 
-.lp-morph[data-scheme='mono'] {
-  --lp-ink: color-mix(in srgb, var(--lc-a) 8%, #fff);
+.lp-morph .lpm-ctx {
+  position: absolute;
+  left: 0;
+  top: 0;
+  white-space: pre;
 }
 
 .lpm-u {
@@ -43,11 +47,43 @@
   left: 0;
   top: 0;
   white-space: pre;
-  line-height: 1;
-  font-family: var(--lc-font, 'Noto Serif SC', serif);
-  font-weight: var(--lyric-weight, 600);
-  letter-spacing: var(--lc-ls, 0.02em);
+  transform-origin: 50% 50%;
   will-change: transform;
+}
+
+/* 版面那份：保留扫光用的留白（和版面同一个值），但去掉负边距——每个字单独定位，盒子要和原字的盒子一样大 */
+.lpm-b .u,
+.lpm-b .u .ch {
+  padding: 0.12em 0.2em 0.16em;
+  margin: 0;
+}
+.lpm-b .u.has-ch {
+  padding: 0;
+}
+.lpm-b .u .ch {
+  margin: -0.12em -0.2em -0.16em;
+}
+
+/* 克隆自己的波浪浮起 / 长音放大乘 --lw（LyricPage 逐帧写）：只在两端保留，交叉渐变那段两份都是平的，不会错位重影 */
+.lpm-ctx .u,
+.lpm-ctx .u .ch {
+  transform: translate3d(0, calc(var(--lift, 0) * -1em * var(--lw, 1)), 0) scale(calc(1 + (var(--sc, 1) - 1) * var(--lw, 1)));
+}
+
+/* 竖排：版面那份也按竖排排，波浪浮起向右、扫光从上往下（同 .lyric-page.is-vert） */
+.lpm-b.is-vert .lpm-u {
+  writing-mode: vertical-rl;
+}
+
+.lpm-b.is-vert .u,
+.lpm-b.is-vert .u .ch {
+  transform: translate3d(calc(var(--lift, 0) * 1em * var(--lw, 1)), 0, 0) scale(calc(1 + (var(--sc, 1) - 1) * var(--lw, 1)));
+  transform-origin: 50% 50%;
+}
+
+.lpm-b.is-vert.is-grad .u:not(.has-ch),
+.lpm-b.is-vert.is-grad .u .ch {
+  background-image: linear-gradient(180deg, var(--sung, #fff) 0, var(--sung, #fff) calc(var(--P) - var(--f, 34%)), var(--edge) var(--P), var(--un) calc(var(--P) + var(--f, 34%)));
 }
 
 /* 1600 × 900 的逻辑画幅，等比缩放到窗口中央 */

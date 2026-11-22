@@ -1566,7 +1566,7 @@ async function main() {
       .catch(() => {});
     const r = await page.evaluate(() => {
       const m = document.querySelector('.lp-morph');
-      const text = m ? [...m.querySelectorAll('.lpm-u')].map((s) => s.textContent).join('') : '';
+      const text = m ? [...m.querySelectorAll('.lpm-a .lpm-u')].map((s) => s.textContent).join('') : '';
       const norm = (s) => (s || '').replace(/\s+/g, '');
       // 被接手的那句（不论当前还是正在离场）要藏起来；其余漫游句子要已经淡得很低
       const fls = [...document.querySelectorAll('.lyrics-layer .flow-lyric')];
@@ -1574,17 +1574,31 @@ async function main() {
       const others = fls.filter((f) => norm(f.textContent) !== norm(text));
       return {
         lk: parseFloat(document.querySelector('.app')?.style.getPropertyValue('--lk') || '0'),
-        spans: m ? m.querySelectorAll('.lpm-u').length : 0,
+        spans: m ? m.querySelectorAll('.lpm-a .lpm-u').length : 0,
+        clonesB: m ? m.querySelectorAll('.lpm-b .lpm-u').length : 0,
         text,
         op: m ? Number(m.style.opacity) : 0,
         z1Op: same.length ? Math.max(...same.map((f) => Number(f.style.opacity))) : null,
         othersOp: others.length ? Math.max(...others.map((f) => Number(f.style.opacity))) : null,
       };
     });
+    // 落位精度（第三版「克隆替身」）：把替身推到交接终点，版面那份克隆和版面真字逐字比中心 / 宽高；
+    // 推到起点，漫游那份克隆和漫游真字比（漫游的句子带 0–3° 倾斜，外接框会大一点，放宽到 2.5px）
+    const landing = await page.evaluate(() => {
+      const p = window.__nebulaLyricPage;
+      const max = (rows) => (rows && rows.length ? Math.max(...rows.flat().map((v) => Math.abs(v))) : null);
+      const pair = p?.pair(0.5);
+      return { end: max(p?.probe(1)), start: max(p?.probe(0)), mid: pair ? pair[0] : null };
+    });
+    r.landEnd = landing.end;
+    r.landStart = landing.start;
+    r.mid = landing.mid;
     if (shot && process.env.NEBULA_QA_SHOT) await page.screenshot({ path: path.join(process.env.NEBULA_QA_SHOT, shot) });
     return r;
   };
-  const morphOk = (r) => !!r && r.lk > 0.3 && r.lk < 0.8 && r.spans > 0 && r.op > 0.5 && (r.z1Op === null || r.z1Op < 0.12) && (r.othersOp === null || r.othersOp < 0.25);
+  const morphOk = (r) =>
+    !!r && r.lk > 0.3 && r.lk < 0.8 && r.spans > 0 && r.clonesB === r.spans && r.op > 0.5 && (r.z1Op === null || r.z1Op < 0.12) &&
+    (r.othersOp === null || r.othersOp < 0.25) && r.landEnd !== null && r.landEnd <= 1 && r.landStart !== null && r.landStart <= 2.5;
   await page.keyboard.press('Control+Shift+M');
   await page.waitForTimeout(300);
   await pickStage('版面');
