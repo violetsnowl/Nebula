@@ -25,25 +25,20 @@ export interface StageShapeBus {
 export const stageShapeBus: StageShapeBus = { on: false, open: 0, gap: 0, sinkDepth: 1, sinkPos: 1, lx: 0, ly: 0, lk: 0 };
 
 /**
- * 版面的转场（用户 2026-11-22 提议）：进入聆听时，漫游歌词正在唱的那句飞到版面上同一句的位置再交叉淡化。
- * LyricPage 每帧写当前句在屏幕上的位置（只在交接进行中）；LyricsLayer 认出是同一句（按开始时间）就接手，
- * 把 taken 置真，版面那边这一句先藏着、交接快结束时淡入。
+ * 版面的转场（用户 2026-11-22 提议，第二版「逐字飞入」）：进入 / 离开聆听时，最近开始唱的那一句逐字飞到版面上
+ * 对应的字（竖排时一个个字落进那一列）。替身由 LyricPage 画；飞行期间漫游歌词里的这句（含它离场的那一份）和字幕要藏起来，
+ * LyricsLayer 按 morphS（这句的开始时间）认出是哪句。
  */
 export interface PageBus {
-  on: boolean;
-  /** 这句的开始时间（秒），用来认出是同一句。 */
-  s: number;
-  /** 屏幕坐标：中心与宽高。 */
-  cx: number;
-  cy: number;
-  w: number;
-  h: number;
-  /** 版面是竖排（横排的句子只能飞到那一列再交叉淡化）。 */
-  vert: boolean;
-  taken: boolean;
+  /** 逐字飞行进行中。 */
+  morph: boolean;
+  /** 被接手那句的开始时间（秒）。 */
+  morphS: number;
+  /** 替身是从字幕（播放条上方那行）起飞的：字幕也要藏起来。 */
+  caption: boolean;
 }
 
-export const pageBus: PageBus = { on: false, s: 0, cx: 0, cy: 0, w: 0, h: 0, vert: false, taken: false };
+export const pageBus: PageBus = { morph: false, morphS: 0, caption: false };
 
 const clamp01 =(v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 

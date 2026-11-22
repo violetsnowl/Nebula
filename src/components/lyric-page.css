@@ -21,6 +21,35 @@
   --lp-ink: color-mix(in srgb, var(--lc-a) 8%, #fff);
 }
 
+/* 转场替身（逐字飞入 / 飞回）：每个字一个绝对定位的 span，位置、字号、倾斜、颜色由 LyricPage 逐帧写。
+   在版面之上一层；外羽化同版面的字 */
+.lp-morph {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  --lp-ink: var(--lc-a);
+  filter: drop-shadow(0 1px 2.4px rgba(4, 6, 12, 0.5)) drop-shadow(0 0 4.8px rgba(4, 6, 12, 0.26));
+}
+
+.lp-morph[data-scheme='mono'] {
+  --lp-ink: color-mix(in srgb, var(--lc-a) 8%, #fff);
+}
+
+.lpm-u {
+  position: absolute;
+  left: 0;
+  top: 0;
+  white-space: pre;
+  line-height: 1;
+  font-family: var(--lc-font, 'Noto Serif SC', serif);
+  font-weight: var(--lyric-weight, 600);
+  letter-spacing: var(--lc-ls, 0.02em);
+  will-change: transform;
+}
+
 /* 1600 × 900 的逻辑画幅，等比缩放到窗口中央 */
 .lp-frame {
   position: absolute;

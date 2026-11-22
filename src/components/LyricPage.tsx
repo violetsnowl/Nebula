@@ -258,6 +258,9 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
   playingRef.current = playState.playing;
   const rootRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
+  const morphRef = useRef<HTMLDivElement>(null);
+  const roamRef = useRef(settings.roamLyrics);
+  roamRef.current = settings.roamLyrics;
   const schemeRef = useRef(listen.scheme);
   schemeRef.current = listen.scheme;
 
@@ -399,7 +402,109 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
     let lastPos = -1;
     let extrap = 0;
     let rootOp = '';
-    let morphLine: PLine | null = null;
+
+    // —— 转场：逐字飞入 / 飞回（用户 2026-11-22 提议；第二版）——
+    // 交接一开始就抓住「最近开始唱的那一句」（两句之间的空档也算上一句），给每个字做一个替身，
+    // 从漫游歌词（或字幕）里那个字的位置飞到版面上对应那个字的位置：位置、字号、倾斜都随交接进度 --lk 走，
+    // 竖排时一个个字落进那一列。飞行期间两边的原句都藏着，最后 10% 替身和版面那句交叉淡化；离开聆听时原路飞回。
+    interface Morph {
+      line: PLine;
+      src: HTMLElement[];
+      tgt: HTMLElement[];
+      spans: HTMLElement[];
+      rot: number;
+      fsS: number[];
+      fsT: number[];
+      hS: number[];
+      hT: number[];
+      lastS: DOMRect[];
+      lastT: DOMRect[];
+    }
+    let morph: Morph | null = null;
+    let morphTried = false;
+    const fsOf = (el: HTMLElement) => parseFloat(getComputedStyle(el).fontSize) || 16;
+    const textOf = (els: HTMLElement[]) => els.map((e) => e.textContent ?? '').join('').replace(/\s+/g, '');
+    const startMorph = (t: number): Morph | null => {
+      const layer = morphRef.current;
+      if (!layer) return null;
+      let line: PLine | null = null;
+      let page: PPage | null = null;
+      for (const pg of pages) for (const l of pg.lines) if (l.e.s <= t + 0.05 && (!line || l.e.s >= line.e.s)) {
+        line = l;
+        page = pg;
+      }
+      if (!line || !page?.on) return null;
+      const caption = roamRef.current === 'caption';
+      const host = document.querySelector<HTMLElement>(caption ? '.lyric-caption > .is-grad' : '.lyrics-layer .flow-lyric.is-current .fl-words');
+      if (!host) return null;
+      const src = [...host.querySelectorAll<HTMLElement>(':scope > .u, :scope > .fl-whole')];
+      const tgt = line.rts ? line.rts.map((r) => r.v.el) : line.whole ? [line.whole] : [];
+      if (!src.length || src.length !== tgt.length || textOf(src) !== textOf(tgt)) return null;
+      const m = (host.closest<HTMLElement>('.flow-lyric')?.style.transform.match(/rotate\((-?[\d.]+)deg\)/) ?? [])[1];
+      layer.textContent = '';
+      const spans = src.map((e) => {
+        const s = document.createElement('span');
+        s.className = 'lpm-u';
+        s.textContent = e.textContent;
+        layer.appendChild(s);
+        return s;
+      });
+      pageBus.morph = true;
+      pageBus.morphS = line.e.s;
+      pageBus.caption = caption;
+      return {
+        line,
+        src,
+        tgt,
+        spans,
+        rot: m ? Number(m) : 0,
+        fsS: src.map(fsOf),
+        fsT: tgt.map(fsOf),
+        hS: src.map((e) => e.offsetHeight || 1),
+        hT: tgt.map((e) => e.offsetHeight || 1),
+        lastS: src.map((e) => e.getBoundingClientRect()),
+        lastT: tgt.map((e) => e.getBoundingClientRect()),
+      };
+    };
+    const endMorph = () => {
+      const layer = morphRef.current;
+      if (layer) {
+        layer.textContent = '';
+        layer.style.opacity = '0';
+      }
+      if (morph) morph.line.el.style.opacity = '';
+      morph = null;
+      pageBus.morph = false;
+    };
+    const stepMorph = (mo: Morph, k: number, t: number) => {
+      const layer = morphRef.current;
+      if (!layer) return;
+      const box = layer.getBoundingClientRect();
+      const lerp = (a: number, b: number) => a + (b - a) * k;
+      const u0 = mo.line.e;
+      mo.spans.forEach((sp, i) => {
+        // 两端的字可能暂时不在（原句被回收、版面换页）：用最后一次量到的位置
+        let rs = mo.src[i]!.getBoundingClientRect();
+        if (rs.width > 0 && mo.src[i]!.isConnected) mo.lastS[i] = rs;
+        else rs = mo.lastS[i]!;
+        let rt = mo.tgt[i]!.getBoundingClientRect();
+        if (rt.width > 0) mo.lastT[i] = rt;
+        else rt = mo.lastT[i]!;
+        const fs = lerp(mo.fsS[i]! * (rs.height / mo.hS[i]!), mo.fsT[i]! * (rt.height / mo.hT[i]!));
+        const cx = lerp(rs.left + rs.width / 2, rt.left + rt.width / 2) - box.left;
+        const cy = lerp(rs.top + rs.height / 2, rt.top + rt.height / 2) - box.top;
+        sp.style.fontSize = `${fs.toFixed(2)}px`;
+        sp.style.transform = `translate(${cx.toFixed(1)}px, ${cy.toFixed(1)}px) translate(-50%, -50%) rotate(${(mo.rot * (1 - k)).toFixed(2)}deg)`;
+        // 颜色跟着演唱走：唱过 = 实色，正在唱 = 波前的亮色，没唱到 = 从漫游的白 42% 过渡到版面的浅灰 16%
+        const u = mo.line.rts?.[i]?.u;
+        const sung = u ? t >= u.e : t >= u0.s;
+        const singing = u ? t >= u.s && t < u.e : false;
+        sp.style.color = sung ? 'var(--lp-ink)' : singing ? 'color-mix(in srgb, var(--lc-a) 30%, #fff)' : `rgba(255,255,255,${lerp(0.42, 0.16).toFixed(3)})`;
+      });
+      layer.style.opacity = (1 - smooth((k - 0.9) / 0.1)).toFixed(3);
+      mo.line.el.style.opacity = smooth((k - 0.9) / 0.1).toFixed(3);
+    };
+
     const tick = (now: number) => {
       const dt = clamp((now - last) / 1000, 0.001, 0.05);
       last = now;
@@ -415,7 +520,6 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
         root.style.opacity = op;
         rootOp = op;
       }
-      let curLine: PLine | null = null;
       if (k > 0.001) {
         const scheme = schemeRef.current;
         const ghost = GHOST[scheme === 'mono' ? 'mono' : 'cover'];
@@ -449,7 +553,6 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
                 l.active = false;
               }
             }
-            if (state === 'cur' && t <= e.e + 0.3 && vis > 0.5) curLine = l;
             if (l.whole) l.whole.classList.toggle('is-on', t >= e.s);
             if (state !== 'cur' || !l.rts?.length) continue;
             // 正在唱（和唱完后 0.9s 的尾韵）：扫光、波浪、长音；没唱到的部分是浅灰的「先印好」
@@ -482,21 +585,17 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
           d.style.transform = `scale(${((0.8 + 0.2 * f) * breathe * (0.4 + 0.6 * tail)).toFixed(3)})`;
         });
       }
-      // —— 转场：把当前句的屏幕位置交给漫游歌词；它接手时，版面上这句先藏着，交接快结束时再交叉淡入 ——
-      if (curLine && k > 0.001 && k < 0.999) {
-        const r = curLine.tx.getBoundingClientRect();
-        pageBus.on = true;
-        pageBus.s = curLine.e.s;
-        pageBus.cx = r.left + r.width / 2;
-        pageBus.cy = r.top + r.height / 2;
-        pageBus.w = r.width;
-        pageBus.h = r.height;
-        pageBus.vert = vert;
-      } else pageBus.on = false;
-      const target = pageBus.taken && curLine ? curLine : null;
-      if (morphLine && morphLine !== target) morphLine.el.style.opacity = '';
-      if (target) target.el.style.opacity = smooth((k - 0.72) / 0.28).toFixed(3);
-      morphLine = target;
+      // —— 转场：交接进行中才有；到达两端（完全聆听 / 完全漫游）就收掉替身 ——
+      if (k <= 0.001 || k >= 0.999) {
+        if (morph) endMorph();
+        morphTried = false;
+      } else {
+        if (!morph && !morphTried) {
+          morphTried = true;
+          morph = startMorph(t);
+        }
+        if (morph) stepMorph(morph, k, t);
+      }
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -506,7 +605,7 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
       ro.disconnect();
       frame.textContent = '';
       root.style.opacity = '0';
-      pageBus.on = false;
+      endMorph();
     };
   }, [active, model, vert, showTranslation, listen.font, songKey]);
 
@@ -519,9 +618,13 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
     '--lyric-weight': settings.bold ? 700 : typo.w,
   } as CSSProperties;
   return (
-    <div ref={rootRef} className={`lyric-page lw${vert ? ' is-vert' : ''}`} data-scheme={listen.scheme} style={vars} aria-hidden="true">
-      <i className="lp-grain" style={{ backgroundImage: `url(${grain()})` }} />
-      <div ref={frameRef} className="lp-frame" />
-    </div>
+    <>
+      <div ref={rootRef} className={`lyric-page lw${vert ? ' is-vert' : ''}`} data-scheme={listen.scheme} style={vars} aria-hidden="true">
+        <i className="lp-grain" style={{ backgroundImage: `url(${grain()})` }} />
+        <div ref={frameRef} className="lp-frame" />
+      </div>
+      {/* 转场替身：不放在版面根里（版面根的透明度随交接从 0 起，替身要一直看得见） */}
+      <div ref={morphRef} className="lp-morph" data-scheme={listen.scheme} style={vars} aria-hidden="true" />
+    </>
   );
 }

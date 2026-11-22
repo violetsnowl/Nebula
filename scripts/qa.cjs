@@ -1547,6 +1547,44 @@ async function main() {
   // 版面（样张 M，fe/next）：实验室选「版面」→ 聆听中版面出现、漫游歌词让开；切回漫游歌词后版面卸掉
   const pickStage = (label) =>
     page.evaluate((lb) => [...document.querySelectorAll('.space-lab .sl-seg[aria-label="聆听时的舞台"] button')].find((b) => b.textContent === lb)?.click(), label);
+  // 版面转场（逐字飞入）：动一下鼠标回到漫游，等重新进入聆听，在交接进度 .35–.75 之间抓一帧：
+  // 替身的字数等于这句的字数、替身看得见、漫游歌词里这句藏起来了（按文字匹配：中文演示歌每句文字相同，
+  // 还在淡出的下一句也会被算进来，所以阈值放到 .12；被接手那句本身是 0）
+  const sampleMorph = async (shot) => {
+    await page.mouse.move(640, 300);
+    await page.mouse.move(672, 330);
+    await page.waitForFunction(() => !document.querySelector('.app[data-lk]'), null, { timeout: 3000 }).catch(() => {});
+    await page
+      .waitForFunction(
+        () => {
+          const v = parseFloat(document.querySelector('.app')?.style.getPropertyValue('--lk') || '0');
+          return v > 0.35 && v < 0.75;
+        },
+        null,
+        { timeout: 9000, polling: 16 },
+      )
+      .catch(() => {});
+    const r = await page.evaluate(() => {
+      const m = document.querySelector('.lp-morph');
+      const text = m ? [...m.querySelectorAll('.lpm-u')].map((s) => s.textContent).join('') : '';
+      const norm = (s) => (s || '').replace(/\s+/g, '');
+      // 被接手的那句（不论当前还是正在离场）要藏起来；其余漫游句子要已经淡得很低
+      const fls = [...document.querySelectorAll('.lyrics-layer .flow-lyric')];
+      const same = fls.filter((f) => norm(f.textContent) === norm(text));
+      const others = fls.filter((f) => norm(f.textContent) !== norm(text));
+      return {
+        lk: parseFloat(document.querySelector('.app')?.style.getPropertyValue('--lk') || '0'),
+        spans: m ? m.querySelectorAll('.lpm-u').length : 0,
+        text,
+        op: m ? Number(m.style.opacity) : 0,
+        z1Op: same.length ? Math.max(...same.map((f) => Number(f.style.opacity))) : null,
+        othersOp: others.length ? Math.max(...others.map((f) => Number(f.style.opacity))) : null,
+      };
+    });
+    if (shot && process.env.NEBULA_QA_SHOT) await page.screenshot({ path: path.join(process.env.NEBULA_QA_SHOT, shot) });
+    return r;
+  };
+  const morphOk = (r) => !!r && r.lk > 0.3 && r.lk < 0.8 && r.spans > 0 && r.op > 0.5 && (r.z1Op === null || r.z1Op < 0.12) && (r.othersOp === null || r.othersOp < 0.25);
   await page.keyboard.press('Control+Shift+M');
   await page.waitForTimeout(300);
   await pickStage('版面');
@@ -1575,6 +1613,9 @@ async function main() {
   });
   // 调试用：设了 NEBULA_QA_SHOT（目录）时拍下聆听中的版面，只给开发时目测，不进仓库
   if (process.env.NEBULA_QA_SHOT) await page.screenshot({ path: path.join(process.env.NEBULA_QA_SHOT, 'lyric-page.png') });
+  // 中文竖排的逐字飞入
+  const morphZh = await sampleMorph('morph-zh.png');
+  log('版面转场·竖排逐字飞入', JSON.stringify(morphZh));
   await page.keyboard.press('Control+Shift+M');
   await page.waitForTimeout(300);
   await pickStage('漫游歌词');
@@ -1593,6 +1634,7 @@ async function main() {
   // 版面·英文占位歌（样张 M 的原创歌词，带中文翻译，有主歌 / 预副歌 / 副歌 / 间奏 / 桥段）：
   // 判定间奏三点（跳到间奏中段，三点出现且在亮、这时没有页）；设了 NEBULA_QA_SHOT 时另外跳到各段拍一张给开发目测
   let gapDots = null;
+  let morphEn = null;
   {
     const EN = {
       V1: [['Streetlights hum the song they never finish', '路灯哼着那首从没唱完的歌'], ['I keep your letters folded in my coat', '我把你的信折好放在大衣里'], ['Every bus goes somewhere I have been before', '每一班车都开往我去过的地方'], ['Every window holds a light I used to know', '每扇窗都亮着我认得的灯']],
@@ -1663,6 +1705,11 @@ async function main() {
       };
     });
     if (process.env.NEBULA_QA_SHOT) await page.screenshot({ path: path.join(process.env.NEBULA_QA_SHOT, 'page-en-gap.png') });
+    // 英文横排的逐字飞入：卡在两句之间（上一句刚唱完、下一句还没开始）进入聆听——上一版在这里不接手
+    const v2 = lines.findIndex((l) => l.text.startsWith('The radio'));
+    const between = (lines[v2].timeMs - 300) / 1000;
+    await page.evaluate((s) => window.__nebula.player.seek(s), between - 3.25);
+    morphEn = await sampleMorph('morph-en.png');
     await page.keyboard.press('Control+Shift+M');
     await page.waitForTimeout(300);
     await pickStage('漫游歌词');
@@ -1670,6 +1717,8 @@ async function main() {
   }
   const gapOk = !!gapDots && gapDots.count >= 1 && gapDots.shown && gapDots.ops.some((o) => o > 0.2) && gapDots.shownPages === 0;
   log('版面·间奏三点', JSON.stringify(gapDots));
+  log('版面转场·横排逐字飞入（两句之间进入聆听）', JSON.stringify(morphEn));
+  const morphPass = morphOk(morphZh) && morphOk(morphEn);
 
   // #220 播放偏好随重开保留：音量、静音、播放顺序写进 localStorage，刷新后读回
   const prefsSet = await page.evaluate(() => {
@@ -1754,6 +1803,7 @@ async function main() {
     !shapeOk ||
     !pageOk ||
     !gapOk ||
+    !morphPass ||
     !capHazeOk ||
     !idleOk ||
     !setOk ||
@@ -1813,6 +1863,7 @@ async function main() {
     lyricShape: !shapeOk,
     lyricPage: !pageOk,
     pageGapDots: !gapOk,
+    pageMorph: !morphPass,
     captionHaze: !capHazeOk,
     idleInPanel: !idleOk,
     settingsLayout: !setOk,

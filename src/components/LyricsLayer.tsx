@@ -127,11 +127,6 @@ function rand(min: number, max: number): number {
 
 const sign = () => (Math.random() < 0.5 ? -1 : 1);
 
-function smooth01(x: number): number {
-  const t = x < 0 ? 0 : x > 1 ? 1 : x;
-  return t * t * (3 - 2 * t);
-}
-
 function easeInOutCubic(t: number): number {
   return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
@@ -667,7 +662,6 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
       let lightX = 0;
       let lightY = 0;
       let lightK = 0;
-      let tookPage = false;
       for (const [lineIdx, fl] of active) {
         if (fl.role === 'leaving') {
           if (playingNow && fl.exitT < 1) {
@@ -729,8 +723,12 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
             scM = 0.84 + 0.16 * k;
           } else opM = k;
         } else if (enabled) opM = k;
-        // 版面模式：聆听中漫游歌词让给版面（漫游时的氛围 / 字幕不变）
-        if (pageMode && enabled) opM *= 1 - k;
+        // 版面模式：聆听中漫游歌词让给版面（漫游时的氛围 / 字幕不变）。淡得比交接曲线快（交接过半多就看不见），
+        // 免得交接途中换了句时，新的那句还留在原位、和逐字飞行的替身同时出现
+        if (pageMode && enabled) {
+          const q = Math.min(1, k / 0.55);
+          opM *= 1 - q * q * (3 - 2 * q);
+        }
         // 升级·间奏让位：候场的句子退开、变淡，把舞台让给星云；下一句前 1.2s 收回
         let gapDy = 0;
         if (gapK > 0.001 && (fl.role === 'next' || fl.role === 'nextNext')) {
@@ -738,34 +736,12 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
           scM *= 1 - 0.12 * gapK;
           gapDy = (fl.sy < ch * MAIN_Y ? -1 : 1) * ch * 0.065 * gapK;
         }
-        let px = fl.sx;
-        let py = fl.sy + gapDy;
-        let prot = fl.rot;
-        let psc = fl.scale * scM;
-        // 版面转场（用户 2026-11-22 提议）：进入 / 离开聆听时，当前句从漫游的位置飞到版面上同一句的位置（转正、缩放到版面字号），
-        // 交接快结束时和版面那句交叉淡化；竖排版面只能飞到那一列再淡出
-        if (pageMode && enabled && fl.role === 'current' && pageBus.on && k > 0.001 && k < 0.999) {
+        // 版面转场（逐字飞入）：这句正由 LyricPage 的替身逐字飞往版面，原句（不论当前还是正在离场）藏起来
+        if (pageMode && pageBus.morph) {
           const e = engineLinesRef.current[lineIdx];
-          const host = containerRef.current;
-          if (e && host && Math.abs(e.s - pageBus.s) < 0.12) {
-            const box = host.getBoundingClientRect();
-            const lsF = box.width / (host.offsetWidth || 1);
-            const w = naturalW(lineIdx);
-            const h = el.offsetHeight;
-            const tcx = (pageBus.cx - box.left) / lsF;
-            const tcy = (pageBus.cy - box.top) / lsF;
-            const tsc = pageBus.vert ? pageBus.w / lsF / 1.2 / settings.fontSize : w > 0 ? pageBus.w / lsF / w : psc;
-            const m = smooth01(k / 0.9);
-            px += (tcx - w / 2 - px) * m;
-            py += (tcy - h / 2 - py) * m;
-            prot += (0 - prot) * m;
-            psc += (tsc - psc) * m;
-            opM = pageBus.vert ? 1 - smooth01((k - 0.5) / 0.4) : 1 - smooth01((k - 0.8) / 0.2);
-            blur = 0;
-            tookPage = true;
-          }
+          if (e && Math.abs(e.s - pageBus.morphS) < 0.12) opM = 0;
         }
-        el.style.transform = `translate3d(${px.toFixed(1)}px, ${py.toFixed(1)}px, 0) rotate(${prot.toFixed(2)}deg) scale(${psc.toFixed(4)})`;
+        el.style.transform = `translate3d(${fl.sx.toFixed(1)}px, ${(fl.sy + gapDy).toFixed(1)}px, 0) rotate(${fl.rot.toFixed(2)}deg) scale(${(fl.scale * scM).toFixed(4)})`;
         // 升级·字照亮空间：光源 = 当前句正在唱（或下一个要唱）的字，按元素中心缩放 / 旋转换到屏幕坐标
         if (up && !pageMode && fl.role === 'current') {
           const d = lineDoms.current.get(lineIdx);
@@ -805,7 +781,6 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
         }
       }
       fontsDirty = false;
-      pageBus.taken = tookPage;
       // 升级·字照亮空间：光源交给舞台（卡片提亮），身后一团很淡的主色光跟着字走；聆听中每帧请舞台刷新
       if (up || pageMode) {
         // 光源位置平滑一点，换字时不跳（版面模式没有光源，光强衰减到 0）
@@ -834,7 +809,7 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
           }
         } else if (playingNow || relayoutNow) pokeListenFrame();
       } else if (lightRef.current && lightRef.current.style.opacity !== '0') lightRef.current.style.opacity = '0';
-      captionFrame(cur, tSec, captionOn ? 1 - k : 0);
+      captionFrame(cur, tSec, captionOn && !(pageMode && pageBus.morph && pageBus.caption) ? 1 - k : 0);
       syncActive();
       raf = requestAnimationFrame(frame);
     };
