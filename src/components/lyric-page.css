@@ -1,0 +1,151 @@
+/* 版面（样张 M，2026-11-22，fe/next）：聆听时的主舞台之一，见 components/LyricPage.tsx。
+   与「卡片之上」的歌词层同层（z-index 11，§5.5）；透明度由 LyricPage 按交接进度 --lk 逐帧写。
+   逐字层的 .u / .ch / 扫光 / 长音白光来自 listen/lyric-words.css（根上带 .lw），这里只管版式和三种状态的颜色：
+   没唱到 = 浅灰「先印好」（--lc-rest），正在唱 = 扫光，唱过 = 印成实色（封面色模式是歌词主色，同色系近白）。 */
+
+.lyric-page {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  --lc-rest: rgba(255, 255, 255, 0.16);
+  --lp-ink: var(--lc-a);
+  --lp-tr: rgba(255, 255, 255, 0.36);
+  --lp-tr-on: rgba(255, 255, 255, 0.62);
+}
+
+.lyric-page[data-scheme='mono'] {
+  --lc-rest: color-mix(in srgb, color-mix(in srgb, var(--lc-a) 58%, #fff) 18%, transparent);
+  --lp-ink: color-mix(in srgb, var(--lc-a) 8%, #fff);
+}
+
+/* 1600 × 900 的逻辑画幅，等比缩放到窗口中央 */
+.lp-frame {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1600px;
+  height: 900px;
+  transform-origin: 50% 50%;
+}
+
+.lp-page {
+  position: absolute;
+  inset: 0;
+  display: none;
+  will-change: opacity, transform;
+}
+
+/* 页眉：这一页是哪一段（结构信息，不是装饰）、第几页 */
+.lp-folio,
+.lp-no {
+  position: absolute;
+  top: 96px;
+  font-family: Inter, 'Segoe UI', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.16em;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.lp-folio {
+  left: 150px;
+}
+
+.lp-folio b {
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.68);
+  letter-spacing: 0.1em;
+}
+
+.lp-no {
+  right: 150px;
+  letter-spacing: 0.12em;
+  color: rgba(255, 255, 255, 0.32);
+  font-variant-numeric: tabular-nums;
+}
+
+.lp-line {
+  position: absolute;
+  white-space: nowrap;
+}
+
+.lp-tx {
+  font-family: var(--lc-font, 'Noto Serif SC', serif);
+  font-weight: var(--lyric-weight, 600);
+  letter-spacing: var(--lc-ls, 0.02em);
+  line-height: 1.2;
+  /* 中性外羽化：压在亮封面上时把字托出来（同漫游歌词） */
+  filter: drop-shadow(0 1px 2.4px rgba(4, 6, 12, 0.5)) drop-shadow(0 0 4.8px rgba(4, 6, 12, 0.26));
+}
+
+/* 唱过：印成实色 */
+.lp-line.is-past .u,
+.lp-line.is-past .u .ch {
+  color: var(--lp-ink);
+}
+
+/* 没有逐字时间的句子：整句在开唱时 0.38s 内印上 */
+.lp-whole {
+  color: var(--lc-rest);
+  transition: color 0.38s ease;
+}
+
+.lp-whole.is-on {
+  color: var(--lp-ink);
+}
+
+/* 翻译：主歌排在右栏作旁注（和原文同一行），其余段落排在原文下面 */
+.lp-tr {
+  font-family: Inter, 'Segoe UI', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  color: var(--lp-tr);
+  white-space: nowrap;
+  transition: color 0.5s ease;
+}
+
+.lp-tr.is-side {
+  position: absolute;
+  left: 990px;
+  top: 0.95em;
+}
+
+.lp-tr.is-under {
+  margin-top: 4px;
+  font-size: 15px;
+}
+
+.lp-line.is-cur .lp-tr,
+.lp-line.is-past .lp-tr {
+  color: var(--lp-tr-on);
+}
+
+/* 竖排（中文歌）：从右往左一列一句；扫光改成从上往下，波浪浮起改成往右 */
+.lyric-page.is-vert .lp-tx {
+  writing-mode: vertical-rl;
+  letter-spacing: 0.14em;
+}
+
+.lyric-page.is-vert .u,
+.lyric-page.is-vert .u .ch {
+  transform: translate3d(calc(var(--lift, 0) * 1em), 0, 0) scale(var(--sc, 1));
+  transform-origin: 50% 50%;
+}
+
+.lyric-page.is-vert .is-grad .u:not(.has-ch),
+.lyric-page.is-vert .is-grad .u .ch {
+  background-image: linear-gradient(180deg, var(--sung, #fff) 0, var(--sung, #fff) calc(var(--P) - var(--f, 34%)), var(--edge) var(--P), var(--un) calc(var(--P) + var(--f, 34%)));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-whole,
+  .lp-tr {
+    transition: none;
+  }
+}

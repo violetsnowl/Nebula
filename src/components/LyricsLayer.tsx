@@ -293,6 +293,10 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
     }
     // 漫游歌词升级（样张 M）：每帧从实验室读开关，按段落引擎算开合 / 间奏让位
     let up = getSpaceLab().lyricShape;
+    /** 聆听时的舞台是「版面」：聆听中漫游歌词淡出，由 LyricPage 接手；星云沉得更深当纸面。 */
+    let pageMode = false;
+    let pokedDepth = -1;
+    let pokedPos = -1;
     let open = 0;
     let gapK = 0;
     let wroteVars = false;
@@ -561,19 +565,28 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
       lastT = t;
       const tSec = t / 1000;
       // 漫游歌词升级：段落开合、间奏让位（stageAt 自带进段落提前 0.8s、1.6s 平滑过渡）
-      up = getSpaceLab().lyricShape;
-      if (up) {
+      const labNow = getSpaceLab();
+      up = labNow.lyricShape;
+      pageMode = labNow.stageMode === 'page';
+      if (up || pageMode) {
         const sd = shapeRef.current;
         const st = stageAt(sd.shape, sd.sl, tSec);
         const sk = shapeSink(st.lift, st.gap);
-        open = sk.open;
-        gapK = st.gap;
-        stageShapeBus.open = open;
-        stageShapeBus.gap = gapK;
-        stageShapeBus.sinkDepth = sk.sinkDepth;
-        stageShapeBus.sinkPos = sk.sinkPos;
-        rootStyle.setProperty('--sdep', sk.sinkDepth.toFixed(3));
-        rootStyle.setProperty('--sopen', open.toFixed(3));
+        open = up ? sk.open : 0;
+        gapK = up ? st.gap : 0;
+        let depth = sk.sinkDepth;
+        let posK = sk.sinkPos;
+        if (pageMode) {
+          // 版面：星云沉成纸面——主歌压到约 .20、副歌 .39，间奏里浮起大半（styles.css 另加轻微虚化）
+          depth = (1.29 - 0.3 * sk.open) * (1 - 0.7 * st.gap);
+          posK = 1 - 0.5 * st.gap;
+        }
+        stageShapeBus.open = sk.open;
+        stageShapeBus.gap = st.gap;
+        stageShapeBus.sinkDepth = depth;
+        stageShapeBus.sinkPos = posK;
+        rootStyle.setProperty('--sdep', depth.toFixed(3));
+        rootStyle.setProperty('--sopen', sk.open.toFixed(3));
         wroteVars = true;
       } else {
         open = 0;
@@ -585,7 +598,7 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
           wroteVars = false;
         }
       }
-      stageShapeBus.on = up;
+      stageShapeBus.on = up || pageMode;
 
       const active = flights.current;
       if (!linesReadyRef.current) {
@@ -710,6 +723,8 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
             scM = 0.84 + 0.16 * k;
           } else opM = k;
         } else if (enabled) opM = k;
+        // 版面模式：聆听中漫游歌词让给版面（漫游时的氛围 / 字幕不变）
+        if (pageMode && enabled) opM *= 1 - k;
         // 升级·间奏让位：候场的句子退开、变淡，把舞台让给星云；下一句前 1.2s 收回
         let gapDy = 0;
         if (gapK > 0.001 && (fl.role === 'next' || fl.role === 'nextNext')) {
@@ -719,7 +734,7 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
         }
         el.style.transform = `translate3d(${fl.sx.toFixed(1)}px, ${(fl.sy + gapDy).toFixed(1)}px, 0) rotate(${fl.rot.toFixed(2)}deg) scale(${(fl.scale * scM).toFixed(4)})`;
         // 升级·字照亮空间：光源 = 当前句正在唱（或下一个要唱）的字，按元素中心缩放 / 旋转换到屏幕坐标
-        if (up && fl.role === 'current') {
+        if (up && !pageMode && fl.role === 'current') {
           const d = lineDoms.current.get(lineIdx);
           const e = engineLinesRef.current[lineIdx];
           const w = naturalW(lineIdx);
@@ -758,8 +773,8 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
       }
       fontsDirty = false;
       // 升级·字照亮空间：光源交给舞台（卡片提亮），身后一团很淡的主色光跟着字走；聆听中每帧请舞台刷新
-      if (up) {
-        // 光源位置平滑一点，换字时不跳
+      if (up || pageMode) {
+        // 光源位置平滑一点，换字时不跳（版面模式没有光源，光强衰减到 0）
         const kk = 1 - Math.exp(-dt * 10);
         if (stageShapeBus.lk <= 0.001 && lightK > 0) {
           stageShapeBus.lx = lightX;
@@ -774,7 +789,16 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
           glow.style.transform = `translate3d(${stageShapeBus.lx.toFixed(1)}px, ${stageShapeBus.ly.toFixed(1)}px, 0)`;
           glow.style.opacity = Math.min(1, stageShapeBus.lk * (enabled ? k : 1) * 1.6).toFixed(3);
         }
-        if (playingNow || relayoutNow) pokeListenFrame();
+        if (pageMode) {
+          // 版面模式下星云带虚化，每帧刷新代价高：只在沉降倍数真的变了时请舞台刷新
+          const d = stageShapeBus.sinkDepth;
+          const p = stageShapeBus.sinkPos;
+          if (Math.abs(d - pokedDepth) > 0.004 || Math.abs(p - pokedPos) > 0.004 || stageShapeBus.lk > 0.001) {
+            pokedDepth = d;
+            pokedPos = p;
+            pokeListenFrame();
+          }
+        } else if (playingNow || relayoutNow) pokeListenFrame();
       } else if (lightRef.current && lightRef.current.style.opacity !== '0') lightRef.current.style.opacity = '0';
       captionFrame(cur, tSec, captionOn ? 1 - k : 0);
       syncActive();

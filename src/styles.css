@@ -4388,6 +4388,13 @@ body {
   filter: brightness(calc(1 - 0.08 * var(--lk))) blur(calc(2.2px * var(--lk) * min(1, var(--sdep, 1))));
 }
 
+/* 版面（样张 M）：聆听时星云不论哪种让开方式都沉成纸面——压暗（倍数由 LyricsLayer 写 --sdep：主歌约 .20、副歌 .39、
+   间奏里浮起大半）、降饱和、轻微虚化，不变淡（退潮的变淡在这里取消）。版面本身在 components/lyric-page.css */
+:root[data-stage-mode='page'] .app[data-listen-style][data-lk] .stage-3d {
+  opacity: 1;
+  filter: brightness(calc(1 - 0.62 * var(--lk) * var(--sdep, 1.29))) saturate(calc(1 - 0.5 * var(--lk))) blur(calc(2.4px * var(--lk)));
+}
+
 /* 播放条变淡：最多淡到 70%（审查第 12 条：淡到一半读起来像「不可用」）。只降材质（::before）和内容。
    不能给 .player-surface 本身设 opacity，否则它会成为 ::before 的背景采样边界，玻璃采不到背后的画面 */
 .app[data-listen-bar='dim'][data-lk] .player-surface::before,

@@ -1544,6 +1544,50 @@ async function main() {
     Number(shapeOn.sdep) > 0 && shapeOn.sopen !== '' && shapeOn.attr && shapeOn.light && shapeOff.sdep === '' && !shapeOff.attr;
   log('漫游歌词随段落起伏（开 / 关）', JSON.stringify({ shapeOn, shapeOff }));
 
+  // 版面（样张 M，fe/next）：实验室选「版面」→ 聆听中版面出现、漫游歌词让开；切回漫游歌词后版面卸掉
+  const pickStage = (label) =>
+    page.evaluate((lb) => [...document.querySelectorAll('.space-lab .sl-seg[aria-label="聆听时的舞台"] button')].find((b) => b.textContent === lb)?.click(), label);
+  await page.keyboard.press('Control+Shift+M');
+  await page.waitForTimeout(300);
+  await pickStage('版面');
+  await page.keyboard.press('Control+Shift+M');
+  await page.waitForFunction(() => !!document.querySelector('.app[data-listen]'), null, { timeout: 8000 }).catch(() => {});
+  await page.waitForTimeout(2200);
+  const pageOn = await page.evaluate(() => {
+    const root = document.querySelector('.lyric-page');
+    const shown = [...document.querySelectorAll('.lyric-page .lp-page')].filter((p) => p.style.display === 'block');
+    const cur = document.querySelector('.lyric-page .lp-line.is-cur, .lyric-page .lp-line.is-past');
+    const fl = document.querySelector('.lyrics-layer .flow-lyric');
+    return {
+      listening: !!document.querySelector('.app[data-listen]'),
+      mode: document.documentElement.dataset.stageMode ?? null,
+      op: root ? Number(root.style.opacity) : -1,
+      pages: document.querySelectorAll('.lyric-page .lp-page').length,
+      shown: shown.length,
+      folio: shown[0]?.querySelector('.lp-folio')?.textContent ?? null,
+      lineState: cur ? cur.className : null,
+      units: cur ? cur.querySelectorAll('.u').length : 0,
+      flOp: fl ? Number(fl.style.opacity) : null,
+      stageFilter: getComputedStyle(document.querySelector('.stage-3d')).filter,
+    };
+  });
+  // 调试用：设了 NEBULA_QA_SHOT（目录）时拍下聆听中的版面，只给开发时目测，不进仓库
+  if (process.env.NEBULA_QA_SHOT) await page.screenshot({ path: path.join(process.env.NEBULA_QA_SHOT, 'lyric-page.png') });
+  await page.keyboard.press('Control+Shift+M');
+  await page.waitForTimeout(300);
+  await pickStage('漫游歌词');
+  await page.keyboard.press('Control+Shift+M');
+  await page.waitForTimeout(300);
+  const pageOff = await page.evaluate(() => ({
+    root: !!document.querySelector('.lyric-page'),
+    mode: document.documentElement.dataset.stageMode ?? null,
+  }));
+  const pageOk =
+    pageOn.listening && pageOn.mode === 'page' && pageOn.op > 0.5 && pageOn.pages >= 1 && pageOn.shown >= 1 && !!pageOn.folio &&
+    !!pageOn.lineState && pageOn.units > 0 && (pageOn.flOp === null || pageOn.flOp < 0.2) && /blur/.test(pageOn.stageFilter) &&
+    !pageOff.root && pageOff.mode === null;
+  log('版面（聆听中取代漫游歌词）', JSON.stringify({ pageOn, pageOff }));
+
   // #220 播放偏好随重开保留：音量、静音、播放顺序写进 localStorage，刷新后读回
   const prefsSet = await page.evaluate(() => {
     const p = window.__nebula.player;
@@ -1625,6 +1669,7 @@ async function main() {
     !volUiOk ||
     !z1Ok ||
     !shapeOk ||
+    !pageOk ||
     !capHazeOk ||
     !idleOk ||
     !setOk ||
@@ -1682,6 +1727,7 @@ async function main() {
     volSlider: !volUiOk,
     z1Words: !z1Ok,
     lyricShape: !shapeOk,
+    lyricPage: !pageOk,
     captionHaze: !capHazeOk,
     idleInPanel: !idleOk,
     settingsLayout: !setOk,

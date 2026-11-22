@@ -5,6 +5,7 @@ import { BackgroundLayer } from './components/BackgroundLayer';
   import { BottomPlayer, lapsedPlatformOf } from './components/player/BottomPlayer';
 import { SearchBar } from './components/SearchBar';
 import { LyricsLayer } from './components/LyricsLayer';
+import { LyricPage } from './components/LyricPage';
 import { StageCanvas } from './components/StageCanvas';
 import { TopBar } from './components/TopBar';
 import { AccountDock } from './components/AccountDock';
@@ -534,6 +535,14 @@ export default function App() {
           }
           songTitle={playerState.song?.title}
           songArtist={playerState.song?.artist}
+        />
+      )}
+      {/* 版面（样张 M）：舞台实验室选「版面」时，聆听中取代漫游歌词 */}
+      {!uiHideLyrics && (
+        <LyricPage
+          lines={lyricLines}
+          songKey={playerState.song ? `${playerState.song.source}:${playerState.song.sourceId ?? playerState.song.id}` : 'none'}
+          showTranslation={lyricTranslationEnabled}
         />
       )}
 
