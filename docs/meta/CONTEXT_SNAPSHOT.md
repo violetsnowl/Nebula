@@ -30,6 +30,15 @@
 - 只有一个工作目录 `E:\CUFE\vibecoding\nebula`、一条分支 `main`；构建产物在同级 `nebula-outputs`。精确 HEAD 用 `git log -1` 取。
 - 新功能直接在 main 上小步提交，每步 build + qa 全绿；实验性改动挂在默认隐藏的开发者开关后面；确需分支用短命分支，合并后即删。
 - 远端 `github.com/violetsnowl/Nebula`，只有 `main`；标签 `v0.1.0-z1-random-checkpoint`、`archive/ui-nebula-design`（旧原型，不作为实现真源）。
+- **临时例外（2026-11-22，用户批准）**：后端会话在主目录的 main 上修后端（常有它未提交的改动，不要碰），前端在短命工作树 `E:\CUFE\vibecoding\fe\nebula`（本地分支 `fe/next`，没推远端）上做，构建产物在 `E:\CUFE\vibecoding\fe\nebula-outputs`，互不覆盖。两边不要同时跑 `pnpm qa`（见 NOTES）。分支上的 CHANGE_LOG 条目写「#待编（fe/next-N）」，合回 main 时按主线日志顶部取号；合回后删工作树和分支，在 HANDOFF 记这次例外。
+
+### 2026-11-22 前端分支 fe/next：主舞台歌词模式（进行中）
+
+用户认为聆听时主舞台的表现力全压在歌词上，而漫游歌词是一套「空间字幕」，撑不起来。定下的推进顺序：
+1. **段落引擎（已提交，fe/next-1）**：`src/lib/listen/sections.ts`，只用歌词推断主歌 / 预副歌 / 副歌 / 桥段 / 尾声、间奏、句组和每段的开合；还没接进界面。真实缓存 170 首里 159 首认出副歌。
+2. **样张 M（已发布，等用户看）**：<https://claude.ai/artifact/CbkjKMV6sAxVuGfeaeFgNd>。同一首占位歌对比四种主舞台：漫游歌词现状；漫游歌词升级（段落开合、间奏让位、字照亮空间、大小对比、同段同向，五项可分别开关）；穿行（歌词立在星云纵深里，镜头唱一句靠近一句、从字中间穿过，颜色旅程在第一次副歌回到这首歌的颜色；带曲库大小 1400 / 200 / 40 / 12 和「小曲库补偿」切换）；版面（一个句组一页，中文竖排，英文翻译作旁注）。样张源文件在会话草稿目录，随时可能被清。
+3. 用户看样张拍板后在分支里实现；新模式挂开发者开关，漫游歌词升级改的是冻结规格（LYRICS_SYSTEM、NEBULA_UI_SYSTEM §7），要用户确认后同步改写规格。
+- 用户提出的顾虑：「穿行」的空间由卡片构成，小歌单时卡片太少、旅程感受限。样张里实测：视野里的封面 1400 首约 130 张、40 首约 4 张、12 首约 1 张；开补偿后 40 首约 37 张、12 首约 10 张。
 
 ### 2026-11-21 后端补齐轮（进行中）：按矩阵缺陷清单逐条补
 
@@ -150,6 +159,7 @@
   - 歌词 J <https://claude.ai/artifact/PHVmyDCvqnVn7R3JhnFQUa>
   - 漫游歌词 K <https://claude.ai/artifact/6F2PnRcE6fcacYfUAvLtPv>
   - 设置面板 L <https://claude.ai/artifact/JC3mxeaZpovAVX6EykGm2K>
+  - 主舞台歌词模式 M <https://claude.ai/artifact/CbkjKMV6sAxVuGfeaeFgNd>（2026-11-22，fe/next）
 - 参照：Mineradio（材质）、Folia（歌词、Spotify / 汽水路线）是 GPL / AGPL，只借思路不搬代码。
 
 ### 已废弃 / 不再排期
