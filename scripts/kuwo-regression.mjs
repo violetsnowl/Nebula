@@ -68,15 +68,40 @@ await test('我的歌单：未登录 / cookie 不完整不发请求；网络失�
  assert.equal(calls,0);
  assert.deepEqual(await new KuwoAdapter(http,newStore(LOGGED)).fetchMyPlaylists(),[]);assert.equal(calls,1);
 });
-await test('取链：成功解析 url，只请求 128kmp3',async()=>{
- let url='';
- const http={requestJson:async u=>{url=u;return {code:200,msg:'success',url:'https://kw-er.kuwo.cn/sig/ts/resource/30106/trackmedia/real.mp3'};},
+await test('取链：请求 320k 但只有 128k 可放时自动降档（#229）',async()=>{
+ const calls=[];
+ const http={requestJson:async u=>{calls.push(new URL(u).searchParams.get('br'));
+   // 320k / flac 都回提示音，只有 128k 回真地址
+   return new URL(u).searchParams.get('br')==='128kmp3'
+     ? {code:200,msg:'success',url:'https://kw-er.kuwo.cn/sig/ts/resource/30106/trackmedia/real.mp3'}
+     : {code:200,url:'https://kw-bj.kuwo.cn/s/t/nf/resource/n1/69/32/588957081.mp3'};},
   requestRaw:async()=>({ok:true,status:206,headers:new Headers({'content-range':'bytes 0-0/3830799'}),text:''})};
  const a=new KuwoAdapter(http,newStore());
  const r=await a.fetchSongUrl('6304356',undefined,'320',{durationSec:239});
  assert.deepEqual(r,{url:'https://kw-er.kuwo.cn/sig/ts/resource/30106/trackmedia/real.mp3',quality:'128'});
- const q=new URL(url).searchParams;assert.equal(q.get('rid'),'6304356');assert.equal(q.get('br'),'128kmp3');assert.equal(q.get('type'),'convert_url3');
- assert.deepEqual((await a.listQualities()).map(x=>x.level),['128']);
+ assert.deepEqual(calls,['320kmp3','128kmp3'],'先试 320k，拿到提示音再退 128k');
+ assert.deepEqual((await a.listQualities()).map(x=>x.level),['flac','320','128']);
+});
+await test('取链：请求 flac 且确实拿到无损时不降档',async()=>{
+ const http={requestJson:async u=>new URL(u).searchParams.get('br')==='2000kflac'
+   ? {code:200,url:'https://kw-er.kuwo.cn/sig/ts/nf/resource/n1/1/9/flac.flac'}
+   : {code:200,url:'https://kw-er.kuwo.cn/sig/ts/resource/x/128.mp3'},
+  requestRaw:async()=>({ok:true,status:206,headers:new Headers({'content-range':'bytes 0-0/26000000'}),text:''})};
+ const a=new KuwoAdapter(http,newStore());
+ const r=await a.fetchSongUrl('6304356',undefined,'flac',{durationSec:239});
+ assert.equal(r?.quality,'flac','flac 可用就必须用 flac，不能无脑退回 128');
+});
+await test('取链：高档位全部失败时逐档退到 128k，而不是直接放弃',async()=>{
+ const tried=[];
+ const http={requestJson:async u=>{const br=new URL(u).searchParams.get('br');tried.push(br);
+   return br==='128kmp3'
+     ? {code:200,url:'https://kw-er.kuwo.cn/sig/ts/resource/x/128.mp3'}
+     : {code:200,url:''};},
+  requestRaw:async()=>({ok:true,status:206,headers:new Headers({'content-range':'bytes 0-0/3400000'}),text:''})};
+ const a=new KuwoAdapter(http,newStore());
+ const r=await a.fetchSongUrl('6304356',undefined,'flac',{durationSec:239});
+ assert.equal(r?.quality,'128');
+ assert.deepEqual(tried,['2000kflac','320kmp3','128kmp3'],'按 flac → 320k → 128k 顺序降');
 });
 await test('取链：失败一律返回 null（接口拒绝 / 提示音 / 时长不符 / 异常 / 非法 rid）',async()=>{
  const ok='https://kw-bj.kuwo.cn/sig/ts/nf/resource/n1/1/2/12345.mp3';

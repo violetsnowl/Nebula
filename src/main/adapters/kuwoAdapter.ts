@@ -14,8 +14,17 @@ const PAGE_SIZE = 100;
 const MAX_PAGES = 60;
 /** 未授权 / 无版权的歌曲，取链接口仍返回 code 200，但给的是同一段短提示音（实测 181521 字节，约 11 秒）。 */
 const PLACEHOLDER_URL = /\/588957081\.mp3(?:$|\?)/;
-/** 实测匿名只拿得到 128k；其余档位（320kmp3 / 2000kflac）匿名返回的是上面的提示音。 */
-const BR_BY_LEVEL: Record<string, string> = { '128': '128kmp3' };
+/**
+ * 各档位对应的 `br` 参数（#229）。匿名实测：128k 给真音频，320k / 2000kflac 一律返回
+ * 上面那段提示音——所以**不能靠档位名判断成败**，每档都要按「是不是提示音 / 长度够不够」校验，
+ * 校验不过就自动降一档重试。登录后能不能真的拿到 320k / flac 由真实账号决定，
+ * 这里只负责「有就给、没有就降」，不会因为请求高档位而把能放的歌变成放不了。
+ */
+const BR_BY_LEVEL: Record<string, string> = { '128': '128kmp3', '320': '320kmp3', 'flac': '2000kflac' };
+/** 从高到低：请求哪个档位，就从这个档位开始往下试。 */
+const LEVEL_ORDER = ['flac', '320', '128'] as const;
+/** 各档位估算码率（Kbps），用于按歌曲时长核对文件大小是不是完整音频。 */
+const KBPS_BY_LEVEL: Record<string, number> = { '128': 128, '320': 320, flac: 900 };
 
 export interface KuwoSession { uid: string; sid: string }
 
@@ -169,20 +178,39 @@ export class KuwoAdapter implements PlatformAdapter {
     return '';
   }
 
-  /** 取链：失败 / 提示音 / 明显短于歌曲时长一律返回 null，让路由器去兜底平台。 */
+  /**
+   * 取链（#229）：从请求的档位开始逐档往下试，每档都按「是不是提示音 / 长度够不够」校验。
+   * 以前直接写死只请求 128k，登录后能拿到的更高档位等于白丢；现在登录态下会真的用上
+   * 320k / flac，拿不到才降档——绝不会因为请求高档位而让本来能放的歌变成放不了。
+   * 失败 / 提示音 / 明显短于歌曲时长一律返回 null，让路由器去兜底平台。
+   */
   async fetchSongUrl(songId: string, _albumId?: string, quality?: string, extra?: Record<string, unknown>): Promise<SongUrl | null> {
     const rid = String(songId || '').trim();
     if (!/^\d+$/.test(rid)) return null;
-    const level = quality && BR_BY_LEVEL[quality] ? quality : '128';
+    const durationSec = Number(extra?.durationSec) || 0;
+    // 请求档位不在已知集合里时从 128 起（保守）
+    const startAt = LEVEL_ORDER.indexOf((quality ?? '128') as (typeof LEVEL_ORDER)[number]);
+    const levels = LEVEL_ORDER.slice(startAt < 0 ? LEVEL_ORDER.indexOf('128') : startAt);
+    for (const level of levels) {
+      const url = await this.requestLevel(rid, BR_BY_LEVEL[level]!);
+      if (!url) continue;
+      if (PLACEHOLDER_URL.test(url)) continue;
+      if (!(await this.looksComplete(url, durationSec, KBPS_BY_LEVEL[level]!))) continue;
+      return { url, quality: level };
+    }
+    return null;
+  }
+
+  /** 单档取地址：接口异常 / 非 200 / 非 http(s) 一律 null。 */
+  private async requestLevel(rid: string, br: string): Promise<string | null> {
     try {
       const data = await this.http.requestJson<{ code?: number; url?: string }>(
-        `${SONG_URL_API}?type=convert_url3&rid=${rid}&format=mp3&response=url&br=${BR_BY_LEVEL[level]}`,
+        `${SONG_URL_API}?type=convert_url3&rid=${rid}&format=mp3&response=url&br=${br}`,
         { platform: 'kuwo', timeoutMs: 6000 },
       );
       const url = String(data?.url ?? '').trim();
-      if (data?.code !== 200 || !/^https?:\/\//i.test(url) || PLACEHOLDER_URL.test(url)) return null;
-      if (!(await this.looksComplete(url, Number(extra?.durationSec) || 0, 128))) return null;
-      return { url, quality: level };
+      if (data?.code !== 200 || !/^https?:\/\//i.test(url)) return null;
+      return url;
     } catch {
       return null;
     }
@@ -201,8 +229,17 @@ export class KuwoAdapter implements PlatformAdapter {
     }
   }
 
+  /**
+   * 音质档位（#229）：三档都列出来，取链时逐档向下校验。
+   * 匿名只能真正拿到 128k，但列表要不要显示高档位取决于「能不能取到」而不是「能不能选」——
+   * 选 320k 时若登录态不够，会自动降回 128k 并照常播，不会失败。
+   */
   async listQualities(): Promise<QualityOption[]> {
-    return [{ level: '128', label: '标准 128k' }];
+    return [
+      { level: 'flac', label: '无损' },
+      { level: '320', label: '较高 320k' },
+      { level: '128', label: '标准 128k' },
+    ];
   }
 
   /**
