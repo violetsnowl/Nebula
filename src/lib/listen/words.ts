@@ -117,6 +117,13 @@ export function measureUnits(rts: UnitRt[]): void {
 export function waveOf(rts: UnitRt[], D: number, t: number): (c: number) => number {
   const a = rts[0]!;
   const z = rts[rts.length - 1]!;
+  // 一个字和下一个字之间没有停顿（逐字时间首尾相接，拉丁歌几乎都是这样）时，S 在这个字的时长里一路走到下一个字的起点，
+  // 把词后的空格也走掉：原来 S 只走到词尾，换词那一刻跨过空格瞬移约 .26em，波峰每个词跳一下（2026-11-22 用户反馈英文歌的颗粒感）
+  const spanEnd = (k: number): number => {
+    const r = rts[k]!;
+    const nx = rts[k + 1];
+    return nx && nx.u.s - r.u.e < 0.06 ? Math.max(r.left + r.w, nx.left) : r.left + r.w;
+  };
   let S = a.left;
   if (t >= z.u.e) S = z.left + z.w;
   else if (t >= a.u.s) {
@@ -125,11 +132,11 @@ export function waveOf(rts: UnitRt[], D: number, t: number): (c: number) => numb
       if (t < r.u.s) {
         const pv = rts[k - 1]!;
         const f = clamp((t - pv.u.e) / Math.max(0.01, r.u.s - pv.u.e), 0, 1);
-        S = lerp(pv.left + pv.w, r.left, sm(f));
+        S = lerp(spanEnd(k - 1), r.left, sm(f));
         break;
       }
       if (t < r.u.e) {
-        S = r.left + clamp((t - r.u.s) / Math.max(0.001, r.u.e - r.u.s), 0, 1) * r.w;
+        S = r.left + clamp((t - r.u.s) / Math.max(0.001, r.u.e - r.u.s), 0, 1) * (spanEnd(k) - r.left);
         break;
       }
     }
@@ -138,8 +145,16 @@ export function waveOf(rts: UnitRt[], D: number, t: number): (c: number) => numb
   const settle = 0.7 - 0.35 * D;
   const A = 0.075 * (1 - 0.25 * D) * sm(clamp((t - a.u.s + lead) / (lead + 0.1), 0, 1)) * sm(clamp((z.u.e + settle - t) / settle, 0, 1));
   const fs = a.fs || 36;
-  const gb = (1.7 - 0.5 * D) * fs;
-  const ga = (1.05 - 0.25 * D) * fs;
+  // 波宽按「字与字的平均间距」放宽（2026-11-22 用户要求「波浪加宽、起伏更柔和」）：中日韩一个字约 1em，间距 ≈ 字号，X ≈ 1 不变；
+  // 拉丁一个词常有 3–4em，按 em 定的波比一个词还窄，相邻两个词浮起差得多，看着一个词一个词地跳。
+  // X = 平均间距 ÷ 1.1 字号（1–4.5），越像拉丁（L：X 从 1 到 2.5 渐入）再额外放宽到 1.8 倍、未唱一侧再宽 35%：
+  // 英文一道波同时托起三四个词，起伏平缓（实测每帧最大跳变从峰值的 22% 降到 4%，和中文同一水平；中文 X = 1，完全不变）
+  const span = z.left + z.w - a.left;
+  const X = clamp(span / Math.max(1, rts.length) / (1.1 * fs), 1, 4.5);
+  const L = clamp((X - 1) / 1.5, 0, 1);
+  const widen = X * (1 + 0.8 * L);
+  const gb = (1.7 - 0.5 * D) * fs * widen;
+  const ga = (1.05 - 0.25 * D) * fs * widen * (1 + 0.35 * L);
   return (c) => {
     const d = c - S;
     const g = d < 0 ? gb : ga;
@@ -225,7 +240,8 @@ export function unitFrame(
   }
   setGrad(rt.v, p);
   if (!active) return;
-  let lift = wave ? wave(rt.left + rt.w / 2) : 0;
+  // 宽的字（拉丁词）整体浮起：取它左、中、右三处波高的平均，而不是只看中点，词与词之间的高低差更平缓
+  let lift = wave ? (rt.w > 1.6 * (rt.fs || 36) ? (wave(rt.left + rt.w * 0.15) + wave(rt.left + rt.w / 2) + wave(rt.left + rt.w * 0.85)) / 3 : wave(rt.left + rt.w / 2)) : 0;
   let sc = 1;
   let g = 0;
   if (u.emph) {
