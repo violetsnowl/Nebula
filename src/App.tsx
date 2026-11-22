@@ -542,7 +542,6 @@ export default function App() {
         <LyricPage
           lines={lyricLines}
           songKey={playerState.song ? `${playerState.song.source}:${playerState.song.sourceId ?? playerState.song.id}` : 'none'}
-          showTranslation={lyricTranslationEnabled}
         />
       )}
 

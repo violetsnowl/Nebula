@@ -38,34 +38,39 @@
   will-change: opacity, transform;
 }
 
-/* 页眉：这一页是哪一段（结构信息，不是装饰）、第几页 */
-.lp-folio,
+/* 纸面颗粒（样张 M）：一层很淡的灰度噪点，像印刷纸面；跟着整个版面一起随交接淡入 */
+.lp-grain {
+  position: absolute;
+  inset: 0;
+  background-size: 256px 256px;
+  opacity: 0.05;
+  pointer-events: none;
+}
+
+/* 页眉只留页码（用户 2026-11-22：左上角不写这页是哪一段） */
 .lp-no {
   position: absolute;
   top: 96px;
+  right: 150px;
   font-family: Inter, 'Segoe UI', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
   font-size: 13px;
   font-weight: 500;
   line-height: 1;
-  letter-spacing: 0.16em;
-  color: rgba(255, 255, 255, 0.4);
-}
-
-.lp-folio {
-  left: 150px;
-}
-
-.lp-folio b {
-  font-weight: 600;
-  color: rgba(255, 255, 255, 0.68);
-  letter-spacing: 0.1em;
-}
-
-.lp-no {
-  right: 150px;
   letter-spacing: 0.12em;
   color: rgba(255, 255, 255, 0.32);
   font-variant-numeric: tabular-nums;
+}
+
+/* 斜体、字尾伸出字的盒子的部分（I 的左下、y 的尾巴、s 的右边）原来扫不到颜色、看着像被切掉：
+   每个字的盒子四周加一圈留白、再用负边距抵消，排版位置不变，扫光的上色范围盖住整个字形（2026-11-22 用户反馈） */
+.lyric-page .u,
+.lyric-page .u .ch {
+  padding: 0.12em 0.2em 0.16em;
+  margin: -0.12em -0.2em -0.16em;
+}
+.lyric-page .u.has-ch {
+  padding: 0;
+  margin: 0;
 }
 
 .lp-line {

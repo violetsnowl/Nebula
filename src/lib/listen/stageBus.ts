@@ -24,7 +24,28 @@ export interface StageShapeBus {
 
 export const stageShapeBus: StageShapeBus = { on: false, open: 0, gap: 0, sinkDepth: 1, sinkPos: 1, lx: 0, ly: 0, lk: 0 };
 
-const clamp01 = (v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
+/**
+ * 版面的转场（用户 2026-11-22 提议）：进入聆听时，漫游歌词正在唱的那句飞到版面上同一句的位置再交叉淡化。
+ * LyricPage 每帧写当前句在屏幕上的位置（只在交接进行中）；LyricsLayer 认出是同一句（按开始时间）就接手，
+ * 把 taken 置真，版面那边这一句先藏着、交接快结束时淡入。
+ */
+export interface PageBus {
+  on: boolean;
+  /** 这句的开始时间（秒），用来认出是同一句。 */
+  s: number;
+  /** 屏幕坐标：中心与宽高。 */
+  cx: number;
+  cy: number;
+  w: number;
+  h: number;
+  /** 版面是竖排（横排的句子只能飞到那一列再交叉淡化）。 */
+  vert: boolean;
+  taken: boolean;
+}
+
+export const pageBus: PageBus = { on: false, s: 0, cx: 0, cy: 0, w: 0, h: 0, vert: false, taken: false };
+
+const clamp01 =(v: number) => (v < 0 ? 0 : v > 1 ? 1 : v);
 
 /**
  * 由引擎的 lift（.2–1）和 gap 算沉降倍数（样张 M 定的值）：

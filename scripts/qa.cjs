@@ -1564,7 +1564,9 @@ async function main() {
       op: root ? Number(root.style.opacity) : -1,
       pages: document.querySelectorAll('.lyric-page .lp-page').length,
       shown: shown.length,
-      folio: shown[0]?.querySelector('.lp-folio')?.textContent ?? null,
+      pageNo: shown[0]?.querySelector('.lp-no')?.textContent ?? null,
+      folio: !!document.querySelector('.lyric-page .lp-folio'),
+      grain: !!document.querySelector('.lyric-page .lp-grain'),
       lineState: cur ? cur.className : null,
       units: cur ? cur.querySelectorAll('.u').length : 0,
       flOp: fl ? Number(fl.style.opacity) : null,
@@ -1583,10 +1585,68 @@ async function main() {
     mode: document.documentElement.dataset.stageMode ?? null,
   }));
   const pageOk =
-    pageOn.listening && pageOn.mode === 'page' && pageOn.op > 0.5 && pageOn.pages >= 1 && pageOn.shown >= 1 && !!pageOn.folio &&
+    pageOn.listening && pageOn.mode === 'page' && pageOn.op > 0.5 && pageOn.pages >= 1 && pageOn.shown >= 1 && !!pageOn.pageNo && !pageOn.folio && pageOn.grain &&
     !!pageOn.lineState && pageOn.units > 0 && (pageOn.flOp === null || pageOn.flOp < 0.2) && /blur/.test(pageOn.stageFilter) &&
     !pageOff.root && pageOff.mode === null;
   log('版面（聆听中取代漫游歌词）', JSON.stringify({ pageOn, pageOff }));
+
+  // 调试用（只在 NEBULA_QA_SHOT 时跑）：换一首带中文翻译、有主歌 / 预副歌 / 副歌 / 桥段的英文占位歌（样张 M 的原创歌词），
+  // 版面模式下跳到各段拍一张，给开发时目测英文横排、斜体和翻译旁注；不参与判定
+  if (process.env.NEBULA_QA_SHOT) {
+    const EN = {
+      V1: [['Streetlights hum the song they never finish', '路灯哼着那首从没唱完的歌'], ['I keep your letters folded in my coat', '我把你的信折好放在大衣里'], ['Every bus goes somewhere I have been before', '每一班车都开往我去过的地方'], ['Every window holds a light I used to know', '每扇窗都亮着我认得的灯']],
+      P: [['And when the evening tears along the seam', '当夜色沿着缝线裂开'], ['I hear you calling through the static', '我听见你穿过杂音在喊我']],
+      C: [['We are paper lanterns', '我们是纸灯笼'], ['Rising over the river tonight', '今夜升起在河面上'], ['If the wind will not carry us home', '如果风不肯带我们回家'], ['We will burn our own way to the light', '我们就自己烧出一条路到光那里']],
+      V2: [['The city folds its map along the water', '城市沿着河水折起它的地图'], ['The radio keeps reading out our names', '收音机一遍遍念着我们的名字'], ['I counted every bridge from here to morning', '我数过从这里到清晨的每一座桥'], ['None of them were ever quite the same', '没有哪一座完全相同']],
+      B: [['Hold the flame a little longer', '再护住火光久一点'], ['Let it shake but never fall', '让它摇晃 但别落下'], ['Even ashes learn to fly', '灰烬也会学会飞']],
+      O: [['Paper lanterns', '纸灯笼'], ['Over the river', '在河面上']],
+    };
+    const plan = [['V1'], ['P'], ['C'], ['V2'], ['P'], ['C'], ['gap'], ['B'], ['C'], ['C'], ['O']];
+    const lines = [];
+    let yrc = '';
+    let t = 3000;
+    const shots = [];
+    for (const [key] of plan) {
+      if (key === 'gap') {
+        t += 6000;
+        continue;
+      }
+      shots.push([key, t + 2600]);
+      for (const [text, tr] of EN[key]) {
+        const ws = text.split(' ');
+        const d = 330;
+        lines.push({ timeMs: t, text, translation: tr });
+        yrc += `[${t},${ws.length * d + 700}]` + ws.map((w, j) => `(${t + j * d},${j === ws.length - 1 ? d + 700 : d},0)${w}${j < ws.length - 1 ? ' ' : ''}`).join('') + '\n';
+        t += ws.length * d + 700 + 450;
+      }
+      t += 800;
+    }
+    const longAudio = `data:audio/wav;base64,${makeWav(Math.ceil(t / 1000) + 5).toString('base64')}`;
+    await page.evaluate((data) => {
+      window.nebulaAPI.fetchLyric = async () => ({ ok: true, data });
+    }, { source: 'netease', lines, yrc });
+    await page.keyboard.press('Control+Shift+M');
+    await page.waitForTimeout(300);
+    await pickStage('版面');
+    await page.keyboard.press('Control+Shift+M');
+    await page.evaluate((audio) => {
+      const n = window.__nebula;
+      const s0 = { ...n.songsData()[1], source: 'netease', sourceId: 'qa-en-page', title: 'Paper Lanterns', audio };
+      n.player.playSong(s0, [s0]);
+    }, longAudio);
+    await page.waitForTimeout(1500);
+    let shotN = 0;
+    for (const [key, at] of shots) {
+      await page.evaluate((s) => window.__nebula.player.seek(s), at / 1000);
+      await page.waitForFunction(() => !!document.querySelector('.app[data-listen]'), null, { timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(1800);
+      await page.screenshot({ path: path.join(process.env.NEBULA_QA_SHOT, `page-en-${String(++shotN).padStart(2, '0')}-${key}.png`) });
+    }
+    await page.keyboard.press('Control+Shift+M');
+    await page.waitForTimeout(300);
+    await pickStage('漫游歌词');
+    await page.keyboard.press('Control+Shift+M');
+  }
 
   // #220 播放偏好随重开保留：音量、静音、播放顺序写进 localStorage，刷新后读回
   const prefsSet = await page.evaluate(() => {
