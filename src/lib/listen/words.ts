@@ -155,10 +155,12 @@ export function waveOf(rts: UnitRt[], D: number, t: number): (c: number) => numb
   const widen = X * (1 + 0.8 * L);
   const gb = (1.7 - 0.5 * D) * fs * widen;
   const ga = (1.05 - 0.25 * D) * fs * widen * (1 + 0.35 * L);
+  // 放宽之后起伏被摊薄（2026-11-22 用户：柔了、顿挫没了，但起伏小到第一眼像只有扫光）：越像拉丁峰值越高，最多到 2 倍；中日韩 L = 0 不变
+  const Aw = A * (1 + L);
   return (c) => {
     const d = c - S;
     const g = d < 0 ? gb : ga;
-    return A * Math.exp(-(d / g) * (d / g));
+    return Aw * Math.exp(-(d / g) * (d / g));
   };
 }
 
