@@ -6,6 +6,26 @@
 
 ---
 
+## #231 — 2026-11-21 — 汽水公开搜索修复（矩阵缺陷第 3 项探测中挖出）；本平台评论 / 详情探测结论
+
+**背景**：第 3 项是「汽水 / 波点 / 酷我本平台评论与详情」。探测过程中先挖出一个真 bug，比原目标更值得说。
+
+**① 汽水公开搜索一直是空的（已修）**
+`mapPublicTrack` 读 `item.id`，而 volcengine 公开搜索返回的字段是 **`item_id`**；歌手在 `author_info.name`，封面在 `cover_url`。
+字段名全错 → 每条都被判成「没有 id」丢掉 → 汽水公开搜索恒定 0 条。这也解释了矩阵里汽水搜索那格为什么长期是「需登录才有结果」。
+修完实测：「晴天」5 条、「周杰伦」5 条，带歌手与封面。
+
+**② 本平台评论 / 详情：三家都没找到可用入口（探测结论，如实记录）**
+- 酷我：`comment.kuwo.cn/com.s` → `code:600「评论失败」`；`m.kuwo.cn/newh5/singles/songinfoandlrc` → `status:301「音乐查询失败」`；`www.kuwo.cn/api/comment/comments` → 404。
+- 波点：`bd-api.kuwo.cn` 的 `/api/comment/*` → 404；`/api/music/info`、`/api/service/music/info` → **402**（要鉴权 / 付费）。
+- 汽水：`/luna/pc/comments` **存在**——参数 `item_id` + `group_id=1` 能通过校验（返回 `count` / `cursor` / `has_more` / `prompts`），但用真实 `item_id` 查询 `count` 恒为 0，未登录读不到内容；详情 `/luna/pc/track` 404，可用的是 `/luna/pc/track_v2`（需登录）。
+
+**改动**：`qishuiAdapter.mapPublicTrack` 改为 `item_id ?? id`、`author_info?.name ?? author/artist`、`cover_url ?? cover`，并兼容旧字段名；`index.ts` 导出 `QishuiAdapter` 供回归使用。
+
+**验证**：`scripts/qishui-car-regression.mjs` 24 → 25 项（公开搜索字段名映射 + 旧字段兼容）；真实网络搜索两个关键词各 5 条带封面；`pnpm build` / `pnpm qa` / `pnpm qa:backend` 全绿。
+
+**遗留**：三家本平台评论 / 详情仍未接，矩阵里保持「→ 网易云/QQ 兜底」并写入上面的探测结论；有账号后再推进（汽水 `/luna/pc/comments` 最接近可用，只差登录态）。
+
 ## #230 — 2026-11-21 — 汽水登录态核验与过期提示（矩阵缺陷第 2 项）
 
 **背景**：矩阵里汽水「登录有效性核验」和「登录过期提示」两格都是 ⚠️/空白——`getAccount()` 只要 Cookie 里能找到 `uid_v2 / sessionid / uid` 任一字段就**无条件**返回 `loggedIn: true`，从不核验；票据失效后界面会一直装作登录着，直到用户自己发现放不了歌。

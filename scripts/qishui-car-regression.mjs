@@ -502,4 +502,41 @@ await test('歌词（#216）：曲目信息里的 KRC 原文 + 中文翻译，�
   await authed.fetchCarLyric('700');
   assert.deepEqual(s2.calls.filter((c) => c.path.endsWith('/media/mget/')).pop().body.common_params, { user_id: '9001' });
 });
+await test('公开搜索字段名（#231）：item_id / author_info.name / cover_url 不能漏', async () => {
+  // 实测形状：volcengine 返回的 id 字段是 item_id，歌手在 author_info.name，封面在 cover_url；
+  // 旧实现只读 id，整批结果被判成空 —— 表现就是「汽水公开搜索一直没有结果」。
+  // PCs 搜索需要 cookie，这里不提供 cookie，走的就是公开搜索那条路。
+  const body = {
+    data: {
+      list: [
+        {
+          item_id: '7676337516358617115',
+          title: '晴天',
+          author_info: { name: '晚风纯音' },
+          cover_url: 'https://p6-luna.douyinpic.com/img/tos-cn-v/abc~tplv-1v05vqsscw-qishui:0:360.image',
+          duration: 269,
+        },
+      ],
+    },
+  };
+  const http = {
+    requestJson: async (url) => {
+      assert.ok(String(url).includes('api-vehicle.volcengine.com'), '没有 cookie 时只能走公开搜索');
+      return body;
+    },
+  };
+  const adapter = new api.QishuiAdapter(http, { get: () => null, getHeader: () => '' });
+  const list = await adapter.searchSongs('晴天', 5);
+  assert.equal(list.length, 1, '以前 item.id 为空 → 整批被丢弃，返回 0 条');
+  assert.equal(list[0].sourceId, '7676337516358617115');
+  assert.equal(list[0].artist, '晚风纯音');
+  assert.ok(list[0].cover.includes('douyinpic.com'));
+
+  // 兼容旧字段名，别把别的来源弄坏
+  const legacyHttp = { requestJson: async () => ({ data: { list: [{ id: '123', title: '歌', author: '人' }] } }) };
+  const legacy = await new api.QishuiAdapter(legacyHttp, { get: () => null, getHeader: () => '' }).searchSongs('歌', 5);
+  assert.equal(legacy[0].sourceId, '123');
+  assert.equal(legacy[0].artist, '人');
+});
+
 print(`\n汽水车机协议回归：${n} 项全部通过`);

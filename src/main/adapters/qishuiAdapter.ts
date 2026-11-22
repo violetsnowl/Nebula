@@ -452,15 +452,17 @@ export class QishuiAdapter implements PlatformAdapter {
   /** 映射公开搜索歌曲 */
   private mapPublicTrack(item: any): Track | null {
     try {
-      const id = String(item.id || '');
+      // 公开搜索（volcengine）里的歌曲 id 字段是 `item_id`，不是 `id`（#231 实测确认）；
+      // 只读 `id` 会让整批结果被判成空，表现就是「汽水公开搜索一直没结果」。
+      const id = String(item?.item_id ?? item?.id ?? '');
       if (!id) return null;
       return {
         id: `qishui:${id}`,
         title: item.title || item.name || '',
-        artist: item.author || item.artist || '',
+        artist: item.author_info?.name || item.author || item.artist || '',
         artists: item.artists?.map((a: any) => a.name || '') || [],
-        album: item.album?.name || '',
-        cover: qishuiCoverUrl(item.cover),
+        album: item.album?.name || item.collection_name || '',
+        cover: qishuiCoverUrl(item.cover_url || item.cover),
         duration: Number(item.duration || 0),
         platform: 'qishui',
         sourceId: id,
