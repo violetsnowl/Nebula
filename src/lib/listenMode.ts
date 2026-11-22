@@ -159,6 +159,8 @@ export class ListenDirector {
     layout: 'stacked',
   };
   private mode: 'roam' | 'listen' = 'roam';
+  /** 常驻聆听被阻断条件打断（比如打开了听音空间）：条件解除时直接回到聆听，不重新计静止时间。 */
+  private resume = false;
   private lastAct = performance.now();
   private moveAcc = 0;
   private lastX: number | null = null;
@@ -282,6 +284,7 @@ export class ListenDirector {
 
   /** 离开聆听（常驻聆听的收起键、Esc）：回到漫游，重新开始计静止时间。 */
   exit(): void {
+    this.resume = false;
     this.lastAct = performance.now();
     if (this.mode === 'listen') this.setMode('roam');
   }
@@ -296,8 +299,20 @@ export class ListenDirector {
     const ok = this.deps.isPlaying() && !this.blocked();
     if (this.mode === 'listen') {
       // 常驻时只认 App 的阻断条件（暂停、打字、侧面板开着都不退出）
-      if (this.cfg.pin ? this.deps.isBlocked() || !!document.querySelector(BUSY_SELECTOR) : !ok) this.setMode('roam');
+      if (this.cfg.pin ? this.deps.isBlocked() || !!document.querySelector(BUSY_SELECTOR) : !ok) {
+        this.resume = this.cfg.pin;
+        this.setMode('roam');
+      }
       return;
+    }
+    // 常驻聆听被打断后，打断它的东西（听音空间等）一收起就回到聆听（版面会接着把字从听音空间飞回来）
+    if (this.resume) {
+      if (!this.cfg.pin) this.resume = false;
+      else if (!this.deps.isBlocked() && !document.querySelector(BUSY_SELECTOR)) {
+        this.resume = false;
+        this.setMode('listen');
+        return;
+      }
     }
     // 条件不满足期间计时清零：恢复播放、关掉弹层后重新数
     if (!ok) {

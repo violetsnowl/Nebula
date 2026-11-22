@@ -309,3 +309,16 @@
 .lp-tr.is-free.is-on {
   color: var(--lp-tr-on);
 }
+
+/* 版面 ↔ 听音空间的一镜到底（2026-11-22，lyric-page/toListen.ts）：替身层挂在 body 上、压在所有层之上，飞行期间一直可见。
+   歌词栏那一份（.lpm-c）没有版面的上色留白，盒子和歌词栏里的真字一样大 */
+.lp-morph.lp-lsfly {
+  position: fixed;
+  z-index: 300;
+  opacity: 1;
+}
+.lpm-c .u,
+.lpm-c .u .ch {
+  padding: 0;
+  margin: 0;
+}

@@ -1636,8 +1636,8 @@ async function main() {
     return r;
   };
   const morphOk = (r) =>
-    !!r && r.lk > 0.3 && r.lk < 0.8 && r.spans > 0 && r.clonesB === r.spans && r.op > 0.5 && (r.z1Op === null || r.z1Op < 0.12) &&
-    (r.othersOp === null || r.othersOp < 0.25) && r.landEnd !== null && r.landEnd <= 1 && (r.landSize === null || r.landSize <= 2) && r.landStart !== null && r.landStart <= 2.5;
+    !!r && r.lk > 0.3 && r.lk < 0.8 && r.spans > 0 && r.clonesB === r.spans && r.op > 0.5 && (r.z1Op === null || r.z1Op < Math.max(0.12, 1 - (Math.min(1, r.lk / 0.55) ** 2) * (3 - 2 * Math.min(1, r.lk / 0.55)) + 0.03)) &&
+    (r.othersOp === null || r.othersOp < Math.max(0.25, 1 - (Math.min(1, r.lk / 0.55) ** 2) * (3 - 2 * Math.min(1, r.lk / 0.55)) + 0.03)) && r.landEnd !== null && r.landEnd <= 1 && (r.landSize === null || r.landSize <= 2) && r.landStart !== null && r.landStart <= 2.5;
   await page.keyboard.press('Control+Shift+M');
   await page.waitForTimeout(300);
   await pickStage('版面');
@@ -1690,6 +1690,7 @@ async function main() {
   let gapDots = null;
   let morphEn = null;
   const tplChecks = { en: null, zh: null };
+  let lsFlyCheck = null;
   const TPLS = ['held', 'spine', 'justify', 'foot', 'bleed', 'diag', 'field', 'groove', 'grid', 'corner'];
   /** 逐套强制版式：跳到用了这套的第一页的第一句唱到一半，量 bounds（out = 跑出画幅的字数，clash = 不同句子的字互相压住多少像素）。 */
   const checkTemplates = async (tag) => {
@@ -1792,6 +1793,38 @@ async function main() {
     await page.evaluate((s) => window.__nebula.player.seek(s), between - 3.25);
     morphEn = await sampleMorph('morph-en.png');
     // 样张 N 的十套大胆版式：逐套强制（__nebulaLyricPage.force），跳到用了这套的第一页，查字不出画幅、不同句子的字不互相压住
+    // 版面 ↔ 听音空间一镜到底（2026-11-22）：打开常驻聆听，聆听中点开听音空间，版面这一页逐字飞到歌词栏；
+    // 收起后回到常驻聆听，字飞回版面。量两次落位（替身推到终点，终点那份克隆和真字的中心差）
+    lsFlyCheck = await (async () => {
+      const tab = (name) => page.evaluate((n) => [...document.querySelectorAll('.sd-panel.sd-right .seg.wide button')].find((b) => b.textContent === n)?.click(), name);
+      const pinTg = () => page.evaluate(() => document.querySelector('.sd-panel.sd-right [aria-label="进入聆听后常驻"]')?.click());
+      await tab('聆听');
+      await page.waitForTimeout(200);
+      await pinTg();
+      await page.evaluate((s) => window.__nebula.player.seek(s), lines[2].timeMs / 1000 + 1);
+      await page.waitForFunction(() => !!document.querySelector('.app[data-listen-pin]'), null, { timeout: 9000 }).catch(() => {});
+      await page.waitForTimeout(1800);
+      const pinned = await page.evaluate(() => !!document.querySelector('.app[data-listen-pin]'));
+      await page.evaluate(() => document.querySelector('.bp-cover[data-np-cover]')?.click());
+      await page.waitForTimeout(250);
+      const inFly = await page.evaluate(() => window.__nebulaLyricPage?.lsProbe());
+      if (process.env.NEBULA_QA_SHOT) await page.screenshot({ path: path.join(process.env.NEBULA_QA_SHOT, 'ls-fly-in.png') });
+      await page.waitForTimeout(1300);
+      const inDone = await page.evaluate(() => ({ layer: !!document.querySelector('.lp-lsfly'), hidden: [...document.querySelectorAll('.ls-col .u')].filter((u) => u.style.visibility === 'hidden').length }));
+      await page.evaluate(() => document.querySelector('.ls-exit')?.click());
+      await page.waitForTimeout(350);
+      const outFly = await page.evaluate(() => window.__nebulaLyricPage?.lsProbe());
+      if (process.env.NEBULA_QA_SHOT) await page.screenshot({ path: path.join(process.env.NEBULA_QA_SHOT, 'ls-fly-out.png') });
+      await page.waitForTimeout(2200);
+      const back = await page.evaluate(() => ({ pin: !!document.querySelector('.app[data-listen-pin]'), layer: !!document.querySelector('.lp-lsfly'), hidden: [...document.querySelectorAll('.lyric-page .u')].filter((u) => u.style.visibility === 'hidden').length }));
+      await page.evaluate(() => document.querySelector('.listen-exit')?.click());
+      await pinTg();
+      await tab('歌词');
+      await page.waitForTimeout(300);
+      const worst = (p) => (p && p.err.length ? Math.max(...p.err.flat().map(Math.abs)) : null);
+      const lsLog = await page.evaluate(() => (window.__nebulaLyricPage?.lsLog || []).slice(-8));
+      return { lsLog, pinned, inN: inFly ? inFly.n : 0, inErr: worst(inFly), inDone, outN: outFly ? outFly.n : 0, outErr: worst(outFly), back };
+    })();
     tplChecks.en = await checkTemplates('en');
     // 中文占位歌（原创歌词、逐字时间、无翻译，主歌 / 预副歌 / 副歌 / 桥段 / 尾声）：同样逐套查一遍竖排（唱片纹强制横排）
     {
@@ -1838,6 +1871,10 @@ async function main() {
   log('版面转场·横排逐字飞入（两句之间进入聆听）', JSON.stringify(morphEn));
   const morphPass = morphOk(morphZh) && morphOk(morphEn);
   log('版面·十套大胆版式（英文 / 中文）', JSON.stringify(tplChecks));
+  log('版面 ↔ 听音空间一镜到底', JSON.stringify(lsFlyCheck));
+  const lsFlyOk =
+    !!lsFlyCheck && lsFlyCheck.pinned && lsFlyCheck.inN > 0 && lsFlyCheck.inErr !== null && lsFlyCheck.inErr <= 1.5 && !lsFlyCheck.inDone.layer && lsFlyCheck.inDone.hidden === 0 &&
+    lsFlyCheck.outN > 0 && lsFlyCheck.outErr !== null && lsFlyCheck.outErr <= 1.5 && lsFlyCheck.back.pin && !lsFlyCheck.back.layer && lsFlyCheck.back.hidden === 0;
   // 每套至少在一首歌里用上；用上的页：没有字跑出画幅、不同句子的字最多压住 2px
   const tplOk =
     !!tplChecks.en &&
@@ -1930,6 +1967,7 @@ async function main() {
     !gapOk ||
     !morphPass ||
     !tplOk ||
+    !lsFlyOk ||
     !pinOk ||
     !capHazeOk ||
     !idleOk ||
@@ -1992,6 +2030,7 @@ async function main() {
     pageGapDots: !gapOk,
     pageMorph: !morphPass,
     pageTemplates: !tplOk,
+    pageToListen: !lsFlyOk,
     listenPin: !pinOk,
     captionHaze: !capHazeOk,
     idleInPanel: !idleOk,

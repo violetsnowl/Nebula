@@ -12,6 +12,7 @@ import { TYPO, measureUnits, renderUnits, restUnit, unitFrame, waveOf, type Unit
 import { useSpaceLab } from '../lib/space/lab';
 import { flatten } from './lyric-page/kit';
 import { FALLBACK_H, newPickState, pickTpl, songHook } from './lyric-page/pools';
+import { LsFly, type FlyPair, type FlySide } from './lyric-page/toListen';
 import { PH, PW, type PageHooks, type TCtx, type TLine, type Tpl } from './lyric-page/types';
 import './listen/lyric-words.css';
 import './lyric-page.css';
@@ -31,6 +32,8 @@ import './lyric-page-tpl-c.css';
 interface LyricPageProps {
   lines: LyricLineUI[];
   songKey?: string;
+  /** 听音空间开着（版面 ↔ 听音空间一镜到底用）。 */
+  lsOpen?: boolean;
 }
 
 const usable = (l: LyricLineUI | undefined) => !!l && (!!l.text?.trim() || !!l.words?.length);
@@ -184,7 +187,7 @@ function measureLine(l: PLine, S: number): void {
 
 
 
-export function LyricPage({ lines, songKey }: LyricPageProps) {
+export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
   const lab = useSpaceLab();
   const active = lab.stageMode === 'page';
   const listen = useListenSettings();
@@ -196,6 +199,10 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const frameRef = useRef<HTMLDivElement>(null);
   const morphRef = useRef<HTMLDivElement>(null);
+  const lsOpenRef = useRef(lsOpen);
+  lsOpenRef.current = lsOpen;
+  const pinRef = useRef(settings.listenPin);
+  pinRef.current = settings.listenPin;
   const roamRef = useRef(settings.roamLyrics);
   roamRef.current = settings.roamLyrics;
   // 开发 / QA：强制某套版式后重新建页（__nebulaLyricPage.force）
@@ -605,6 +612,8 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
         pages: () => { tpl: string; s: number; vert: boolean }[];
         force: (id: string | null) => void;
         bounds: () => { tpl: string; units: number; out: number; clash: number }[];
+        lsProbe: () => { n: number; err: number[][] } | null;
+        lsLog: string[];
       };
     };
     probeWin.__nebulaLyricPage = {
@@ -618,6 +627,16 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
         });
       },
       // 版面上每一句里相邻两个字「量出来的范围」最多重叠多少像素（应 ≤ 0：演唱位置只往前走）
+      // 版面 ↔ 听音空间替身：推到终点量落位（每个字终点那份克隆和真字的中心差）
+      get lsLog() {
+        return lsLog;
+      },
+      lsProbe: () => {
+        if (!lsFly) return null;
+        lsFly.render(1);
+        const err = lsFly.probe();
+        return { n: err.length, err };
+      },
       // 每页用的版式和开始时间（QA 按它跳到某套版式的页）
       pages: () => pages.map((p) => ({ tpl: p.tpl.id, s: p.s, vert: p.ctx.vert })),
       // 强制所有能用的页都用某套版式（null = 恢复轮换），重新建页
@@ -675,6 +694,106 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
       },
     };
 
+    // —— 版面 ↔ 听音空间一镜到底（2026-11-22 用户要求，lyric-page/toListen.ts）——
+    // 打开听音空间时，版面正在显示的这一页逐字飞到听音空间歌词栏里对应的字上；常驻聆听时收起听音空间会回到版面，字再飞回来。
+    let lsFly: LsFly | null = null;
+    /** 一镜到底的起落记录（QA 排查用，最多 20 条）。 */
+    const lsLog: string[] = [];
+    const lsNote = (m: string) => {
+      lsLog.push(m);
+      if (lsLog.length > 20) lsLog.shift();
+    };
+    let lsPrev = lsOpenRef.current;
+    /** 收起听音空间、飞回版面期间版面直接满显（不等交接曲线慢慢升起），直到交接追上。 */
+    let lsBoostUntil = 0;
+    const normText = (s: string) => s.replace(/\s+/g, '');
+    const unitsOfPage = (l: PLine): HTMLElement[] => (l.rts ? l.rts.map((r) => r.v.el) : l.whole ? [l.whole] : []);
+    const pageSide = (l: PLine, el: HTMLElement): FlySide => ({ el, ctx: `lpm-b ${l.el.className}`, rot: rotTarget(l, el), vert: unitVert(l, el) });
+    const colSide = (line: HTMLElement, el: HTMLElement): FlySide => ({
+      el,
+      ctx: `lpm-c${line.classList.contains('is-grad') ? ' is-grad' : ''}`,
+      rot: 0,
+      vert: false,
+      opEl: line,
+      blend: line.classList.contains('is-cur') ? undefined : 'plus-lighter',
+    });
+    /** 听音空间歌词栏里和版面这几句对应的句子：先按「当前句对当前句」对齐，文字不同时就近找同样文字的一句。 */
+    const colLinesFor = (ls: PLine[], t: number): (HTMLElement | null)[] => {
+      const cols = [...document.querySelectorAll<HTMLElement>('.ls-col .ly-line')];
+      if (!cols.length) return ls.map(() => null);
+      const texts = cols.map((c) => normText(c.querySelector('.ly-main')?.textContent ?? ''));
+      let curC = cols.findIndex((c) => c.classList.contains('is-cur'));
+      let curP = -1;
+      ls.forEach((l, i) => {
+        if (l.eng.s <= t + 0.05) curP = i;
+      });
+      if (curP < 0) curP = 0;
+      if (curC < 0) curC = Math.max(0, texts.indexOf(normText(ls[curP]!.eng.text)));
+      return ls.map((l, i) => {
+        const want = normText(l.eng.text);
+        const guess = curC + (i - curP);
+        if (texts[guess] === want) return cols[guess]!;
+        let best = -1;
+        for (let d = 1; d < cols.length; d++) {
+          if (texts[guess - d] === want) best = guess - d;
+          else if (texts[guess + d] === want) best = guess + d;
+          if (best >= 0) break;
+        }
+        return best >= 0 ? cols[best]! : null;
+      });
+    };
+    const colUnits = (line: HTMLElement | null): HTMLElement[] => (line ? [...line.querySelectorAll<HTMLElement>(':scope > .ly-main > .u, :scope > .ly-main.ly-whole')] : []);
+    const hideEls = (els: HTMLElement[], on: boolean) => {
+      for (const el of els) el.style.visibility = on ? 'hidden' : '';
+    };
+    /** 现在该显示哪一页：已经出现的最后一页。 */
+    const pageAt = (t: number): PPage | null => {
+      let pg: PPage | null = null;
+      for (const p of pages) if (p.tIn <= t) pg = p;
+      return pg;
+    };
+    const startLsIn = (t: number) => {
+      const pg = pages.find((p) => p.on && Number(p.el.style.opacity || 1) > 0.5) ?? null;
+      lsNote(`in page=${pg ? pages.indexOf(pg) : -1}`);
+      if (!pg) return;
+      const pairs: (FlyPair & { line: PLine; i: number })[] = [];
+      pg.lines.forEach((l) => unitsOfPage(l).forEach((el, i) => pairs.push({ from: pageSide(l, el), to: null, line: l, i })));
+      if (!pairs.length) return;
+      // 歌词栏刚建好时可能还没有字：每帧补找；一句的字数对不上时这一句不飞到栏里（原地淡出）
+      let cols: (HTMLElement | null)[] | null = null;
+      lsFly = new LsFly(
+        pairs,
+        (p) => {
+          const q = p as FlyPair & { line: PLine; i: number };
+          if (!cols || cols.every((c) => !c)) {
+            cols = colLinesFor(pg.lines, t);
+            lsNote(`cols ${document.querySelectorAll('.ls-col .ly-line').length} matched ${cols.filter(Boolean).length}/${pg.lines.length}`);
+          }
+          const col = cols[pg.lines.indexOf(q.line)] ?? null;
+          const us = colUnits(col);
+          if (!col || us.length !== unitsOfPage(q.line).length) return null;
+          return colSide(col, us[q.i]!);
+        },
+        650,
+        hideEls,
+      );
+    };
+    const startLsOut = (t: number) => {
+      const pg = pageAt(t);
+      if (!pg) return;
+      const cols = colLinesFor(pg.lines, t);
+      const pairs: FlyPair[] = [];
+      pg.lines.forEach((l, li) => {
+        const us = colUnits(cols[li] ?? null);
+        const ps = unitsOfPage(l);
+        if (!us.length || us.length !== ps.length) return;
+        us.forEach((el, i) => pairs.push({ from: colSide(cols[li]!, el), to: pageSide(l, ps[i]!) }));
+      });
+      lsBoostUntil = performance.now() + 2600;
+      if (!pairs.length) return;
+      lsFly = new LsFly(pairs, () => null, 700, hideEls);
+    };
+
     const tick = (now: number) => {
       const dt = clamp((now - last) / 1000, 0.001, 0.05);
       last = now;
@@ -689,12 +808,25 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
       smoothT = cand;
       const t = cand;
       const k = listenBus.enabled ? listenBus.k : 0;
-      const op = k.toFixed(3);
+      // 听音空间开合：开 = 版面飞到歌词栏；常驻聆听时收起 = 飞回版面
+      const lsNow = lsOpenRef.current;
+      if (lsNow !== lsPrev) {
+        lsFly?.end();
+        lsFly = null;
+        lsNote(`ls ${lsNow} k=${k.toFixed(2)}`);
+        if (lsNow && k > 0.5) startLsIn(t);
+        else if (!lsNow && pinRef.current) startLsOut(t);
+        lsPrev = lsNow;
+      }
+      if (lsFly && lsFly.step(now)) lsFly = null;
+      const boost = now < lsBoostUntil && k < 0.99 ? 1 : 0;
+      if (k >= 0.99) lsBoostUntil = 0;
+      const op = Math.max(k, boost).toFixed(3);
       if (op !== rootOp) {
         root.style.opacity = op;
         rootOp = op;
       }
-      if (k > 0.001) {
+      if (k > 0.001 || boost) {
         const scheme = schemeRef.current;
         const ghost = GHOST[scheme === 'mono' ? 'mono' : 'cover'];
         for (const pg of pages) {
@@ -762,8 +894,11 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
           d.style.transform = `scale(${((0.8 + 0.2 * f) * breathe * (0.4 + 0.6 * tail)).toFixed(3)})`;
         });
       }
-      // —— 转场：交接进行中才有；到达两端（完全聆听 / 完全漫游）就收掉替身 ——
-      if (k <= 0.001 || k >= 0.999) {
+      // —— 转场：交接进行中才有；到达两端（完全聆听 / 完全漫游）就收掉替身。听音空间开着或刚收起飞回版面时不做漫游 ↔ 版面的转场 ——
+      if (lsNow || lsFly || boost) {
+        if (morph) endMorph();
+        morphTried = true;
+      } else if (k <= 0.001 || k >= 0.999) {
         if (morph) endMorph();
         morphTried = false;
       } else {
@@ -783,6 +918,7 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
       frame.textContent = '';
       root.style.opacity = '0';
       endMorph();
+      lsFly?.end();
     };
   }, [active, model, vert, showTranslation, listen.font, songKey, rev]);
 
