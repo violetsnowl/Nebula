@@ -693,8 +693,13 @@ export class LyricService {
     return null;
   }
 
-  /** 全网搜歌：网易云 + QQ（酷狗兜底），按页容量裁剪、去重。 */
+  /**
+   * 全网搜歌：网易云 + QQ（酷狗兜底），按页容量裁剪、去重。
+   * 酷我、波点也有可用的搜索接口（#207 起用于兜底），一并参与（#224）；
+   * Spotify 只在登录后（有令牌）才参与，未登录时接口空手而归、不必白等。
+   */
   async searchSongs(keyword: string, pageSize = 8): Promise<Track[]> {
+    // 每家的取回量：交错后每家至少能出 1 条，取 ceil(pageSize / 2) 保底
     const per = Math.max(2, Math.ceil(pageSize / 2));
     const out: Track[] = [];
     const seen = new Set<string>();
@@ -705,27 +710,59 @@ export class LyricService {
       // 平台搜索接口会把命中词包成 <em>…</em>（QQ 尤其），界面上原样露出来；统一在这里清洗
       out.push({ ...t, title: stripMarkup(t.title), artist: stripMarkup(t.artist), album: stripMarkup(t.album) });
     };
-    const sources = [this.adapters.netease, this.adapters.qq, this.adapters.kugou];
-    await Promise.all(
+    const sources = [
+      this.adapters.netease,
+      this.adapters.qq,
+      this.adapters.kugou,
+      this.adapters.kuwo,
+      this.adapters.bodian,
+    ].filter(Boolean);
+    // Spotify 只有登录后才有令牌；没有就跳过，省一次必然失败的请求（未登录时搜索接口回空）
+    const spotify = this.adapters.spotify;
+    if (spotify?.searchSongs) sources.push(spotify);
+    // 各家并行，但结果按「轮流取一条」交错：谁先返回谁先占满的话，快的酷狗 / 酷我会把
+    // 网易云、QQ 挤掉（实测搜「周杰伦」6 条全是酷狗 + 酷我）。
+    const lists = await Promise.all(
       sources.map(async (adapter) => {
-        if (!adapter.searchSongs) return;
+        if (!adapter.searchSongs) return [] as Track[];
         try {
           const list = await adapter.searchSongs(keyword, per);
-          list.forEach(push);
+          return list.map((t) => ({
+            ...t,
+            title: stripMarkup(t.title),
+            artist: stripMarkup(t.artist),
+            album: stripMarkup(t.album),
+          }));
         } catch (err) {
-          console.warn("[LyricService] searchSongs");
+          console.warn('[LyricService] searchSongs');
+          return [] as Track[];
         }
       }),
     );
+    // 交错取用：每轮先让「每家一条」，再进下一轮。这样快的平台不会靠前 3 条把名额吃光，
+    // 慢的网易云（约 1.2 秒）也一定能在自己那一格出现。
+    const active = lists.filter((l) => l.length > 0);
+    const rounds = Math.max(0, ...active.map((l) => l.length));
+    for (let i = 0; i < rounds && out.length < pageSize; i++) {
+      for (const list of active) {
+        const t = list[i];
+        if (!t) continue;
+        push(t);
+        if (out.length >= pageSize) break;
+      }
+    }
     return out.slice(0, pageSize);
   }
 
-  /** 全网搜歌手：网易云 + QQ。 */
+  /**
+   * 全网搜歌手：网易云 + QQ；酷狗补上（#224，手机端搜索接口给 singername / singerid）。
+   * 酷我、波点没有可用的歌手搜索接口，不参与。
+   */
   async searchArtists(keyword: string, pageSize = 5): Promise<ArtistSearchHit[]> {
     const per = Math.max(2, Math.ceil(pageSize / 2));
     const out: ArtistSearchHit[] = [];
     const seen = new Set<string>();
-    const sources = [this.adapters.netease, this.adapters.qq];
+    const sources = [this.adapters.netease, this.adapters.qq, this.adapters.kugou].filter(Boolean);
     await Promise.all(
       sources.map(async (adapter) => {
         if (!adapter.searchArtists) return;

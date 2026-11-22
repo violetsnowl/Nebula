@@ -189,11 +189,11 @@ export function useOverlays() {
   }, [showInfo]);
 
   /**
-   * 歌手 chip 点击：netease/qq 带 id 直接打开；其他平台（酷狗/汽水/Spotify）
-   * 或 id 缺失时按歌手名转译到网易云/QQ 歌手页。
+   * 歌手 chip 点击：netease / qq / 酷狗（#224 起有歌手页）带 id 直接打开；
+   * 其他平台（汽水 / Spotify 等）或 id 缺失时按歌手名转译到网易云 / QQ 歌手页。
    */
   const openArtistFromChip = useCallback((platform: string, artistId: string, name: string) => {
-    if (artistId && (platform === 'netease' || platform === 'qq')) {
+    if (artistId && (platform === 'netease' || platform === 'qq' || platform === 'kugou')) {
       showInfo({ kind: 'artist', platform, artistId, artistName: name });
       return;
     }

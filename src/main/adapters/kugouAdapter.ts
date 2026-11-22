@@ -2,7 +2,7 @@ import crypto from 'node:crypto';
 import type { HttpClient } from '../http';
 import { requestScope, throwIfCancelled, withRequestScope } from '../requestScope';
 import type { CookieStore } from '../cookieStore';
-import type { Lyric, Playlist, PlaylistSummary, PlatformAdapter, QualityOption, SongUrl, Track } from '../types';
+import type { AlbumSummary, ArtistInfo, ArtistSearchHit, Lyric, Playlist, PlaylistSummary, PlatformAdapter, QualityOption, SongUrl, Track } from '../types';
 import { parseLrc } from '../parsers/lyricParser';
 import { decodeKrc, fromTimed } from '../parsers/timedLyrics';
 import { mapKugouMobileTrack, mapKugouTrack } from './mappers';
@@ -558,6 +558,104 @@ export class KugouAdapter implements PlatformAdapter {
       return (data?.data?.lists ?? []).map(mapKugouTrack).filter((t): t is Track => !!t);
     } catch (err) {
       console.warn("[KugouAdapter] 搜索失败:");
+      return [];
+    }
+  }
+
+  /**
+   * 关键词搜歌手（#224）：mobilecdn 的 v3 搜索给 singername / singerid。
+   * 注意这条接口只有 http 通（https 侧证书/路径都不对），别顺手改成 https。
+   */
+  async searchArtists(keyword: string, pageSize = 5): Promise<ArtistSearchHit[]> {
+    try {
+      const data = await this.http.requestJson<{
+        data?: Array<{ singername?: string; singerid?: number | string }>;
+      }>(
+        `http://mobilecdn.kugou.com/api/v3/search/singer?format=json&keyword=${encodeURIComponent(keyword)}&page=1&pagesize=${pageSize}&showtype=1`,
+        { platform: 'kugou' },
+      );
+      return (data?.data ?? [])
+        .map((a) => ({
+          platform: 'kugou' as const,
+          id: String(a.singerid ?? ''),
+          name: String(a.singername ?? ''),
+          avatar: '',
+        }))
+        .filter((a) => a.id && a.name);
+    } catch (err) {
+      console.warn('[KugouAdapter] 歌手搜索失败:');
+      return [];
+    }
+  }
+
+  /**
+   * 歌手资料（#224）：mobilecdn 的 singer/info 给 singername / profile / imgurl。
+   * `imgurl` 里带 `{size}` 占位符（如 `/softhead/{size}/...`），换成 240 才是真地址。
+   */
+  async fetchArtistInfo(artistId: string): Promise<ArtistInfo | null> {
+    try {
+      const res = await this.http.requestJson<{
+        data?: { singername?: string; profile?: string; intro?: string; imgurl?: string; singerid?: number | string };
+      }>(`http://mobilecdn.kugou.com/api/v3/singer/info?singerid=${encodeURIComponent(artistId)}`, {
+        platform: 'kugou',
+      });
+      const d = res?.data;
+      if (!d?.singername) return null;
+      return {
+        platform: 'kugou',
+        id: String(d.singerid ?? artistId),
+        name: String(d.singername),
+        avatar: String(d.imgurl ?? '').replace('{size}', '240'),
+        description: String(d.profile || d.intro || '').trim() || undefined,
+      };
+    } catch (err) {
+      console.warn('[KugouAdapter] 歌手资料失败:');
+      return null;
+    }
+  }
+
+  /**
+   * 歌手歌曲（#224）：酷狗没有公开的「按歌手列全曲」接口（singer/songs 一律 Access Denied），
+   * 用关键词搜索歌手名代替——搜索结果里只留歌手名对得上的，够歌手页首屏用。
+   */
+  async fetchArtistSongs(artistId: string): Promise<Track[]> {
+    try {
+      const name = (await this.fetchArtistInfo(artistId))?.name || '';
+      if (!name) return [];
+      const list = await this.searchSongs(name, 20);
+      const key = name.replace(/\s+/g, '').toLowerCase();
+      const hit = list.filter((t) => String(t.artist ?? '').replace(/\s+/g, '').toLowerCase().includes(key));
+      return hit.length ? hit : list;
+    } catch (err) {
+      console.warn('[KugouAdapter] 歌手歌曲失败:');
+      return [];
+    }
+  }
+
+  /** 歌手专辑（#224）：singer/album 给 albumname / albumid / publishtime / songcount。 */
+  async fetchArtistAlbums(artistId: string): Promise<AlbumSummary[]> {
+    try {
+      const res = await this.http.requestJson<{
+        data?: { info?: Array<Record<string, any>> };
+      }>(`http://mobilecdn.kugou.com/api/v3/singer/album?singerid=${encodeURIComponent(artistId)}&page=1&pagesize=20`, {
+        platform: 'kugou',
+      });
+      return (res?.data?.info ?? [])
+        .map((a) => {
+          const id = String(a.albumid ?? '');
+          return {
+            platform: 'kugou' as const,
+            id,
+            name: String(a.albumname ?? ''),
+            cover: id ? `https://imge.kugou.com/msoft/480/${id}.jpg` : '',
+            artist: String(a.singername ?? ''),
+            year: a.publishtime ? Number(String(a.publishtime).slice(0, 4)) || undefined : undefined,
+            songCount: Number(a.songcount) || undefined,
+          };
+        })
+        .filter((a) => a.id && a.name);
+    } catch (err) {
+      console.warn('[KugouAdapter] 歌手专辑失败:');
       return [];
     }
   }

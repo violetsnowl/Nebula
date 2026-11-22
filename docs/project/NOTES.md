@@ -25,6 +25,14 @@
 - **构建产物在仓库外**：`pnpm build` 输出到同级目录 `../nebula-outputs/index.html`（本机 `E:\CUFE\vibecoding\nebula-outputs`）；而 `pnpm qa` 正是读取这个文件，所以**必须先 build 再 qa**。
 - 项目已接入 git；远程为 `github.com/violetsnowl/Nebula`（2026-11-14 改名；旧地址 `violetsnowl/nebula`、`a161858970-ux/nebula` 自动重定向，本地 origin 已更新）；文档随提交维护（docs/）。
 
+### 在线搜索补平台（2026-11-21，#224）
+
+- **酷狗的歌手相关接口都在 `mobilecdn.kugou.com`，且只有 http 通**：`https://mobilecdn.kugou.com/api/v3/search/singer` 报 `fetch failed`，同一路径换 `http://` 就有数据。`singer/info`、`singer/album` 同理。别顺手统一改成 https。
+- **酷狗没有「按歌手列全曲」的公开接口**：`singer/songs`、`singer/songlist` 都返回 `Access Denied`（HTML，不是 JSON）。歌手页的歌曲只能用「搜歌手名」代用，所以不会是全量。
+- **酷狗歌手头像 `imgurl` 带 `{size}` 占位符**（`/softhead/{size}/...`），要替换成 `240` 才是真地址；不换会 404。
+- **搜索「谁先返回谁占位」会让快平台吃掉全部名额**：酷狗 / 酷我约 130ms，网易云约 1.2 秒，直接并行 push 的结果是搜「周杰伦」6 条全是酷我 + 酷狗。必须按平台交错（每轮每家一条）再截断。
+- **探针改了源码却没生效时，先看打包产物**：`esbuild` 打包的探针会把当时代码内联进去，改完 `src/` 必须重新打包探针才会变；另外 esbuild 会剥掉注释，用注释做「产物里有没有新逻辑」的判据会误判成没构建。
+
 ### 跨平台专辑兜底（2026-11-21，#223）
 
 - **QQ 专辑搜索的 type 是 8，不是 10**：`client_search_cp` 传 `t=2`、`t=10` 都不返回专辑（`data.album` 缺失），只有 `t=8` 有。字段是 `albumMID / albumName / singerName / publicTime / song_count`，歌名里带 `<em>` 高亮标签要清。搜索词带歌手名召回更准（「范特西 周杰伦」）。

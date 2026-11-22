@@ -6,6 +6,33 @@
 
 ---
 
+## #224 — 2026-11-21 — 在线搜索补平台：酷狗歌手页 + 酷我 / 波点 / 酷狗搜歌手（矩阵缺陷清单第 7 条）
+
+**背景**：矩阵「在线搜索」里酷我、波点的搜歌写着 ❌，酷狗搜歌手写着 ❌。查下来不是没做接口——酷我、波点**本来就有** `searchSongs`（#207 做兜底时写的），只是没被 `LyricService.searchSongs` 收进来源列表；酷狗则确实没有 `searchArtists`。
+
+**查到的另一个问题**：`searchSongs` 是「谁先返回谁先占位」，酷狗 / 酷我最快（约 130ms），网易云最慢（约 1.2 秒），所以一接进来就出现「搜『周杰伦』6 条全是酷我 + 酷狗」，网易云和 QQ 一条都没有。
+
+**改动**（纯后端 + 前端跳转的一个白名单）：
+- `LyricService.searchSongs`：来源加酷我、波点；结果改为**按平台交错**（每轮每家先出 1 条再进下一轮），慢的平台不会被快的挤掉。
+- `LyricService.searchArtists`：来源加酷狗。
+- `kugouAdapter` 新增四个方法（走 `mobilecdn.kugou.com` 的 v3 接口，**只有 http 通**）：
+  - `searchArtists`：`search/singer` → `singername` / `singerid`；
+  - `fetchArtistInfo`：`singer/info` → 名字、简介、头像（`imgurl` 里的 `{size}` 换成 240）、`description`；
+  - `fetchArtistSongs`：酷狗**没有**公开的「按歌手列全曲」接口（`singer/songs` 一律 Access Denied、`songlist` 也是），用关键词搜歌手名代替并筛掉歌手对不上的；
+  - `fetchArtistAlbums`：`singer/album` → 专辑名 / id / 年份 / 曲目数。
+- `useOverlays.openArtistFromChip`：酷狗加入「带 id 直接打开歌手页」的白名单（以前一律转译到网易云 / QQ）。
+
+**验证**：
+- 新增 `scripts/search-regression.mjs`（8 项，假适配器、离线）并接进 `pnpm qa:backend`：五平台交错、快的不能挤掉慢的、单家抛错不影响其他家、没有该方法的适配器被跳过、去重、`<em>` 清洗、酷狗参与搜歌手。
+- 真实网络实测：搜「周杰伦」6 条 = 网易云 2 / QQ 1 / 酷狗 1 / 酷我 1 / 波点 1（交错前是酷狗 3 + 酷我 3）；搜「Adele」同理五家都有。酷狗歌手页三件套：周杰伦（id 3520）资料含 1455 字简介与头像、20 首歌、20 张专辑。
+- 汽水、Spotify 的 `searchSongs` 未登录时返回 0 条（都要登录态），本轮未接进搜索链路，矩阵标「需登录」。
+- `pnpm build`、`pnpm qa`、`pnpm qa:backend` 全绿。
+
+**遗留**：
+- 汽水 / Spotify 的搜歌要等有登录账号时才能验证，未接入。
+- 酷狗歌手页的「歌曲」是搜索结果代用，不是完整曲库（接口封锁，见 NOTES）。
+- 酷狗歌手页目前没有「查看全部歌曲」（`fetchArtistAllSongs` 未接）。
+
 ## #223 — 2026-11-21 — 专辑页跨平台兜底（矩阵缺陷清单第 2 条）
 
 **背景**：矩阵「内容页」里专辑页除了网易云 / QQ 之外全写着「→ 按专辑名搜网易云」，而网易云 / QQ 本平台取失败时（歌下架、接口异常）是空白。用户本轮要求专做后端、按矩阵缺陷清单逐条补齐，这是第 1 步。
