@@ -1618,6 +1618,7 @@ async function main() {
       shown: shown.length,
       pageNo: shown[0]?.querySelector('.lp-no')?.textContent ?? null,
       folio: !!document.querySelector('.lyric-page .lp-folio'),
+      unitOverlap: window.__nebulaLyricPage?.overlap() ?? null,
       grain: !!document.querySelector('.lyric-page .lp-grain'),
       lineState: cur ? cur.className : null,
       units: cur ? cur.querySelectorAll('.u').length : 0,
@@ -1640,7 +1641,7 @@ async function main() {
     mode: document.documentElement.dataset.stageMode ?? null,
   }));
   const pageOk =
-    pageOn.listening && pageOn.mode === 'page' && pageOn.op > 0.5 && pageOn.pages >= 1 && pageOn.shown >= 1 && !!pageOn.pageNo && !pageOn.folio && pageOn.grain &&
+    pageOn.listening && pageOn.mode === 'page' && pageOn.op > 0.5 && pageOn.pages >= 1 && pageOn.shown >= 1 && !!pageOn.pageNo && !pageOn.folio && pageOn.grain && pageOn.unitOverlap !== null && pageOn.unitOverlap <= 0.5 &&
     !!pageOn.lineState && pageOn.units > 0 && (pageOn.flOp === null || pageOn.flOp < 0.2) && /blur/.test(pageOn.stageFilter) &&
     !pageOff.root && pageOff.mode === null;
   log('版面（聆听中取代漫游歌词）', JSON.stringify({ pageOn, pageOff }));

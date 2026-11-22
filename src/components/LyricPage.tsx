@@ -232,17 +232,29 @@ function layoutPage(pg: PPage, f: number): void {
   });
 }
 
-/** 量字的位置：每个字的盒子带一圈留白（让斜体伸出去的部分也能上色），按实际位置量，不按宽度累加。 */
-function measureLine(l: PLine, vert: boolean): void {
+/**
+ * 量字的位置（波浪按它找「正在唱的位置」）：每个字的盒子带一圈上色留白、再用负边距抵消，相邻两个字的盒子互相重叠。
+ * 必须按字本身的范围量（扣掉留白）：按含留白的盒子量的话，演唱位置每走到下一个字都会先倒退 0.4 个字宽，
+ * 波浪峰在每个字的交界处来回跳——慢歌里就是「诡异的抖动」（2026-11-22 用户反馈，fe/next-9 之后）。
+ */
+function measureLine(l: PLine, vert: boolean, S: number): void {
   if (!l.rts?.length) return;
   measureUnits(l.rts);
-  const first = l.rts[0]!.v.el;
-  const base = vert ? first.offsetTop : first.offsetLeft;
-  for (const r of l.rts) {
-    const el = r.v.el;
-    r.left = (vert ? el.offsetTop : el.offsetLeft) - base;
-    r.w = vert ? el.offsetHeight : el.offsetWidth;
-  }
+  const pads = l.rts.map((r) => {
+    const cs = getComputedStyle(r.v.el);
+    return vert ? [parseFloat(cs.paddingTop) || 0, parseFloat(cs.paddingBottom) || 0] : [parseFloat(cs.paddingLeft) || 0, parseFloat(cs.paddingRight) || 0];
+  });
+  // 沿阅读方向用带小数的外接框量（offsetLeft / offsetWidth 是取整的，会留下约 1px 的重叠）；
+  // 波浪浮起垂直于阅读方向，不影响这一维。外接框带画幅缩放 S，换回未缩放的像素
+  const rects = l.rts.map((r) => r.v.el.getBoundingClientRect());
+  const pos = (b: DOMRect) => (vert ? b.top : b.left) / S;
+  const len = (b: DOMRect) => (vert ? b.height : b.width) / S;
+  const base = pos(rects[0]!) + pads[0]![0]!;
+  l.rts.forEach((r, i) => {
+    const [p0, p1] = pads[i]!;
+    r.left = pos(rects[i]!) + p0! - base;
+    r.w = len(rects[i]!) - p0! - p1!;
+  });
   const z = l.rts[l.rts.length - 1]!;
   for (const r of l.rts) r.lineW = z.left + z.w;
 }
@@ -378,7 +390,9 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
         });
         f = clamp(f, 0.45, 1);
         layoutPage(pg, f);
-        for (const l of pg.lines) measureLine(l, vert);
+        // 画幅当前的缩放（第一次排版时还没 fit，就是 1）：量出来的外接框除以它，得到未缩放的像素
+        const S = frame.getBoundingClientRect().width / PW || 1;
+        for (const l of pg.lines) measureLine(l, vert, S);
         pg.el.style.display = pg.on ? 'block' : 'none';
       }
     };
@@ -606,7 +620,7 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
     };
 
     // 测试探针（QA 用）：把替身推到交接进度 kk，量每个字和两头真字的偏差（中心 x / y、宽、高，像素）
-    const probeWin = window as unknown as { __nebulaLyricPage?: { probe: (kk: number) => number[][] | null; pair: (kk: number) => number[][] | null } };
+    const probeWin = window as unknown as { __nebulaLyricPage?: { probe: (kk: number) => number[][] | null; pair: (kk: number) => number[][] | null; overlap: () => number } };
     probeWin.__nebulaLyricPage = {
       probe: (kk) => {
         if (!morph) return null;
@@ -616,6 +630,16 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
           const b = (kk >= 0.5 ? u.tgt : u.src).getBoundingClientRect();
           return [a.left + a.width / 2 - (b.left + b.width / 2), a.top + a.height / 2 - (b.top + b.height / 2), a.width - b.width, a.height - b.height].map((v) => Math.round(v * 100) / 100);
         });
+      },
+      // 版面上每一句里相邻两个字「量出来的范围」最多重叠多少像素（应 ≤ 0：演唱位置只往前走）
+      overlap: () => {
+        let worst = -Infinity;
+        for (const pg of pages) for (const l of pg.lines) {
+          const r = l.rts;
+          if (!r) continue;
+          for (let i = 1; i < r.length; i++) worst = Math.max(worst, r[i - 1]!.left + r[i - 1]!.w - r[i]!.left);
+        }
+        return Math.round(worst * 100) / 100;
       },
       // 两份克隆在交接进度 kk 时各自的盒子中心之差（看飞行途中会不会错位重影）
       pair: (kk) => {
