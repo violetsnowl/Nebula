@@ -23,6 +23,7 @@
 - 后端统一入口是 `dist-main/index.cjs`（由 `src/main/index.ts` 经 esbuild 打包）；改 `src/main` 后必须 `pnpm build:main` 才能让 Electron 和冒烟测试生效。
 - `pnpm build` 会清空并重建 `../nebula-outputs/`（README 等内容需在构建后重写，见构建脚本说明）。
 - **构建产物在仓库外**：`pnpm build` 输出到同级目录 `../nebula-outputs/index.html`（本机 `E:\CUFE\vibecoding\nebula-outputs`）；而 `pnpm qa` 正是读取这个文件，所以**必须先 build 再 qa**。
+- **两个目录不要同时跑 `pnpm qa`**（2026-11-22，前端工作树 `fe\nebula` 与主目录并行时踩到）：两个无头浏览器同时播放，播放时间会卡住，「空域歌词逐字层」「进度填充逐帧推进」两项报红（表现是 `flights:0`、`moved:0`）。产物没变却突然红这两项，先用任务管理器 / `Get-CimInstance Win32_Process` 看有没有另一个 `node scripts/qa.cjs`，等它跑完再跑。
 - 项目已接入 git；远程为 `github.com/violetsnowl/Nebula`（2026-11-14 改名；旧地址 `violetsnowl/nebula`、`a161858970-ux/nebula` 自动重定向，本地 origin 已更新）；文档随提交维护（docs/）。
 
 ### 搜索去重与前端展开（2026-11-21，#227）
