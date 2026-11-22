@@ -25,6 +25,12 @@
 - **构建产物在仓库外**：`pnpm build` 输出到同级目录 `../nebula-outputs/index.html`（本机 `E:\CUFE\vibecoding\nebula-outputs`）；而 `pnpm qa` 正是读取这个文件，所以**必须先 build 再 qa**。
 - 项目已接入 git；远程为 `github.com/violetsnowl/Nebula`（2026-11-14 改名；旧地址 `violetsnowl/nebula`、`a161858970-ux/nebula` 自动重定向，本地 origin 已更新）；文档随提交维护（docs/）。
 
+### 歌词署名行过滤（2026-11-21，#233）
+
+- **三种署名写法都要覆盖**：`标签：名字`（有冒号，旧规则管）→ `标签名字`（紧贴，`CREDIT_BARE` 管，只在正文前生效）→ `标签 名字`（**空格分隔、无冒号，以前全漏**）。第三种是「编曲 n-buna」这类，来源里很常见。
+- **别用「像不像人名」判断**：`CREDIT_SPACED` 只要求「行首是制作标签 + 后面有空格再接内容 + 整行很短」，所以「我爱你 中国」「曲终人散」不会中招。按人名猜会误杀正常歌词。
+- **改过滤器必须拿真实语料验证误杀率**：本机歌词缓存在 `%APPDATA%\music-nebula\lyric-cache.json`，结构是 `{schema, entries:{...}}`，每条的实际歌词在 `entry.lyric.raw`（不是 `.lrc`），标题在 `entry.title`。拿 175 首 9501 行跑一遍、抽样看被丢弃的行，比构造几个例子可靠得多。
+
 ### 搜索去重与前端展开（2026-11-21，#227 / #228）
 
 - **两个「谁先返回谁占位」都要交错，别只修一处**：#224 修了 `searchSongs`，漏了 `searchArtists`——酷狗最快且一次给十几条，直接把名额填满，网易云（1.2 秒）和 QQ 整批被 `slice` 截掉，用户看到的就是「只有酷狗的周杰伦」。凡是「并行多源 + 合并到一个数组 + 截断到 N」，都要先取回全部再交错。
@@ -37,6 +43,7 @@
 - **行底色画在容器上、子按钮要透明**：`.search-item:hover` 和容器 hover 各画一层 `rgba(255,255,255,.05)`，两层叠起来会明显更深。整行一块底色的做法是容器负责底色、行按钮 hover 时 `background: transparent`。
 - **要验证「前端实际拿到什么」就绕过 UI 直接问 IPC**：在真实 Electron 里 `page.evaluate(() => window.nebulaAPI.searchArtists(...))`，能直接看到平台分布，比截图判断可靠；Node 里单独跑适配器不一定会复现并发 / 超时下的行为。
 - **隐藏窗口截图时 `locator.click()` 会报「element is outside of the viewport」**：`show: false` 的窗口用 `page.setViewportSize({width,height})` 设尺寸，点击改用 `page.evaluate(() => el.click())`；要滚动下拉列表用容器的 `scrollTop`，不要用 `scrollIntoView`（它会滚整个页面，元素截图会截错东西）。
+- **`progressSmooth` / `z1Words` 偶发失败不代表有回归**：进度条那项要求「40 帧里至少 60% 在动」，实测抖动时会掉到 36/39 刚好卡在阈值边缘；连续跑 3 次全通过即可排除。判据：改了纯函数（如 `filterCreditLines`）却出现这两个红，先看报出的实际数值，别急着改代码。
 
 ### 在线搜索补平台（2026-11-21，#224）
 
