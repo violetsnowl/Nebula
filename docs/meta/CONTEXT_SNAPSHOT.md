@@ -29,7 +29,7 @@
 
 - 主工作目录 `E:\CUFE\vibecoding\nebula`，在 `main`；构建产物在同级 `nebula-outputs`。精确 HEAD 用 `git log -1` 取。
 - **另有一个并行工作树 `E:\CUFE\vibecoding\fe\nebula`，分支 `fe/next`，领先 main 约 19 个提交**（歌词版面「样张 M / N」、段落引擎、漫游歌词升级、逐字波浪等前端工作；提交信息里用 `fe/next-N` 编号，注明「合回 main 时取号」）。它由另一个窗口维护，**不要在 main 窗口里删、合并、覆盖或提交它的东西**。
-  - 注意：`AGENTS.md` 的分支纪律和 `HANDOFF.md` §2 仍写着「只有一个工作目录、一条主线」——与现场不符。2026-11-22 收尾时已如实记下，**没有擅自改 AGENTS.md / HANDOFF.md**（不确定这个并行分支是否已获正式授权）。新窗口如果要把前端工作合回 main，先问用户。
+  - 注意：`AGENTS.md` 的分支纪律原本写着「不再开第二个工作树」、`HANDOFF.md` §2 原本写着「只有一个工作目录」——2026-11-22 收尾时已在两份文件里补了「现场例外」说明（记录 `fe/next` 的存在与「不要动」），但**没有改掉原来那条约定本身**：这个并行分支是否已获正式授权、要不要合回 main 并删除，**由用户决定，新窗口先问**。
 - 远端 `github.com/violetsnowl/Nebula`，远端只有 `main`（`fe/next` 未推）；标签 `v0.1.0-z1-random-checkpoint`、`archive/ui-nebula-design`（旧原型，不作为实现真源）。
 - main 上的新功能仍是小步提交、每步 build + qa 全绿；实验性改动挂在默认隐藏的开发者开关后面。
 
