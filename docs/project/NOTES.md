@@ -25,12 +25,17 @@
 - **构建产物在仓库外**：`pnpm build` 输出到同级目录 `../nebula-outputs/index.html`（本机 `E:\CUFE\vibecoding\nebula-outputs`）；而 `pnpm qa` 正是读取这个文件，所以**必须先 build 再 qa**。
 - 项目已接入 git；远程为 `github.com/violetsnowl/Nebula`（2026-11-14 改名；旧地址 `violetsnowl/nebula`、`a161858970-ux/nebula` 自动重定向，本地 origin 已更新）；文档随提交维护（docs/）。
 
-### 搜索去重与前端展开（2026-11-21，#227）
+### 搜索去重与前端展开（2026-11-21，#227 / #228）
 
+- **两个「谁先返回谁占位」都要交错，别只修一处**：#224 修了 `searchSongs`，漏了 `searchArtists`——酷狗最快且一次给十几条，直接把名额填满，网易云（1.2 秒）和 QQ 整批被 `slice` 截掉，用户看到的就是「只有酷狗的周杰伦」。凡是「并行多源 + 合并到一个数组 + 截断到 N」，都要先取回全部再交错。
+- **QQ 的 `client_search_cp?t=1` 已经废弃**：搜歌手恒定返回 0 条（`data.singer.list` 是空对象，不带报错），单测里用假适配器永远发现不了。可用的是 smartbox：`c.y.qq.com/splcloud/fcgi-bin/smartbox_new.fcg?key=…`，`data.singer.itemlist[].pic` 直接就是头像。
+- **酷狗的两个接口分工**：`search/singer` 只给 `singername` / `singerid`（**没有头像**），头像是在 `singer/info` 的 `imgurl`（`{size}` 占位符）。给搜索结果补头像要限流：前 6 位、并发 3，实测总耗时约 150ms。
+- **「没有头像」分两种**：接口失败 vs 对方服务器确实没图。酷狗里「十分想见周杰伦」「情敌周杰伦」这类号 `singer/info` 返回 `status=1` 但 `imgurl` 为空——不是 bug，别去重试。界面显示名字首字（与账号面板同一做法）。
 - **名额必须在合并之后算**：搜歌是「各平台并行 → 交错取用 → 截断到 pageSize」。如果在交错阶段就按 pageSize 截断，五个平台同一首歌会先被截成 3 条重复、再合并成 1 条，列表就只剩一条。现在的顺序是：收集全部候选 → 按同一录音合并 → 再按组截断。
 - **同一录音判定不能退回字符串比较**：`recordingMatch` 带版本约束（Live / Remix / 伴奏 / 翻唱），字符串相等会把「晴天」和「晴天 (Live)」并成一条。用户实测里同一首歌跨平台时长完全一致（269s），这是能安全合并的依据。
 - **按钮里不能再套按钮**：结果行原本是 `<button>`，加了「展开来源」后必须改成 `div` 容器 + 行按钮 + 行尾箭头按钮（两个兄弟按钮），否则是非法 HTML、点击事件还会互相穿透。
 - **行底色画在容器上、子按钮要透明**：`.search-item:hover` 和容器 hover 各画一层 `rgba(255,255,255,.05)`，两层叠起来会明显更深。整行一块底色的做法是容器负责底色、行按钮 hover 时 `background: transparent`。
+- **要验证「前端实际拿到什么」就绕过 UI 直接问 IPC**：在真实 Electron 里 `page.evaluate(() => window.nebulaAPI.searchArtists(...))`，能直接看到平台分布，比截图判断可靠；Node 里单独跑适配器不一定会复现并发 / 超时下的行为。
 - **隐藏窗口截图时 `locator.click()` 会报「element is outside of the viewport」**：`show: false` 的窗口用 `page.setViewportSize({width,height})` 设尺寸，点击改用 `page.evaluate(() => el.click())`；要滚动下拉列表用容器的 `scrollTop`，不要用 `scrollIntoView`（它会滚整个页面，元素截图会截错东西）。
 
 ### 在线搜索补平台（2026-11-21，#224）

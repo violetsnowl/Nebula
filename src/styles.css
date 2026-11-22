@@ -1150,6 +1150,17 @@ body {
   display: block;
 }
 
+/* 没有头像的歌手：和账号面板同一做法——显示名字首字，不留一个空洞 */
+.search-initial {
+  width: 100%;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--fg-3s);
+}
+
 .search-info {
   flex: 1;
   min-width: 0;

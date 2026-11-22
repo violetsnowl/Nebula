@@ -190,6 +190,45 @@ await test('搜歌手：近似同名一律保留，不合并（用户 2026-11-21
   assert.equal(list.filter((a) => a.name === '周杰伦').length, 2, '同名但平台不同也各留一条');
 });
 
+await test('搜歌手：结果按平台交错，快的酷狗不能把网易云 / QQ 挤掉（#228）', async () => {
+  // 酷狗一次返回十几条且最快；网易云慢、QQ 也慢——以前谁先完成谁 push，只剩酷狗
+  const many = (platform, count, delay) => ({
+    searchArtists: async (kw, pageSize) => {
+      if (delay) await new Promise((r) => setTimeout(r, delay));
+      return Array.from({ length: count }, (_, i) => ({ platform, id: `${platform}-${i}`, name: `${platform}歌手${i}`, avatar: '' }));
+    },
+  });
+  const svc = new b.LyricService({
+    netease: many('netease', 3, 30),
+    qq: many('qq', 3, 20),
+    kugou: many('kugou', 15, 0),
+  });
+  const list = await svc.searchArtists('测试', 6);
+  const platforms = new Set(list.map((a) => a.platform));
+  assert.equal(platforms.size, 3, '三家都必须出现，不能只剩酷狗');
+  assert.equal(list.length, 6);
+});
+
+await test('搜歌手：平台顺序保持「网易云 → QQ → 酷狗」的轮转优先', async () => {
+  const many = (platform, count) => ({
+    searchArtists: async () => Array.from({ length: count }, (_, i) => ({ platform, id: `${platform}-${i}`, name: `${platform}${i}`, avatar: '' })),
+  });
+  const svc = new b.LyricService({ netease: many('netease', 3), qq: many('qq', 3), kugou: many('kugou', 3) });
+  const list = await svc.searchArtists('测试', 9);
+  assert.deepEqual(list.slice(0, 3).map((a) => a.platform), ['netease', 'qq', 'kugou'], '第一轮每家一条');
+});
+
+await test('搜歌手：同一平台重复 id 只留一条', async () => {
+  const svc = new b.LyricService({
+    qq: { searchArtists: async () => [
+      { platform: 'qq', id: 'x', name: '甲', avatar: '' },
+      { platform: 'qq', id: 'x', name: '甲', avatar: '' },
+    ] },
+  });
+  const list = await svc.searchArtists('测试', 5);
+  assert.equal(list.length, 1);
+});
+
 await test('搜歌手：单家抛错不影响其他家', async () => {
   const svc = new b.LyricService({
     netease: { searchArtists: async () => { throw new Error('boom'); } },

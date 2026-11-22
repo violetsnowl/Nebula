@@ -761,30 +761,42 @@ export class LyricService {
   }
 
   /**
-   * 全网搜歌手：网易云 + QQ；酷狗补上（#224，手机端搜索接口给 singername / singerid）。
-   * 酷我、波点没有可用的歌手搜索接口，不参与。
+   * 全网搜歌手：网易云 + QQ + 酷狗（#224）。
+   * 各家并行，但结果**按平台交错**取用（每家先出一条再进下一条）：
+   * 酷狗返回最快、一次给十几条，谁先完成谁先 push 的话，网易云（约 1.2 秒）和 QQ
+   * 会被整批挤掉——实测搜「周杰伦」曾只剩酷狗一家（#228）。
    */
   async searchArtists(keyword: string, pageSize = 5): Promise<ArtistSearchHit[]> {
     const per = Math.max(2, Math.ceil(pageSize / 2));
-    const out: ArtistSearchHit[] = [];
-    const seen = new Set<string>();
     const sources = [this.adapters.netease, this.adapters.qq, this.adapters.kugou].filter(Boolean);
-    await Promise.all(
+    const lists = await Promise.all(
       sources.map(async (adapter) => {
-        if (!adapter.searchArtists) return;
+        if (!adapter.searchArtists) return [] as ArtistSearchHit[];
         try {
-          const list = await adapter.searchArtists(keyword, per);
-          for (const hit of list) {
-            const key = `${hit.platform}:${hit.id}`;
-            if (seen.has(key)) continue;
-            seen.add(key);
-            out.push({ ...hit, name: stripMarkup(hit.name) });
-          }
+          return (await adapter.searchArtists(keyword, per)).map((h) => ({ ...h, name: stripMarkup(h.name) }));
         } catch (err) {
-          console.warn("[LyricService] searchArtists");
+          console.warn('[LyricService] searchArtists');
+          return [] as ArtistSearchHit[];
         }
       }),
     );
-    return out.slice(0, pageSize);
+    const out: ArtistSearchHit[] = [];
+    const seen = new Set<string>();
+    const active = lists.filter((l) => l.length > 0);
+    const rounds = Math.max(0, ...active.map((l) => l.length));
+    // 交错时不做「同名合并」（用户 2026-11-21 定：周杰伦 / 周杰伦. / 周杰伦♚ 可能是不同的人），
+    // 只按 平台:id 去重。
+    for (let i = 0; i < rounds && out.length < pageSize; i++) {
+      for (const list of active) {
+        const hit = list[i];
+        if (!hit) continue;
+        const key = `${hit.platform}:${hit.id}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(hit);
+        if (out.length >= pageSize) break;
+      }
+    }
+    return out;
   }
 }

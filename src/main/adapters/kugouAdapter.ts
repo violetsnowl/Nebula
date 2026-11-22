@@ -565,6 +565,9 @@ export class KugouAdapter implements PlatformAdapter {
   /**
    * 关键词搜歌手（#224）：mobilecdn 的 v3 搜索给 singername / singerid。
    * 注意这条接口只有 http 通（https 侧证书/路径都不对），别顺手改成 https。
+   * 搜索接口本身**不带头像**（原始返回只有 singername / singerid），头像要另外查
+   * `singer/info` 的 `imgurl`（带 `{size}` 占位符）。为避免一次打十几个请求，
+   * 只给前 6 位补头像、并发 3 个，取不到的留空（#228）。
    */
   async searchArtists(keyword: string, pageSize = 5): Promise<ArtistSearchHit[]> {
     try {
@@ -574,7 +577,7 @@ export class KugouAdapter implements PlatformAdapter {
         `http://mobilecdn.kugou.com/api/v3/search/singer?format=json&keyword=${encodeURIComponent(keyword)}&page=1&pagesize=${pageSize}&showtype=1`,
         { platform: 'kugou' },
       );
-      return (data?.data ?? [])
+      const hits = (data?.data ?? [])
         .map((a) => ({
           platform: 'kugou' as const,
           id: String(a.singerid ?? ''),
@@ -582,10 +585,38 @@ export class KugouAdapter implements PlatformAdapter {
           avatar: '',
         }))
         .filter((a) => a.id && a.name);
+      return await this.fillAvatars(hits);
     } catch (err) {
       console.warn('[KugouAdapter] 歌手搜索失败:');
       return [];
     }
+  }
+
+  /** 给搜索结果补头像：前 6 位、并发 3 个查 singer/info；失败一律留空，不影响搜索。 */
+  private async fillAvatars(hits: ArtistSearchHit[]): Promise<ArtistSearchHit[]> {
+    const limit = Math.min(6, hits.length);
+    const concurrency = 3;
+    const out = hits.map((h) => ({ ...h }));
+    let cursor = 0;
+    const worker = async () => {
+      for (;;) {
+        const i = cursor++;
+        if (i >= limit) return;
+        const hit = out[i]!;
+        try {
+          const res = await this.http.requestJson<{ data?: { imgurl?: string } }>(
+            `http://mobilecdn.kugou.com/api/v3/singer/info?singerid=${encodeURIComponent(hit.id)}`,
+            { platform: 'kugou' },
+          );
+          const img = String(res?.data?.imgurl ?? '').replace('{size}', '240');
+          if (img) hit.avatar = img;
+        } catch {
+          /* 头像取不到就留空 */
+        }
+      }
+    };
+    await Promise.all(Array.from({ length: Math.min(concurrency, limit) }, worker));
+    return out;
   }
 
   /**

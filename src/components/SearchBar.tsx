@@ -165,8 +165,8 @@ export function SearchBar({
     }
     setNetSearching(true);
     const timer = window.setTimeout(() => {
-      const songsP = window.nebulaAPI!.searchSongs(q, 6).catch(() => ({ ok: false as const, error: '' }));
-      const artistsP = window.nebulaAPI!.searchArtists(q, 4).catch(() => ({ ok: false as const, error: '' }));
+      const songsP = window.nebulaAPI!.searchSongs(q, 8).catch(() => ({ ok: false as const, error: '' }));
+      const artistsP = window.nebulaAPI!.searchArtists(q, 6).catch(() => ({ ok: false as const, error: '' }));
       void Promise.all([songsP, artistsP]).then(([sr, ar]) => {
         if (netSeqRef.current !== seq) return;
         setNetSongs(
@@ -368,7 +368,7 @@ export function SearchBar({
                       onClick={() => onOpenArtist?.(a.platform, a.id, a.name)}
                     >
                       <span className="search-thumb">
-                        {a.avatar ? <img src={a.avatar} alt="" loading="lazy" /> : null}
+                        {a.avatar ? <img src={a.avatar} alt="" loading="lazy" /> : <span className="search-initial">{a.name.slice(0, 1)}</span>}
                       </span>
                       <span className="search-info">
                         <span className="search-title">{a.name}</span>

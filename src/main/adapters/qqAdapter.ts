@@ -204,26 +204,30 @@ export class QqAdapter implements PlatformAdapter {
     }
   }
 
+  /**
+   * 关键词搜歌手：`soso/client_search_cp` 的 `t=1` 早已废弃（实测恒定返回 0 条，2026-11-21 复核），
+   * 改用 smartbox 联想接口（#228）：给 id / mid / name / pic，pic 就是歌手头像。
+   */
   async searchArtists(keyword: string, pageSize = 5): Promise<ArtistSearchHit[]> {
     try {
       const data = await this.http.requestJson<{
-        data?: { singer?: { list?: Array<Record<string, any>> } };
+        data?: { singer?: { itemlist?: Array<Record<string, any>> } };
       }>(
-        `https://c.y.qq.com/soso/fcgi-bin/client_search_cp?w=${encodeURIComponent(keyword)}&t=1&p=1&n=${pageSize}&format=json&inCharset=utf-8&outCharset=utf-8&cr=1`,
+        `https://c.y.qq.com/splcloud/fcgi-bin/smartbox_new.fcg?key=${encodeURIComponent(keyword)}&format=json&inCharset=utf-8&outCharset=utf-8`,
         { platform: 'qq' },
       );
-      return (data?.data?.singer?.list ?? [])
+      const list = data?.data?.singer?.itemlist ?? [];
+      return list
+        .slice(0, pageSize)
         .map((a) => ({
           platform: 'qq' as const,
-          id: String(a.singer_id ?? a.singer_mid ?? ''),
-          name: String(a.singer_name ?? ''),
-          avatar: a.singer_mid
-            ? `https://y.gtimg.cn/music/photo_new/T001R300x300M000${a.singer_mid}.jpg`
-            : '',
+          id: String(a.mid || a.id || ''),
+          name: String(a.name ?? ''),
+          avatar: String(a.pic ?? ''),
         }))
         .filter((a) => a.id && a.name);
     } catch (err) {
-      console.warn("[QqAdapter] searchArtists failed:");
+      console.warn('[QqAdapter] searchArtists failed:');
       return [];
     }
   }
