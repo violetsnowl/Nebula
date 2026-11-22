@@ -3077,6 +3077,13 @@ body {
   max-width: min(80vw, 1100px);
 }
 
+/* 版面模式下前奏的歌名随交接淡出（2026-11-22 用户验收：聆听时版面第一页和歌名叠在一起）：版面从开头就把第一页印好，
+   聆听中由版面接手，歌名只在漫游时出现 */
+:root[data-stage-mode='page'] .app[data-lk] .lyrics-intro {
+  opacity: calc(0.92 * (1 - var(--lk)));
+  transition: none;
+}
+
 /* 前奏 / 纯音乐时居中的歌名：同样用衬线 Display，不发光（§6 发光授权只给正在唱的字） */
 .lyrics-intro .li-title {
   /* 最多 2 行，超出省略 */
