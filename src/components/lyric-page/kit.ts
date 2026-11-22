@@ -177,3 +177,23 @@ export function hookRuns(l: TLine, hook: string, cjk: boolean): number[][] {
   for (let i = 0; i + n <= ts.length; i++) if (ts.slice(i, i + n).join('') === hook) out.push(Array.from({ length: n }, (_, k) => i + k));
   return out;
 }
+
+/** 把原元素的逐帧状态（行内变量、类名，含子节点）同步到它的克隆上（色场的「色块里那一份」用）。 */
+export function syncClone(from: HTMLElement, to: HTMLElement): void {
+  if (to.style.cssText !== from.style.cssText) to.style.cssText = from.style.cssText;
+  if (to.className !== from.className) to.className = from.className;
+  const fc = from.children;
+  const tc = to.children;
+  for (let i = 0; i < fc.length && i < tc.length; i++) syncClone(fc[i] as HTMLElement, tc[i] as HTMLElement);
+}
+
+/** 一句在 t 时的状态（同引擎：唱完 0.9s 内仍算「正在唱」）。 */
+export const stateAt = (l: TLine, t: number): 'future' | 'cur' | 'past' => (t > l.te + 0.9 ? 'past' : t >= l.ts - 0.05 ? 'cur' : 'future');
+
+/** 第 i 个字在 t 时唱到几成（0–1）；整句没有逐字时间时按整句。 */
+export function unitP(l: TLine, i: number, t: number): number {
+  const u = l.eu?.[i];
+  const s = u ? u.s : l.ts;
+  const e = u ? u.e : l.te;
+  return Math.max(0, Math.min(1, (t - s) / Math.max(0.001, e - s)));
+}

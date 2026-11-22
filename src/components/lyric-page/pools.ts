@@ -1,5 +1,7 @@
 import type { SectionKind } from '../../lib/listen/sections';
 import { foot, held, justify, spine } from './bold-a';
+import { bleed, diag, field } from './bold-b';
+import { corner, groove, grid } from './bold-c';
 import { CLASSIC_FALLBACK_H, CLASSIC_H, CLASSIC_V } from './classic';
 import { glyphs, norm } from './kit';
 import type { TCtx, Tpl } from './types';
@@ -10,7 +12,7 @@ import type { TCtx, Tpl } from './types';
  * 色场只给全曲最后一个副歌页。所有语言共用这一套轮换，横排还是竖排由页面方向决定（中文竖排、其余横排）。
  */
 
-const BOLD: Record<string, Tpl> = { held, spine, justify, foot };
+const BOLD: Record<string, Tpl> = { held, spine, justify, foot, bleed, diag, field, groove, grid, corner };
 
 /** 后面几批版式在各自的模块里登记进来。 */
 export function registerBold(...ts: Tpl[]): void {
@@ -87,11 +89,30 @@ const STOP_CJK = new Set([...'的了我你是在不有就都也和他她它们�
  * 这首歌的「钩子词」（出血大字用）：副歌里重复最多的实词。拉丁：至少 3 个字母、不是虚词、出现 3 次以上；
  * 中日韩：连续两个字出现 3 次以上的优先，否则单字出现 4 次以上（去掉虚字）。没有就是 null。
  */
+/** units：拉丁 = 每句的词；中日韩 = 每句整句原文（一个元素，保留空格，分词要看停顿）。 */
 export function songHook(units: string[][], cjk: boolean): string | null {
   const count = new Map<string, number>();
+  /** 落在句尾或停顿（空格）前的次数：钩子词通常压在乐句末尾（「等一束光」的「光」），同样次数时优先 */
+  const ends = new Map<string, number>();
   const add = (k: string, n = 1) => count.set(k, (count.get(k) ?? 0) + n);
+  // 中日韩优先按分词数词（「等一束光」→ 等 / 一束 / 光），免得挑出「等一」这种半个词
+  const Seg = (Intl as unknown as { Segmenter?: new (l?: string, o?: { granularity: string }) => { segment: (s: string) => Iterable<{ segment: string; isWordLike?: boolean }> } }).Segmenter;
+  if (cjk && Seg) {
+    const seg = new Seg(undefined, { granularity: 'word' });
+    for (const us of units) {
+      const ws = [...seg.segment(us.join(''))];
+      ws.forEach((w, i) => {
+        const t = norm(w.segment);
+        if (w.isWordLike === false || !t || glyphs(t) > 2 || (glyphs(t) === 1 && STOP_CJK.has(t))) return;
+        add(t);
+        const next = ws[i + 1];
+        if (!next || !next.segment.trim()) ends.set(t, (ends.get(t) ?? 0) + 1);
+      });
+    }
+    return bestHook(count, cjk, ends);
+  }
   for (const us of units) {
-    const ts = us.map(norm).filter(Boolean);
+    const ts = (cjk ? [...us.join('')] : us).map(norm).filter(Boolean);
     if (!cjk) {
       for (const t of ts) if (glyphs(t) >= 3 && !STOP.has(t)) add(t);
       continue;
@@ -101,13 +122,17 @@ export function songHook(units: string[][], cjk: boolean): string | null {
       if (i + 1 < ts.length && glyphs(ts[i]! + ts[i + 1]!) === 2) add(ts[i]! + ts[i + 1]!, 1);
     }
   }
+  return bestHook(count, cjk);
+}
+
+function bestHook(count: Map<string, number>, cjk: boolean, ends?: Map<string, number>): string | null {
   let best: string | null = null;
   let score = 0;
   for (const [k, n] of count) {
     const two = cjk && glyphs(k) === 2;
     const need = !cjk ? 3 : two ? 3 : 4;
     if (n < need) continue;
-    const s = n + (two ? 0.5 : 0) + glyphs(k) * 0.01;
+    const s = ends ? n + ((ends.get(k) ?? 0) / n) * 0.9 + glyphs(k) * 0.01 : n + (two ? 0.5 : 0) + glyphs(k) * 0.01;
     if (s > score) {
       score = s;
       best = k;

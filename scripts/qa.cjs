@@ -1650,6 +1650,33 @@ async function main() {
   // 判定间奏三点（跳到间奏中段，三点出现且在亮、这时没有页）；设了 NEBULA_QA_SHOT 时另外跳到各段拍一张给开发目测
   let gapDots = null;
   let morphEn = null;
+  const tplChecks = { en: null, zh: null };
+  const TPLS = ['held', 'spine', 'justify', 'foot', 'bleed', 'diag', 'field', 'groove', 'grid', 'corner'];
+  /** 逐套强制版式：跳到用了这套的第一页的第一句唱到一半，量 bounds（out = 跑出画幅的字数，clash = 不同句子的字互相压住多少像素）。 */
+  const checkTemplates = async (tag) => {
+    const out = {};
+    // 前面的步骤把设置面板留在右边开着：逐套检查和截图时先藏起来（不影响量字，只为了截图看得到右半边）
+    await page.evaluate(() => document.querySelector('.sd-panel.sd-right')?.style.setProperty('visibility', 'hidden'));
+    for (const id of TPLS) {
+      await page.evaluate((x) => window.__nebulaLyricPage && window.__nebulaLyricPage.force(x), id);
+      await page.waitForTimeout(500);
+      const pg = await page.evaluate((x) => (window.__nebulaLyricPage ? window.__nebulaLyricPage.pages().find((p) => p.tpl === x) : null), id);
+      if (!pg) {
+        out[id] = 'n/a';
+        continue;
+      }
+      await page.evaluate((s) => window.__nebula.player.seek(s), pg.s + 1.4);
+      await page.waitForFunction(() => !!document.querySelector('.app[data-listen]'), null, { timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(1300);
+      const b = await page.evaluate((x) => (window.__nebulaLyricPage.bounds() || []).find((q) => q.tpl === x) || null, id);
+      out[id] = b ? { units: b.units, out: b.out, clash: b.clash } : 'hidden';
+      if (process.env.NEBULA_QA_SHOT) await page.screenshot({ path: path.join(process.env.NEBULA_QA_SHOT, `tpl-${tag}-${id}.png`) });
+    }
+    await page.evaluate(() => window.__nebulaLyricPage && window.__nebulaLyricPage.force(null));
+    await page.evaluate(() => document.querySelector('.sd-panel.sd-right')?.style.removeProperty('visibility'));
+    await page.waitForTimeout(300);
+    return out;
+  };
   {
     const EN = {
       V1: [['Streetlights hum the song they never finish', '路灯哼着那首从没唱完的歌'], ['I keep your letters folded in my coat', '我把你的信折好放在大衣里'], ['Every bus goes somewhere I have been before', '每一班车都开往我去过的地方'], ['Every window holds a light I used to know', '每扇窗都亮着我认得的灯']],
@@ -1725,6 +1752,43 @@ async function main() {
     const between = (lines[v2].timeMs - 300) / 1000;
     await page.evaluate((s) => window.__nebula.player.seek(s), between - 3.25);
     morphEn = await sampleMorph('morph-en.png');
+    // 样张 N 的十套大胆版式：逐套强制（__nebulaLyricPage.force），跳到用了这套的第一页，查字不出画幅、不同句子的字不互相压住
+    tplChecks.en = await checkTemplates('en');
+    // 中文占位歌（原创歌词、逐字时间、无翻译，主歌 / 预副歌 / 副歌 / 桥段 / 尾声）：同样逐套查一遍竖排（唱片纹强制横排）
+    {
+      const ZH = {
+        V1: ['晚风把旧信吹到窗前', '路灯一盏一盏替我数着', '你说过的那条河', '现在流到哪里了'],
+        P: ['我把心事折成纸船', '放进没有名字的河'],
+        C: ['等一束光　穿过很长的夜', '等一束光　落在你的肩', '我们都是迟到的人', '却还在路上'],
+        V2: ['车站的钟停在九点', '我数着站台上的雨', '每一班车都开走了', '只剩下我的影子'],
+        B: ['把名字写在水上', '看它慢慢走远', '远到再也看不见'],
+        O: ['等一束光', '落在你的肩'],
+      };
+      const zlines = [];
+      let zyrc = '';
+      let zt = 3000;
+      for (const key of ['V1', 'P', 'C', 'V2', 'P', 'C', 'B', 'C', 'O']) {
+        for (const text of ZH[key]) {
+          const cs = [...text];
+          const d = 300;
+          zlines.push({ timeMs: zt, text });
+          zyrc += `[${zt},${cs.length * d + 700}]` + cs.map((c, j) => `(${zt + j * d},${j === cs.length - 1 ? d + 700 : d},0)${c}`).join('') + '\n';
+          zt += cs.length * d + 700 + 450;
+        }
+        zt += 800;
+      }
+      const zAudio = `data:audio/wav;base64,${makeWav(Math.ceil(zt / 1000) + 5).toString('base64')}`;
+      await page.evaluate((data) => {
+        window.nebulaAPI.fetchLyric = async () => ({ ok: true, data });
+      }, { source: 'netease', lines: zlines, yrc: zyrc });
+      await page.evaluate((audio) => {
+        const n = window.__nebula;
+        const s0 = { ...n.songsData()[2], source: 'netease', sourceId: 'qa-zh-page', title: '等一束光', audio };
+        n.player.playSong(s0, [s0]);
+      }, zAudio);
+      await page.waitForTimeout(1500);
+      tplChecks.zh = await checkTemplates('zh');
+    }
     await page.keyboard.press('Control+Shift+M');
     await page.waitForTimeout(300);
     await pickStage('漫游歌词');
@@ -1734,6 +1798,13 @@ async function main() {
   log('版面·间奏三点', JSON.stringify(gapDots));
   log('版面转场·横排逐字飞入（两句之间进入聆听）', JSON.stringify(morphEn));
   const morphPass = morphOk(morphZh) && morphOk(morphEn);
+  log('版面·十套大胆版式（英文 / 中文）', JSON.stringify(tplChecks));
+  // 每套至少在一首歌里用上；用上的页：没有字跑出画幅、不同句子的字最多压住 2px
+  const tplOk =
+    !!tplChecks.en &&
+    !!tplChecks.zh &&
+    TPLS.every((id) => [tplChecks.en[id], tplChecks.zh[id]].some((r) => r && typeof r === 'object')) &&
+    TPLS.every((id) => [tplChecks.en[id], tplChecks.zh[id]].every((r) => r === 'n/a' || (r && typeof r === 'object' && r.units > 0 && r.out === 0 && r.clash <= 2)));
 
   // #220 播放偏好随重开保留：音量、静音、播放顺序写进 localStorage，刷新后读回
   const prefsSet = await page.evaluate(() => {
@@ -1819,6 +1890,7 @@ async function main() {
     !pageOk ||
     !gapOk ||
     !morphPass ||
+    !tplOk ||
     !capHazeOk ||
     !idleOk ||
     !setOk ||
@@ -1879,6 +1951,7 @@ async function main() {
     lyricPage: !pageOk,
     pageGapDots: !gapOk,
     pageMorph: !morphPass,
+    pageTemplates: !tplOk,
     captionHaze: !capHazeOk,
     idleInPanel: !idleOk,
     settingsLayout: !setOk,

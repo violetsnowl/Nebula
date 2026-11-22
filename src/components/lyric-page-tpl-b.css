@@ -1,0 +1,127 @@
+/* 版面的大胆版式第二批（样张 N，2026-11-22 用户定稿）：出血大字、斜线、色场。逻辑在 components/lyric-page/bold-b.ts。
+   位置、字号由版式按 1600 × 900 的逻辑像素写在行内；这里只管字体和装饰的样子。颜色只取封面（--lp-acc / --lc-a）。 */
+
+/* ———— 出血大字：两份叠在一起，一份只描边，一份填封面色、按 --f 露出一段；都垫在句子下面 ———— */
+.lp-gw {
+  position: absolute;
+  z-index: -1;
+  font-family: Newsreader, Georgia, serif;
+  font-style: italic;
+  font-weight: 600;
+  font-size: 660px;
+  line-height: 1;
+  letter-spacing: -0.03em;
+  white-space: nowrap;
+  color: transparent;
+  -webkit-text-stroke: 1.5px rgba(255, 255, 255, 0.17);
+  pointer-events: none;
+}
+
+.is-cjk .lp-gw {
+  font-family: 'Noto Serif SC', 'Noto Serif JP', 'Noto Serif KR', 'Songti SC', 'Yu Mincho', serif;
+  font-style: normal;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.lp-gw.is-v {
+  writing-mode: vertical-rl;
+  letter-spacing: 0;
+}
+
+.lp-gw.is-fill {
+  --f: 0;
+  color: var(--lp-acc);
+  -webkit-text-stroke: 0;
+  opacity: 0;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(var(--f) * 104% - 4%), transparent calc(var(--f) * 104%));
+  mask-image: linear-gradient(90deg, #000 calc(var(--f) * 104% - 4%), transparent calc(var(--f) * 104%));
+}
+
+/* 竖着的大字：从上往下露出（读向） */
+.lp-gw.is-v.is-fill {
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(var(--f) * 104% - 4%), transparent calc(var(--f) * 104%));
+  mask-image: linear-gradient(180deg, #000 calc(var(--f) * 104% - 4%), transparent calc(var(--f) * 104%));
+}
+
+/* 左上一栏的句子：衬线 600；中日韩没有斜体，沿用歌词字体 */
+.lt-bleed .lp-tx {
+  font-family: Newsreader, Georgia, serif;
+  font-weight: 600;
+}
+
+.is-cjk .lt-bleed .lp-tx {
+  font-family: var(--lc-font);
+}
+
+/* ———— 斜线：斜体衬线大字，整页绕同一个点转 ———— */
+.lt-diag .lp-tx {
+  font-family: Newsreader, Georgia, serif;
+  font-style: italic;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.is-cjk .lt-diag .lp-tx {
+  font-family: var(--lc-font);
+  font-style: normal;
+  font-weight: 700;
+}
+
+.lang-zh .lt-diag .lp-tx {
+  font-family: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+}
+
+/* ———— 色场：色块 + 色块里那一份（深色） ———— */
+.lt-field .lp-tx {
+  font-family: Newsreader, Georgia, serif;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.is-cjk .lt-field .lp-tx {
+  font-family: 'Noto Serif SC', 'Noto Serif JP', 'Noto Serif KR', 'Songti SC', 'Yu Mincho', serif;
+  font-weight: 700;
+}
+
+/* 色块：不透明，盖住它下面的原文（色块里的字由 .lp-field-on 那一份重新印上去） */
+.lp-field {
+  position: absolute;
+  z-index: 1;
+  background: color-mix(in srgb, var(--lp-acc) 58%, rgb(10 11 14));
+  pointer-events: none;
+}
+
+/* 页码压在色块上也要看得见 */
+.tpl-field .lp-no {
+  z-index: 3;
+}
+
+/* 色块里那一份：整层按色块的区域裁剪（clip-path 行内写），字换成深色——
+   没唱到 = 深色 34% 透明、唱过 / 正在唱 = 深色。逐字层的颜色变量由引擎每帧写在 .u 的行内 style 上，
+   所以这里用 !important 把 --sung / --edge / --un 压住；唱过的句子走 --lp-ink、没唱到的走 --lc-rest，在这一层上直接改写。 */
+.lp-field-on {
+  --lp-field-ink: color-mix(in srgb, var(--lp-acc) 22%, rgb(6 7 9));
+  --lc-rest: color-mix(in srgb, var(--lp-field-ink) 34%, transparent);
+  --lp-ink: var(--lp-field-ink);
+  --lp-tr: color-mix(in srgb, var(--lp-field-ink) 50%, transparent);
+  --lp-tr-on: color-mix(in srgb, var(--lp-field-ink) 82%, transparent);
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+}
+
+.lp-field-on .u,
+.lp-field-on .u .ch {
+  --sung: var(--lp-field-ink) !important;
+  --edge: color-mix(in srgb, var(--lp-field-ink) 70%, transparent) !important;
+  --un: var(--lc-rest) !important;
+}
+
+/* 去掉外羽化（暗字压在亮色上不需要托）和长音白光 */
+.lp-field-on .lp-tx,
+.lp-field-on .u.glow,
+.lp-field-on .u .ch.glow {
+  filter: none;
+}

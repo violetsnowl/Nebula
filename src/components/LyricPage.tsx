@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type CSSProperties } from 'react';
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { audioPlayer } from '../lib/audio/AudioPlayer';
 import { useAudioPlayer } from '../lib/audio/useAudioPlayer';
 import { useInterfaceSettingsContext } from '../hooks/interfaceSettings/InterfaceSettingsContext';
@@ -16,6 +16,8 @@ import { PH, PW, type PageHooks, type TCtx, type TLine, type Tpl } from './lyric
 import './listen/lyric-words.css';
 import './lyric-page.css';
 import './lyric-page-tpl.css';
+import './lyric-page-tpl-b.css';
+import './lyric-page-tpl-c.css';
 
 /**
  * 版面（样张 M，2026-11-22，fe/next；规格 NEBULA_UI_SYSTEM §7.1b）：聆听时的另一种主舞台。完全不飞，靠排版：
@@ -193,6 +195,8 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
   const morphRef = useRef<HTMLDivElement>(null);
   const roamRef = useRef(settings.roamLyrics);
   roamRef.current = settings.roamLyrics;
+  // 开发 / QA：强制某套版式后重新建页（__nebulaLyricPage.force）
+  const [rev, setRev] = useState(0);
   const schemeRef = useRef(listen.scheme);
   schemeRef.current = listen.scheme;
 
@@ -226,7 +230,7 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
     // —— 建页：版式按段落轮换（lyric-page/pools.ts：稳和险交替，大胆版式一首歌最多一次，相邻两页不重复）——
     const lang: TCtx['lang'] = model.script === 'zh' ? 'zh' : model.script === 'ja' ? 'ja' : model.script === 'ko' ? 'ko' : 'en';
     const cjk = lang !== 'en';
-    const chorusUnits = els.filter((_, k) => shape.sections[shape.lineSection[k] ?? -1]?.kind === 'chorus').map((e) => (e.units ?? []).map((u) => u.t));
+    const chorusUnits = els.filter((_, k) => shape.sections[shape.lineSection[k] ?? -1]?.kind === 'chorus').map((e) => (cjk ? [e.units ? e.units.map((u) => u.t + (u.sp ? ' ' : '')).join('') : e.text] : (e.units ?? []).map((u) => u.t)));
     const hook = songHook(chorusUnits, cjk);
     let lastChorusSec = -1;
     shape.sections.forEach((s, i) => {
@@ -579,7 +583,16 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
     };
 
     // 测试探针（QA 用）：把替身推到交接进度 kk，量每个字和两头真字的偏差（中心 x / y、宽、高，像素）
-    const probeWin = window as unknown as { __nebulaLyricPage?: { probe: (kk: number) => number[][] | null; pair: (kk: number) => number[][] | null; overlap: () => number } };
+    const probeWin = window as unknown as {
+      __nebulaLyricPage?: {
+        probe: (kk: number) => number[][] | null;
+        pair: (kk: number) => number[][] | null;
+        overlap: () => number;
+        pages: () => { tpl: string; s: number; vert: boolean }[];
+        force: (id: string | null) => void;
+        bounds: () => { tpl: string; units: number; out: number; clash: number }[];
+      };
+    };
     probeWin.__nebulaLyricPage = {
       probe: (kk) => {
         if (!morph) return null;
@@ -591,6 +604,42 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
         });
       },
       // 版面上每一句里相邻两个字「量出来的范围」最多重叠多少像素（应 ≤ 0：演唱位置只往前走）
+      // 每页用的版式和开始时间（QA 按它跳到某套版式的页）
+      pages: () => pages.map((p) => ({ tpl: p.tpl.id, s: p.s, vert: p.ctx.vert })),
+      // 强制所有能用的页都用某套版式（null = 恢复轮换），重新建页
+      force: (id) => {
+        try {
+          if (id) localStorage.setItem('nebula.pageTpl', id);
+          else localStorage.removeItem('nebula.pageTpl');
+        } catch {
+          /* 无痕模式等：忽略 */
+        }
+        setRev((r) => r + 1);
+      },
+      // 正在显示的页：多少个字跑出画幅（超出 2px 以上）、不同句子的字最多互相压住多少（屏幕像素，取两字重叠矩形的短边）
+      bounds: () => {
+        const fr = frame.getBoundingClientRect();
+        return pages
+          .filter((p) => p.on)
+          .map((p) => {
+            const rs = p.lines.map((l) => l.units.filter((u) => !u.closest('.lp-deco')).map((u) => u.getBoundingClientRect()));
+            let out = 0;
+            let clash = 0;
+            rs.flat().forEach((r) => {
+              if (r.left < fr.left - 2 || r.right > fr.right + 2 || r.top < fr.top - 2 || r.bottom > fr.bottom + 2) out++;
+            });
+            // 字的盒子带上色留白（四周 .12–.2em），比字形大：两字之间按缩进 22% 的盒子算重叠
+            const shrink = (r: DOMRect) => ({ l: r.left + r.width * 0.22, r: r.right - r.width * 0.22, t: r.top + r.height * 0.22, b: r.bottom - r.height * 0.22 });
+            for (let a = 0; a < rs.length; a++) for (let b = a + 1; b < rs.length; b++) for (const x of rs[a]!) for (const y of rs[b]!) {
+              const A = shrink(x);
+              const B = shrink(y);
+              const w = Math.min(A.r, B.r) - Math.max(A.l, B.l);
+              const h = Math.min(A.b, B.b) - Math.max(A.t, B.t);
+              if (w > 0 && h > 0) clash = Math.max(clash, Math.min(w, h));
+            }
+            return { tpl: p.tpl.id, units: rs.flat().length, out, clash: Math.round(clash * 10) / 10 };
+          });
+      },
       overlap: () => {
         let worst = -Infinity;
         for (const pg of pages) for (const l of pg.lines) {
@@ -717,7 +766,7 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
       root.style.opacity = '0';
       endMorph();
     };
-  }, [active, model, vert, showTranslation, listen.font, songKey]);
+  }, [active, model, vert, showTranslation, listen.font, songKey, rev]);
 
   if (!active) return null;
   const lcA = settings.lyricColorSource === 'custom' ? settings.customColor : 'var(--ly-a, rgb(238 240 244))';
