@@ -47,6 +47,27 @@
   pointer-events: none;
 }
 
+/* 间奏三点（2026-11-22 用户要求）：和听音空间的 .ly-gap 同样大小比例（点 .2em、间距 .32em，按 48px 字号），
+   居中；透明度和缩放由 LyricPage 逐帧写 */
+.lp-gap {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: none;
+  align-items: center;
+  gap: 0.32em;
+  font-size: 48px;
+  transform: translate(-50%, -50%);
+}
+
+.lp-gap i {
+  width: 0.2em;
+  height: 0.2em;
+  border-radius: 50%;
+  background: #fff;
+  opacity: 0;
+}
+
 /* 页眉只留页码（用户 2026-11-22：左上角不写这页是哪一段） */
 .lp-no {
   position: absolute;

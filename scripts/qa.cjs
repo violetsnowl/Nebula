@@ -1590,9 +1590,10 @@ async function main() {
     !pageOff.root && pageOff.mode === null;
   log('版面（聆听中取代漫游歌词）', JSON.stringify({ pageOn, pageOff }));
 
-  // 调试用（只在 NEBULA_QA_SHOT 时跑）：换一首带中文翻译、有主歌 / 预副歌 / 副歌 / 桥段的英文占位歌（样张 M 的原创歌词），
-  // 版面模式下跳到各段拍一张，给开发时目测英文横排、斜体和翻译旁注；不参与判定
-  if (process.env.NEBULA_QA_SHOT) {
+  // 版面·英文占位歌（样张 M 的原创歌词，带中文翻译，有主歌 / 预副歌 / 副歌 / 间奏 / 桥段）：
+  // 判定间奏三点（跳到间奏中段，三点出现且在亮、这时没有页）；设了 NEBULA_QA_SHOT 时另外跳到各段拍一张给开发目测
+  let gapDots = null;
+  {
     const EN = {
       V1: [['Streetlights hum the song they never finish', '路灯哼着那首从没唱完的歌'], ['I keep your letters folded in my coat', '我把你的信折好放在大衣里'], ['Every bus goes somewhere I have been before', '每一班车都开往我去过的地方'], ['Every window holds a light I used to know', '每扇窗都亮着我认得的灯']],
       P: [['And when the evening tears along the seam', '当夜色沿着缝线裂开'], ['I hear you calling through the static', '我听见你穿过杂音在喊我']],
@@ -1606,9 +1607,13 @@ async function main() {
     let yrc = '';
     let t = 3000;
     const shots = [];
+    let gapMid = 0;
     for (const [key] of plan) {
       if (key === 'gap') {
+        // 上一句唱完是 t − 450 − 800；间奏三点占 [唱完 + 1.6s, 下一句 − 2.2s]
+        const gapS = t - 1250;
         t += 6000;
+        gapMid = (gapS + 1600 + t - 2200) / 2;
         continue;
       }
       shots.push([key, t + 2600]);
@@ -1636,17 +1641,35 @@ async function main() {
     }, longAudio);
     await page.waitForTimeout(1500);
     let shotN = 0;
-    for (const [key, at] of shots) {
+    for (const [key, at] of process.env.NEBULA_QA_SHOT ? shots : []) {
       await page.evaluate((s) => window.__nebula.player.seek(s), at / 1000);
       await page.waitForFunction(() => !!document.querySelector('.app[data-listen]'), null, { timeout: 8000 }).catch(() => {});
       await page.waitForTimeout(1800);
       await page.screenshot({ path: path.join(process.env.NEBULA_QA_SHOT, `page-en-${String(++shotN).padStart(2, '0')}-${key}.png`) });
     }
+    await page.evaluate((s) => window.__nebula.player.seek(s), (gapMid - 800) / 1000);
+    await page.waitForFunction(() => !!document.querySelector('.app[data-listen]'), null, { timeout: 8000 }).catch(() => {});
+    await page.evaluate((s) => window.__nebula.player.seek(s), (gapMid - 300) / 1000);
+    await page.waitForTimeout(900);
+    gapDots = await page.evaluate(() => {
+      const g = [...document.querySelectorAll('.lyric-page .lp-gap')].find((x) => x.style.display === 'flex');
+      const shownPages = [...document.querySelectorAll('.lyric-page .lp-page')].filter((p) => p.style.display === 'block' && Number(p.style.opacity) > 0.5).length;
+      return {
+        count: document.querySelectorAll('.lyric-page .lp-gap').length,
+        shown: !!g,
+        ops: g ? [...g.children].map((i) => Number(i.style.opacity)) : [],
+        shownPages,
+        t: window.__nebula.player.getState().currentTime,
+      };
+    });
+    if (process.env.NEBULA_QA_SHOT) await page.screenshot({ path: path.join(process.env.NEBULA_QA_SHOT, 'page-en-gap.png') });
     await page.keyboard.press('Control+Shift+M');
     await page.waitForTimeout(300);
     await pickStage('漫游歌词');
     await page.keyboard.press('Control+Shift+M');
   }
+  const gapOk = !!gapDots && gapDots.count >= 1 && gapDots.shown && gapDots.ops.some((o) => o > 0.2) && gapDots.shownPages === 0;
+  log('版面·间奏三点', JSON.stringify(gapDots));
 
   // #220 播放偏好随重开保留：音量、静音、播放顺序写进 localStorage，刷新后读回
   const prefsSet = await page.evaluate(() => {
@@ -1730,6 +1753,7 @@ async function main() {
     !z1Ok ||
     !shapeOk ||
     !pageOk ||
+    !gapOk ||
     !capHazeOk ||
     !idleOk ||
     !setOk ||
@@ -1788,6 +1812,7 @@ async function main() {
     z1Words: !z1Ok,
     lyricShape: !shapeOk,
     lyricPage: !pageOk,
+    pageGapDots: !gapOk,
     captionHaze: !capHazeOk,
     idleInPanel: !idleOk,
     settingsLayout: !setOk,

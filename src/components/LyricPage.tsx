@@ -347,6 +347,19 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
       p.tIn = long ? p.s - 2.2 : Math.max(prev.e + 0.1, p.s - 0.9);
       prev.tOut = long ? prev.e + 1.4 : p.tIn;
     });
+    // —— 间奏三点（用户 2026-11-22：间奏时画面别空着）：和听音空间同一套——随进度逐个亮起、整体呼吸、收拢。
+    // 只占「真正空白」的那段：上一页淡出之后（唱完 1.4s + 0.7s），到下一页提前 2.2s 出现时收拢；放在画面正中 ——
+    const gapDots = shape.gaps
+      .filter((g) => g.kind === 'interlude')
+      .map((g) => ({ s: g.s + 1.6, e: g.e - 2.2 }))
+      .filter((g) => g.e - g.s >= 1)
+      .map((g) => {
+        const el = document.createElement('div');
+        el.className = 'lp-gap';
+        el.innerHTML = '<i></i><i></i><i></i>';
+        frame.appendChild(el);
+        return { ...g, el, dots: [...el.querySelectorAll<HTMLElement>('i')], on: false };
+      });
     // —— 排版：先按原字号排、量尺寸，再按最挤的那句整页缩小 ——
     const layoutAll = () => {
       for (const pg of pages) {
@@ -451,6 +464,23 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
             l.active = singing;
           }
         }
+      }
+      // —— 间奏三点：p = 这段空白的进度；淡入 0.5s，结束前 0.45s 收拢（同听音空间 engine.ts 的公式） ——
+      for (const g of gapDots) {
+        const show = k > 0.001 && t >= g.s - 0.5 && t <= g.e;
+        if (show !== g.on) {
+          g.el.style.display = show ? 'flex' : 'none';
+          g.on = show;
+        }
+        if (!show) continue;
+        const p = clamp((t - g.s) / Math.max(0.01, g.e - g.s), 0, 1);
+        const tail = clamp((g.e - t) / 0.45, 0, 1) * smooth((t - (g.s - 0.5)) / 0.5);
+        const breathe = 1 + 0.06 * Math.sin(t * Math.PI * 1.25);
+        g.dots.forEach((d, i) => {
+          const f = clamp(p * 3.1 - i, 0, 1);
+          d.style.opacity = ((0.25 + 0.75 * f) * tail).toFixed(3);
+          d.style.transform = `scale(${((0.8 + 0.2 * f) * breathe * (0.4 + 0.6 * tail)).toFixed(3)})`;
+        });
       }
       // —— 转场：把当前句的屏幕位置交给漫游歌词；它接手时，版面上这句先藏着，交接快结束时再交叉淡入 ——
       if (curLine && k > 0.001 && k < 0.999) {
