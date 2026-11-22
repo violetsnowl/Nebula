@@ -207,8 +207,28 @@ export const diag: Tpl = {
 
 // ———— 色场（全曲最后一个副歌页）：一整块封面色，句子写进去之后变深色，像印在色纸上 ————
 /** 竖排：色块从这条线往下铺到底；横排：色块从这条线往右铺到边。 */
-const FIELD_TOP = 540;
-const FIELD_LEFT = 930;
+/**
+ * 色块的分割线跟着这一页的句子走（2026-11-22 用户：句子都短时，固定在右侧的分割线一句也碰不到）：
+ * 横排 = 最长那句写进色块约四成（左缘 150 + 最长宽 × .6），竖排 = 最长那列写进色块约四成；再夹在一个不太偏的范围里。
+ */
+function fieldEdge(c: TCtx): number {
+  if (c.vert) {
+    let top = 0;
+    let h = 0;
+    for (const l of c.lines) {
+      const s = c.size(l.tx);
+      if (s.h > h) {
+        h = s.h;
+        top = parseFloat(l.el.style.top) || 0;
+      }
+    }
+    // 最长那列至少有 70px 写进色块
+    return clamp(Math.min(top + h * 0.6, top + h - 70), 260, 640);
+  }
+  const w = Math.max(...c.lines.map((l) => c.size(l.tx).w));
+  // 最长那句至少有 90px 写进色块
+  return clamp(Math.min(150 + w * 0.6, 150 + w - 90), 330, 1120);
+}
 
 export const field: Tpl = {
   id: 'field',
@@ -220,12 +240,17 @@ export const field: Tpl = {
       if (l.tr) l.tr.className = 'lp-tr is-under';
     }
     if (c.vert) {
-      // 竖排：竖列从右往左、逐列错开；长句从暗处一直写进下面的色块（整列最低不过 830，最高不过 90）
-      let f = 1;
+      // 竖排：竖列从右往左、逐列错开；长句从暗处一直写进下面的色块（整列最低不过 830，最高不过 90）。
+      // 句子都短时字号放大到 1.4 倍（最长那列撑到约 560px），让句子够得着色块
+      let f = 1.4;
+      let hm = 0;
       for (const l of c.lines) {
         l.tx.style.fontSize = '60px';
-        f = Math.min(f, 740 / Math.max(1, c.size(l.tx).h));
+        const h = c.size(l.tx).h;
+        hm = Math.max(hm, h);
+        f = Math.min(f, 740 / Math.max(1, h));
       }
+      f = Math.min(f, Math.max(1, 560 / Math.max(1, hm)));
       const fs = 60 * Math.max(0.5, f);
       const STAG = [118, 170, 262, 214, 296, 248];
       c.lines.forEach((l, i) => {
@@ -235,12 +260,17 @@ export const field: Tpl = {
       });
       return;
     }
-    // 横排：句子左对齐从 x 150 起，纵向居中成一组；长句越过色块的边线写进去
-    let f = 1;
+    // 横排：句子左对齐从 x 150 起，纵向居中成一组；长句越过色块的边线写进去。
+    // 句子都短时字号放大（最多 1.5 倍，最长那句撑到约 900px），让句子够得着色块
+    let f = 1.5;
+    let wm = 0;
     for (const l of c.lines) {
       l.tx.style.fontSize = '72px';
-      f = Math.min(f, 1300 / Math.max(1, c.size(l.el).w));
+      const w = c.size(l.el).w;
+      wm = Math.max(wm, w);
+      f = Math.min(f, 1300 / Math.max(1, w));
     }
+    f = Math.min(f, Math.max(1, 900 / Math.max(1, wm)));
     let fs = 72 * Math.max(0.55, f);
     const GAP = 26;
     const stack = () => {
@@ -260,9 +290,10 @@ export const field: Tpl = {
   },
   finish: (c) => {
     // 色块（压在原文上面，不透明）
-    const block = deco(c, 'lp-field', c.vert ? { left: '0', right: '0', top: px(FIELD_TOP), bottom: '0' } : { left: px(FIELD_LEFT), right: '0', top: '0', bottom: '0' });
+    const edge = fieldEdge(c);
+    const block = deco(c, 'lp-field', c.vert ? { left: '0', right: '0', top: px(edge), bottom: '0' } : { left: px(edge), right: '0', top: '0', bottom: '0' });
     // 色块里的那一份：本页所有句子深拷贝一份，整层裁成色块那块区域，颜色在 CSS 里压成深色（见 lyric-page-tpl-b.css）
-    const layer = deco(c, 'lp-field-on', { clipPath: c.vert ? `inset(${FIELD_TOP}px 0 0 0)` : `inset(0 0 0 ${FIELD_LEFT}px)` });
+    const layer = deco(c, 'lp-field-on', { clipPath: c.vert ? `inset(${edge}px 0 0 0)` : `inset(0 0 0 ${edge}px)` });
     layer.setAttribute('aria-hidden', 'true');
     block.setAttribute('aria-hidden', 'true');
     const pairs = c.lines.map((l: TLine) => {

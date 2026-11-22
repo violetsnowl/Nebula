@@ -21,6 +21,12 @@ export interface ListenConfig {
   style: ListenStyle;
   /** 聆听时播放条一起变淡。 */
   dimBar: boolean;
+  /**
+   * 进入聆听后常驻（2026-11-22 用户要求）：动鼠标、点击、滚轮都不再退出，像听音空间一样待着；
+   * 按 Esc 或左上角收起键（exit）离开。常驻期间不因暂停、在输入框打字、两侧面板开着而退出，只在 App 的阻断条件（右键菜单、
+   * 信息弹窗、听音空间、壁纸、登录、导入）出现时退出。根元素带 data-listen-pin：光标、两侧边缘入口、播放条照常（styles.css）。
+   */
+  pin: boolean;
   /** 歌词图层在卡片之下（决定「沉降」是否需要换层）。 */
   lyricsUnder: boolean;
   /** 歌词三句布局（决定「散开」的让开中心）。 */
@@ -148,6 +154,7 @@ export class ListenDirector {
     delayMs: 6000,
     style: 'sink',
     dimBar: true,
+    pin: false,
     lyricsUnder: true,
     layout: 'stacked',
   };
@@ -173,17 +180,19 @@ export class ListenDirector {
 
   start(): void {
     window.addEventListener('pointermove', this.onMove, { passive: true, capture: true });
-    for (const t of ['pointerdown', 'wheel', 'keydown', 'touchstart'] as const) {
+    for (const t of ['pointerdown', 'wheel', 'touchstart'] as const) {
       window.addEventListener(t, this.onActivity, { passive: true, capture: true });
     }
+    window.addEventListener('keydown', this.onKey, { passive: true, capture: true });
     this.timer = window.setInterval(this.check, CHECK_MS);
   }
 
   dispose(): void {
     window.removeEventListener('pointermove', this.onMove, { capture: true });
-    for (const t of ['pointerdown', 'wheel', 'keydown', 'touchstart'] as const) {
+    for (const t of ['pointerdown', 'wheel', 'touchstart'] as const) {
       window.removeEventListener(t, this.onActivity, { capture: true });
     }
+    window.removeEventListener('keydown', this.onKey, { capture: true });
     window.clearInterval(this.timer);
     if (this.raf) cancelAnimationFrame(this.raf);
     this.raf = 0;
@@ -209,6 +218,8 @@ export class ListenDirector {
     const d = this.root.dataset;
     d.listenStyle = cfg.style;
     d.listenBar = cfg.dimBar ? 'dim' : 'keep';
+    if (this.mode === 'listen' && cfg.pin) d.listenPin = 'on';
+    else delete d.listenPin;
     if (!prev.enabled) {
       this.lastAct = performance.now();
       this.lyrOp = LYR_ROAM;
@@ -236,6 +247,7 @@ export class ListenDirector {
     delete d.listen;
     delete d.lk;
     delete d.lyrTop;
+    delete d.listenPin;
     for (const v of ['--lk', '--lo', '--ls']) this.root.style.removeProperty(v);
     listenBus.k = 0;
   }
@@ -255,8 +267,24 @@ export class ListenDirector {
 
   private onActivity = (): void => {
     this.lastAct = performance.now();
-    if (this.mode === 'listen') this.setMode('roam');
+    if (this.mode === 'listen' && !this.cfg.pin) this.setMode('roam');
   };
+
+  /** 常驻聆听：Esc 离开（别的浮层——队列 / 音质 / 音量弹层、右键菜单、打开的侧面板、信息弹窗——开着时让给它们）。 */
+  private onKey = (e: KeyboardEvent): void => {
+    if (this.cfg.pin && this.mode === 'listen' && e.key === 'Escape') {
+      if (document.querySelector('.queue-pop, .quality-pop, .vol-pop, .ctx-menu, .sd-panel.is-open, .info-overlay')) return;
+      this.exit();
+      return;
+    }
+    this.onActivity();
+  };
+
+  /** 离开聆听（常驻聆听的收起键、Esc）：回到漫游，重新开始计静止时间。 */
+  exit(): void {
+    this.lastAct = performance.now();
+    if (this.mode === 'listen') this.setMode('roam');
+  }
 
   private blocked(): boolean {
     return this.deps.isBlocked() || editableFocused() || !!document.querySelector(BUSY_SELECTOR);
@@ -267,7 +295,8 @@ export class ListenDirector {
     const now = performance.now();
     const ok = this.deps.isPlaying() && !this.blocked();
     if (this.mode === 'listen') {
-      if (!ok) this.setMode('roam');
+      // 常驻时只认 App 的阻断条件（暂停、打字、侧面板开着都不退出）
+      if (this.cfg.pin ? this.deps.isBlocked() || !!document.querySelector(BUSY_SELECTOR) : !ok) this.setMode('roam');
       return;
     }
     // 条件不满足期间计时清零：恢复播放、关掉弹层后重新数
@@ -283,6 +312,8 @@ export class ListenDirector {
     this.mode = m;
     if (m === 'listen') this.root.dataset.listen = 'on';
     else delete this.root.dataset.listen;
+    if (m === 'listen' && this.cfg.pin) this.root.dataset.listenPin = 'on';
+    else delete this.root.dataset.listenPin;
     const to = m === 'listen' ? 1 : 0;
     const base = m === 'listen' ? ENTER_MS : EXIT_MS;
     this.tw = {

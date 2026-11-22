@@ -178,7 +178,16 @@ interface Geo {
   Y0: number;
 }
 
-const charsOf = (l: TLine) => l.units.map((u) => glyphs(u.textContent ?? ''));
+/** 方块字（汉字、假名、谚文）一字一格。 */
+const CJK_CH = /[぀-ヿ㐀-鿿豈-﫿가-힯ᄀ-ᇿ]/u;
+/** 一个字占几格：方块字一字一格；拉丁字母按稿纸习惯两个字母一格（2026-11-22 用户：Breezing 之后的日文不再居中占格） */
+const cellsOfUnit = (u: HTMLElement) => {
+  const cs = [...(u.textContent ?? '').replace(/\s+/g, '')];
+  const cjk = cs.filter((ch) => CJK_CH.test(ch)).length;
+  return Math.max(1, cjk + Math.ceil((cs.length - cjk) / 2));
+};
+const isLatinUnit = (u: HTMLElement) => ![...(u.textContent ?? '')].some((ch) => CJK_CH.test(ch));
+const charsOf = (l: TLine) => l.units.map(cellsOfUnit);
 
 function gridGeo(c: TCtx): Geo {
   const n = c.lines.length;
@@ -207,7 +216,8 @@ function gridGeo(c: TCtx): Geo {
   const Y0 = Math.round((PH - (n * (C + G) - G)) / 2) - 20;
   return {
     vert: false, C, G, fs, ls, mx, X0, Y0,
-    at: (j) => ({ left: X0 + C + ls / 2, top: Y0 + j * (C + G) }),
+    // 字形在行高里本来就偏上，再加上逐字浮起会显得顶出格子：整行下移 5px（2026-11-22 用户反馈）
+    at: (j) => ({ left: X0 + C + ls / 2, top: Y0 + j * (C + G) + 5 }),
     cell: (j, k) => ({ x: X0 + (k + 1) * C, y: Y0 + j * (C + G) }),
   };
 }
@@ -233,9 +243,19 @@ export const grid: Tpl = {
       l.tx.style.fontSize = px(g.fs);
       l.tx.style.lineHeight = px(g.C);
       l.tx.style.letterSpacing = px(g.ls);
+      // 拉丁词：两个字母一格，整个词占满它那几格、在格子里居中（字距按原样，不再每个字母加格距的字距）；
+      // 整句为了让方块字居中挪了半个字距，这里挪回来。用逻辑属性，竖排时同样沿列的方向
+      for (const u of l.units) {
+        if (!isLatinUnit(u)) continue;
+        u.style.letterSpacing = '0.02em';
+        u.style.inlineSize = px(cellsOfUnit(u) * g.C);
+        u.style.textAlign = 'center';
+        u.style.position = 'relative';
+        u.style.insetInlineStart = px(-g.ls / 2);
+      }
       const p = g.at(j);
       put(l, p.left, p.top);
-      if (l.tr) lift(c, l, p.left - g.ls / 2, p.top + g.C + 6, 'is-grid');
+      if (l.tr) lift(c, l, p.left - g.ls / 2, p.top + g.C + 1, 'is-grid');
     });
   },
   finish: (c) => {

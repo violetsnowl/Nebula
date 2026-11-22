@@ -1479,6 +1479,34 @@ async function main() {
     intro: !!document.querySelector('.sd-panel.sd-right .intro'),
   }));
   await page.locator('.sd-panel.sd-right button', { hasText: '3 秒' }).first().click();
+  // 常驻聆听（2026-11-22）：打开「进入后常驻」，静止进入聆听后动鼠标不退出、光标照常、左上角收起键可点，点了回到漫游
+  let pinCheck = null;
+  {
+    const tg = page.locator('.sd-panel.sd-right [aria-label="进入聆听后常驻"]');
+    const hasTg = (await tg.count()) > 0;
+    if (hasTg) {
+      await tg.click();
+      await page.waitForTimeout(200);
+      await page.waitForFunction(() => !!document.querySelector('.app[data-listen]'), null, { timeout: 9000 }).catch(() => {});
+      await page.waitForTimeout(1800);
+      const inPin = await page.evaluate(() => ({ listen: !!document.querySelector('.app[data-listen]'), pin: !!document.querySelector('.app[data-listen-pin]') }));
+      await page.mouse.move(700, 400);
+      await page.mouse.move(760, 460, { steps: 6 });
+      await page.mouse.wheel(0, 40);
+      await page.waitForTimeout(600);
+      const afterMove = await page.evaluate(() => {
+        const app = document.querySelector('.app');
+        const exit = document.querySelector('.listen-exit');
+        return { listen: !!document.querySelector('.app[data-listen]'), cursor: getComputedStyle(app).cursor, exitOp: exit ? Number(getComputedStyle(exit).opacity) : -1, exitPe: exit ? getComputedStyle(exit).pointerEvents : '' };
+      });
+      await page.evaluate(() => document.querySelector('.listen-exit')?.click());
+      await page.waitForTimeout(500);
+      const afterExit = await page.evaluate(() => ({ listen: !!document.querySelector('.app[data-listen]'), pin: !!document.querySelector('.app[data-listen-pin]') }));
+      await tg.click();
+      await page.waitForTimeout(200);
+      pinCheck = { inPin, afterMove, afterExit };
+    } else pinCheck = { hasTg };
+  }
   await page.locator('.sd-panel.sd-right .seg.wide button', { hasText: '歌词' }).click();
   await page.waitForTimeout(300);
   // 歌词页：一张预览 + 手动切换；同页两段控件左右对齐；「更多排版」默认收起
@@ -1500,6 +1528,11 @@ async function main() {
     listenPage.tiles === 3 && listenPage.intro && lyricPage.head === 2 && lyricPage.previews === 1 && !lyricPage.oldListenPreview &&
     lyricPage.segs >= 3 && lyricPage.aligned && !lyricPage.moreOpen && !lyricPage.nativeColor;
   log('设置面板重排', JSON.stringify({ listenPage, lyricPage }));
+  log('常驻聆听（动鼠标不退出、收起键离开）', JSON.stringify(pinCheck));
+  const pinOk =
+    !!pinCheck && !!pinCheck.inPin && pinCheck.inPin.listen && pinCheck.inPin.pin &&
+    pinCheck.afterMove.listen && pinCheck.afterMove.cursor !== 'none' && pinCheck.afterMove.exitOp > 0.9 && pinCheck.afterMove.exitPe === 'auto' &&
+    !pinCheck.afterExit.listen && !pinCheck.afterExit.pin;
   await page.evaluate(() => document.querySelector('.sd-panel.sd-right input[type="range"]')?.focus());
   const idleStart = await page.evaluate(() => ({
     panel: !!document.querySelector('.sd-panel.sd-right'),
@@ -1588,9 +1621,15 @@ async function main() {
       const p = window.__nebulaLyricPage;
       const max = (rows) => (rows && rows.length ? Math.max(...rows.flat().map((v) => Math.abs(v))) : null);
       const pair = p?.pair(0.5);
-      return { end: max(p?.probe(1)), start: max(p?.probe(0)), mid: pair ? pair[0] : null };
+      const endRows = p?.probe(1);
+      // 落位最差的那个字（中心 x / y、宽、高的偏差），排查用
+      const worst = endRows && endRows.length ? endRows.reduce((a, b) => (Math.max(...b.map(Math.abs)) > Math.max(...a.map(Math.abs)) ? b : a)) : null;
+      // 中心偏差决定落位跳不跳；盒子宽高差 1–2px 时字号相同、字形不动（大字在竖排里的盒子高度会差一点），单独放宽到 2px
+      return { end: max(endRows && endRows.map((r) => r.slice(0, 2))), size: max(endRows && endRows.map((r) => r.slice(2))), worst, start: max(p?.probe(0)), mid: pair ? pair[0] : null };
     });
     r.landEnd = landing.end;
+    r.worst = landing.worst;
+    r.landSize = landing.size;
     r.landStart = landing.start;
     r.mid = landing.mid;
     if (shot && process.env.NEBULA_QA_SHOT) await page.screenshot({ path: path.join(process.env.NEBULA_QA_SHOT, shot) });
@@ -1598,7 +1637,7 @@ async function main() {
   };
   const morphOk = (r) =>
     !!r && r.lk > 0.3 && r.lk < 0.8 && r.spans > 0 && r.clonesB === r.spans && r.op > 0.5 && (r.z1Op === null || r.z1Op < 0.12) &&
-    (r.othersOp === null || r.othersOp < 0.25) && r.landEnd !== null && r.landEnd <= 1 && r.landStart !== null && r.landStart <= 2.5;
+    (r.othersOp === null || r.othersOp < 0.25) && r.landEnd !== null && r.landEnd <= 1 && (r.landSize === null || r.landSize <= 2) && r.landStart !== null && r.landStart <= 2.5;
   await page.keyboard.press('Control+Shift+M');
   await page.waitForTimeout(300);
   await pickStage('版面');
@@ -1891,6 +1930,7 @@ async function main() {
     !gapOk ||
     !morphPass ||
     !tplOk ||
+    !pinOk ||
     !capHazeOk ||
     !idleOk ||
     !setOk ||
@@ -1952,6 +1992,7 @@ async function main() {
     pageGapDots: !gapOk,
     pageMorph: !morphPass,
     pageTemplates: !tplOk,
+    listenPin: !pinOk,
     captionHaze: !capHazeOk,
     idleInPanel: !idleOk,
     settingsLayout: !setOk,

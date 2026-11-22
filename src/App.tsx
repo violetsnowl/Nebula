@@ -279,6 +279,7 @@ export default function App() {
       delayMs: lyricSettings.listenDelay * 1000,
       style: lyricSettings.listenStyle,
       dimBar: lyricSettings.listenDimBar,
+      pin: lyricSettings.listenPin,
       lyricsUnder: lyricSettings.layerMode === 'under',
       layout: lyricSettings.lyricLayout,
     }),
@@ -289,7 +290,7 @@ export default function App() {
   // 聆听中悬停态由 CSS 压回普通态（.app[data-lk] .music-card.is-hovered），一动鼠标自然恢复。
   // 侧栏 / 设置 / 顶部搜索面板开着、鼠标不动也算静止（#125，用户确认）；在搜索框里打字由引擎的输入框判断挡住
   const listenBlocked = !!contextMenu || !!infoModal || nowPlayingOpen || wallpaperOpen || loginSheetOpen || importing;
-  useListenMode(appRef, listenConfig, listenBlocked);
+  const exitListen = useListenMode(appRef, listenConfig, listenBlocked);
 
   /** 全网搜索点播：仅播放该曲，不影响当前队列；播完自动接回歌单（playTransient）。 */
   const handlePlayNetworkSong = useCallback((track: Track) => {
@@ -650,6 +651,13 @@ export default function App() {
         <span>
           <IconLocate size={18} />
         </span>
+      </button>
+
+      {/* 常驻聆听的收起键（2026-11-22）：和听音空间左上角的收起键同一个样子，只在常驻聆听时出现（styles.css .listen-exit） */}
+      <button type="button" className="listen-exit" onClick={exitListen} aria-label="离开聆听" data-tip="收起（Esc）" data-tip-side="right">
+        <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          <path d="M6 9.5l6 6 6-6" />
+        </svg>
       </button>
 
       {/* 开发者工具：歌词来源面板（默认隐藏，Ctrl+Shift+L 开关） */}

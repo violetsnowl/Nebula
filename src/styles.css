@@ -4403,8 +4403,8 @@ body {
 
 /* 播放条变淡：最多淡到 70%（审查第 12 条：淡到一半读起来像「不可用」）。只降材质（::before）和内容。
    不能给 .player-surface 本身设 opacity，否则它会成为 ::before 的背景采样边界，玻璃采不到背后的画面 */
-.app[data-listen-bar='dim'][data-lk] .player-surface::before,
-.app[data-listen-bar='dim'][data-lk] .player-surface > * {
+.app[data-listen-bar='dim'][data-lk]:not([data-listen-pin]) .player-surface::before,
+.app[data-listen-bar='dim'][data-lk]:not([data-listen-pin]) .player-surface > * {
   opacity: calc(1 - 0.3 * var(--lk));
 }
 
@@ -4417,13 +4417,52 @@ body {
 }
 
 /* 聆听中：隐藏指针；卡片不响应悬停和点击（第一下移动先把界面叫回来） */
-.app[data-listen],
-.app[data-listen] * {
+.app[data-listen]:not([data-listen-pin]),
+.app[data-listen]:not([data-listen-pin]) * {
   cursor: none !important;
 }
 
 .app[data-listen] .music-card {
   pointer-events: none;
+}
+
+/* 常驻聆听（2026-11-22 用户要求，§7.1）：根元素带 data-listen-pin 时，动鼠标不退出；光标、两侧边缘入口照常，
+   播放条不变淡（上面三条规则都排除了它），和听音空间一样可以直接操作。左上角的收起键（同听音空间 .ls-exit）跟着交接淡入 */
+.listen-exit {
+  position: fixed;
+  left: 34px;
+  top: 30px;
+  z-index: 60;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  appearance: none;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: var(--fg-3s);
+  opacity: 0;
+  pointer-events: none;
+  transition: color 0.18s var(--ease-std);
+}
+.listen-exit svg {
+  transition: transform 0.18s var(--ease-std);
+}
+.app[data-listen-pin][data-lk] .listen-exit {
+  opacity: var(--lk);
+  pointer-events: auto;
+}
+.listen-exit:hover {
+  color: #fff;
+}
+.listen-exit:hover svg {
+  transform: scale(1.07);
+}
+.listen-exit:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.55);
+  outline-offset: 2px;
+  border-radius: 8px;
 }
 
 /* 指针静止在卡片上也能进入聆听（2026-11-14，§7.1）：交接和聆听中把悬停态压回普通态（不放大、不出播放球、
@@ -4519,7 +4558,7 @@ body {
 }
 
 .sd-seam.is-hidden,
-.app[data-listen] .sd-seam {
+.app[data-listen]:not([data-listen-pin]) .sd-seam {
   opacity: 0;
 }
 

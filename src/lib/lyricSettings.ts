@@ -21,6 +21,8 @@ export interface LyricVisualSettings {
   listenStyle: 'sink' | 'part' | 'ebb';
   /** 聆听时播放条一起变淡。 */
   listenDimBar: boolean;
+  /** 进入聆听后常驻（2026-11-22 用户要求）：动鼠标不再退出，按 Esc 或左上角收起键离开；两侧面板和播放条照常可用。 */
+  listenPin: boolean;
   /**
    * 漫游时的歌词（#124）：ambient = 只留当前句、缩小半透明微虚，退成氛围；
    * caption = 播放条上方一行字幕；both = 两者都有。聆听时都换成完整的三句。
@@ -30,5 +32,5 @@ export interface LyricVisualSettings {
 
 /** 交接相关的设置项（设置页一次改一项）。 */
 export type ListenSettingsPatch = Partial<
-  Pick<LyricVisualSettings, 'listenHandoff' | 'listenDelay' | 'listenStyle' | 'listenDimBar' | 'roamLyrics'>
+  Pick<LyricVisualSettings, 'listenHandoff' | 'listenDelay' | 'listenStyle' | 'listenDimBar' | 'listenPin' | 'roamLyrics'>
 >;

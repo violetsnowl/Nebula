@@ -114,7 +114,13 @@ export function measureUnits(rts: UnitRt[]): void {
  * 唱过的一侧更宽（慢慢落回），没唱的一侧更窄（快唱到时才升起）；S 在字间停顿里平滑移动；句首提前淡入、句尾落平。
  * D = 快歌密度 0–1（越快波越窄越低）。t 为秒。
  */
-export function waveOf(rts: UnitRt[], D: number, t: number): (c: number) => number {
+export interface WaveOpts {
+  /** 拉丁歌的波宽再乘这个系数（中日韩不受影响）。版面单独用 .6（2026-11-22 用户：版面里歌词又长又是唯一重点，
+   *  听音空间那套宽波浪到了版面就变成半句一起起伏；听音空间、漫游歌词不传，保持原样）。 */
+  widthK?: number;
+}
+
+export function waveOf(rts: UnitRt[], D: number, t: number, opts?: WaveOpts): (c: number) => number {
   const a = rts[0]!;
   const z = rts[rts.length - 1]!;
   // 一个字和下一个字之间没有停顿（逐字时间首尾相接，拉丁歌几乎都是这样）时，S 在这个字的时长里一路走到下一个字的起点，
@@ -154,8 +160,9 @@ export function waveOf(rts: UnitRt[], D: number, t: number): (c: number) => numb
   const L = clamp((X - 1) / 1.5, 0, 1);
   // 2026-11-22 用户看过后要求收窄 15%（拉丁才收，中日韩 L = 0 不受影响；L 稍大于 0 就收满）
   const widen = X * (1 + 0.8 * L) * (1 - 0.15 * Math.min(1, L * 4));
-  const gb = (1.7 - 0.5 * D) * fs * widen;
-  const ga = (1.05 - 0.25 * D) * fs * widen * (1 + 0.35 * L);
+  const nk = 1 - (1 - (opts?.widthK ?? 1)) * Math.min(1, L * 4);
+  const gb = (1.7 - 0.5 * D) * fs * widen * nk;
+  const ga = (1.05 - 0.25 * D) * fs * widen * (1 + 0.35 * L) * nk;
   // 放宽之后起伏被摊薄（2026-11-22 用户：柔了、顿挫没了，但起伏小到第一眼像只有扫光）：越像拉丁峰值越高，最多到 2 倍；中日韩 L = 0 不变
   const Aw = A * (1 + L);
   return (c) => {

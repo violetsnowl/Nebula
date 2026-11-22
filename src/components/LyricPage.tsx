@@ -92,6 +92,9 @@ function grain(): string {
   return grainUrl;
 }
 
+/** 版面单独的波浪参数：拉丁歌波宽在听音空间那套的基础上收窄 40%（2026-11-22 用户要求，听音空间、漫游歌词不变）。 */
+const PAGE_WAVE = { widthK: 0.6 };
+
 /** 经典版式：每句一个位置和字号（f = 整页缩放）。 */
 function layoutClassic(pg: PPage, f: number): void {
   const n = pg.lines.length;
@@ -342,6 +345,12 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
         for (const l of pg.lines) {
           l.el.classList.toggle('is-vert', l.vert);
           measureLine(l, S0);
+          // 浮起量按字号封顶（lyric-page.css 的 --lfk）：相当于不超过 52px 的字，粗大写（满版齐行 / 书脊）再乘 .7
+          const heavy = l.el.classList.contains('lt-heavy') ? 0.7 : 1;
+          for (const u of l.units) {
+            const fpx = parseFloat(getComputedStyle(u).fontSize) || 40;
+            u.style.setProperty('--lfk', (Math.min(1, 52 / fpx) * heavy).toFixed(3));
+          }
         }
         pg.el.classList.remove('is-measuring');
         pg.hooks = pg.tpl.finish?.(pg.ctx) || null;
@@ -725,7 +734,7 @@ export function LyricPage({ lines, songKey }: LyricPageProps) {
             if (state !== 'cur' || !l.rts?.length) continue;
             // 正在唱（和唱完后 0.9s 的尾韵）：扫光、波浪、长音；没唱到的部分是浅灰的「先印好」
             const singing = t <= e.e + 0.3;
-            const wave = singing ? waveOf(l.rts, e.dens, t) : null;
+            const wave = singing ? waveOf(l.rts, e.dens, t, PAGE_WAVE) : null;
             for (const rt of l.rts) {
               unitFrame(rt, t, scheme, singing, wave, e.dens);
               rt.v.set('--un', ghost);
