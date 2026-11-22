@@ -8,6 +8,12 @@ import type { Track } from '../lib/catalog';
 import { toFrontendTrack, type DesktopArtistHit } from '../lib/playlist/ipcClient';
 import { IconChevronRight, IconClose, IconPlay } from './icons';
 
+/** 全网搜歌的一条结果：后端已按「同一录音」合并（#227），这里只带着它的各平台来源。 */
+interface NetSongGroup {
+  primary: Track;
+  sources: Track[];
+}
+
 interface SearchBarProps {
   songs: Track[];
   /** 点击单条结果：定位到该卡片（仍保留当前聚簇布局）。 */
@@ -101,7 +107,9 @@ export function SearchBar({
   // 用户是否用方向键主动移动过高亮：只有移动过，回车才选高亮项；否则回车仍是「聚簇全览」
   const [navigated, setNavigated] = useState(false);
   const [isExpanded, setIsExpanded] = useState(false);
-  const [netSongs, setNetSongs] = useState<Track[]>([]);
+  const [netSongs, setNetSongs] = useState<NetSongGroup[]>([]);
+  /** 当前展开来源的那一条（键 = 平台:id），同时只展开一条 */
+  const [openSrc, setOpenSrc] = useState<string | null>(null);
   const [netArtists, setNetArtists] = useState<DesktopArtistHit[]>([]);
   const [netSearching, setNetSearching] = useState(false);
   const wrapRef = useRef<HTMLDivElement>(null);
@@ -161,7 +169,15 @@ export function SearchBar({
       const artistsP = window.nebulaAPI!.searchArtists(q, 4).catch(() => ({ ok: false as const, error: '' }));
       void Promise.all([songsP, artistsP]).then(([sr, ar]) => {
         if (netSeqRef.current !== seq) return;
-        setNetSongs(sr.ok ? sr.data.map((t, i) => toFrontendTrack(t, 1_000_000 + i)) : []);
+        setNetSongs(
+          sr.ok
+            ? sr.data.map((g, gi) => ({
+                primary: toFrontendTrack(g.primary, 1_000_000 + gi * 10),
+                sources: g.sources.map((s, si) => toFrontendTrack(s, 1_000_000 + gi * 10 + si + 1)),
+              }))
+            : [],
+        );
+        setOpenSrc(null);
         setNetArtists(ar.ok ? ar.data : []);
         setNetSearching(false);
       });
@@ -372,31 +388,72 @@ export function SearchBar({
                     <span>全网歌曲</span>
                   </li>
                 )}
-                {netSongs.map((t) => (
-                  <li key={`net-${t.source}-${t.sourceId}`}>
-                    <button
-                      type="button"
-                      className="search-item search-net-item"
-                      onClick={() => onPlayNetworkSong?.(t)}
-                    >
-                      <span
-                        className="search-thumb"
-                        style={{ background: placeholderFill(t.hue1) }}
-                      >
-                        {t.cover ? <img src={t.cover} alt="" loading="lazy" /> : null}
-                      </span>
-                      <span className="search-info">
-                        <span className="search-title">{t.title}</span>
-                        <span className="search-artist">
-                          {t.artist}
-                        </span>
-                      </span>
-                      <span className="search-go" aria-hidden="true">
-                        <IconPlay size={12} />
-                      </span>
-                    </button>
-                  </li>
-                ))}
+                {netSongs.map((g) => {
+                  const key = `${g.primary.source}-${g.primary.sourceId}`;
+                  const open = openSrc === key;
+                  const multi = g.sources.length > 1;
+                  return (
+                    <li key={`net-${key}`} className="search-net-group">
+                      <div className="search-net-row">
+                        <button
+                          type="button"
+                          className="search-item search-net-item"
+                          onClick={() => onPlayNetworkSong?.(g.primary)}
+                        >
+                          <span
+                            className="search-thumb"
+                            style={{ background: placeholderFill(g.primary.hue1) }}
+                          >
+                            {g.primary.cover ? <img src={g.primary.cover} alt="" loading="lazy" /> : null}
+                          </span>
+                          <span className="search-info">
+                            <span className="search-title">{g.primary.title}</span>
+                            <span className="search-artist">
+                              {g.primary.artist}
+                              <em className="search-kind">
+                                {multi ? `${g.sources.length} 个来源` : platformLabel(g.primary.source)}
+                              </em>
+                            </span>
+                          </span>
+                          <span className="search-go" aria-hidden="true">
+                            <IconPlay size={12} />
+                          </span>
+                        </button>
+                        {multi && (
+                          <button
+                            type="button"
+                            className={`search-src-toggle${open ? ' is-open' : ''}`}
+                            aria-expanded={open}
+                            aria-label={open ? '收起来源' : `展开 ${g.sources.length} 个来源`}
+                            onClick={() => setOpenSrc(open ? null : key)}
+                          >
+                            <IconChevronRight size={13} />
+                          </button>
+                        )}
+                      </div>
+                      {multi && (
+                        <div className={`search-src-body${open ? ' open' : ''}`} aria-hidden={!open}>
+                          <div>
+                            {g.sources.map((s) => (
+                              <button
+                                key={`${s.source}-${s.sourceId}`}
+                                type="button"
+                                className="search-src"
+                                onClick={() => onPlayNetworkSong?.(s)}
+                              >
+                                <span className="search-src-name">{platformLabel(s.source)}</span>
+                                {s.source === g.primary.source && <span className="search-src-tag">默认</span>}
+                                <span className="search-go" aria-hidden="true">
+                                  <IconPlay size={11} />
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </li>
+                  );
+                })}
               </ul>
             </>
           )}

@@ -25,6 +25,14 @@
 - **构建产物在仓库外**：`pnpm build` 输出到同级目录 `../nebula-outputs/index.html`（本机 `E:\CUFE\vibecoding\nebula-outputs`）；而 `pnpm qa` 正是读取这个文件，所以**必须先 build 再 qa**。
 - 项目已接入 git；远程为 `github.com/violetsnowl/Nebula`（2026-11-14 改名；旧地址 `violetsnowl/nebula`、`a161858970-ux/nebula` 自动重定向，本地 origin 已更新）；文档随提交维护（docs/）。
 
+### 搜索去重与前端展开（2026-11-21，#227）
+
+- **名额必须在合并之后算**：搜歌是「各平台并行 → 交错取用 → 截断到 pageSize」。如果在交错阶段就按 pageSize 截断，五个平台同一首歌会先被截成 3 条重复、再合并成 1 条，列表就只剩一条。现在的顺序是：收集全部候选 → 按同一录音合并 → 再按组截断。
+- **同一录音判定不能退回字符串比较**：`recordingMatch` 带版本约束（Live / Remix / 伴奏 / 翻唱），字符串相等会把「晴天」和「晴天 (Live)」并成一条。用户实测里同一首歌跨平台时长完全一致（269s），这是能安全合并的依据。
+- **按钮里不能再套按钮**：结果行原本是 `<button>`，加了「展开来源」后必须改成 `div` 容器 + 行按钮 + 行尾箭头按钮（两个兄弟按钮），否则是非法 HTML、点击事件还会互相穿透。
+- **行底色画在容器上、子按钮要透明**：`.search-item:hover` 和容器 hover 各画一层 `rgba(255,255,255,.05)`，两层叠起来会明显更深。整行一块底色的做法是容器负责底色、行按钮 hover 时 `background: transparent`。
+- **隐藏窗口截图时 `locator.click()` 会报「element is outside of the viewport」**：`show: false` 的窗口用 `page.setViewportSize({width,height})` 设尺寸，点击改用 `page.evaluate(() => el.click())`；要滚动下拉列表用容器的 `scrollTop`，不要用 `scrollIntoView`（它会滚整个页面，元素截图会截错东西）。
+
 ### 在线搜索补平台（2026-11-21，#224）
 
 - **酷狗的歌手相关接口都在 `mobilecdn.kugou.com`，且只有 http 通**：`https://mobilecdn.kugou.com/api/v3/search/singer` 报 `fetch failed`，同一路径换 `http://` 就有数据。`singer/info`、`singer/album` 同理。别顺手统一改成 https。

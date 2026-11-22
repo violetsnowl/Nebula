@@ -156,6 +156,12 @@ export interface DesktopAlbumDetail {
   source?: { platform: string; sourceId: string; fallback: boolean };
 }
 
+/** 全网搜歌的一条结果（#227）：同一录音的多个平台来源合并成一条，sources 至少含 primary。 */
+export interface DesktopSearchSongGroup {
+  primary: DesktopTrack;
+  sources: DesktopTrack[];
+}
+
 /** 全网歌手搜索命中（含平台定位，可直接打开歌手页）。 */
 export interface DesktopArtistHit {
   platform: string;
@@ -239,7 +245,7 @@ export interface DesktopApi {
   artistSongsAll: (platform: string, artistId: string) => IpcResult<DesktopTrack[]>;
   artistAlbums: (platform: string, artistId: string) => IpcResult<DesktopAlbumSummary[]>;
   albumDetail: (platform: string, albumId: string, hint?: { name?: string; artist?: string }) => IpcResult<DesktopAlbumDetail | null>;
-  searchSongs: (keyword: string, pageSize?: number) => IpcResult<DesktopTrack[]>;
+  searchSongs: (keyword: string, pageSize?: number) => IpcResult<DesktopSearchSongGroup[]>;
   searchArtists: (keyword: string, pageSize?: number) => IpcResult<DesktopArtistHit[]>;
   resolveArtistByName: (name: string) => IpcResult<DesktopArtistHit | null>;
   resolveAlbumByTitle: (title: string, artist?: string) => IpcResult<DesktopAlbumSummary | null>;

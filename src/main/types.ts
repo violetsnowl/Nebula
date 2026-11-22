@@ -254,3 +254,14 @@ export interface AlbumDetail {
   /** 详情实际来自哪个平台（本平台取不到时，按专辑名 + 歌手转到别家）。 */
   source?: ContentSource;
 }
+
+/**
+ * 全网搜歌的一条结果（#227）：同一录音在各平台的来源合并成一条，
+ * 列表只显示 `primary`，用户在条目下展开才看到 `sources`。
+ */
+export interface SearchSongGroup {
+  /** 代表条目：点按它时按这家优先播放。 */
+  primary: Track;
+  /** 同一录音的全部来源，按平台偏好排序；至少含 primary。 */
+  sources: Track[];
+}

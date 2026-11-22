@@ -7,6 +7,7 @@ import type {
   CommentResult,
   Lyric,
   Platform,
+  SearchSongGroup,
   SongDetail,
   Track,
 } from '../types';
@@ -17,6 +18,7 @@ import { romanizeJapaneseLines } from '../parsers/romanizeJapanese';
 import { recordingMatch, searchKeyword } from './recordingMatch';
 import { titleSimilarity } from '../adapters/mappers';
 import { rankAlbumCandidates } from './albumMatch';
+import { groupSearchResults } from './searchGroup';
 import { LyricCache } from './lyricCache';
 import { LyricOverrides, clampLyricOffset } from './lyricOverrides';
 import { applyLyricOffset } from './lyricOffset';
@@ -697,11 +699,12 @@ export class LyricService {
   }
 
   /**
-   * 全网搜歌：网易云 + QQ（酷狗兜底），按页容量裁剪、去重。
-   * 酷我、波点也有可用的搜索接口（#207 起用于兜底），一并参与（#224）；
-   * Spotify 只在登录后（有令牌）才参与，未登录时接口空手而归、不必白等。
+   * 全网搜歌：网易云 + QQ + 酷狗，酷我、波点（#224），Spotify（登录后）。
+   * 结果按平台**交错**取用（每家先出一条再进下一轮），慢的平台不会被快的挤掉；
+   * 最后按**同一录音**合并成一条（#227），同一首歌在多个平台只显示一行，
+   * 展开才看到各平台来源。
    */
-  async searchSongs(keyword: string, pageSize = 8): Promise<Track[]> {
+  async searchSongs(keyword: string, pageSize = 8): Promise<SearchSongGroup[]> {
     // 每家的取回量：交错后每家至少能出 1 条，取 ceil(pageSize / 2) 保底
     const per = Math.max(2, Math.ceil(pageSize / 2));
     const out: Track[] = [];
@@ -744,17 +747,17 @@ export class LyricService {
     );
     // 交错取用：每轮先让「每家一条」，再进下一轮。这样快的平台不会靠前 3 条把名额吃光，
     // 慢的网易云（约 1.2 秒）也一定能在自己那一格出现。
+    // 注意：这里不能按 pageSize 提前截断——同一首歌的多个平台来源会被合并成一条，
+    // 提前截断会让「合并后只剩 3 条」这种结果出现，名额按合并后的组数算（#227）。
     const active = lists.filter((l) => l.length > 0);
     const rounds = Math.max(0, ...active.map((l) => l.length));
-    for (let i = 0; i < rounds && out.length < pageSize; i++) {
+    for (let i = 0; i < rounds; i++) {
       for (const list of active) {
         const t = list[i];
-        if (!t) continue;
-        push(t);
-        if (out.length >= pageSize) break;
+        if (t) push(t);
       }
     }
-    return out.slice(0, pageSize);
+    return groupSearchResults(out, pageSize);
   }
 
   /**
