@@ -3,8 +3,11 @@ import { audioPlayer } from '../lib/audio/AudioPlayer';
 import { useAudioPlayer } from '../lib/audio/useAudioPlayer';
 import { useInterfaceSettingsContext } from '../hooks/interfaceSettings/InterfaceSettingsContext';
 import { currentLyricIndex, type LyricLineUI } from '../lib/lyrics';
-import { listenBus } from '../lib/listenMode';
+import { listenBus, pokeListenFrame } from '../lib/listenMode';
 import { detectScript, songPace, toEngineLine, type EngineLine } from '../lib/listen/model';
+import { analyzeSong, stageAt, type ShapeLine } from '../lib/listen/sections';
+import { shapeSink, stageShapeBus } from '../lib/listen/stageBus';
+import { getSpaceLab, useSpaceLab } from '../lib/space/lab';
 import { useListenSettings } from '../lib/listen/settings';
 import {
   TYPO,
@@ -70,7 +73,20 @@ interface Flight {
   exitVy: number;
   /** 离场时转出的角度（往飞出方向倾，#124）。 */
   exitRot: number;
+  /** 漫游歌词升级（样张 M）：副歌的句子从下往上升起（候句在当前句下方，离场往上）。 */
+  rise: boolean;
+  /** 漫游歌词升级：同一个句组朝同一个方向流过。-1 = 从左进、往右出；1 = 从右进、往左出；0 = 不按句组（旧样子）。 */
+  flow: number;
 }
+
+/** 漫游歌词升级（样张 M）的大小对比：候句缩小变淡，当前句随段落开合变大。 */
+const UP_NEXT = 0.56;
+const UP_NN = 0.42;
+const UP_OP_NEXT = 0.5;
+const UP_OP_NN = 0.3;
+/** 副歌升起时候句的位置上限（不压到底部播放条和字幕）。 */
+const RISE_NEXT_MAX = 0.2;
+const RISE_NN_MAX = 0.32;
 
 const MARGIN = 240;
 /** 主带：垂直中心 ±12%。 */
@@ -174,6 +190,7 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
   const listen = useListenSettings();
   const containerRef = useRef<HTMLDivElement>(null);
   const captionRef = useRef<HTMLDivElement>(null);
+  const lightRef = useRef<HTMLElement>(null);
   const elRefs = useRef(new Map<number, HTMLSpanElement>());
   const lineDoms = useRef(new Map<number, LineDom>());
   const flights = useRef(new Map<number, Flight>());
@@ -204,6 +221,20 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
   }, [lines]);
   const engineLinesRef = useRef(engineLines);
   engineLinesRef.current = engineLines;
+  // 段落引擎（sections.ts）：主歌 / 副歌 / 桥段、间奏、句组；pos = 歌词行下标 → 引擎里的句子下标
+  const shapeData = useMemo(() => {
+    const sl: ShapeLine[] = [];
+    const pos = new Map<number, number>();
+    engineLines.forEach((e, i) => {
+      if (!e) return;
+      pos.set(i, sl.length);
+      sl.push({ s: e.s, e: e.e, text: e.text });
+    });
+    return { sl, pos, shape: analyzeSong(sl) };
+  }, [engineLines]);
+  const shapeRef = useRef(shapeData);
+  shapeRef.current = shapeData;
+  const lab = useSpaceLab();
   const script = useMemo(() => detectScript(lines), [lines]);
   const typo = TYPO[listen.font][script];
 
@@ -260,6 +291,22 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
             : rand(NEXT_MAG[0], NEXT_MAG[1]) * frameBus.vh;
       }
     }
+    // 漫游歌词升级（样张 M）：每帧从实验室读开关，按段落引擎算开合 / 间奏让位
+    let up = getSpaceLab().lyricShape;
+    let open = 0;
+    let gapK = 0;
+    let wroteVars = false;
+    const rootStyle = document.documentElement.style;
+    /** 这一句属于第几个句组、哪种段落（升级关闭或不在引擎里时为 null）。 */
+    const lineShape = (lineIdx: number): { stanza: number; kind: string } | null => {
+      if (!up) return null;
+      const d = shapeRef.current;
+      const k = d.pos.get(lineIdx);
+      if (k == null) return null;
+      const sh = d.shape;
+      const sec = sh.sections[sh.lineSection[k]!];
+      return sec ? { stanza: sh.lineStanza[k]!, kind: sec.kind } : null;
+    };
     // 字体晚到：重新量
     let fontsDirty = false;
     document.fonts?.ready.then(() => {
@@ -287,6 +334,9 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
       let y: number;
       if (role === 'current') {
         y = ch * MAIN_Y;
+      } else if (fl.rise) {
+        // 副歌从下往上升起：候句在当前句下方，不压到底部
+        y = ch * MAIN_Y + Math.min(role === 'next' ? fl.yMag : fl.yMagNext, ch * (role === 'next' ? RISE_NEXT_MAX : RISE_NN_MAX));
       } else if (role === 'next') {
         const mag = fl.yMag;
         y = settings.lyricLayout === 'stacked' ? ch * MAIN_Y - mag : fl.side === 'above' ? ch * MAIN_Y - mag : ch * MAIN_Y + mag;
@@ -309,15 +359,17 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
       const nat = naturalW(fl.lineIdx);
       const fitC = nat > 0 ? (FIT_CUR * cw) / nat : 9;
       const fitW = nat > 0 ? (FIT_WAIT * cw) / nat : 9;
+      const upNow = fl.flow !== 0 || fl.rise;
       if (role !== 'leaving') {
         fl.targetScale =
           (role === 'current'
-            ? Math.min(settings.currentScale, fitC)
+            ? Math.min(settings.currentScale * (upNow ? 1.04 + 0.2 * open : 1), fitC)
             : role === 'next'
-              ? Math.min(0.82, fitW)
-              : Math.min(0.68, fitW * 0.85)) * fl.baseScale;
+              ? Math.min(upNow ? UP_NEXT : 0.82, fitW)
+              : Math.min(upNow ? UP_NN : 0.68, fitW * 0.85)) * fl.baseScale;
       }
-      fl.targetOpacity = role === 'current' ? 1 : role === 'next' ? 0.62 : role === 'nextNext' ? 0.42 : 0.95;
+      fl.targetOpacity =
+        role === 'current' ? 1 : role === 'next' ? (upNow ? UP_OP_NEXT : 0.62) : role === 'nextNext' ? (upNow ? UP_OP_NN : 0.42) : 0.95;
       const nnSign = Math.sign(fl.angleNext) || 1;
       const targetAngle =
         role === 'current'
@@ -332,8 +384,13 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
 
     const spawnFlight = (lineIdx: number, role: Role, t: number, cw: number, ch: number): Flight => {
       const side = Math.random() < 0.5 ? 'above' : 'below';
+      // 升级：副歌升起；其余按句组决定从哪边进（偶数句组从左进、往右出，奇数反过来）
+      const ls = lineShape(lineIdx);
+      const rise = !!ls && ls.kind === 'chorus';
+      const flow = ls && !rise ? (ls.stanza % 2 ? 1 : -1) : 0;
       let xSign: number;
-      if (balanceRef.current >= 1) xSign = -1;
+      if (flow) xSign = flow;
+      else if (balanceRef.current >= 1) xSign = -1;
       else if (balanceRef.current <= -1) xSign = 1;
       else xSign = sign();
       balanceRef.current = clamp(balanceRef.current + xSign * 0.5, -2, 2);
@@ -370,7 +427,14 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
         exitVx: 0,
         exitVy: 0,
         exitRot: 0,
+        rise,
+        flow,
       };
+      if (rise) {
+        // 升起的句子几乎不斜、水平只轻微错开
+        fl.xOff = xSign * rand(0, 0.04) * cw;
+        fl.angleNext = sign() * rand(0, 2);
+      }
       const target = roleTarget(fl, role, cw, ch);
       const timeToStart = lines[lineIdx]?.timeMs != null ? lines[lineIdx]!.timeMs - t : 0;
       if (role === 'current') {
@@ -380,15 +444,15 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
         fl.entryT = 1;
         fl.entering = false;
       } else if (timeToStart > 2000) {
-        const vertical = Math.random() < VERTICAL_P;
+        const vertical = rise || (!flow && Math.random() < VERTICAL_P);
         fl.entryDur = clamp(rand(1.1, 1.7), 0.6, Math.max(0.6, (timeToStart * 0.85) / 1000));
         if (vertical) {
-          const fromTop = Math.random() < 0.5;
+          const fromTop = rise ? false : Math.random() < 0.5;
           fl.entryFromX = target.x;
           fl.entryFromY = fromTop ? -MARGIN : ch + MARGIN;
           fl.rot = fl.angleNext;
         } else {
-          const fromLeft = Math.random() < 0.5;
+          const fromLeft = flow ? flow < 0 : Math.random() < 0.5;
           fl.entryFromX = fromLeft ? -MARGIN : cw + MARGIN;
           fl.entryFromY = target.y + rand(-ch * 0.06, ch * 0.06);
           // 进场带大角度：从左边来往下倾、从右边来往上倾，再收到等候角
@@ -496,6 +560,32 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
       }
       lastT = t;
       const tSec = t / 1000;
+      // 漫游歌词升级：段落开合、间奏让位（stageAt 自带进段落提前 0.8s、1.6s 平滑过渡）
+      up = getSpaceLab().lyricShape;
+      if (up) {
+        const sd = shapeRef.current;
+        const st = stageAt(sd.shape, sd.sl, tSec);
+        const sk = shapeSink(st.lift, st.gap);
+        open = sk.open;
+        gapK = st.gap;
+        stageShapeBus.open = open;
+        stageShapeBus.gap = gapK;
+        stageShapeBus.sinkDepth = sk.sinkDepth;
+        stageShapeBus.sinkPos = sk.sinkPos;
+        rootStyle.setProperty('--sdep', sk.sinkDepth.toFixed(3));
+        rootStyle.setProperty('--sopen', open.toFixed(3));
+        wroteVars = true;
+      } else {
+        open = 0;
+        gapK = 0;
+        stageShapeBus.lk = 0;
+        if (wroteVars) {
+          rootStyle.removeProperty('--sdep');
+          rootStyle.removeProperty('--sopen');
+          wroteVars = false;
+        }
+      }
+      stageShapeBus.on = up;
 
       const active = flights.current;
       if (!linesReadyRef.current) {
@@ -536,12 +626,13 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
           if (newRole === 'current') fl.xOff = (fl.xOff >= 0 ? 1 : -1) * cw * 0.03;
           if (newRole === 'leaving') {
             // 离开：左右 50%，带 ±1.5°–5° 小角度的非水平柔和飞出（1.0–1.4s），字往飞出方向转出 10–16°
-            const dir = sign();
+            // 升级：按句组往进来的反方向出（同一个句组像一股流一样流过）；副歌往上升出画面
+            const dir = fl.flow ? -fl.flow : sign();
             fl.exitT = 0;
             fl.exitDur = rand(1.0, 1.4);
             const wPx = lineWidthPx(fl);
-            const exitX = dir > 0 ? cw + MARGIN * 2 : -MARGIN * 2 - wPx;
-            const exitY = fl.sy + rand(-ch * 0.1, ch * 0.08);
+            const exitX = fl.rise ? fl.sx + rand(-cw * 0.03, cw * 0.03) : dir > 0 ? cw + MARGIN * 2 : -MARGIN * 2 - wPx;
+            const exitY = fl.rise ? -MARGIN * 2 : fl.sy + rand(-ch * 0.1, ch * 0.08);
             const dx = exitX - fl.sx;
             const dy = exitY - fl.sy;
             const ang = (sign() * rand(1.5, 5) * Math.PI) / 180;
@@ -549,12 +640,15 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
             const sinA = Math.sin(ang);
             fl.exitVx = (dx * cosA - dy * sinA) / fl.exitDur;
             fl.exitVy = (dx * sinA + dy * cosA) / fl.exitDur;
-            fl.exitRot = dir * rand(ANG_EXIT[0], ANG_EXIT[1]);
+            fl.exitRot = fl.rise ? sign() * rand(2, 5) : dir * rand(ANG_EXIT[0], ANG_EXIT[1]);
           }
         }
         applyRoleVisuals(fl, cw);
       }
 
+      let lightX = 0;
+      let lightY = 0;
+      let lightK = 0;
       for (const [lineIdx, fl] of active) {
         if (fl.role === 'leaving') {
           if (playingNow && fl.exitT < 1) {
@@ -616,7 +710,34 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
             scM = 0.84 + 0.16 * k;
           } else opM = k;
         } else if (enabled) opM = k;
-        el.style.transform = `translate3d(${fl.sx.toFixed(1)}px, ${fl.sy.toFixed(1)}px, 0) rotate(${fl.rot.toFixed(2)}deg) scale(${(fl.scale * scM).toFixed(4)})`;
+        // 升级·间奏让位：候场的句子退开、变淡，把舞台让给星云；下一句前 1.2s 收回
+        let gapDy = 0;
+        if (gapK > 0.001 && (fl.role === 'next' || fl.role === 'nextNext')) {
+          opM *= 1 - 0.82 * gapK;
+          scM *= 1 - 0.12 * gapK;
+          gapDy = (fl.sy < ch * MAIN_Y ? -1 : 1) * ch * 0.065 * gapK;
+        }
+        el.style.transform = `translate3d(${fl.sx.toFixed(1)}px, ${(fl.sy + gapDy).toFixed(1)}px, 0) rotate(${fl.rot.toFixed(2)}deg) scale(${(fl.scale * scM).toFixed(4)})`;
+        // 升级·字照亮空间：光源 = 当前句正在唱（或下一个要唱）的字，按元素中心缩放 / 旋转换到屏幕坐标
+        if (up && fl.role === 'current') {
+          const d = lineDoms.current.get(lineIdx);
+          const e = engineLinesRef.current[lineIdx];
+          const w = naturalW(lineIdx);
+          const h = el.offsetHeight;
+          let wx = w / 2;
+          if (d?.rts?.length) {
+            const rt = d.rts.find((r) => tSec >= r.u.s && tSec <= r.u.e) ?? d.rts.find((r) => tSec < r.u.s) ?? d.rts[d.rts.length - 1]!;
+            if (rt.w > 0) wx = rt.left + rt.w / 2;
+          }
+          const a = (fl.rot * Math.PI) / 180;
+          const off = (wx - w / 2) * fl.scale * scM;
+          lightX = fl.sx + w / 2 + off * Math.cos(a);
+          lightY = fl.sy + gapDy + h / 2 + off * Math.sin(a);
+          // 强度（样张 M）：主歌 .3、最后一次副歌 .62（= 光心处卡片从沉降的暗度往原亮度拉回的比例）；
+          // 唱完这句后 0.6s 内熄掉；间奏里没有
+          const sung = e ? clamp(1 - (tSec - e.e) / 0.6, 0, 1) : 1;
+          lightK = (0.3 + 0.32 * open) * (1 - gapK) * sung;
+        }
         el.style.opacity = (fl.opacity * opM).toFixed(3);
         const fil = blur > 0.02 ? `blur(${blur.toFixed(2)}px)` : '';
         if (el.style.filter !== fil) el.style.filter = fil;
@@ -636,12 +757,38 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
         }
       }
       fontsDirty = false;
+      // 升级·字照亮空间：光源交给舞台（卡片提亮），身后一团很淡的主色光跟着字走；聆听中每帧请舞台刷新
+      if (up) {
+        // 光源位置平滑一点，换字时不跳
+        const kk = 1 - Math.exp(-dt * 10);
+        if (stageShapeBus.lk <= 0.001 && lightK > 0) {
+          stageShapeBus.lx = lightX;
+          stageShapeBus.ly = lightY;
+        } else if (lightK > 0) {
+          stageShapeBus.lx += (lightX - stageShapeBus.lx) * kk;
+          stageShapeBus.ly += (lightY - stageShapeBus.ly) * kk;
+        }
+        stageShapeBus.lk += (lightK - stageShapeBus.lk) * (1 - Math.exp(-dt * 6));
+        const glow = lightRef.current;
+        if (glow) {
+          glow.style.transform = `translate3d(${stageShapeBus.lx.toFixed(1)}px, ${stageShapeBus.ly.toFixed(1)}px, 0)`;
+          glow.style.opacity = (stageShapeBus.lk * (enabled ? k : 1) * 1.3).toFixed(3);
+        }
+        if (playingNow || relayoutNow) pokeListenFrame();
+      } else if (lightRef.current && lightRef.current.style.opacity !== '0') lightRef.current.style.opacity = '0';
       captionFrame(cur, tSec, captionOn ? 1 - k : 0);
       syncActive();
       raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      // 卸载 / 重建循环时把升级写出去的状态收回（下一轮循环第一帧会重新写）
+      stageShapeBus.on = false;
+      stageShapeBus.lk = 0;
+      rootStyle.removeProperty('--sdep');
+      rootStyle.removeProperty('--sopen');
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lines, relayoutKey]);
 
@@ -667,9 +814,11 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
         ref={containerRef}
         className={`lyrics-layer lw${settings.layerMode === 'over' ? ' lyrics-over' : ''}`}
         data-scheme={listen.scheme}
+        data-shape={lab.lyricShape ? '' : undefined}
         style={fontVars}
         aria-hidden="true"
       >
+        <i ref={lightRef} className="fl-light" aria-hidden="true" />
         {introVisible && (
           <div className="lyrics-intro">
             <div className="li-title">{songTitle}</div>

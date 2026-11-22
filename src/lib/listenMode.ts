@@ -48,6 +48,15 @@ export function onListenFrame(fn: () => void): () => void {
   };
 }
 
+/**
+ * 聆听中由别处（漫游歌词的段落开合、字照亮空间）请舞台刷新一帧：交接曲线跑完后舞台不会自己每帧刷新。
+ * 只在交接启用、正在聆听或交接进行中时有效。
+ */
+export function pokeListenFrame(): void {
+  if (!listenBus.enabled || listenBus.k <= 0.001) return;
+  for (const fn of frameSubs) fn();
+}
+
 /** 交接曲线时长：进入像灯光调暗，回来不让人等。 */
 const ENTER_MS = 1600;
 const EXIT_MS = 380;

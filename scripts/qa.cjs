@@ -1513,6 +1513,37 @@ async function main() {
   const idleOk = idleStart.panel && idleInPanel.listening && idleInPanel.panelStill;
   log('设置面板里静止也进入聆听', JSON.stringify({ idleStart, idleInPanel }));
 
+  // 漫游歌词升级（样张 M，fe/next）：聆听中段落引擎在写星云的压暗倍数，字的光在；舞台实验室里关掉后回到旧样子
+  await page.waitForTimeout(500);
+  const shapeOn = await page.evaluate(() => {
+    const root = document.documentElement.style;
+    const light = document.querySelector('.lyrics-layer .fl-light');
+    return {
+      sdep: root.getPropertyValue('--sdep'),
+      sopen: root.getPropertyValue('--sopen'),
+      attr: document.querySelector('.lyrics-layer')?.hasAttribute('data-shape') ?? false,
+      light: !!light,
+      stageFilter: getComputedStyle(document.querySelector('.stage-3d')).filter,
+    };
+  });
+  await page.keyboard.press('Control+Shift+M');
+  await page.waitForTimeout(300);
+  await page.evaluate(() => [...document.querySelectorAll('.space-lab .sl-row')].find((b) => b.textContent.includes('段落'))?.click());
+  await page.waitForTimeout(300);
+  const shapeOff = await page.evaluate(() => ({
+    sdep: document.documentElement.style.getPropertyValue('--sdep'),
+    attr: document.querySelector('.lyrics-layer')?.hasAttribute('data-shape') ?? false,
+    panel: !!document.querySelector('.space-lab'),
+    pressed: [...document.querySelectorAll('.space-lab .sl-row')].find((b) => b.textContent.includes('段落'))?.getAttribute('aria-pressed') ?? null,
+    lyr: document.querySelectorAll('.lyrics-layer').length,
+  }));
+  await page.evaluate(() => [...document.querySelectorAll('.space-lab .sl-row')].find((b) => b.textContent.includes('段落'))?.click());
+  await page.keyboard.press('Control+Shift+M');
+  await page.waitForTimeout(200);
+  const shapeOk =
+    Number(shapeOn.sdep) > 0 && shapeOn.sopen !== '' && shapeOn.attr && shapeOn.light && shapeOff.sdep === '' && !shapeOff.attr;
+  log('漫游歌词随段落起伏（开 / 关）', JSON.stringify({ shapeOn, shapeOff }));
+
   // #220 播放偏好随重开保留：音量、静音、播放顺序写进 localStorage，刷新后读回
   const prefsSet = await page.evaluate(() => {
     const p = window.__nebula.player;
@@ -1593,6 +1624,7 @@ async function main() {
     !volOk ||
     !volUiOk ||
     !z1Ok ||
+    !shapeOk ||
     !capHazeOk ||
     !idleOk ||
     !setOk ||
@@ -1649,6 +1681,7 @@ async function main() {
     volHover: !volOk,
     volSlider: !volUiOk,
     z1Words: !z1Ok,
+    lyricShape: !shapeOk,
     captionHaze: !capHazeOk,
     idleInPanel: !idleOk,
     settingsLayout: !setOk,

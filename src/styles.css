@@ -2922,6 +2922,27 @@ body {
   display: inline-block;
 }
 
+/* 漫游歌词升级·大小对比（样张 M）：长音在舞台尺度上放大得更明显（听音空间是 107%，舞台上约 120%），只作用于当前句 */
+.lyrics-layer[data-shape] .flow-lyric.is-current .u,
+.lyrics-layer[data-shape] .flow-lyric.is-current .u .ch {
+  transform: translate3d(0, calc(var(--lift, 0) * -1em), 0) scale(calc(1 + (var(--sc, 1) - 1) * 2.8));
+}
+
+/* 字照亮空间（样张 M）：正在唱的字身后一团很淡的歌词主色光，跟着字移动；卡片的提亮在舞台帧循环里 */
+.lyrics-layer .fl-light {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 720px;
+  height: 720px;
+  margin: -360px 0 0 -360px;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--lc-a) 34%, transparent), transparent);
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
 .flow-lyric.is-current .u,
 .flow-lyric.is-current .u .ch,
 .flow-lyric.is-current .fl-whole {
@@ -4324,15 +4345,18 @@ body {
 
 /* 聆听时环境光略微提亮（退潮不提亮：卡片化成薄雾时再提亮背景，整屏会发灰，审查第 12 条） */
 .app[data-lk]:not([data-listen-style='ebb']) .bg-layer {
-  filter: brightness(calc(1 + 0.12 * var(--lk))) saturate(calc(1 + 0.08 * var(--lk)));
+  filter: brightness(calc(1 + (0.12 + 0.1 * var(--sopen, 0)) * var(--lk))) saturate(calc(1 + 0.08 * var(--lk)));
 }
+
+/* 漫游歌词升级（样张 M，2026-11-22）：LyricsLayer 按段落引擎写 --sdep（压暗相对旧值的倍数：主歌 1.13、
+   最后一次副歌 .58、间奏里约 .17）和 --sopen（开合 0–1）。实验室里关掉升级时两个变量被移除，回到旧值 */
 
 /* 三种让开各有情绪（#124）：沉降是暗，散开是让，退潮是淡。
    沉降：整片星云往下沉、后退、压暗。下沉和后退（缩到 86%、下移 4vh）由舞台帧循环在屏幕坐标上算
    （useStage 的 sinkK / lens.applyXf）：不再给 .stage-3d 整体缩放——它自带裁剪、星层画布也只有一屏大，
    缩小后四周露空、边上的卡片被截断（2026-11-21）。这里只压暗；交接进行中关掉位移过渡，免得卡片拖在曲线后面 */
 .app[data-listen-style='sink'][data-lk] .stage-3d {
-  filter: brightness(calc(1 - 0.62 * var(--lk))) saturate(calc(1 - 0.45 * var(--lk)));
+  filter: brightness(calc(1 - 0.62 * var(--lk) * var(--sdep, 1))) saturate(calc(1 - 0.45 * var(--lk) * var(--sdep, 1)));
 }
 
 .app[data-listen-style='sink'][data-lk] .music-card {
@@ -4341,7 +4365,7 @@ body {
 
 /* 散开：卡片位移由舞台帧循环计算；交接进行中关掉位移过渡，免得卡片拖在曲线后面 */
 .app[data-listen-style='part'][data-lk] .stage-3d {
-  filter: brightness(calc(1 - 0.16 * var(--lk)));
+  filter: brightness(calc(1 - 0.16 * var(--lk) * var(--sdep, 1)));
 }
 
 .app[data-listen-style='part'][data-lk] .music-card {
@@ -4350,8 +4374,8 @@ body {
 
 /* 退潮：卡片向外、略向下漂散（位移在舞台帧循环里），化成一层薄雾——变淡、轻微虚化，不压暗，背景不提亮 */
 .app[data-listen-style='ebb'][data-lk] .stage-3d {
-  opacity: calc(1 - 0.68 * var(--lk));
-  filter: brightness(calc(1 - 0.08 * var(--lk))) blur(calc(2.2px * var(--lk)));
+  opacity: calc(1 - 0.68 * var(--lk) * min(1, var(--sdep, 1)));
+  filter: brightness(calc(1 - 0.08 * var(--lk))) blur(calc(2.2px * var(--lk) * min(1, var(--sdep, 1))));
 }
 
 /* 播放条变淡：最多淡到 70%（审查第 12 条：淡到一半读起来像「不可用」）。只降材质（::before）和内容。
