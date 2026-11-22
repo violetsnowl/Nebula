@@ -187,4 +187,43 @@ await test('getAccount 会员：my_info.is_vip / vip_stage 映射到 isVip / isS
   }
 });
 
+await test('getAccount 登录态核验（#230）：票据失效 → expired；断网 → 仍算登录（unknown）；正常 → valid', async () => {
+  const realFetch = globalThis.fetch;
+  const accountFor = async (reply) => {
+    globalThis.fetch = reply;
+    const store = { get: () => ({ cookies: 'sessionid=fixture; uid_v2=42' }), set() {} };
+    return new api.QishuiLogin(store, { WebContentsView: class {}, session: {}, present: () => null }).getAccount();
+  };
+  try {
+    // 实测形状：HTTP 200 + status_code 1000016 + 没有 my_info
+    const expired = await accountFor(async () => ({
+      json: async () => ({ status_code: 1000016, status_info: { status_msg: '登录状态已失效，请重新登录' } }),
+    }));
+    assert.deepEqual([expired.loggedIn, expired.authStatus, expired.error], [false, 'expired', '汽水登录已过期，请重新登录']);
+
+    const valid = await accountFor(async () => ({
+      json: async () => ({ status_code: 0, my_info: { id: '9', nickname: '真用户' } }),
+    }));
+    assert.deepEqual([valid.loggedIn, valid.authStatus, valid.nickname], [true, 'valid', '真用户']);
+
+    // 有 my_info 时不因为别的 status_code 误判过期
+    const withInfo = await accountFor(async () => ({
+      json: async () => ({ status_code: 1000016, my_info: { id: '9', nickname: '仍在' } }),
+    }));
+    assert.equal(withInfo.loggedIn, true);
+    assert.equal(withInfo.authStatus, 'valid');
+
+    // 断网 / 超时：不能因为网络问题把用户登出
+    const offline = await accountFor(async () => { throw new Error('断网'); });
+    assert.deepEqual([offline.loggedIn, offline.authStatus], [true, 'unknown']);
+
+    // 返回 null（解析不出东西）时也算未知，不判过期
+    const empty = await accountFor(async () => ({ json: async () => null }));
+    assert.equal(empty.loggedIn, true);
+    assert.equal(empty.authStatus, 'unknown');
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+});
+
 print(`汽水扫码登录回归 ${n}/${n}`);

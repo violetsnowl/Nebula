@@ -15,6 +15,10 @@ const VERIFY_SDK_VERSION = '1.0.29';
 const SECURE_SDK_VERSION = '3.3.5';
 const BDMS_VERSION = '1.0.0.41';
 const AUTH_PARTITION = 'persist:nebula-qishui-auth';
+/** 汽水票据失效时 /luna/pc/me 的 status_code（HTTP 200，status_msg 是「登录状态已失效，请重新登录」）。 */
+const QISHUI_AUTH_INVALID_CODE = 1000016;
+/** 登录过期提示文案（与酷狗 / 波点同一条命名习惯）。 */
+export const QISHUI_AUTH_EXPIRED = '汽水登录已过期，请重新登录';
 const OFFICIAL_BDMS_URL =
   'https://lf-headquarters-speed.yhgfb-cn-static.com/obj/rc-client-security/web/stable/1.0.0.41/bdms.js';
 const UA =
@@ -623,10 +627,15 @@ export class QishuiLogin {
     let apiUserId = '';
     let isVip = false;
     let isSvip = false;
+    /** 核验结果：只有「接口明确说票据失效」才算过期；网络异常按未知处理，不当登出（#230）。 */
+    let authStatus: AccountInfo['authStatus'] = 'unknown';
     try {
       const me = await this.fetchMeInfo(cookie);
-      console.log("[QishuiLogin] getAccount: fetchMeInfo 返回:");
+      if (me?.expired) {
+        return { loggedIn: false, authStatus: 'expired', error: QISHUI_AUTH_EXPIRED };
+      }
       if (me) {
+        authStatus = 'valid';
         nickname = me.nickname || '';
         avatar = me.avatar || '';
         apiUserId = me.id || '';
@@ -634,11 +643,13 @@ export class QishuiLogin {
         isSvip = !!me.isSvip;
       }
     } catch (err) {
-      console.log("[QishuiLogin] getAccount: fetchMeInfo 异常:");
+      // 网络异常 / 超时：不判登出，只是这次读不到资料
+      console.warn('[QishuiLogin] getAccount: 账号信息核验失败，按未知处理');
     }
 
     return {
       loggedIn: true,
+      authStatus,
       userId: apiUserId || userId,
       nickname: nickname || '汽水用户',
       avatarUrl: avatar,
@@ -649,7 +660,9 @@ export class QishuiLogin {
   }
 
   /** 调用 /luna/pc/me 获取账号信息 */
-  private async fetchMeInfo(cookie: string): Promise<{ nickname?: string; avatar?: string; id?: string; isVip?: boolean; isSvip?: boolean } | null> {
+  private async fetchMeInfo(cookie: string): Promise<
+    { nickname?: string; avatar?: string; id?: string; isVip?: boolean; isSvip?: boolean; expired?: boolean } | null
+  > {
     try {
       const params = this.pcAppParams();
       const qs = Object.entries(params).map(([k, v]) => `${k}=${encodeURIComponent(v)}`).join('&');
@@ -665,8 +678,16 @@ export class QishuiLogin {
         },
       });
       const json = await res.json() as any;
+      // 登录态核实（#230）：未登录 / 票据失效时 HTTP 仍是 200，但 status_code=1000016、
+      // status_msg「登录状态已失效，请重新登录」，body 里没有 my_info（实测 2026-11-21）。
+      const code = Number(json?.status_code ?? 0);
+      if (code === QISHUI_AUTH_INVALID_CODE && !json?.my_info) return { expired: true };
+      // 没有 my_info 就不是一次成功的账号读取（比如返回体异常）：交回 null 让上层按「未知」处理，
+      // 不能因为空对象被当成「核验通过」。
+      const info = json?.my_info || json?.data?.my_info;
+      if (!info) return null;
       // 实测结构：{ status_info, my_info: { id, nickname, is_vip, vip_stage('free' 为非会员), larger_avatar_url: { urls: [...] } } }
-      const data = json?.my_info || json?.data?.my_info || json || {};
+      const data = info;
       const avatarObj = data.larger_avatar_url || data.avatar_url || data.avatar || {};
       const avatarUrls = avatarObj.urls || avatarObj.url_list || [];
       let avatar = Array.isArray(avatarUrls) ? String(avatarUrls[0] || '') : '';

@@ -6,6 +6,27 @@
 
 ---
 
+## #230 — 2026-11-21 — 汽水登录态核验与过期提示（矩阵缺陷第 2 项）
+
+**背景**：矩阵里汽水「登录有效性核验」和「登录过期提示」两格都是 ⚠️/空白——`getAccount()` 只要 Cookie 里能找到 `uid_v2 / sessionid / uid` 任一字段就**无条件**返回 `loggedIn: true`，从不核验；票据失效后界面会一直装作登录着，直到用户自己发现放不了歌。
+
+**实测（2026-11-21）**：`GET /luna/pc/me` 在无 Cookie 和假 Cookie 下都是 **HTTP 200**，body 形如
+`{status_code: 1000016, status_info: {status_msg: '登录状态已失效，请重新登录'}}`，**没有 `my_info`**。
+所以判据是「`status_code === 1000016` 且没有 `my_info`」。
+
+**改动**（`login/qishuiLogin.ts`）：
+- 新增常量 `QISHUI_AUTH_INVALID_CODE = 1000016` 与 `QISHUI_AUTH_EXPIRED = '汽水登录已过期，请重新登录'`。
+- `fetchMeInfo` 识别该状态并返回 `{ expired: true }`；**没有 `my_info` 的其他情况一律返回 null**（以前会把空 body 当成成功，误判成「核验通过」）。
+- `getAccount` 按波点同一套语义：明确失效 → `{ loggedIn: false, authStatus: 'expired', error }`；拿到资料 → `authStatus: 'valid'`；**网络异常 → 保持 `loggedIn: true` + `authStatus: 'unknown'`**，不因断网把用户登出。
+- 顺手删掉三处只打印前缀、没有内容的 `console.log`（会让日志看起来像有诊断信息）。
+
+**验证**：
+- `scripts/qishui-login-regression.mjs` 9 → 10 项：票据失效 → expired、正常 → valid、有 `my_info` 时不因其他 status_code 误判、断网 → unknown 且仍算登录、返回体为空 → unknown。
+- 前端不需要按平台改：`useAccounts` 只看 `authStatus === 'expired' | 'missing'` 就会显示「登录已过期」。
+- `pnpm build`、`pnpm qa`（控制台错误 0）、`pnpm qa:backend` 全绿。
+
+**遗留**：真实账号长时间闲置后是否也回 1000016（而不是别的码）需实际观察；目前只按实测到的这一个码判定，其他未知码保守按「未知」处理。
+
 ## #229 — 2026-11-21 — 酷我按请求档位逐档取链（矩阵缺陷第 1 项）
 
 **背景**：矩阵里酷我是「⚠️ 只接了 128k（登录后高音质未核验）」。原代码写死 `BR_BY_LEVEL = {'128': '128kmp3'}`，也就是说**即使登录了也不可能拿到更高档位**——不是「没验证」，是「根本没问」。
