@@ -726,6 +726,9 @@ export class LyricService {
     // Spotify 只有登录后才有令牌；没有就跳过，省一次必然失败的请求（未登录时搜索接口回空）
     const spotify = this.adapters.spotify;
     if (spotify?.searchSongs) sources.push(spotify);
+    // Apple Music（#232）：适配器内部已判断「没登录就返回空」
+    const apple = this.adapters.applemusic;
+    if (apple?.searchSongs) sources.push(apple);
     // 各家并行，但结果按「轮流取一条」交错：谁先返回谁先占满的话，快的酷狗 / 酷我会把
     // 网易云、QQ 挤掉（实测搜「周杰伦」6 条全是酷狗 + 酷我）。
     const lists = await Promise.all(

@@ -416,4 +416,55 @@ await test('曲目数：桥不支持批量 / 页面没就绪 / 批量抛错时�
 });
 
 assert.ok(!logs.some((l) => /developerToken|musicUserToken|Bearer/i.test(l)), '日志里不应出现令牌字样');
+await test('搜索（#232）：未登录时立即返回空，不调用页面引擎；登录后走目录搜索并映射成曲目', async () => {
+  const { AppleMusicAdapter } = api;
+  // 未登录：cookies 里没有 applemusic 记录 → 必须直接 [] 且不碰 bridge
+  let called = 0;
+  const anonAdapter = new AppleMusicAdapter({}, { get: () => null });
+  anonAdapter.client.setBridge({
+    call: async () => {
+      called++;
+      return { results: { songs: { data: [] } } };
+    },
+  });
+  assert.deepEqual(await anonAdapter.searchSongs('晴天', 5), []);
+  assert.equal(called, 0, '没登录就不该发起注定失败的请求');
+
+  // 登录后：目录搜索结果 → Track（复用 mapAppleTrack，封面走 1000 模板）
+  const logged = new AppleMusicAdapter({}, { get: () => ({ cookies: 'page-session' }) });
+  const seen = [];
+  logged.client.setBridge({
+    call: async (req) => {
+      seen.push(req);
+      return {
+        // 页面引擎（appleMusicEngine.cjs）会把 results.songs.data 提取到顶层的 data
+        data: [
+          {
+            id: '1440857781',
+            type: 'songs',
+            attributes: {
+              name: '晴天',
+              artistName: '周杰伦',
+              albumName: '叶惠美',
+              durationInMillis: 269000,
+              isrc: 'TWA531400001',
+              artwork: { url: 'https://is1-ssl.mzstatic.com/image/{w}x{h}bb.jpg' },
+              playParams: { id: '1440857781', kind: 'song' },
+            },
+          },
+        ],
+      };
+    },
+    storefront: async () => 'cn',
+  });
+  const hits = await logged.searchSongs('晴天', 5);
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].title, '晴天');
+  assert.equal(hits[0].artist, '周杰伦');
+  assert.equal(hits[0].platform, 'applemusic');
+  assert.equal(hits[0].sourceId, '1440857781');
+  assert.ok(hits[0].cover.includes('1000x1000'), '封面走大图模板');
+  assert.ok(seen.some((r) => String(r.path).includes('/search')), '走的是目录搜索');
+});
+
 say(`Apple Music 适配器回归 ${passed}/${passed}`);

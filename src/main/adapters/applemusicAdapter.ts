@@ -338,7 +338,7 @@ export class AppleMusicAdapter implements PlatformAdapter {
   /** 资料库歌单曲目数缓存：id → { 数量, 读到的时间 }。 */
   private trackCounts = new Map<string, { count: number; at: number }>();
 
-  constructor(_http?: HttpClient, _cookies?: CookieStore) {}
+  constructor(_http?: HttpClient, private cookies?: CookieStore) {}
 
   async fetchPlaylist(playlistId: string): Promise<Playlist> {
     const id = String(playlistId ?? '').trim();
@@ -381,6 +381,23 @@ export class AppleMusicAdapter implements PlatformAdapter {
       description: a?.description?.standard || undefined,
       tracks,
     };
+  }
+
+  /**
+   * 关键词搜歌（#232）：走目录搜索 `/v1/catalog/{地区}/search`（页面引擎已放行结果）。
+   * 只在 Apple Music 登录可用时参与：没有登录标记时直接返回空，不让全网搜索白等一条必挂的请求。
+   */
+  async searchSongs(keyword: string, pageSize = 10): Promise<Track[]> {
+    const term = String(keyword ?? '').trim();
+    if (!term) return [];
+    // 未登录时页面引擎根本没初始化，这里先挡住，省一次注定失败的调用。
+    if (!this.cookies?.get('applemusic')?.cookies) return [];
+    const storefront = await this.accountStorefront();
+    const rows = await this.client.searchCatalogSongs(storefront || 'cn', term, Math.min(25, pageSize));
+    return rows
+      .map((r) => mapAppleTrack(r, storefront || 'cn'))
+      .filter((t): t is Track => !!t)
+      .slice(0, pageSize);
   }
 
   /** 账号地区：读不到不影响主流程（分享链接退回 cn）。 */

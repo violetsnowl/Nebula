@@ -6,6 +6,19 @@
 
 ---
 
+## #232 — 2026-11-21 — Apple Music 接入全网搜索（矩阵缺陷第 4 项）
+
+**背景**：矩阵里 Apple Music「参与搜歌」是 ❌。页面引擎其实早就有目录搜索能力（#195 查歌词时用过 `searchCatalogSongs`），只是没接进全网搜索。
+
+**改动**：
+- `applemusicAdapter.searchSongs`：走 `/v1/catalog/{地区}/search`（`types=songs`），结果复用 `mapAppleTrack` 映射（封面走 1000 模板、带 isrc / catalogId / storefront）。
+- **未登录直接返回空**：没有 `applemusic` 登录标记时连页面引擎都不碰，避免全网搜索为一条注定失败的请求白等。构造函数把 `_cookies` 改为真正保存 `cookies`（原来参数被丢弃）。
+- `LyricService.searchSongs` 的来源列表加入 Apple（适配器内部自己判断登录态）。
+
+**验证**：`scripts/applemusic-regression.mjs` 22 → 23 项：未登录时 `searchSongs` 返回空且**不调用** bridge；登录后走 `/search`、映射出标题 / 歌手 / 平台 / sourceId、封面为 1000 模板。`pnpm build` / `pnpm qa` / `pnpm qa:backend` 全绿。
+
+**遗留**：需要有效 Apple Music 订阅 + 登录态才能实测真实搜索结果（矩阵标 ⚠️ 而非 ✅）。页面引擎白名单已放行 `results.songs.data`，无需改动。
+
 ## #231 — 2026-11-21 — 汽水公开搜索修复（矩阵缺陷第 3 项探测中挖出）；本平台评论 / 详情探测结论
 
 **背景**：第 3 项是「汽水 / 波点 / 酷我本平台评论与详情」。探测过程中先挖出一个真 bug，比原目标更值得说。
