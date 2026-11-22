@@ -42,18 +42,21 @@
 
 ## 2. 工作区拓扑与接手流程
 
-**只有一个工作目录、一条主线**（2026-11-16 起，用户要求）：
+**约定是一条主线**（2026-11-16 起，用户要求），但**现场目前有两个工作树**：
 
-| 目录 | 分支 | 用途 |
-|---|---|---|
-| `E:\CUFE\vibecoding\nebula` | `main` | 唯一的开发线 |
+| 目录 | 分支 | 用途 | 状态 |
+|---|---|---|---|
+| `E:\CUFE\vibecoding\nebula` | `main` | 主开发线（后端、平台接入、共享 UI） | 本轮工作的位置 |
+| `E:\CUFE\vibecoding\fe\nebula` | `fe/next` | 前端歌词 / 版面（样张 M / N、段落引擎、逐字波浪） | **并行窗口在维护，领先 main 约 19 个提交；未推送** |
 
-- 新功能直接在 main 上小步提交，每步 `pnpm build` + `pnpm qa` 全绿后提交并推送。
+- **在 main 上工作时只碰 main 的文件**。看到 `fe/next` 或 `E:\CUFE\vibecoding\fe\nebula` 的东西，不要清理、不要提交、不要合并——那是另一个窗口的活。
+- 那个分支是否合回 main、是否保留，**先问用户**（2026-11-22 收尾时它已经存在且在工作，我没动）。
+- 新功能在 main 上小步提交，每步 `pnpm build` + `pnpm qa` 全绿后提交并推送。
 - 实验性改动（如主舞台方向原型）挂在默认隐藏的开发者开关后面，默认体验不变。
-- 确需分支时用短命分支，合并后立即删除；**不再开长期分支或第二个工作树**（之前 UI 分支领先 main 68 个提交、两个工作区共享 `.git` 互相影响，就是这么来的）。
-- 远端只有 `main`。标签：`v0.1.0-z1-random-checkpoint`；`archive/ui-nebula-design`（原 `ui/nebula-design` 分支：mimo-hermes 独立 HTML 原型、旧 Dock 原型，不作为实现真源；取回用 `git checkout archive/ui-nebula-design -- prototype/`）。
+- 确需分支时用短命分支，合并后立即删除；除上面的 `fe/next` 外不再开长期分支。
+- 远端只有 `main`（`fe/next` 未推）。标签：`v0.1.0-z1-random-checkpoint`；`archive/ui-nebula-design`（原 `ui/nebula-design` 分支：mimo-hermes 独立 HTML 原型、旧 Dock 原型，不作为实现真源；取回用 `git checkout archive/ui-nebula-design -- prototype/`）。
 
-> 历史：2026-11 用户把工作区从 `C:\Users\LIU\Documents\Codex\2026-08-10\wo\work\` 迁到 `E:\CUFE\vibecoding\`，构建产物在同级 `nebula-outputs`；脚本里尽量用相对路径。2026-11-16 UI 分支 `ui/nebula-design-deepseek-codex` 快进合入 main 后删除，`nebula-ui` 工作树收掉。
+> 历史：2026-11 用户把工作区从 `C:\Users\LIU\Documents\Codex\2026-08-10\wo\work\` 迁到 `E:\CUFE\vibecoding\`，构建产物在同级 `nebula-outputs`；脚本里尽量用相对路径。2026-11-16 UI 分支 `ui/nebula-design-deepseek-codex` 快进合入 main 后删除，`nebula-ui` 工作树收掉。2026-11-22 记录 `fe/next` 的存在（见上表）。
 
 **接手流程（建议照做）**
 
