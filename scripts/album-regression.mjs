@@ -172,4 +172,27 @@ await test('专辑转译：搜索接口抛错时另一家仍可用', async () =>
   assert.equal(a?.id, 'q1');
 });
 
+await test('专辑详情：Spotify 也参与兜底（有 searchAlbums + fetchAlbumDetail 才算目标）', async () => {
+  const spotify = fakeAdapter({
+    searchAlbums: async () => [{ platform: 'spotify', id: 'sp1', name: '范特西', cover: '', artist: '周杰伦' }],
+    fetchAlbumDetail: async (id) => ({ platform: 'spotify', id, name: '范特西', cover: '', artist: '周杰伦', tracks: [{ title: '双截棍' }] }),
+  });
+  const netease = fakeAdapter({ searchAlbums: async () => [], fetchAlbumDetail: async () => null });
+  const qq = fakeAdapter({ searchAlbums: async () => [], fetchAlbumDetail: async () => null });
+  const svc = new b.LyricService({ netease, qq, spotify, kugou: fakeAdapter() });
+  const d = await svc.fetchAlbumDetail('kugou', 'kg-1', { name: '范特西', artist: '周杰伦' });
+  assert.ok(d);
+  assert.equal(d.source.platform, 'spotify');
+  assert.equal(d.tracks.length, 1);
+});
+
+await test('专辑详情：只有 searchAlbums 没有 fetchAlbumDetail 的平台不当兜底目标', async () => {
+  const onlySearch = fakeAdapter({ searchAlbums: async () => [{ platform: 'kuwo', id: 'k1', name: '范特西', cover: '', artist: '周杰伦' }] });
+  const netease = fakeAdapter({ searchAlbums: async () => [], fetchAlbumDetail: async () => null });
+  const qq = fakeAdapter({ searchAlbums: async () => [], fetchAlbumDetail: async () => null });
+  const svc = new b.LyricService({ netease, qq, kuwo: onlySearch, kugou: fakeAdapter() });
+  const d = await svc.fetchAlbumDetail('kugou', 'kg-1', { name: '范特西', artist: '周杰伦' });
+  assert.equal(d, null, '只能开详情的平台才配当兜底目标，否则给了 id 也打不开');
+});
+
 console.log(`专辑页兜底回归 ${n}/${n}`);

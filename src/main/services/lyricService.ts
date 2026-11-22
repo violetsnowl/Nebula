@@ -660,7 +660,10 @@ export class LyricService {
     artist: string,
     own: AlbumDetail | null,
   ): Promise<AlbumDetail | null> {
-    const candidates = (['netease', 'qq'] as const).filter((p) => p !== from && this.adapters[p]?.searchAlbums);
+    // 能直接开详情页的：网易云、QQ，以及 Spotify（#226 补了 searchAlbums，需登录令牌）
+    const candidates = (['netease', 'qq', 'spotify'] as const).filter(
+      (p) => p !== from && this.adapters[p]?.searchAlbums && this.adapters[p]?.fetchAlbumDetail,
+    );
     if (!candidates.length) return null;
     const lists = await Promise.all(
       candidates.map(async (p) => {

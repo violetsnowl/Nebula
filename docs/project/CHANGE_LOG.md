@@ -6,6 +6,18 @@
 
 ---
 
+## #226 — 2026-11-21 — Spotify 接入专辑搜索，专辑兜底多一个可直接打开的目标
+
+**背景**：矩阵专辑页那一行，Spotify 写着「⚠️ 有专辑接口没用」。查代码：`spotifyAdapter.fetchAlbumDetail` 其实一直在（走 `/albums/{id}` + `/albums/{id}/tracks`），缺的是 `searchAlbums` —— 没有搜索就无法按「专辑名 + 歌手」把别家的专辑转译到 Spotify，所以它在兜底链路里等于不存在。
+
+**改动**：
+- `spotifyAdapter.searchAlbums`（#226）：`/search?q=…&type=album`，映射 id / 名称 / 封面 / 歌手 / 年份 / 曲目数。需要登录令牌（和 `searchSongs` 同一前提），未登录时返回空。
+- `LyricService.alternateAlbum`：候选平台从「网易云、QQ」扩为「网易云、QQ、Spotify」，且要求**同时有 `searchAlbums` 和 `fetchAlbumDetail`** 才算目标——只给 id 却打不开详情页的平台不配当兜底目标。
+
+**验证**：`scripts/album-regression.mjs` 加 2 项（Spotify 能当兜底目标；只有 searchAlbums 没有 fetchAlbumDetail 的平台不被选中）→ 16/16；`tsc --noEmit`、`pnpm build`、`pnpm qa`、`pnpm qa:backend` 全绿。
+
+**遗留**：Spotify 未登录时这条依然无效（令牌是前提）；未实测登录态下的真实专辑转译。
+
 ## #225 — 2026-11-21 — 内容页兜底落实测：评论与歌曲详情在「本平台没有接口」时确实能转别家
 
 **背景**：矩阵「内容页」里评论 / 歌曲详情有 6 个平台写着「→ 同左」「未实测」。链路本身（#163）是通的，但一直没人验证过「本平台压根没有接口」时的表现，也没有回归守住。

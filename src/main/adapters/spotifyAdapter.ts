@@ -1,6 +1,6 @@
 import type { CookieStore } from '../cookieStore';
 import type { HttpClient } from '../http';
-import type { AlbumDetail, Lyric, Playlist, PlatformAdapter, SongUrl, Track } from '../types';
+import type { AlbumDetail, AlbumSummary, Lyric, Playlist, PlatformAdapter, SongUrl, Track } from '../types';
 import { withRequestScope } from '../requestScope';
 import { mergeLyric } from '../parsers/lyricParser';
 import { lrcAt } from '../parsers/timedLyrics';
@@ -282,6 +282,31 @@ export class SpotifyAdapter implements PlatformAdapter {
       return out;
     } catch (err) {
       console.warn('[Spotify] 读取我的歌单失败:', err instanceof Error ? err.message : '');
+      return [];
+    }
+  }
+
+  /**
+   * 关键词搜专辑（#226）：走 Web API 的 /search?type=album。
+   * 需要登录令牌，和 searchSongs 同一个前提；未登录时回空，交给调用方。
+   */
+  async searchAlbums(keyword: string, pageSize = 8): Promise<AlbumSummary[]> {
+    try {
+      const data = await this.authedRequest<{
+        albums?: { items?: Array<Record<string, any>> };
+      }>(`${API}/search?q=${encodeURIComponent(keyword)}&type=album&limit=${pageSize}`);
+      return (data?.albums?.items ?? [])
+        .map((a) => ({
+          platform: 'spotify' as const,
+          id: String(a.id ?? ''),
+          name: String(a.name ?? ''),
+          cover: a.images?.[0]?.url ?? '',
+          artist: (a.artists ?? []).map((x: any) => String(x?.name ?? '')).filter(Boolean).join('/'),
+          year: a.release_date ? Number(String(a.release_date).slice(0, 4)) || undefined : undefined,
+          songCount: Number(a.total_tracks) || undefined,
+        }))
+        .filter((a) => a.id && a.name);
+    } catch {
       return [];
     }
   }
