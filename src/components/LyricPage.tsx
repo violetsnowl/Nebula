@@ -612,7 +612,7 @@ export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
         pages: () => { tpl: string; s: number; vert: boolean }[];
         force: (id: string | null) => void;
         bounds: () => { tpl: string; units: number; out: number; clash: number }[];
-        lsProbe: () => { n: number; err: number[][] } | null;
+        lsProbe: () => { n: number; err: number[][]; off: number } | null;
         lsLog: string[];
       };
     };
@@ -635,7 +635,10 @@ export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
         if (!lsFly) return null;
         lsFly.render(1);
         const err = lsFly.probe();
-        return { n: err.length, err };
+        // 飞到歌词栏范围外的字（应为 0）
+        const box = document.querySelector('.ls-col')?.getBoundingClientRect();
+        const off = box ? lsFly.targets().filter((el) => { const r = el.getBoundingClientRect(); return r.top < box.top - 2 || r.bottom > box.bottom + 2; }).length : 0;
+        return { n: err.length, err, off };
       },
       // 每页用的版式和开始时间（QA 按它跳到某套版式的页）
       pages: () => pages.map((p) => ({ tpl: p.tpl.id, s: p.s, vert: p.ctx.vert })),
@@ -719,10 +722,27 @@ export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
       opEl: line,
       blend: line.classList.contains('is-cur') ? undefined : 'plus-lighter',
     });
-    /** 听音空间歌词栏里和版面这几句对应的句子：先按「当前句对当前句」对齐，文字不同时就近找同样文字的一句。 */
+    /**
+     * 歌词栏里这一句现在看得见：句子至少 3/4 落在歌词栏的范围里，且没被边缘淡出（引擎按景深逐句写透明度，≥ .25）。
+     * 当前句之前，歌词栏一般只看得见两句半（折行的句子占两行时更少）；当前句和它之后的句子在版面这一页里都看得见。
+     */
+    const colVisible = (line: HTMLElement): boolean => {
+      const box = document.querySelector('.ls-col')?.getBoundingClientRect();
+      const r = line.getBoundingClientRect();
+      if (!box || !(r.height > 0)) return false;
+      const op = parseFloat(getComputedStyle(line).opacity);
+      const vis = Math.min(r.bottom, box.bottom) - Math.max(r.top, box.top);
+      return (Number.isNaN(op) ? 1 : op) >= 0.25 && vis >= r.height * 0.75;
+    };
+    /**
+     * 听音空间歌词栏里和版面这几句对应的句子——只取两边都看得见的公共部分（2026-11-22 用户：只让两个场景都显示的句子转场，
+     * 其余原地淡出，免得飞到看不见的地方）。对齐按「当前句对当前句」的偏移（歌词栏去掉间奏行，和版面是同一串句子），
+     * 文字对不上时只在前后两句里找；对不上或歌词栏里看不见的句子返回 null（这句不飞）。
+     */
     const colLinesFor = (ls: PLine[], t: number): (HTMLElement | null)[] => {
-      const cols = [...document.querySelectorAll<HTMLElement>('.ls-col .ly-line')];
-      if (!cols.length) return ls.map(() => null);
+      const cols = [...document.querySelectorAll<HTMLElement>('.ls-col .ly-line:not(.is-gapline)')];
+      // 歌词栏刚建好、引擎还没排版（还没有当前句）时先不对齐
+      if (!cols.length || !cols.some((c) => c.classList.contains('is-cur'))) return ls.map(() => null);
       const texts = cols.map((c) => normText(c.querySelector('.ly-main')?.textContent ?? ''));
       let curC = cols.findIndex((c) => c.classList.contains('is-cur'));
       let curP = -1;
@@ -734,14 +754,12 @@ export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
       return ls.map((l, i) => {
         const want = normText(l.eng.text);
         const guess = curC + (i - curP);
-        if (texts[guess] === want) return cols[guess]!;
-        let best = -1;
-        for (let d = 1; d < cols.length; d++) {
+        let best = texts[guess] === want ? guess : -1;
+        for (let d = 1; best < 0 && d <= 2; d++) {
           if (texts[guess - d] === want) best = guess - d;
           else if (texts[guess + d] === want) best = guess + d;
-          if (best >= 0) break;
         }
-        return best >= 0 ? cols[best]! : null;
+        return best >= 0 && colVisible(cols[best]!) ? cols[best]! : null;
       });
     };
     const colUnits = (line: HTMLElement | null): HTMLElement[] => (line ? [...line.querySelectorAll<HTMLElement>(':scope > .ly-main > .u, :scope > .ly-main.ly-whole')] : []);
@@ -763,14 +781,22 @@ export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
       pg.lines.forEach((l) => unitsOfPage(l).forEach((el, i) => pairs.push({ from: pageSide(l, el), to: null, line: l, i })));
       if (!pairs.length) return;
       // 歌词栏刚建好时可能还没有字：每帧补找；一句的字数对不上时这一句不飞到栏里（原地淡出）
-      let cols: (HTMLElement | null)[] | null = null;
-      lsFly = new LsFly(
+      // 歌词栏刚打开时各句还在淡入、排版：飞行前 35% 里每帧（最多一次）重新判断哪些句子看得见，还没配上的字可以晚一点接上；
+      // 过了 35% 还没配上的这句就原地淡出
+      let cols: (HTMLElement | null)[] = pg.lines.map(() => null);
+      let colsAt = -1;
+      let fly: LsFly | null = null;
+      lsFly = fly = new LsFly(
         pairs,
         (p) => {
           const q = p as FlyPair & { line: PLine; i: number };
-          if (!cols || cols.every((c) => !c)) {
+          if (fly && fly.progress > 0.35) return null;
+          const now = performance.now();
+          if (now - colsAt > 8) {
+            colsAt = now;
+            const before = cols.filter(Boolean).length;
             cols = colLinesFor(pg.lines, t);
-            lsNote(`cols ${document.querySelectorAll('.ls-col .ly-line').length} matched ${cols.filter(Boolean).length}/${pg.lines.length}`);
+            if (cols.filter(Boolean).length !== before) lsNote(`cols matched ${cols.filter(Boolean).length}/${pg.lines.length} at ${(fly?.progress ?? 0).toFixed(2)}`);
           }
           const col = cols[pg.lines.indexOf(q.line)] ?? null;
           const us = colUnits(col);

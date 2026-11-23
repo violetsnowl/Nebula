@@ -214,6 +214,11 @@ export class LsFly {
     }
   }
 
+  /** 已经找到终点的字（QA 用：查有没有飞到可见范围外）。 */
+  targets(): HTMLElement[] {
+    return this.lives.filter((l) => l.p.to).map((l) => l.p.to!.el);
+  }
+
   /** 落地误差（QA 用）：每个字终点那份克隆与终点真字的中心差（像素）。 */
   probe(): number[][] {
     return this.lives
