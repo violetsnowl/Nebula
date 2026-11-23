@@ -730,9 +730,10 @@ export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
       const box = document.querySelector('.ls-col')?.getBoundingClientRect();
       const r = line.getBoundingClientRect();
       if (!box || !(r.height > 0)) return false;
-      const op = parseFloat(getComputedStyle(line).opacity);
+      // 只看位置：歌词栏刚打开时各句还在淡入（真实速度下要 300–450ms），按当时的透明度判断会一句都配不上（2026-11-22 用户：不飞了）。
+      // 被边缘淡出的句子本来就在栏的边上，3/4 落在栏内这一条已经把它们排除了
       const vis = Math.min(r.bottom, box.bottom) - Math.max(r.top, box.top);
-      return (Number.isNaN(op) ? 1 : op) >= 0.25 && vis >= r.height * 0.75;
+      return vis >= r.height * 0.75;
     };
     /**
      * 听音空间歌词栏里和版面这几句对应的句子——只取两边都看得见的公共部分（2026-11-22 用户：只让两个场景都显示的句子转场，
@@ -781,8 +782,8 @@ export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
       pg.lines.forEach((l) => unitsOfPage(l).forEach((el, i) => pairs.push({ from: pageSide(l, el), to: null, line: l, i })));
       if (!pairs.length) return;
       // 歌词栏刚建好时可能还没有字：每帧补找；一句的字数对不上时这一句不飞到栏里（原地淡出）
-      // 歌词栏刚打开时各句还在淡入、排版：飞行前 35% 里每帧（最多一次）重新判断哪些句子看得见，还没配上的字可以晚一点接上；
-      // 过了 35% 还没配上的这句就原地淡出
+      // 歌词栏刚打开时还在排版：飞行前 60% 里每帧（最多一次）重新判断哪些句子看得见，还没配上的字可以晚一点接上
+      // （从接上那一刻、当时的位置起按剩下的时间飞，不跳）；过了 60% 还没配上的这句就原地淡出
       let cols: (HTMLElement | null)[] = pg.lines.map(() => null);
       let colsAt = -1;
       let fly: LsFly | null = null;
@@ -790,7 +791,7 @@ export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
         pairs,
         (p) => {
           const q = p as FlyPair & { line: PLine; i: number };
-          if (fly && fly.progress > 0.35) return null;
+          if (fly && fly.progress > 0.6) return null;
           const now = performance.now();
           if (now - colsAt > 8) {
             colsAt = now;

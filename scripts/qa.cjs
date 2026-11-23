@@ -1809,7 +1809,8 @@ async function main() {
       await page.evaluate(() => document.querySelector('.bp-cover[data-np-cover]')?.click());
       await page.waitForTimeout(250);
       // 替身要看得见（上一版替身同步了原字的隐藏样式，全程不可见、QA 只量了位置没发现）
-      const inVis = await page.evaluate(() => [...document.querySelectorAll('.lp-lsfly .lpm-u')].filter((u) => getComputedStyle(u.firstElementChild).visibility === 'visible').length);
+      // 也不能半路淡没（上上版全程乘歌词栏还在淡入的透明度，替身几乎看不见）：数透明度 > .3 且字本身可见的替身
+      const inVis = await page.evaluate(() => [...document.querySelectorAll('.lp-lsfly .lpm-u')].filter((u) => getComputedStyle(u.firstElementChild).visibility === 'visible' && parseFloat(u.parentElement.style.opacity || '1') > 0.3).length);
       const inFly = await page.evaluate(() => window.__nebulaLyricPage?.lsProbe());
       if (process.env.NEBULA_QA_SHOT) await page.screenshot({ path: path.join(process.env.NEBULA_QA_SHOT, 'ls-fly-in.png') });
       await page.waitForTimeout(1300);

@@ -46,6 +46,9 @@ interface Live {
   s: { x: number; y: number; f: number; rot: number };
   /** 上一次量到的终点。 */
   t: { x: number; y: number; f: number; rot: number } | null;
+  /** 接上终点时的飞行进度、起点那份当时的透明度：晚接上的字从那一刻、那个位置起按剩下的进度飞，不跳。 */
+  e0: number;
+  a0: number;
 }
 
 const fsOf = (el: HTMLElement) => parseFloat(getComputedStyle(el).fontSize) || 16;
@@ -134,7 +137,7 @@ export class LsFly {
       const fsA = fsOf(p.from.el);
       a.style.fontSize = `${fsA}px`;
       const ra = a.getBoundingClientRect();
-      const live: Live = { p, a, ac, b: null, bc: null, fsA, fsB: fsA, aw: ra.width || 1, ah: ra.height || 1, bw: 1, bh: 1, s: { x: 0, y: 0, f: fsA, rot: 0 }, t: null };
+      const live: Live = { p, a, ac, b: null, bc: null, fsA, fsB: fsA, aw: ra.width || 1, ah: ra.height || 1, bw: 1, bh: 1, s: { x: 0, y: 0, f: fsA, rot: 0 }, t: null, e0: 0, a0: 1 };
       live.s = placeOf(p.from.el, p.from, live.aw, live.ah, fsA) ?? { x: innerWidth / 2, y: innerHeight / 2, f: fsA, rot: 0 };
       this.lives.push(live);
       this.hidden.push(p.from.el);
@@ -177,34 +180,43 @@ export class LsFly {
   /** 按进度 k（0–1）摆一帧（QA 可以直接推到终点量落位）。 */
   render(k: number): void {
     const e = ease(k);
-    const q = smooth((e - 0.2) / 0.6);
     const lwA = (1 - smooth(e / 0.2)).toFixed(3);
-    const lwB = smooth((e - 0.8) / 0.2).toFixed(3);
     for (const l of this.lives) {
+      // 还没接上终点的字：原地慢慢淡（等终点出现；一直没出现就随版面淡掉）
+      const waitOp = 1 - smooth(e / 0.9);
       if (!l.b) {
         const to = l.p.to ?? this.retarget(l.p);
-        if (to) this.attach(l, to);
+        if (to) {
+          this.attach(l, to);
+          l.e0 = e < 0.999 ? e : 0;
+          l.a0 = l.e0 > 0 ? waitOp : 1;
+        }
       }
+      // 本字自己的进度：从接上终点那一刻算起，按剩下的时间走完
+      const le = l.b ? Math.min(1, Math.max(0, (e - l.e0) / Math.max(0.001, 1 - l.e0))) : 0;
+      const lq = smooth((le - 0.2) / 0.6);
       syncClone(l.p.from.el, l.ac);
       const ctxA = l.a.parentElement!;
-      ctxA.style.opacity = l.b ? (1 - q).toFixed(3) : (1 - e).toFixed(3);
+      ctxA.style.opacity = l.b ? (l.a0 * (1 - lq)).toFixed(3) : waitOp.toFixed(3);
       ctxA.style.setProperty('--lw', lwA);
       let T = l.t;
       if (l.b && l.bc && l.p.to) {
         syncClone(l.p.to.el, l.bc);
         const ctxB = l.b.parentElement!;
-        const op = l.p.to.opEl ? parseFloat(getComputedStyle(l.p.to.opEl).opacity) || 1 : 1;
-        ctxB.style.opacity = (q * op).toFixed(3);
-        ctxB.style.setProperty('--lw', lwB);
+        // 终点句子的透明度（歌词栏按景深写）只在落地前最后 30% 才乘上：歌词栏刚打开时各句还在淡入，全程乘会让替身半路看不见
+        const op = l.p.to.opEl ? parseFloat(getComputedStyle(l.p.to.opEl).opacity) : 1;
+        const opK = Number.isNaN(op) ? 1 : 1 + (op - 1) * smooth((le - 0.7) / 0.3);
+        ctxB.style.opacity = (lq * opK).toFixed(3);
+        ctxB.style.setProperty('--lw', smooth((le - 0.8) / 0.2).toFixed(3));
         const m = placeOf(l.p.to.el, l.p.to, l.bw, l.bh, l.fsB);
         if (m) T = l.t = m;
       }
       const S = l.s;
       const to = T ?? S;
-      const x = S.x + (to.x - S.x) * e;
-      const y = S.y + (to.y - S.y) * e;
-      const f = S.f + (to.f - S.f) * e;
-      const rot = S.rot + (to.rot - S.rot) * e;
+      const x = S.x + (to.x - S.x) * le;
+      const y = S.y + (to.y - S.y) * le;
+      const f = S.f + (to.f - S.f) * le;
+      const rot = S.rot + (to.rot - S.rot) * le;
       const sA = f / l.fsA;
       l.a.style.transform = `translate(${(x - l.aw / 2).toFixed(3)}px, ${(y - l.ah / 2).toFixed(3)}px) scale(${sA.toFixed(5)}) rotate(${rot.toFixed(3)}deg)`;
       if (l.b) {
