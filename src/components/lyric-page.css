@@ -7,6 +7,8 @@
   position: absolute;
   inset: 0;
   z-index: 11;
+  /* 版面根的透明度逐帧随交接 / 飞进听音空间变化：单独成层，透明度变化只在合成阶段做，不把整页（带外羽化的大字、颗粒、纸面）每帧重画 */
+  will-change: opacity;
   overflow: hidden;
   pointer-events: none;
   opacity: 0;
@@ -316,6 +318,8 @@
   position: fixed;
   z-index: 300;
   opacity: 1;
+  /* 不要整层外羽化：铺满全屏的滤镜层，几十个字每帧移动都要把整层重新算一遍阴影（掉帧的来源之一） */
+  filter: none;
 }
 .lpm-c .u,
 .lpm-c .u .ch {

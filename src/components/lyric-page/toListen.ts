@@ -103,6 +103,8 @@ export class LsFly {
   private t0 = performance.now();
   private hidden: HTMLElement[] = [];
   done = false;
+  /** 每帧花在替身上的时间（毫秒，开发排查用）。 */
+  readonly cost: number[] = [];
   /** 飞行进度 0–1（版面按它淡出译文、装饰）。 */
   get progress(): number {
     return Math.min(1, (performance.now() - this.t0) / this.dur);
@@ -172,7 +174,10 @@ export class LsFly {
   step(now: number): boolean {
     if (this.done) return true;
     const k = Math.min(1, (now - this.t0) / this.dur);
+    const c0 = performance.now();
     this.render(k);
+    this.cost.push(performance.now() - c0);
+    (window as unknown as { __nebulaFlyCost?: number[] }).__nebulaFlyCost = this.cost;
     if (k >= 1) this.end();
     return this.done;
   }
@@ -181,9 +186,10 @@ export class LsFly {
   render(k: number): void {
     const e = ease(k);
     const lwA = (1 - smooth(e / 0.2)).toFixed(3);
+    // 先集中读（补找终点、量终点的位置和整句透明度），再集中写：读写交错时每个字都会逼浏览器重新排版一次
+    const waitOp = 1 - smooth(e / 0.9);
+    const opCache = new Map<HTMLElement, number>();
     for (const l of this.lives) {
-      // 还没接上终点的字：原地慢慢淡（等终点出现；一直没出现就随版面淡掉）
-      const waitOp = 1 - smooth(e / 0.9);
       if (!l.b) {
         const to = l.p.to ?? this.retarget(l.p);
         if (to) {
@@ -192,6 +198,15 @@ export class LsFly {
           l.a0 = l.e0 > 0 ? waitOp : 1;
         }
       }
+    }
+    for (const l of this.lives) {
+      if (!l.b || !l.p.to) continue;
+      const m = placeOf(l.p.to.el, l.p.to, l.bw, l.bh, l.fsB);
+      if (m) l.t = m;
+      const oe = l.p.to.opEl;
+      if (oe && !opCache.has(oe)) opCache.set(oe, parseFloat(getComputedStyle(oe).opacity));
+    }
+    for (const l of this.lives) {
       // 本字自己的进度：从接上终点那一刻算起，按剩下的时间走完
       const le = l.b ? Math.min(1, Math.max(0, (e - l.e0) / Math.max(0.001, 1 - l.e0))) : 0;
       const lq = smooth((le - 0.2) / 0.6);
@@ -204,12 +219,11 @@ export class LsFly {
         syncClone(l.p.to.el, l.bc);
         const ctxB = l.b.parentElement!;
         // 终点句子的透明度（歌词栏按景深写）只在落地前最后 30% 才乘上：歌词栏刚打开时各句还在淡入，全程乘会让替身半路看不见
-        const op = l.p.to.opEl ? parseFloat(getComputedStyle(l.p.to.opEl).opacity) : 1;
+        const op = l.p.to.opEl ? (opCache.get(l.p.to.opEl) ?? 1) : 1;
         const opK = Number.isNaN(op) ? 1 : 1 + (op - 1) * smooth((le - 0.7) / 0.3);
         ctxB.style.opacity = (lq * opK).toFixed(3);
         ctxB.style.setProperty('--lw', smooth((le - 0.8) / 0.2).toFixed(3));
-        const m = placeOf(l.p.to.el, l.p.to, l.bw, l.bh, l.fsB);
-        if (m) T = l.t = m;
+        T = l.t;
       }
       const S = l.s;
       const to = T ?? S;

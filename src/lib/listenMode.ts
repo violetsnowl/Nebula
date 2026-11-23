@@ -301,7 +301,10 @@ export class ListenDirector {
       // 常驻时只认 App 的阻断条件（暂停、打字、侧面板开着都不退出）
       if (this.cfg.pin ? this.deps.isBlocked() || !!document.querySelector(BUSY_SELECTOR) : !ok) {
         this.resume = this.cfg.pin;
-        this.setMode('roam');
+        // 版面模式下是听音空间打开挡住的：交接直接落到漫游（2026-11-22 用户：版面进听音空间掉帧严重）。
+        // 退回漫游的 0.4s 里每帧改根元素的 --lk，上千张卡片的整棵页面每帧重算样式；听音空间的遮罩、版面自己的淡出会把这一下盖住
+        const lsOpening = document.documentElement.dataset.stageMode === 'page' && !!document.querySelector('.ls-root');
+        this.setMode('roam', lsOpening);
       }
       return;
     }
@@ -322,7 +325,7 @@ export class ListenDirector {
     if (now - this.lastAct >= this.cfg.delayMs) this.setMode('listen');
   };
 
-  private setMode(m: 'roam' | 'listen'): void {
+  private setMode(m: 'roam' | 'listen', instant = false): void {
     if (this.mode === m) return;
     this.mode = m;
     if (m === 'listen') this.root.dataset.listen = 'on';
@@ -335,7 +338,7 @@ export class ListenDirector {
       from: this.k,
       to,
       t0: performance.now(),
-      dur: this.reduce ? 1 : base * Math.max(0.35, Math.abs(to - this.k)),
+      dur: this.reduce || instant ? 1 : base * Math.max(0.35, Math.abs(to - this.k)),
       lyrFrom: this.lyrOp,
       needSwap: this.needsTop() && (m === 'listen') !== this.lyrTop,
     };
