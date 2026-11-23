@@ -100,6 +100,10 @@ export class LsFly {
   private t0 = performance.now();
   private hidden: HTMLElement[] = [];
   done = false;
+  /** 飞行进度 0–1（版面按它淡出译文、装饰）。 */
+  get progress(): number {
+    return Math.min(1, (performance.now() - this.t0) / this.dur);
+  }
 
   constructor(
     pairs: FlyPair[],
@@ -110,6 +114,8 @@ export class LsFly {
     /** 飞行期间要藏起来的真字（起点、终点两边）；结束时还原。 */
     private hide: (els: HTMLElement[], on: boolean) => void,
   ) {
+    // 开发排查：window.__nebulaFlySlow = 倍数，放慢飞行
+    this.dur *= (window as unknown as { __nebulaFlySlow?: number }).__nebulaFlySlow || 1;
     this.layer = document.createElement('div');
     this.layer.className = 'lp-morph lp-lsfly lw';
     this.layer.setAttribute('aria-hidden', 'true');

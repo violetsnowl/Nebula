@@ -1807,23 +1807,25 @@ async function main() {
       const pinned = await page.evaluate(() => !!document.querySelector('.app[data-listen-pin]'));
       await page.evaluate(() => document.querySelector('.bp-cover[data-np-cover]')?.click());
       await page.waitForTimeout(250);
+      // 替身要看得见（上一版替身同步了原字的隐藏样式，全程不可见、QA 只量了位置没发现）
+      const inVis = await page.evaluate(() => [...document.querySelectorAll('.lp-lsfly .lpm-u')].filter((u) => getComputedStyle(u.firstElementChild).visibility === 'visible').length);
       const inFly = await page.evaluate(() => window.__nebulaLyricPage?.lsProbe());
       if (process.env.NEBULA_QA_SHOT) await page.screenshot({ path: path.join(process.env.NEBULA_QA_SHOT, 'ls-fly-in.png') });
       await page.waitForTimeout(1300);
-      const inDone = await page.evaluate(() => ({ layer: !!document.querySelector('.lp-lsfly'), hidden: [...document.querySelectorAll('.ls-col .u')].filter((u) => u.style.visibility === 'hidden').length }));
+      const inDone = await page.evaluate(() => ({ layer: !!document.querySelector('.lp-lsfly'), hidden: [...document.querySelectorAll('.ls-col .u')].filter((u) => u.hasAttribute('data-flyhide')).length }));
       await page.evaluate(() => document.querySelector('.ls-exit')?.click());
       await page.waitForTimeout(350);
       const outFly = await page.evaluate(() => window.__nebulaLyricPage?.lsProbe());
       if (process.env.NEBULA_QA_SHOT) await page.screenshot({ path: path.join(process.env.NEBULA_QA_SHOT, 'ls-fly-out.png') });
       await page.waitForTimeout(2200);
-      const back = await page.evaluate(() => ({ pin: !!document.querySelector('.app[data-listen-pin]'), layer: !!document.querySelector('.lp-lsfly'), hidden: [...document.querySelectorAll('.lyric-page .u')].filter((u) => u.style.visibility === 'hidden').length }));
+      const back = await page.evaluate(() => ({ pin: !!document.querySelector('.app[data-listen-pin]'), layer: !!document.querySelector('.lp-lsfly'), hidden: [...document.querySelectorAll('.lyric-page .u')].filter((u) => u.hasAttribute('data-flyhide')).length }));
       await page.evaluate(() => document.querySelector('.listen-exit')?.click());
       await pinTg();
       await tab('歌词');
       await page.waitForTimeout(300);
       const worst = (p) => (p && p.err.length ? Math.max(...p.err.flat().map(Math.abs)) : null);
       const lsLog = await page.evaluate(() => (window.__nebulaLyricPage?.lsLog || []).slice(-8));
-      return { lsLog, pinned, inN: inFly ? inFly.n : 0, inErr: worst(inFly), inDone, outN: outFly ? outFly.n : 0, outErr: worst(outFly), back };
+      return { lsLog, pinned, inVis, inN: inFly ? inFly.n : 0, inErr: worst(inFly), inDone, outN: outFly ? outFly.n : 0, outErr: worst(outFly), back };
     })();
     tplChecks.en = await checkTemplates('en');
     // 中文占位歌（原创歌词、逐字时间、无翻译，主歌 / 预副歌 / 副歌 / 桥段 / 尾声）：同样逐套查一遍竖排（唱片纹强制横排）
@@ -1873,7 +1875,7 @@ async function main() {
   log('版面·十套大胆版式（英文 / 中文）', JSON.stringify(tplChecks));
   log('版面 ↔ 听音空间一镜到底', JSON.stringify(lsFlyCheck));
   const lsFlyOk =
-    !!lsFlyCheck && lsFlyCheck.pinned && lsFlyCheck.inN > 0 && lsFlyCheck.inErr !== null && lsFlyCheck.inErr <= 1.5 && !lsFlyCheck.inDone.layer && lsFlyCheck.inDone.hidden === 0 &&
+    !!lsFlyCheck && lsFlyCheck.pinned && lsFlyCheck.inVis > 0 && lsFlyCheck.inN > 0 && lsFlyCheck.inErr !== null && lsFlyCheck.inErr <= 1.5 && !lsFlyCheck.inDone.layer && lsFlyCheck.inDone.hidden === 0 &&
     lsFlyCheck.outN > 0 && lsFlyCheck.outErr !== null && lsFlyCheck.outErr <= 1.5 && lsFlyCheck.back.pin && !lsFlyCheck.back.layer && lsFlyCheck.back.hidden === 0;
   // 每套至少在一首歌里用上；用上的页：没有字跑出画幅、不同句子的字最多压住 2px
   const tplOk =

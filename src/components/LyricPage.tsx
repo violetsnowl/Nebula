@@ -697,6 +697,8 @@ export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
     // —— 版面 ↔ 听音空间一镜到底（2026-11-22 用户要求，lyric-page/toListen.ts）——
     // 打开听音空间时，版面正在显示的这一页逐字飞到听音空间歌词栏里对应的字上；常驻聆听时收起听音空间会回到版面，字再飞回来。
     let lsFly: LsFly | null = null;
+    /** 飞进听音空间期间：版面（译文、装饰、纸面）跟着飞行进度更快淡出，不等交接曲线。 */
+    let lsIn = false;
     /** 一镜到底的起落记录（QA 排查用，最多 20 条）。 */
     const lsLog: string[] = [];
     const lsNote = (m: string) => {
@@ -744,7 +746,8 @@ export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
     };
     const colUnits = (line: HTMLElement | null): HTMLElement[] => (line ? [...line.querySelectorAll<HTMLElement>(':scope > .ly-main > .u, :scope > .ly-main.ly-whole')] : []);
     const hideEls = (els: HTMLElement[], on: boolean) => {
-      for (const el of els) el.style.visibility = on ? 'hidden' : '';
+      // 用属性而不是行内样式藏：替身每帧把原字的行内样式和类名同步过去，写在那里会把替身也藏掉（2026-11-22 用户：一镜到底看不见，只有一段黑）
+      for (const el of els) el.toggleAttribute('data-flyhide', on);
     };
     /** 现在该显示哪一页：已经出现的最后一页。 */
     const pageAt = (t: number): PPage | null => {
@@ -814,14 +817,20 @@ export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
         lsFly?.end();
         lsFly = null;
         lsNote(`ls ${lsNow} k=${k.toFixed(2)}`);
-        if (lsNow && k > 0.5) startLsIn(t);
+        lsIn = false;
+        if (lsNow && k > 0.5) {
+          startLsIn(t);
+          lsIn = !!lsFly;
+        }
         else if (!lsNow && pinRef.current) startLsOut(t);
         lsPrev = lsNow;
       }
       if (lsFly && lsFly.step(now)) lsFly = null;
       const boost = now < lsBoostUntil && k < 0.99 ? 1 : 0;
       if (k >= 0.99) lsBoostUntil = 0;
-      const op = Math.max(k, boost).toFixed(3);
+      const fade = lsIn && lsFly ? 1 - smooth(lsFly.progress / 0.55) : lsIn ? 0 : 1;
+      if (lsIn && !lsNow) lsIn = false;
+      const op = Math.min(Math.max(k, boost), fade).toFixed(3);
       if (op !== rootOp) {
         root.style.opacity = op;
         rootOp = op;

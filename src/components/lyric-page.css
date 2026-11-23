@@ -322,3 +322,8 @@
   padding: 0;
   margin: 0;
 }
+
+/* 飞行期间藏起来的真字（替身只同步行内样式和类名，不同步属性，所以替身不受影响） */
+[data-flyhide] {
+  visibility: hidden !important;
+}
