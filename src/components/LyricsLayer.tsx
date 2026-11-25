@@ -389,7 +389,7 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist, l
       const src = collectRoamSources();
       if (!src.length) return false;
       roamFlyInKind = null;
-      roamFly = launchStageToListenFly(src, { flightMs: 650, waitMs: 1200, settleMs: 150 });
+      roamFly = launchStageToListenFly(src, { flightMs: 600 });
       return !!roamFly;
     };
     const startRoamIn = (): boolean => {

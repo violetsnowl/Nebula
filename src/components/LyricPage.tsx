@@ -757,9 +757,7 @@ export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
           sideOf: (el) => pageSide(l, el),
         })),
         {
-          flightMs: 650,
-          waitMs: 1200,
-          settleMs: 150,
+          flightMs: 600,
           onMatchChange: (matched, total, prog) => lsNote(`cols matched ${matched}/${total} at ${prog.toFixed(2)}`),
         },
       );

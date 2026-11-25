@@ -6,6 +6,23 @@
 
 ---
 
+## #265 — 2026-11-25 — 去掉主舞台进听音空间一镜到底起飞延迟，同步大封面 600ms `easeStd`
+
+**背景**：用户反馈在版面漫游态、版面聆听态以及漫游模式下点击播放条封面进入听音空间时，歌词比大封面慢半拍——听音空间已就位才看到原歌词开始飞向目标位，而收起退出时没有延迟。
+
+**根因（三处叠加）**：
+1. `launchStageToListenFly`（`src/lib/listen/flyTransition.ts`）先强制空等 `settleMs = 150`ms 再开始配对，配对上首个字后又调用 `rebase(650)` 重置起点时钟，把总时长拖到约 816ms（而大封面 `.ls-hero` 在 `600ms` `easeStd` 下 300ms 时已到位约 92%）；
+2. 进入阶段 `LsFly` 使用 `easeInOutCubic`（前 150ms 位移不足 5%），与大封面 / 遮罩使用的 `easeStd`（`cubic-bezier(0.2, 0, 0, 1)`）曲线严重不同步；
+3. `LyricColumn.tsx` 挂载后等到首个 `rAF` 才调用 `eng.frame` 落位到当前播放时间，若去掉 150ms 等待，挂载首帧尚未落到真实 `.is-cur`。
+
+**改动点**
+- `src/components/listen/LyricColumn.tsx`：挂载建引擎后立即以当前 `audioPlayer.position()` 调用一次 `eng.frame(pos0, playing, performance.now())`，使 `.ls-col` 首帧绘制前即处于真实当前句和精确行坐标（未改动 `engine.ts` 与 `words.ts`）。
+- `src/lib/listen/flyTransition.ts`：新增 `easeStd`（同 `ListenSpace.tsx` 的 `cubic-bezier(0.2, 0, 0, 1)` 求解器）作为 `LsFly` 可选缓动参数；进入方向（`launchStageToListenFly`）去掉 `settleMs` 硬等待、`waitMs` 初值与 `rebase()` 重计时，直接按 `600ms` + `easeStd` 立即起飞；`waitOp` 改为按线性进度 `k / 0.55` 淡出，首帧短时补配（`k ≤ 0.08`）保持起始满不透明度不闪降；退场方向保持既有 `700ms` + `easeInOutCubic` 不变。
+- `src/components/LyricPage.tsx`、`src/components/LyricsLayer.tsx`：进入听音空间调用统一传 `{ flightMs: 600 }`，去掉 `waitMs: 1200` 与 `settleMs: 150`。
+- `docs/design/NEBULA_UI_SYSTEM.md` §7.1b、`docs/meta/CONTEXT_SNAPSHOT.md`：同步 600ms `easeStd` 同步起飞规格与当前状态。
+
+**验证**：`pnpm build`、`pnpm qa:backend`、`pnpm qa`（含 `pageToListen` 与 `stageFlyExtra`）、`pnpm build:desktop` 全绿。
+
 ## #264 — 2026-11-25 — 合并 `fe/next` 回 `main`、正式取号（#235–#263）并收敛回单主线工作流
 
 **目标**：按用户批准，将前端并行分支 `fe/next`（32 个提交：段落引擎、漫游歌词随段落起伏、版面模式与样张 N 十套大胆版式、统一双向一镜到底引擎 `flyTransition.ts`、常驻聆听状态机收敛与扩展回归）合回 `main`，正式取号并清理临时工作树，恢复单目录单主线工作流。

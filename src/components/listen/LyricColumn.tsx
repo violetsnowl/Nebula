@@ -86,6 +86,13 @@ export function LyricColumn({ lines, settings, compact, demo, className }: Lyric
     let smooth = 0;
     let demoStart = 0;
     let demoKey: EngineEntry[] | null = null;
+    // 挂载当帧立即同步落到当前播放句，避免等首帧 rAF 时一镜到底先按第 0 句起飞或空等
+    if (!latest.current.demo) {
+      const pos0 = audioPlayer.position();
+      lastPos = pos0;
+      smooth = pos0;
+      eng.frame(pos0, audioPlayer.state.playing, performance.now());
+    }
     const loop = (now: number) => {
       raf = requestAnimationFrame(loop);
       const dt = lastNow ? Math.min(0.05, (now - lastNow) / 1000) : 1 / 60;

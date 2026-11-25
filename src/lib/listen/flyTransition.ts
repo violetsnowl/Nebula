@@ -6,8 +6,7 @@
  *    漫游模式及版面模式的漫游态（k ≤ 0.5）一律由 LyricsLayer 接管，两边天然互斥，不重复起飞、不闪隐藏版面。
  * 2. 克隆保真：剥离歌词栏作用域外的注释节点（.ly-rb 假名注音 / 罗马音 / 翻译 / 和声），
  *    同时把非扫光句（已唱句 .is-past、待唱句、整句歌词 .ly-whole/.fl-whole）的计算后实色写入克隆，杜绝脱离 .lc-root 后闪白。
- * 3. 歌词栏对齐：按去掉 .ly-rb 假名注音后的纯正文匹配（WeakMap 缓存），等歌词栏标出 .is-cur 并开始滚动后再配对可见句；
- *    晚就绪时首字接上后 rebase(650) 保证完整飞行时长。
+ * 3. 歌词栏对齐：按去掉 .ly-rb 假名注音后的纯正文匹配（WeakMap 缓存），等歌词栏标出 .is-cur 后立即配对可见句，与大封面同步起飞（600ms easeStd）。
  */
 
 /** 一个字（或整句单元）在一端的快照与排版环境。 */
@@ -64,6 +63,20 @@ const smooth = (x: number) => {
   return t * t * (3 - 2 * t);
 };
 const ease = (t: number) => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
+
+/** cubic-bezier(0.2, 0, 0, 1)：与 ListenSpace 大封面 / 遮罩保持同曲线同步起飞。 */
+export function easeStd(x: number): number {
+  let lo = 0;
+  let hi = 1;
+  let m = x;
+  for (let i = 0; i < 22; i++) {
+    m = (lo + hi) / 2;
+    const bx = 3 * (1 - m) * (1 - m) * m * 0.2 + m * m * m;
+    if (bx < x) lo = m;
+    else hi = m;
+  }
+  return 3 * (1 - m) * m * m + m * m * m;
+}
 
 /** 版面模式只有在真正进入聆听态（k > 0.5）时才接管舞台；漫游态仍归 LyricsLayer。 */
 export function isPageStageActive(pageMode: boolean, listenEnabled: boolean, listenK: number): boolean {
@@ -156,17 +169,12 @@ export class LsFly {
     return Math.min(1, (performance.now() - this.t0) / this.dur);
   }
 
-  /** 歌词栏晚就绪时，首个目标接上后重置飞行计时，保证仍有完整的飞行时长。 */
-  rebase(ms?: number): void {
-    this.t0 = performance.now();
-    if (ms) this.dur = ms;
-  }
-
   constructor(
     pairs: FlyPair[],
     private retarget: (p: FlyPair, k: number) => FlySide | null,
     private dur: number,
     private hide: (els: HTMLElement[], on: boolean) => void = hideFlyElements,
+    private easeFn: (t: number) => number = ease,
   ) {
     this.dur *= (window as unknown as { __nebulaFlySlow?: number }).__nebulaFlySlow || 1;
     this.layer = document.createElement('div');
@@ -260,9 +268,9 @@ export class LsFly {
 
   render(k: number): void {
     if (this.done) return;
-    const e = ease(k);
+    const e = this.easeFn(k);
     const lwA = (1 - smooth(e / 0.2)).toFixed(3);
-    const waitOp = 1 - smooth(e / 0.9);
+    const waitOp = 1 - smooth(k / 0.55);
     const opCache = new Map<HTMLElement, number>();
     // 第一遍集中补找终点并挂载
     for (const l of this.lives) {
@@ -271,7 +279,7 @@ export class LsFly {
         if (to) {
           this.attach(l, to);
           l.e0 = e < 0.999 ? e : 0;
-          l.a0 = (l.e0 > 0 ? waitOp : 1) * l.sOp;
+          l.a0 = (k > 0.08 ? waitOp : 1) * l.sOp;
         }
       }
     }
@@ -471,16 +479,14 @@ export interface StageOutLine {
 
 /**
  * 启动「舞台 → 听音空间歌词栏」的飞行实例：
- * 给歌词栏留 settleMs 开始滚动，最多等待 waitMs；首个字接上目标后 rebase(flightMs) 跑完整飞行。
+ * 与大封面同步立即起飞（600ms easeStd），不再额外等待或重计时。
  */
 export function launchStageToListenFly(
   lines: StageOutLine[],
-  opts?: { flightMs?: number; waitMs?: number; settleMs?: number; onMatchChange?: (matched: number, total: number, progress: number) => void },
+  opts?: { flightMs?: number; onMatchChange?: (matched: number, total: number, progress: number) => void },
 ): LsFly | null {
   if (!lines.length) return null;
-  const flightMs = opts?.flightMs ?? 650;
-  const waitMs = opts?.waitMs ?? 1200;
-  const settleMs = opts?.settleMs ?? 150;
+  const flightMs = opts?.flightMs ?? 600;
   interface IndexedPair extends FlyPair {
     li: number;
     ui: number;
@@ -495,15 +501,12 @@ export function launchStageToListenFly(
   const queries: ColumnMatchQuery[] = lines.map((l) => ({ text: l.text, offsetFromCur: l.offsetFromCur }));
   let cols: (HTMLElement | null)[] = lines.map(() => null);
   let colsAt = -1;
-  let flightStarted = false;
-  const openedAt = performance.now();
   let fly: LsFly | null = null;
   fly = new LsFly(
     pairs,
     (p, k) => {
       const q = p as IndexedPair;
-      if (flightStarted && fly && k < 0.999 && fly.progress > 0.96) return null;
-      if (k < 0.999 && performance.now() - openedAt < settleMs) return null;
+      if (k < 0.999 && k > 0.6) return null;
       const now = performance.now();
       if (now - colsAt > 8) {
         colsAt = now;
@@ -515,14 +518,11 @@ export function launchStageToListenFly(
       const col = cols[q.li] ?? null;
       const us = columnUnitsOf(col);
       if (!col || us.length !== lines[q.li]!.units.length) return null;
-      if (!flightStarted && fly) {
-        fly.rebase(flightMs);
-        flightStarted = true;
-      }
       return columnSideOf(col, us[q.ui]!);
     },
-    waitMs,
+    flightMs,
     hideFlyElements,
+    easeStd,
   );
   if (fly.done) return null;
   return fly;
