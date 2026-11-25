@@ -4420,15 +4420,17 @@ body {
   filter: brightness(0.92) blur(calc(2.2px * min(1, var(--sdep, 1))));
 }
 
-/* 版面（样张 M）：聆听时星云不论哪种让开方式都沉成纸面——压暗（倍数由 LyricsLayer 写 --sdep：主歌约 .20、副歌 .39、
-   间奏里浮起大半）、降饱和、轻微虚化，不变淡（退潮的变淡在这里取消）。版面本身在 components/lyric-page.css */
+/* 版面（样张 M）：聆听时星云沉成纸面背景。过渡期（[data-lk]）仅保留轻量亮度/饱和度调节，不做逐帧 2K 模糊重算；
+   进入完整聆听稳态（[data-lk-full]）后才挂上静态 blur(2.4px) */
 :root[data-stage-mode='page'] .app[data-listen-style][data-lk] .stage-3d {
   opacity: 1;
-  filter: brightness(calc(1 - 0.62 * var(--lk) * var(--sdep, 1.29))) saturate(calc(1 - 0.5 * var(--lk))) blur(calc(2.4px * var(--lk)));
+  filter: brightness(calc(1 - 0.62 * var(--lk) * var(--sdep, 1.29))) saturate(calc(1 - 0.5 * var(--lk)));
+}
+:root[data-stage-mode='page'] .app[data-listen-style][data-lk-full] .stage-3d {
+  filter: brightness(calc(1 - 0.62 * var(--lk) * var(--sdep, 1.29))) saturate(calc(1 - 0.5 * var(--lk))) blur(2.4px);
 }
 
-/* 听音空间开着（含开合动画）时已进入聆听的星云滤镜冻住（2026-11-22 用户：版面进听音空间掉帧严重）：交接曲线退回漫游的那 0.4s 里，
-   上面那条的虚化半径每帧都在变，整片星云（上千张卡片）每帧带虚化重画一遍；加 [data-lk] 限定仅在聆听中生效，避免版面模式漫游态（k=0）进出听音空间误压暗虚化星云 */
+/* 听音空间开着（含开合动画）时已进入聆听的星云滤镜冻住（2026-11-22 用户：版面进听音空间掉帧严重） */
 :root[data-stage-mode='page'] .app[data-listen-style][data-lk]:has(.ls-root) .stage-3d.stage-3d {
   filter: brightness(calc(1 - 0.62 * var(--sdep, 1.29))) saturate(0.5) blur(2.4px);
 }

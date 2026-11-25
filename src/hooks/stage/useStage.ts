@@ -257,8 +257,9 @@ export function useStage({
     const pool = pickPoolRef.current;
     // 聆听「沉降」：整片星云往下沉、后退（缩到 86%、下移 4vh，中心在 50% / 45%），在屏幕坐标上算（见 lens.applyXf）
     // 漫游歌词升级（样张 M）：沉降幅度随段落开合、间奏让位变化（主歌略沉，副歌浮起一半，间奏完全浮起）
-    const shape = stageShapeBus.on ? stageShapeBus : null;
-    const sinkK = listenBus.style === 'sink' ? listenBus.k * (shape ? shape.sinkPos : 1) : 0;
+    const pageStage = document.documentElement.dataset.stageMode === 'page';
+    const shape = !pageStage && stageShapeBus.on ? stageShapeBus : null;
+    const sinkK = !pageStage && listenBus.style === 'sink' ? listenBus.k * (shape ? shape.sinkPos : 1) : 0;
     const xf: ScreenXf | null = sinkK > 0.0005 ? { f: 1 - 0.14 * sinkK, ox: vw / 2, oy: vh * 0.45, ty: vh * 0.04 * sinkK } : null;
     const qk = xf ? 1 / xf.f : 1; // 缩小后一屏装得下更大一片世界，查询范围跟着放大
     let np = 0;
@@ -326,8 +327,8 @@ export function useStage({
     }
 
     const spawnSet = spawnFromCenterRef.current;
-    const partK = listenBus.style === 'part' ? listenBus.k : 0;
-    const ebbK = listenBus.style === 'ebb' ? listenBus.k : 0;
+    const partK = !pageStage && listenBus.style === 'part' ? listenBus.k : 0;
+    const ebbK = !pageStage && listenBus.style === 'ebb' ? listenBus.k : 0;
     // 字照亮空间：正在唱的字附近的卡片提亮（高斯衰减，半径约 0.22 屏宽）。
     // lk = 光心处卡片从让开后的暗度往原亮度（1.05）拉回的比例，所以要知道这一刻整片星云被压到多暗
     const lightK = shape ? shape.lk * listenBus.k : 0;
@@ -696,10 +697,11 @@ export function useStage({
 
   useEffect(() => initGlassGlow(), []);
 
-  // 交接进行中每帧刷新一次卡片位置（「沉降」「散开」「退潮」都会移动卡片；切走时再刷新一次把卡片放回原位）
+  // 交接进行中每帧刷新一次卡片位置（「沉降」「散开」「退潮」都会移动卡片；版面模式下交由纸面托底，不触发整片星云每帧重排；切走前若仍有偏移则刷新一次归位）
   useEffect(
     () =>
       onListenFrame(() => {
+        if (document.documentElement.dataset.stageMode === 'page' && !partActiveRef.current) return;
         if (listenBus.style === 'sink' || listenBus.style === 'part' || listenBus.style === 'ebb' || partActiveRef.current) controllerRef.current?.refresh();
       }),
     [controllerRef],

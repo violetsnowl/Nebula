@@ -6,6 +6,23 @@
 
 ---
 
+## #270 — 2026-11-25 — 修复无逐字整句一镜到底巨字闪现，并优化漫游 ↔ 版面双向转场性能
+
+**背景**：用户反馈两部分问题：① 汽水歌单等无逐字时间轴的整句歌词（如 `Nobody / No-****ing-body / Nobody`）在版面 ↔ 听音空间一镜到底时，位置对但中途变巨字、落地瞬间闪回真实大小；② 版面模式下从漫游主舞台进出版面的双向转场存在明显掉帧。
+
+**根因与改动点**
+1. **无逐字整句（`.ly-whole` / `.lp-whole`）一镜到底尺寸错算**
+   - `src/components/listen/lyric-column.css`：给 `.lc-root .ly-main.ly-whole` 增加 `width: fit-content; max-width: 100%;`（保持块级流不影响译文/罗马音），让单行短整句的测量盒贴合真实文字宽度，避免整栏 `760px` 宽把短词 `placeOf()` 算成 `2.4×–4×` 巨字。
+   - `src/lib/listen/flyTransition.ts`：新增 `fitWholeCloneBox()`，对可自动折行的整句宿主沿用其 `whiteSpace` 与实测 `width`，防止绝对定位内层折叠成单词竖排或长短不一致。
+   - `src/components/lyric-page.css`：为 `.lp-whole` 补 `display: inline-block;`，对齐替身盒行高（消除了 `roam ↔ page` 整句 12px 盒高差）。
+2. **版面模式「漫游 ↔ 版面」双向转场掉帧优化**
+   - `src/lib/listenMode.ts` & `src/styles.css`：新增稳态标记 `data-lk-full`（`k ≥ 0.98`），过渡期间 `.stage-3d` 仅做轻量亮度/饱和度调节而不逐帧改变 2K `blur()` 半径，落稳后再挂静态 `blur(2.4px)`。
+   - `src/hooks/stage/useStage.ts` & `src/components/LyricsLayer.tsx`：版面模式下停止过渡期间对 140 张星云卡片的沉降/散开/退潮重排与 `pokeListenFrame()` 唤醒，避免后台重绘 2K 星层画布。
+   - `src/components/LyricPage.tsx`：`startMorph` 与 `stepMorph` 改为严格「先批量读、后批量写」，将每帧 15–30 次强制同步重排压成 1 次，且非波浪/整句跳过 `getComputedStyle(...).transform`。
+   - `src/components/listen/fly-transition.css`：去掉 `.lp-morph` 全屏双层 `drop-shadow` 与替身内层重复 `will-change: transform`。
+
+**验证**：Playwright 2K（`2560×1440`）注入纯 LRC 整句歌（含 `Nobody / No-****ing-body` 及长折行句）验证：`inProbe` 最大误差 `0.43px`、`outProbe` `0px`、`roam ↔ page` 过渡无 `blur` 且落位误差 `0px`；`pnpm build`、`pnpm qa`（0 报错）与 `pnpm build:desktop` 全绿。
+
 ## #269 — 2026-11-25 — 修复边缘过渡带拖拽跳跃抖帧，并落地画布外围交互与悬浮透视倍率
 
 **背景**：用户确认 `#268` 已消除静止与悬浮时的重影，但高密度缩放拖拽时原过渡圈存在跳跃与抖帧；同时拍板同意落地两项交互改进：① 外围画布卡片补齐静止态手型光标与右键菜单（保持零拖拽开销）；② 悬浮放大保持中心不变、向边缘柔和收敛形成透视感。

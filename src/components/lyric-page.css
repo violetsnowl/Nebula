@@ -155,6 +155,7 @@
 
 /* 没有逐字时间的句子：整句在开唱时 0.38s 内印上 */
 .lp-whole {
+  display: inline-block;
   color: var(--lc-rest);
   transition: color 0.38s ease;
 }

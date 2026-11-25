@@ -10,7 +10,6 @@
   pointer-events: none;
   opacity: 0;
   --lp-ink: var(--lc-a);
-  filter: drop-shadow(0 1px 2.4px rgba(4, 6, 12, 0.5)) drop-shadow(0 0 4.8px rgba(4, 6, 12, 0.26));
 }
 
 /* 舞台 ↔ 听音空间的全局替身层：挂在 body 上、压在所有层之上，不加全屏 drop-shadow 以避免大面积合成重算 */
@@ -45,20 +44,10 @@
   will-change: transform;
 }
 
-/* 克隆自身的波浪浮起 / 长音放大乘 --lw：只在起飞与落地两端保留，交叉渐变中段收平以避免重影 */
+/* 克隆自身的波浪浮起 / 长音放大乘 --lw：只在起飞与落地两端保留，外框 .lpm-u 已成合成层，内部不再重复挂 will-change */
 .lpm-ctx .u,
 .lpm-ctx .u .ch {
-  will-change: transform;
   transform: translate3d(0, calc(var(--lift, 0) * -1em * var(--lw, 1) * var(--lfk, 1)), 0) scale(calc(1 + (var(--sc, 1) - 1) * var(--lw, 1)));
-}
-
-/* 舞台 ↔ 听音空间（.lp-lsfly）的外框 .lpm-u 已单独成层，内部字元不再重复建合成层，避免数十个字双层合成开销 */
-.lp-lsfly .lpm-ctx .u,
-.lp-lsfly .lpm-ctx .u .ch,
-.lp-lsfly .lpm-ctx .fl-whole,
-.lp-lsfly .lpm-ctx .ly-whole,
-.lp-lsfly .lpm-ctx .lp-whole {
-  will-change: auto;
 }
 
 /* 漫游歌词启用段落起伏（data-shape）时，舞台当前句的长音放大系数为 2.8 倍，替身起点同步一致避免首帧缩放跳变 */
@@ -74,7 +63,6 @@
   display: inline-block;
   color: var(--lc-rest, #fff);
   transition: none !important;
-  will-change: transform;
   transform: translate3d(0, calc(var(--lift, 0) * -1em * var(--lw, 1)), 0);
 }
 

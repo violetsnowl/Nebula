@@ -60,6 +60,11 @@
 .lc-root .ly-main {
   display: block;
 }
+/* 无逐字时间轴的整句保持块级流但宽度贴字内容，避免短句测量盒被 760px 栏宽撑宽导致一镜到底缩放倍增 */
+.lc-root .ly-main.ly-whole {
+  width: fit-content;
+  max-width: 100%;
+}
 
 /* 当前句的字各自上合成层：位移按亚像素走，慢速起伏不会一格一格地跳（文字位移被对齐到整像素才会） */
 .lc-root .ly-line.is-cur .u,

@@ -102,6 +102,22 @@ function cleanClone(el: HTMLElement): HTMLElement {
   return el;
 }
 
+/** 整句替身若来自可自动折行的宿主（如窄栏长整句），让替身外框沿用相同换行宽度。 */
+function fitWholeCloneBox(wrapper: HTMLElement, src: HTMLElement): void {
+  if (
+    !src.classList.contains('ly-whole') &&
+    !src.classList.contains('lp-whole') &&
+    !src.classList.contains('fl-whole')
+  ) {
+    return;
+  }
+  const cs = getComputedStyle(src);
+  if (cs.whiteSpace !== 'nowrap' && cs.whiteSpace !== 'pre' && src.offsetWidth > 0) {
+    wrapper.style.whiteSpace = cs.whiteSpace;
+    wrapper.style.width = `${Math.ceil(src.offsetWidth) + 1}px`;
+  }
+}
+
 /** 复制原字的计算后排版属性与颜色状态（含非扫光句 .is-past / 整句节点的精确实色）。 */
 function copyTypeAndColor(to: HTMLElement, from: HTMLElement, ctxClass: string): void {
   const cs = getComputedStyle(from);
@@ -195,6 +211,7 @@ export class LsFly {
       copyTypeAndColor(a, p.from.el, p.from.ctx);
       const fsA = fsOf(p.from.el);
       a.style.fontSize = `${fsA}px`;
+      fitWholeCloneBox(a, p.from.el);
       const ra = a.getBoundingClientRect();
       const aw = ra.width || 1;
       const ah = ra.height || 1;
@@ -247,6 +264,7 @@ export class LsFly {
     copyTypeAndColor(b, to.el, to.ctx);
     l.fsB = fsOf(to.el);
     b.style.fontSize = `${l.fsB}px`;
+    fitWholeCloneBox(b, to.el);
     const rb = b.getBoundingClientRect();
     l.b = b;
     l.bc = bc;

@@ -260,6 +260,7 @@ export class ListenDirector {
     delete d.listenBar;
     delete d.listen;
     delete d.lk;
+    delete d.lkFull;
     delete d.lyrTop;
     delete d.listenPin;
     for (const v of ['--lk', '--lo', '--ls']) this.root.style.removeProperty(v);
@@ -408,6 +409,8 @@ export class ListenDirector {
     s.setProperty('--ls', (1 + (this.cfg.style === 'sink' ? 0.04 : 0.03) * this.k).toFixed(4));
     if (this.k > 0.001) d.lk = 'on';
     else delete d.lk;
+    if (this.k >= 0.98) d.lkFull = 'on';
+    else delete d.lkFull;
     if (this.lyrTop) d.lyrTop = 'on';
     else delete d.lyrTop;
     listenBus.k = this.k;

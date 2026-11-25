@@ -314,8 +314,6 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist, l
     let up = getSpaceLab().lyricShape;
     /** 聆听时的舞台是「版面」：聆听中漫游歌词淡出，由 LyricPage 接手；星云沉得更深当纸面。 */
     let pageMode = false;
-    let pokedDepth = -1;
-    let pokedPos = -1;
     let open = 0;
     let gapK = 0;
     let wroteVars = false;
@@ -966,16 +964,7 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist, l
             glow.style.transform = `translate3d(${stageShapeBus.lx.toFixed(1)}px, ${stageShapeBus.ly.toFixed(1)}px, 0)`;
             glow.style.opacity = Math.min(1, stageShapeBus.lk * (enabled ? k : 1) * 1.6).toFixed(3);
           }
-          if (pageMode) {
-            // 版面模式下星云带虚化，每帧刷新代价高：只在沉降倍数真的变了时请舞台刷新
-            const d = stageShapeBus.sinkDepth;
-            const p = stageShapeBus.sinkPos;
-            if (Math.abs(d - pokedDepth) > 0.004 || Math.abs(p - pokedPos) > 0.004 || stageShapeBus.lk > 0.001) {
-              pokedDepth = d;
-              pokedPos = p;
-              pokeListenFrame();
-            }
-          } else if (playingNow || relayoutNow) pokeListenFrame();
+          if (!pageMode && (playingNow || relayoutNow)) pokeListenFrame();
         }
       } else if (lightRef.current && lightRef.current.style.opacity !== '0') lightRef.current.style.opacity = '0';
       // 先同步本帧底部字幕（保证打开/收起听音空间的那一帧 captionDom 与 --cap-o 已是最新当前句）

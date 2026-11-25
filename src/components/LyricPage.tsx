@@ -488,38 +488,65 @@ export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
       layer.append(ctxA, ctxB);
       copyType(ctxA, src[0]!);
       copyType(ctxB, tgt[0]!);
-      const units = src.map((s, i): MorphUnit => {
+      const pre = src.map((s, i) => {
         const g = tgt[i]!;
+        const bv = unitVert(line, g);
+        const fsA = fsOf(s);
+        const fsB = fsOf(g);
+        const lsA = parseFloat(getComputedStyle(s).letterSpacing) || 0;
+        const lsB = parseFloat(getComputedStyle(g).letterSpacing) || 0;
+        const tr = rotTarget(line, g);
+        const lastS = s.getBoundingClientRect();
+        return { s, g, bv, fsA, fsB, lsA, lsB, tr, lastS };
+      });
+      // 第一遍（集中写入）：批量挂入所有克隆并设好字号，避免逐字读写交错触发布局抖动
+      const built = pre.map((item) => {
         const a = document.createElement('span');
         a.className = 'lpm-u';
-        const ac = s.cloneNode(true) as HTMLElement;
+        const ac = item.s.cloneNode(true) as HTMLElement;
         a.appendChild(ac);
         ctxA.appendChild(a);
         const b = document.createElement('span');
         // 版面那份按目标字自己的读向排（一句跨横竖两截时每个字不同），字体照抄目标字（一句里可能混两种字号字体）
-        const bv = unitVert(line, g);
-        b.className = bv ? 'lpm-u is-v' : 'lpm-u';
-        copyType(b, g);
-        const bc = g.cloneNode(true) as HTMLElement;
+        b.className = item.bv ? 'lpm-u is-v' : 'lpm-u';
+        copyType(b, item.g);
+        const bc = item.g.cloneNode(true) as HTMLElement;
         b.appendChild(bc);
         ctxB.appendChild(b);
-        const fsA = fsOf(s);
-        const fsB = fsOf(g);
-        a.style.fontSize = `${fsA}px`;
-        b.style.fontSize = `${fsB}px`;
+        a.style.fontSize = `${item.fsA}px`;
+        b.style.fontSize = `${item.fsB}px`;
+        return { ...item, a, b, ac, bc };
+      });
+      // 第二遍（单次集中读取）：一次性量取所有自然盒子尺寸
+      const units = built.map((u): MorphUnit => {
         // 自然盒子用定位框（还没加变换）的小数实测，不用取整的 offsetWidth
-        const ra = a.getBoundingClientRect();
-        const rb = b.getBoundingClientRect();
-        const lsA = parseFloat(getComputedStyle(s).letterSpacing) || 0;
-        const lsB = parseFloat(getComputedStyle(g).letterSpacing) || 0;
+        const ra = u.a.getBoundingClientRect();
+        const rb = u.b.getBoundingClientRect();
         // 版面那份：上下留白 .12em / .16em；横排字距加在右边，竖排加在下边
-        const gA: [number, number] = [-lsA / 2, 0];
-        const gB0: [number, number] = bv ? [0, -lsB / 2 - 0.02 * fsB] : [-lsB / 2, -0.02 * fsB];
-        const tr = rotTarget(line, g);
-        const rc = Math.cos((tr * Math.PI) / 180);
-        const rsn = Math.sin((tr * Math.PI) / 180);
+        const gA: [number, number] = [-u.lsA / 2, 0];
+        const gB0: [number, number] = u.bv ? [0, -u.lsB / 2 - 0.02 * u.fsB] : [-u.lsB / 2, -0.02 * u.fsB];
+        const rc = Math.cos((u.tr * Math.PI) / 180);
+        const rsn = Math.sin((u.tr * Math.PI) / 180);
         const gB: [number, number] = [gB0[0] * rc - gB0[1] * rsn, gB0[0] * rsn + gB0[1] * rc];
-        return { gA, gB, tr, src: s, tgt: g, a, b, ac, bc, fsA, fsB, aw: ra.width || s.offsetWidth, ah: ra.height || s.offsetHeight || 1, bw: rb.width || g.offsetWidth, bh: rb.height || g.offsetHeight || 1, lastS: s.getBoundingClientRect(), lastT: null };
+        return {
+          gA,
+          gB,
+          tr: u.tr,
+          src: u.s,
+          tgt: u.g,
+          a: u.a,
+          b: u.b,
+          ac: u.ac,
+          bc: u.bc,
+          fsA: u.fsA,
+          fsB: u.fsB,
+          aw: ra.width || u.s.offsetWidth,
+          ah: ra.height || u.s.offsetHeight || 1,
+          bw: rb.width || u.g.offsetWidth,
+          bh: rb.height || u.g.offsetHeight || 1,
+          lastS: u.lastS,
+          lastT: null,
+        };
       });
       pageBus.morph = true;
       pageBus.morphS = line.eng.s;
@@ -557,13 +584,45 @@ export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
     const stepMorph = (mo: Morph, k: number) => {
       const layer = morphRef.current;
       if (!layer) return;
-      layer.style.opacity = '1';
-      mo.line.el.style.opacity = '0';
+      // 第一遍（集中读取，零写入）：每帧只触发布局计算一次
       const box = layer.getBoundingClientRect();
-      // 版面这一行：未变换的盒子 × 画幅缩放 S（页的进出场只有平移）
       // 样张 N 起句子可能整句旋转，不能再用这一句的外接框反推：直接取画幅的缩放
       const S = frame.getBoundingClientRect().width / PW || 1;
-      mo.ctxA.classList.toggle('is-grad', mo.srcHost.classList.contains('is-grad'));
+      const srcGrad = mo.srcHost.classList.contains('is-grad');
+      const lineGrad = mo.line.el.classList.contains('is-grad');
+      if (mo.srcHost.isConnected) mo.rot = rotOf(mo.srcHost);
+      const th = (mo.rot * Math.PI) / 180;
+      const cos = Math.abs(Math.cos(th));
+      const sin = Math.abs(Math.sin(th));
+      const meas = mo.units.map((u) => {
+        // 起点：漫游里那个字（外接框按倾斜反推视觉缩放，再扣掉它自己的浮起 / 放大）；原句被回收时用最后一次量到的
+        let rs = u.src.getBoundingClientRect();
+        if (rs.width > 0 && u.src.isConnected) u.lastS = rs;
+        else rs = u.lastS;
+        const vsAll = (rs.width + rs.height) / ((u.aw + u.ah) * (cos + sin) || 1);
+        const ty = u.b.classList.contains('is-v') ? 0.5 : 0.85;
+        const oa =
+          u.src.isConnected && (srcGrad || u.src.classList.contains('fl-whole'))
+            ? ownShift(u.src, vsAll, th, u.ah, 0.85)
+            : { dx: 0, dy: 0, sc: 1 };
+        // 终点：版面上那个字没浮起时的盒子中心，视觉字号 = 字号 × S
+        let T = u.lastT;
+        const rt = u.tgt.getBoundingClientRect();
+        if (rt.width > 0) {
+          const ob =
+            lineGrad || u.tgt.classList.contains('lp-whole')
+              ? ownShift(u.tgt, S, (u.tr * Math.PI) / 180, u.bh, ty)
+              : { dx: 0, dy: 0, sc: 1 };
+          T = { x: rt.left + rt.width / 2 - ob.dx - box.left, y: rt.top + rt.height / 2 - ob.dy - box.top, f: u.fsB * S };
+          u.lastT = T;
+        }
+        return { rs, vsAll, oa, T };
+      });
+
+      // 第二遍（集中写入样式与变换）
+      layer.style.opacity = '1';
+      mo.line.el.style.opacity = '0';
+      mo.ctxA.classList.toggle('is-grad', srcGrad);
       mo.ctxB.className = `lpm-ctx lpm-b ${mo.line.el.className}`;
       // 途中 A 渐变成 B（.2 → .8），差异在运动中化掉
       const q = smooth((k - 0.2) / 0.6);
@@ -572,35 +631,17 @@ export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
       // 原字的波浪浮起 / 长音放大只在两端保留：漫游那份起飞后 .2 内收平，版面那份 .8 之后才浮起，渐变那段两份都是平的
       mo.ctxA.style.setProperty('--lw', (1 - smooth(k / 0.2)).toFixed(3));
       mo.ctxB.style.setProperty('--lw', smooth((k - 0.8) / 0.2).toFixed(3));
-      // 起点的倾斜每帧从原句读（交接途中换句时，被接手那句正在转出离场）
-      if (mo.srcHost.isConnected) mo.rot = rotOf(mo.srcHost);
-      const th = (mo.rot * Math.PI) / 180;
-      const cos = Math.abs(Math.cos(th));
-      const sin = Math.abs(Math.sin(th));
-      for (const u of mo.units) {
+      for (let i = 0; i < mo.units.length; i++) {
+        const u = mo.units[i]!;
+        const { rs, vsAll, oa, T: measuredT } = meas[i]!;
         const rot = mo.rot * (1 - k) + u.tr * k;
-        const ty = u.b.classList.contains('is-v') ? 0.5 : 0.85;
         syncClone(u.src, u.ac);
         syncClone(u.tgt, u.bc);
-        // 起点：漫游里那个字（外接框按倾斜反推视觉缩放，再扣掉它自己的浮起 / 放大）；原句被回收时用最后一次量到的
-        let rs = u.src.getBoundingClientRect();
-        if (rs.width > 0 && u.src.isConnected) u.lastS = rs;
-        else rs = u.lastS;
-        const vsAll = (rs.width + rs.height) / ((u.aw + u.ah) * (cos + sin) || 1);
-        const oa = u.src.isConnected ? ownShift(u.src, vsAll, th, u.ah, 0.85) : { dx: 0, dy: 0, sc: 1 };
         const vsA = vsAll / oa.sc;
         const sx = rs.left + rs.width / 2 - oa.dx - box.left;
         const sy = rs.top + rs.height / 2 - oa.dy - box.top;
         const sf = u.fsA * vsA;
-        // 终点：版面上那个字没浮起时的盒子中心，视觉字号 = 字号 × S
-        let T = u.lastT;
-        const rt = u.tgt.getBoundingClientRect();
-        if (rt.width > 0) {
-          const ob = ownShift(u.tgt, S, (u.tr * Math.PI) / 180, u.bh, ty);
-          T = { x: rt.left + rt.width / 2 - ob.dx - box.left, y: rt.top + rt.height / 2 - ob.dy - box.top, f: u.fsB * S };
-          u.lastT = T;
-        }
-        if (!T) T = { x: sx, y: sy, f: sf };
+        const T = measuredT ?? { x: sx, y: sy, f: sf };
         // 两份克隆的字形中心始终重合（G）；起点按漫游那份的盒子、终点按版面那份的盒子精确落位
         const f = sf + (T.f - sf) * k;
         const sA = f / u.fsA;
