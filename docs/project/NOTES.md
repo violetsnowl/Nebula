@@ -35,6 +35,11 @@
 - **克隆非扫光歌词节点必须同步计算后的实色**（同上）：`.is-grad` 靠背景渐变上色，而 `.is-past`（已唱句，「变成白色」模式下为纯白）和整句节点（`.ly-whole / .fl-whole / .lp-whole`）靠 `color` 上色；脱离原父级选择器后若只给半透明 `--lc-rest` 兜底，飞行途中会发灰跳色，克隆时需把 `getComputedStyle(el).color` 写进 `--lc-rest`。
 - **常驻聆听不要靠轮询 `.ls-root` 退回漫游再恢复**（同上）：听音空间挂载晚一拍、收起有 600ms 退场动画，250ms 轮询 DOM 会跟交接曲线撞车闪出星云；将听音空间开关从硬阻断拆出直传 `ListenDirector`，常驻聆听下底层舞台保持 `k = 1` 原地待命即可零重算无缝往返。
 - **漫游聆听 ↔ 听音空间双向转场期间必须停掉后台舞台刷新，且替身单字不挂 `drop-shadow` / 双层 `will-change`**（2026-11-25，#266）：`LyricsLayer` 在听音空间开合与飞行期间（`lsBusy`）仍调 `pokeListenFrame()` 与每帧写根元素 `--sdep / --sopen`，会导致 `.ls-veil`（`backdrop-filter: blur(16px)`）背后的 140 张星云卡片 + 星层画布每帧重绘并被 `getBoundingClientRect()` 强制同步重排；同时漫游聆听三句 30–50+ 个 `.lpm-r .u` 逐字挂双层 `drop-shadow` 与嵌套 `will-change: transform` 会引发 GPU 模糊风暴。非常驻模式下打开听音空间也应统一对所有舞台模式直落（`instant = true`），避免 380ms `--lk` 根变量曲线触发全页重算。
+- **色场 `.lp-field-on` 深色副本须同步 `data-flyhide` 且 `LsFly` 启停帧立即刷新**（2026-11-25，#267）：`kit.ts` 的 `syncClone` 必须仅给色场深色副本同步 `data-flyhide`（注意不要套到 `LyricPage` 局部 `morph` 替身），且 `LyricPage` 在 `startLsIn / startLsOut / endLsFly` 同步刷新，否则从听音空间退回版面时色块内深色字会在转场中途提前露出。
+- **主舞台画布与 DOM 卡片必须同帧互斥 + 边界双滞回，禁止半透明交叉双画**（2026-11-25，#268 / #269）：画布与 DOM 卡按比例半透明叠加会在鼠标 hover 放大或 `--near-z` 上浮产生屏幕位移时露底成重影；改用视口内优先分配 `MAX_MOUNT = 140` 名额 + 同帧互斥归属，跌出名额的卡片须在 `boundedFrame` 同帧同步设 `visibility: hidden`（不等 React 卸载），新挂卡先挂 `data-pending` 等当帧坐标与图片就绪再与画布同帧切换，拖拽起手调 `clearProximity()` 归位邻近上浮防跨界跳回抖帧。
+- **整句歌词 `.ly-main.ly-whole` 须 `width: fit-content` 且替身显式同步实测宽度**（2026-11-25，#270）：无逐字时间轴的整句若撑满 `760px` 栏宽，会让 `placeOf()` 把短词错算成 `2×–4×` 巨字然后落地闪回；且绝对定位 `0px` 宽的 `.lpm-ctx` 内若只写 `maxWidth` 会将自动折行长句压成单字竖排，必须给 `fitWholeCloneBox()` 显式写入 `Math.ceil(src.offsetWidth) + 1` 的 `width`，并让 `.lp-whole` 保持 `display: inline-block` 对齐盒高。
+- **版面模式 `roam ↔ page` 切勿逐帧改 `.stage-3d` 模糊半径或在 `stepMorph` 内读写交错**（2026-11-25，#270）：2K 屏逐帧变动 `blur()` 半径会触发重度 GPU 栅格化，应仅在稳态 `data-lk-full`（`k ≥ 0.98`）挂静态 `blur(2.4px)`；过渡期间停止后台 140 卡与星层刷新，`startMorph` / `stepMorph` 严格先全读后全写，且不要给整屏 `.lp-morph` 挂全屏 `drop-shadow`。
+- **慢取词到达的入场动画与 `LyricColumn` 落位必须在 `useLayoutEffect` 中同步完成**（2026-11-25，#272）：若写在 `useEffect`，新歌词到达首帧会先以满亮度或第 0 句起位画出 1 帧再突然拉回 `opacity: 0` 或跳句造成明显闪跳；改为在 `useLayoutEffect` 中同步挂 `.is-arrive`（配 `animation-fill-mode: backwards` 与 `onAnimationEnd` 清理）并在 `setLyrics()` 后立即同步调用一次 `eng.frame(...)`。
 - 项目已接入 git；远程为 `github.com/violetsnowl/Nebula`（2026-11-14 改名；旧地址 `violetsnowl/nebula`、`a161858970-ux/nebula` 自动重定向，本地 origin 已更新）；文档随提交维护（docs/）。
 
 ### 歌词署名行过滤（2026-11-21，#233）
@@ -117,7 +122,7 @@
 
 - 一张卡片（article + 封面 + 标题 + 播放球，约 8 个节点）每帧改 CSS 变量 / transform，样式重算约 50µs。几百张同时变动（缩小看一大片时）拖动每帧 40ms 以上。
 - 对照实验排除了：封面阴影、will-change、透明度、`transform-style: preserve-3d`、逐帧改 z-index，都不是原因。
-- 做法：屏幕上 56px 以下的卡片不挂 DOM，改在画布上画圆角缩略图（drawImage 很便宜），56–72px 交叉淡化。DOM 卡片上限 140 张。
+- 做法：屏幕上 56px 以下的卡片不挂 DOM，改在画布上画圆角缩略图（drawImage 很便宜）；同帧互斥归属 + 视口内优先 + 边界双滞回（#268 / #269 已取消 56–72px 半透明交叉双画）。DOM 卡片上限 140 张。
 - 卡片组件在 pan / zoom 变化时不必重渲染（位置由帧循环写）；React 初始样式里不要写由帧循环管理的值（比如透明度），否则每次重渲染都会被打回初始值。
 
 ### 听音空间：混合模式与背景模糊（2026-11-16，Player P2）
