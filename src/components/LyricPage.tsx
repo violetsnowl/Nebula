@@ -213,6 +213,8 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
   const morphRef = useRef<HTMLDivElement>(null);
   const lsOpenRef = useRef(lsOpen);
   lsOpenRef.current = lsOpen;
+  /** 本次打开听音空间是否从版面聆听态起飞（跨切歌/重排版持久化，避免 ListenSpace 内切歌后收起误丢版面回飞）。 */
+  const enteredFromPageRef = useRef(false);
   const pinRef = useRef(settings.listenPin);
   pinRef.current = settings.listenPin;
   const roamRef = useRef(settings.roamLyrics);
@@ -269,7 +271,11 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
   useEffect(() => {
     const root = rootRef.current;
     const frame = frameRef.current;
-    if (!active || !root || !frame) return;
+    if (!active) {
+      enteredFromPageRef.current = false;
+      return;
+    }
+    if (!root || !frame) return;
     frame.textContent = '';
     const { els, shape } = model;
     const total = shape.stanzas.length;
@@ -787,11 +793,9 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
         lsFlyPage = null;
       }
     };
-    /** 本次打开听音空间是否从版面聆听态起飞（收起时只有从版面起飞过或此刻仍在版面聆听态才飞回版面，杜绝漫游态收起闪版面）。 */
-    let enteredFromPage = false;
-    /** 飞进听音空间期间：版面（译文、装饰、纸面）按飞行进度更快淡出，不等交接曲线。 */
-    let flyingOutToLs = false;
-    /** 翻页过渡瞬间可能尚未拿到 >0.5 透明度的页，1.2s 内每 60ms 补试一次。 */
+    /** 听音空间打开期间，不管一镜到底是否匹配成功，版面必须在 330ms 内统一淡出并在稳态保持 opacity = 0。 */
+    const LS_FADE_OUT_MS = 330;
+    /** 翻页过渡瞬间可能尚未拿到 >0.5 透明度的页，300ms 淡出窗口内每 60ms 补试一次。 */
     let lsWantAt = 0;
     let lsAttemptAt = 0;
     /** 一镜到底的起落记录（QA 排查用，最多 20 条）。 */
@@ -801,6 +805,17 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
       if (lsLog.length > 20) lsLog.shift();
     };
     let lsPrev = lsOpenRef.current;
+    /**
+     * 听音空间遮罩逻辑状态：
+     * - `-1`：effect 启动时听音空间已开启（如听音空间内切歌/加载新歌词/切翻译/切字体），或从漫游态进入，直接置 0；
+     * - `0`：听音空间未开启，不压暗（fade = 1）；
+     * - `> 0`：刚从有可见度的版面点开听音空间的时间戳，无论 lsFly 是否启动，330ms 内退到 0 并保持 0。
+     */
+    let lsFadeT0 = lsPrev ? -1 : 0;
+    if (lsPrev) {
+      root.style.opacity = '0';
+      rootOp = '0.000';
+    }
     /** 收起听音空间、飞回版面期间版面直接满显（不等交接曲线慢慢升起），直到交接追上。 */
     let lsBoostUntil = 0;
     const unitsOfPage = (l: PLine): HTMLElement[] => (l.rts ? l.rts.map((r) => r.v.el) : l.whole ? [l.whole] : []);
@@ -818,6 +833,40 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
       });
       if (curP < 0) curP = 0;
       return ls.map((l, i) => ({ text: l.eng.text, offsetFromCur: i - curP }));
+    };
+    const syncPageLines = (pg: PPage, t: number, scheme: 'accent' | 'mono') => {
+      const ghost = GHOST[scheme === 'mono' ? 'mono' : 'cover'];
+      for (const l of pg.lines) {
+        const e = l.eng;
+        const state: PLine['state'] = t > e.e + 0.9 ? 'past' : t >= e.s - 0.05 ? 'cur' : 'future';
+        if (state !== l.state) {
+          l.state = state;
+          l.el.classList.toggle('is-grad', state === 'cur');
+          l.el.classList.toggle('is-past', state === 'past');
+          l.el.classList.toggle('is-cur', state === 'cur');
+          if (state !== 'cur' && l.rts && l.active) {
+            l.rts.forEach(restUnit);
+            l.active = false;
+          }
+        }
+        if (l.whole) l.whole.classList.toggle('is-on', t >= e.s);
+        // 版式挪出句子的翻译（脚注、右栏……）：跟着所属句子亮起
+        if (l.tr && l.tr.parentElement !== l.el) l.tr.classList.toggle('is-on', state !== 'future');
+        if (state !== 'cur' || !l.rts?.length) continue;
+        // 正在唱（和唱完后 0.9s 的尾韵）：扫光、波浪、长音；没唱到的部分是浅灰的「先印好」
+        const singing = t <= e.e + 0.3;
+        const rawWave = singing ? waveOf(l.rts, e.dens, t, PAGE_WAVE) : null;
+        // 波浪在句首前已预淡入，候选句不应用；切入当前句后的 0.15s 内从 0 过渡接上，避免首帧轻跳
+        const waveK = smooth(clamp((t - (e.s - 0.05)) / 0.15, 0, 1));
+        const wave = rawWave ? (c: number) => rawWave(c) * waveK : null;
+        for (const rt of l.rts) {
+          unitFrame(rt, t, scheme, singing, wave, e.dens);
+          rt.v.set('--un', ghost);
+          rt.chs?.forEach((c) => c.set('--un', ghost));
+        }
+        if (!singing && l.active) l.rts.forEach(restUnit);
+        l.active = singing;
+      }
     };
     const startLsIn = (t: number) => {
       const pg = pages.find((p) => p.on && Number(p.el.style.opacity || 1) > 0.5) ?? null;
@@ -844,6 +893,19 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
     const startLsOut = (t: number) => {
       const pg = pageAt(t);
       if (!pg) return;
+      for (const p of pages) {
+        if (p !== pg && p.on) {
+          p.el.style.display = 'none';
+          p.on = false;
+        }
+      }
+      if (!pg.on) {
+        pg.el.style.display = 'block';
+        pg.on = true;
+      }
+      pg.el.style.opacity = '1';
+      pg.el.style.transform = 'translate3d(0, 0px, 0)';
+      syncPageLines(pg, t, schemeRef.current);
       const cols = matchColumnLines(queriesOfPage(pg.lines, t));
       const pairs: FlyPair[] = [];
       pg.lines.forEach((l, li) => {
@@ -884,11 +946,10 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
         endLsFly(t);
         lsNote(`ls ${lsNow} k=${k.toFixed(2)}`);
         if (lsNow) {
-          enteredFromPage = pageOwnsStage;
-          flyingOutToLs = false;
-          if (enteredFromPage) {
+          enteredFromPageRef.current = pageOwnsStage;
+          lsFadeT0 = k > 0.001 ? now : -1;
+          if (pageOwnsStage) {
             startLsIn(t);
-            flyingOutToLs = !!lsFly;
             lsWantAt = lsFly ? 0 : now;
             lsAttemptAt = now;
           } else {
@@ -896,21 +957,18 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
           }
         } else {
           lsWantAt = 0;
-          flyingOutToLs = false;
-          if (pinRef.current && (enteredFromPage || pageOwnsStage)) {
+          lsFadeT0 = 0;
+          if (pinRef.current && (enteredFromPageRef.current || pageOwnsStage)) {
             startLsOut(t);
           }
-          enteredFromPage = false;
+          enteredFromPageRef.current = false;
         }
         lsPrev = lsNow;
       }
-      if (lsNow && enteredFromPage && !lsFly && lsWantAt && now - lsWantAt < 1200 && now - lsAttemptAt > 60) {
+      if (lsNow && enteredFromPageRef.current && !lsFly && lsWantAt && now - lsWantAt < 300 && now - lsAttemptAt > 60) {
         lsAttemptAt = now;
         startLsIn(t);
-        if (lsFly) {
-          flyingOutToLs = true;
-          lsWantAt = 0;
-        }
+        if (lsFly) lsWantAt = 0;
       }
       const boost = now < lsBoostUntil && k < 0.99 ? 1 : 0;
       if (k >= 0.99) lsBoostUntil = 0;
@@ -925,16 +983,21 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
           lsFlyPage.hooks?.frame?.(t);
         }
       }
-      const fade = flyingOutToLs && lsFly ? 1 - smooth(lsFly.progress / 0.55) : flyingOutToLs ? 0 : 1;
-      if (flyingOutToLs && !lsNow) flyingOutToLs = false;
+      const fade = !lsNow
+        ? 1
+        : lsFly
+          ? 1 - smooth(lsFly.progress / 0.55)
+          : lsFadeT0 > 0
+            ? 1 - smooth((now - lsFadeT0) / LS_FADE_OUT_MS)
+            : 0;
       const op = Math.min(Math.max(k, boost), fade).toFixed(3);
       if (op !== rootOp) {
         root.style.opacity = op;
         rootOp = op;
       }
-      if (k > 0.001 || boost) {
+      const pageVisible = (k > 0.001 || boost > 0) && (!lsNow || fade > 0.001 || !!lsFly);
+      if (pageVisible) {
         const scheme = schemeRef.current;
-        const ghost = GHOST[scheme === 'mono' ? 'mono' : 'cover'];
         for (const pg of pages) {
           const inK = pg.tIn < 0 ? 1 : smooth((t - pg.tIn) / 0.9);
           const outK = smooth((t - pg.tOut) / 0.7);
@@ -953,42 +1016,12 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
           pg.el.style.opacity = vis.toFixed(3);
           pg.hooks?.frame?.(t);
           pg.el.style.transform = `translate3d(0, ${((1 - inK) * 22 - outK * 16).toFixed(1)}px, 0)`;
-          for (const l of pg.lines) {
-            const e = l.eng;
-            const state: PLine['state'] = t > e.e + 0.9 ? 'past' : t >= e.s - 0.05 ? 'cur' : 'future';
-            if (state !== l.state) {
-              l.state = state;
-              l.el.classList.toggle('is-grad', state === 'cur');
-              l.el.classList.toggle('is-past', state === 'past');
-              l.el.classList.toggle('is-cur', state === 'cur');
-              if (state !== 'cur' && l.rts && l.active) {
-                l.rts.forEach(restUnit);
-                l.active = false;
-              }
-            }
-            if (l.whole) l.whole.classList.toggle('is-on', t >= e.s);
-            // 版式挪出句子的翻译（脚注、右栏……）：跟着所属句子亮起
-            if (l.tr && l.tr.parentElement !== l.el) l.tr.classList.toggle('is-on', state !== 'future');
-            if (state !== 'cur' || !l.rts?.length) continue;
-            // 正在唱（和唱完后 0.9s 的尾韵）：扫光、波浪、长音；没唱到的部分是浅灰的「先印好」
-            const singing = t <= e.e + 0.3;
-            const rawWave = singing ? waveOf(l.rts, e.dens, t, PAGE_WAVE) : null;
-            // 波浪在句首前已预淡入，候选句不应用；切入当前句后的 0.15s 内从 0 过渡接上，避免首帧轻跳
-            const waveK = smooth(clamp((t - (e.s - 0.05)) / 0.15, 0, 1));
-            const wave = rawWave ? (c: number) => rawWave(c) * waveK : null;
-            for (const rt of l.rts) {
-              unitFrame(rt, t, scheme, singing, wave, e.dens);
-              rt.v.set('--un', ghost);
-              rt.chs?.forEach((c) => c.set('--un', ghost));
-            }
-            if (!singing && l.active) l.rts.forEach(restUnit);
-            l.active = singing;
-          }
+          syncPageLines(pg, t, scheme);
         }
       }
       // —— 间奏三点：p = 这段空白的进度；淡入 0.5s，结束前 0.45s 收拢（同听音空间 engine.ts 的公式） ——
       for (const g of gapDots) {
-        const show = k > 0.001 && t >= g.s - 0.5 && t <= g.e;
+        const show = pageVisible && t >= g.s - 0.5 && t <= g.e;
         if (show !== g.on) {
           g.el.style.display = show ? 'flex' : 'none';
           g.on = show;

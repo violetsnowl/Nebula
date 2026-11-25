@@ -1497,14 +1497,40 @@ async function main() {
       const afterMove = await page.evaluate(() => {
         const app = document.querySelector('.app');
         const exit = document.querySelector('.listen-exit');
-        return { listen: !!document.querySelector('.app[data-listen]'), cursor: getComputedStyle(app).cursor, exitOp: exit ? Number(getComputedStyle(exit).opacity) : -1, exitPe: exit ? getComputedStyle(exit).pointerEvents : '' };
+        const stage = document.querySelector('.stage-3d');
+        return {
+          listen: !!document.querySelector('.app[data-listen]'),
+          cursor: getComputedStyle(app).cursor,
+          stagePe: stage ? getComputedStyle(stage).pointerEvents : '',
+          exitOp: exit ? Number(getComputedStyle(exit).opacity) : -1,
+          exitPe: exit ? getComputedStyle(exit).pointerEvents : '',
+        };
       });
+      // 常驻聆听下背景星云不响应鼠标拖拽与滚轮缩放（先点一下空白收起右侧设置面板，再真正测背景拖拽与滚轮）
+      await page.mouse.click(360, 260);
+      await page.waitForTimeout(200);
+      const beforeDragBg = await page.evaluate(() => ({ pan: window.__nebula.pan(), zoom: window.__nebula.zoom() }));
+      await page.mouse.move(360, 260);
+      await page.mouse.down();
+      await page.mouse.move(520, 340, { steps: 6 });
+      await page.mouse.up();
+      await page.mouse.wheel(0, 120);
+      await page.waitForTimeout(200);
+      const afterDragBg = await page.evaluate(() => ({ pan: window.__nebula.pan(), zoom: window.__nebula.zoom() }));
+      const dragAttempt = {
+        panMoved: Math.hypot(afterDragBg.pan.x - beforeDragBg.pan.x, afterDragBg.pan.y - beforeDragBg.pan.y) > 0.01,
+        zoomChanged: Math.abs(afterDragBg.zoom - beforeDragBg.zoom) > 0.001,
+      };
       await page.evaluate(() => document.querySelector('.listen-exit')?.click());
       await page.waitForTimeout(500);
       const afterExit = await page.evaluate(() => ({ listen: !!document.querySelector('.app[data-listen]'), pin: !!document.querySelector('.app[data-listen-pin]') }));
+      await page.mouse.move(1596, 420);
+      await page.waitForTimeout(400);
+      await page.locator('.sd-rail.sd-right .sd-orb[aria-label="设置"]').click();
+      await page.waitForTimeout(400);
       await tg.click();
       await page.waitForTimeout(200);
-      pinCheck = { inPin, afterMove, afterExit };
+      pinCheck = { inPin, afterMove, dragAttempt, afterExit };
     } else pinCheck = { hasTg };
   }
   await page.locator('.sd-panel.sd-right .seg.wide button', { hasText: '歌词' }).click();
@@ -1528,10 +1554,12 @@ async function main() {
     listenPage.tiles === 3 && listenPage.intro && lyricPage.head === 2 && lyricPage.previews === 1 && !lyricPage.oldListenPreview &&
     lyricPage.segs >= 3 && lyricPage.aligned && !lyricPage.moreOpen && !lyricPage.nativeColor;
   log('设置面板重排', JSON.stringify({ listenPage, lyricPage }));
-  log('常驻聆听（动鼠标不退出、收起键离开）', JSON.stringify(pinCheck));
+  log('常驻聆听（动鼠标不退出、背景不拖星云、收起键离开）', JSON.stringify(pinCheck));
   const pinOk =
     !!pinCheck && !!pinCheck.inPin && pinCheck.inPin.listen && pinCheck.inPin.pin &&
-    pinCheck.afterMove.listen && pinCheck.afterMove.cursor !== 'none' && pinCheck.afterMove.exitOp > 0.9 && pinCheck.afterMove.exitPe === 'auto' &&
+    pinCheck.afterMove.listen && pinCheck.afterMove.cursor !== 'none' && pinCheck.afterMove.stagePe === 'none' &&
+    pinCheck.afterMove.exitOp > 0.9 && pinCheck.afterMove.exitPe === 'auto' &&
+    !pinCheck.dragAttempt.panMoved && !pinCheck.dragAttempt.zoomChanged &&
     !pinCheck.afterExit.listen && !pinCheck.afterExit.pin;
   await page.evaluate(() => document.querySelector('.sd-panel.sd-right input[type="range"]')?.focus());
   const idleStart = await page.evaluate(() => ({
@@ -1691,6 +1719,7 @@ async function main() {
   let morphEn = null;
   const tplChecks = { en: null, zh: null };
   let lsFlyCheck = null;
+  let pageLsLeakCheck = null;
   const TPLS = ['held', 'spine', 'justify', 'foot', 'bleed', 'diag', 'field', 'groove', 'grid', 'corner'];
   /** 逐套强制版式：跳到用了这套的第一页的第一句唱到一半，量 bounds（out = 跑出画幅的字数，clash = 不同句子的字互相压住多少像素）。 */
   const checkTemplates = async (tag) => {
@@ -1865,6 +1894,93 @@ async function main() {
       await page.waitForTimeout(1500);
       tplChecks.zh = await checkTemplates('zh');
     }
+    // 版面 ↔ 听音空间防叠加回归：间奏空档期从版面点开听音空间，以及听音空间内切歌，版面均不能叠加在听音空间上
+    pageLsLeakCheck = await (async () => {
+      const tab = (name) => page.evaluate((n) => [...document.querySelectorAll('.sd-panel.sd-right .seg.wide button')].find((b) => b.textContent === n)?.click(), name);
+      const pinTg = () => page.evaluate(() => document.querySelector('.sd-panel.sd-right [aria-label="进入聆听后常驻"]')?.click());
+      const mkTrackData = (linesSpec) => {
+        const ls = [];
+        let yrc = '';
+        for (const [t, text] of linesSpec) {
+          const ws = text.split(' ');
+          const d = 300;
+          ls.push({ timeMs: t, text });
+          yrc += `[${t},${ws.length * d + 500}]` + ws.map((w, j) => `(${t + j * d},${j === ws.length - 1 ? d + 500 : d},0)${w}${j < ws.length - 1 ? ' ' : ''}`).join('') + '\n';
+        }
+        return { source: 'netease', lines: ls, yrc };
+      };
+      const song1Data = mkTrackData([
+        [1000, 'Silent lantern by the shore'],
+        [3000, 'Drifting slowly from the pier'],
+        [13500, 'Morning gathers on the tide'],
+        [15500, 'Every echo disappears'],
+      ]);
+      const song2Data = mkTrackData([
+        [1000, 'Second harbor lights awake'],
+        [3200, 'Paper shadows cross the hall'],
+        [5400, 'Silver rain begins to fall'],
+      ]);
+      const leakAudio = `data:audio/wav;base64,${makeWav(25).toString('base64')}`;
+      await tab('聆听');
+      await page.waitForTimeout(180);
+      await pinTg();
+      await page.evaluate(
+        ({ data, audio }) => {
+          window.nebulaAPI.fetchLyric = async () => ({ ok: true, data });
+          const n = window.__nebula;
+          const s1 = { ...n.songsData()[3], source: 'netease', sourceId: 'qa-page-gap-open', title: 'Gap Open', audio };
+          n.player.playSong(s1, [s1]);
+        },
+        { data: song1Data, audio: leakAudio },
+      );
+      await page.waitForFunction(() => !!document.querySelector('.app[data-listen-pin]'), null, { timeout: 9000 }).catch(() => {});
+      await page.waitForTimeout(1800);
+      // 1) 跳到长间奏空档（无任何页 opacity > 0.5）点开听音空间
+      await page.evaluate(() => window.__nebula.player.seek(7.5));
+      await page.waitForTimeout(300);
+      const beforeGap = await page.evaluate(() => ({
+        pin: !!document.querySelector('.app[data-listen-pin]'),
+        pageOp: parseFloat(getComputedStyle(document.querySelector('.lyric-page')).opacity || '0'),
+        shownPages: [...document.querySelectorAll('.lyric-page .lp-page')].filter((p) => p.style.display === 'block' && Number(p.style.opacity) > 0.5).length,
+      }));
+      await page.evaluate(() => document.querySelector('.bp-cover[data-np-cover]')?.click());
+      await page.waitForTimeout(480);
+      const gapOpen = await page.evaluate(() => ({
+        lsShown: !!document.querySelector('.ls-root.is-shown'),
+        pageOp: parseFloat(getComputedStyle(document.querySelector('.lyric-page')).opacity || '1'),
+      }));
+      // 2) 仍在听音空间内直接切换下一首歌
+      await page.evaluate(
+        ({ data, audio }) => {
+          window.nebulaAPI.fetchLyric = async () => ({ ok: true, data });
+          const n = window.__nebula;
+          const s2 = { ...n.songsData()[4], source: 'netease', sourceId: 'qa-page-ls-switch', title: 'Switch In LS', audio };
+          n.player.playSong(s2, [s2]);
+        },
+        { data: song2Data, audio: leakAudio },
+      );
+      await page.waitForTimeout(550);
+      const switchInLs = await page.evaluate(() => ({
+        lsShown: !!document.querySelector('.ls-root.is-shown'),
+        pageOp: parseFloat(getComputedStyle(document.querySelector('.lyric-page')).opacity || '1'),
+      }));
+      // 3) 切歌后收起听音空间，应干净回到常驻版面且无飞字残留
+      await page.evaluate(() => document.querySelector('.ls-exit')?.click());
+      await page.waitForTimeout(1000);
+      const afterClose = await page.evaluate(() => ({
+        lsRoot: !!document.querySelector('.ls-root'),
+        pin: !!document.querySelector('.app[data-listen-pin]'),
+        pageOp: parseFloat(getComputedStyle(document.querySelector('.lyric-page')).opacity || '0'),
+        flyLayer: !!document.querySelector('.lp-lsfly'),
+        flyHide: document.querySelectorAll('.lyric-page [data-flyhide]').length,
+      }));
+      await page.evaluate(() => document.querySelector('.listen-exit')?.click());
+      await page.waitForTimeout(250);
+      await pinTg();
+      await tab('歌词');
+      await page.waitForTimeout(250);
+      return { beforeGap, gapOpen, switchInLs, afterClose };
+    })();
     await page.keyboard.press('Control+Shift+M');
     await page.waitForTimeout(300);
     await pickStage('漫游歌词');
@@ -2089,9 +2205,24 @@ async function main() {
   const morphPass = morphOk(morphZh) && morphOk(morphEn);
   log('版面·十套大胆版式（英文 / 中文）', JSON.stringify(tplChecks));
   log('版面 ↔ 听音空间一镜到底', JSON.stringify(lsFlyCheck));
+  log('版面 ↔ 听音空间防叠加（间奏打开 / 空间内切歌）', JSON.stringify(pageLsLeakCheck));
   const lsFlyOk =
     !!lsFlyCheck && lsFlyCheck.pinned && lsFlyCheck.inVis > 0 && lsFlyCheck.inOff === 0 && lsFlyCheck.inN > 0 && lsFlyCheck.inErr !== null && lsFlyCheck.inErr <= 1.5 && !lsFlyCheck.inDone.layer && lsFlyCheck.inDone.hidden === 0 &&
     lsFlyCheck.outN > 0 && lsFlyCheck.outErr !== null && lsFlyCheck.outErr <= 1.5 && lsFlyCheck.back.pin && !lsFlyCheck.back.layer && lsFlyCheck.back.hidden === 0;
+  const pageLsLeakOk =
+    !!pageLsLeakCheck &&
+    pageLsLeakCheck.beforeGap.pin &&
+    pageLsLeakCheck.beforeGap.pageOp >= 0.99 &&
+    pageLsLeakCheck.beforeGap.shownPages === 0 &&
+    pageLsLeakCheck.gapOpen.lsShown &&
+    pageLsLeakCheck.gapOpen.pageOp <= 0.001 &&
+    pageLsLeakCheck.switchInLs.lsShown &&
+    pageLsLeakCheck.switchInLs.pageOp <= 0.001 &&
+    !pageLsLeakCheck.afterClose.lsRoot &&
+    pageLsLeakCheck.afterClose.pin &&
+    pageLsLeakCheck.afterClose.pageOp >= 0.99 &&
+    !pageLsLeakCheck.afterClose.flyLayer &&
+    pageLsLeakCheck.afterClose.flyHide === 0;
   // 每套至少在一首歌里用上；用上的页：没有字跑出画幅、不同句子的字最多压住 2px
   const tplOk =
     !!tplChecks.en &&
@@ -2185,6 +2316,7 @@ async function main() {
     !morphPass ||
     !tplOk ||
     !lsFlyOk ||
+    !pageLsLeakOk ||
     !stageFlyExtraOk ||
     !pinOk ||
     !capHazeOk ||
@@ -2249,6 +2381,7 @@ async function main() {
     pageMorph: !morphPass,
     pageTemplates: !tplOk,
     pageToListen: !lsFlyOk,
+    pageLsLeak: !pageLsLeakOk,
     stageFlyExtra: !stageFlyExtraOk,
     listenPin: !pinOk,
     captionHaze: !capHazeOk,

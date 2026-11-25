@@ -6,6 +6,25 @@
 
 ---
 
+## #275 — 2026-11-25 — 修复常驻聆听背景星云穿透交互，以及版面进听音空间后切歌/空档期触发的叠层错位
+
+**目标**：排查并修复用户反馈的两处常驻聆听 / 版面交互缺陷：① 开启「进入后常驻」时仍能在背景上拖拽星云和点击点歌（经对照 `docs/design/NEBULA_UI_SYSTEM.md` §7.1 确认为 Bug，并非设计预期）；② 版面模式点击播放条封面进听音空间，或在听音空间内切歌后，出现版面纸面与歌词叠加压在听音空间歌词栏之上的错误态。
+
+**根因与改动点**
+1. **常驻聆听下背景星云可拖拽、缩放与点击点歌**（`src/styles.css`）：
+   - 原规则仅给 `.app[data-listen] .music-card` 置为 `pointer-events: none`，遗漏了宿主 `.stage-3d`；在常驻聆听下鼠标事件穿过透明版面直接落到 `.stage-3d` 上，触发 `PanController` 拖拽/滚轮缩放与 `useStage` 外围画布命中点歌。
+   - 补上 `.app[data-listen] .stage-3d` 的 `pointer-events: none`，常驻聆听期间仅两侧面板、顶栏、播放条与收起键可交互。
+2. **版面与听音空间叠加显示**（`src/components/LyricPage.tsx`）：
+   - 此前仅靠 `useEffect` 局部闭包 `flyingOutToLs` 控制 `.lyric-page` 淡出，且仅在 `startLsIn()` 成功配对单句起飞时置 `true`：听音空间内切歌（或新歌词到达/切翻译/切字体）触发 `useEffect` 重跑后 `flyingOutToLs` 重置为 `false`、`k` 维持 `1`，新版面立即以 `opacity: 1`（`z-index: 11`）盖到听音空间歌词栏上；同时在翻页交叉切换、间奏三点、前奏/加载或交接未过半时进入听音空间，因未启动 `lsFly` 同样漏掉淡出。
+   - 改由持久化 ref `enteredFromPageRef` 记忆进入路径，并在 `useEffect` 内引入统一遮罩状态 `lsFadeT0`（`lsPrev` 为真直接同步 `opacity: 0`，从有可见度版面打开时无论是否触发一镜到底均于 `330ms` 内淡出到 `0`）；抽出 `syncPageLines()` 供 `tick` 与 `startLsOut` 共用，保证听音空间内切歌后收起仍能准确同步目标页状态并回飞。
+3. **自动化回归补齐**（`scripts/qa.cjs`）：
+   - `pinCheck` 补充 `.stage-3d` 计算 `pointer-events: none` 及背景拖拽/滚轮零位移断言；
+   - 新增 `pageLsLeakCheck` 验证长间奏空档期进入听音空间、听音空间内切歌时 `.lyric-page` 始终保持 `opacity <= 0.001`，以及切歌后收起干净返回常驻版面。
+
+**验证**：`$env:pnpm_config_verify_deps_before_run='false'; pnpm build`（`tsc --noEmit` + `vite build`，641 模块）与 `pnpm qa`（`check-arch`、`ui-playback-regression` 6/6、`sections-regression` 9/9、`qa.cjs` 含新增两项回归，0 控制台错误）全部通过。
+
+**遗留与风险**：无。
+
 ## #274 — 2026-11-25 — 清理文档中与现行代码及记录不一致的过时表述
 
 **目标**：新窗口接手后按事实核对仓库文档，刷新与当前代码和现行记录相矛盾或过时的表述（只改文档，未改任何源码）。

@@ -4456,6 +4456,8 @@ body {
   cursor: none !important;
 }
 
+/* 聆听中（含常驻聆听）：星云舞台与卡片不响应拖拽、缩放、悬停、点击和右键（常驻模式下仅操作两侧面板与播放条） */
+.app[data-listen] .stage-3d,
 .app[data-listen] .music-card {
   pointer-events: none;
 }
