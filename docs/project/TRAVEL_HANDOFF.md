@@ -1,7 +1,7 @@
 # 穿行模式交接（临时文档，2026-11-23）
 
 > 给接手「穿行」的新窗口。做完穿行、规格写进 `docs/design/NEBULA_UI_SYSTEM.md` §7.1c 后，本文件可删。
-> 本文件只写穿行要用到的上下文；版面、常驻聆听等已完成的部分看规格 §7.1 / §7.1b 和 CHANGE_LOG（fe/next-1 ~ fe/next-23）。
+> 本文件只写穿行要用到的上下文；版面精修、全路径一镜到底、常驻聆听等已完成并桌面验收通过的部分看规格 §7.1 / §7.1b 和 CHANGE_LOG（`fe/next-1 ~ fe/next-29`）。
 
 ## 1. 穿行是什么、为什么做
 
@@ -32,8 +32,8 @@
 
 - **段落引擎** `src/lib/listen/sections.ts`：`analyzeSong` 给出段落 / 句组 / 间奏 / 第一次副歌，`stageAt(shape, lines, t)` 给出开合 lift 和间奏让位 gap——路线的 Z 间隔、颜色旅程、间奏变暗都靠它。
 - **逐字层** `src/lib/listen/words.ts`：`renderUnits` / `measureUnits` / `waveOf` / `unitFrame` / `restUnit`。注意 `waveOf` 有可选参数 `widthK`（拉丁歌波宽系数）：听音空间和漫游歌词不传（=1），版面传 .6。穿行要不要单独调，等看了效果再问用户；**听音空间和漫游歌词的逐字层用户说「完美」，不要动**。
-- **交接与常驻**：`lib/listenMode.ts`（`--lk`、`data-listen`、常驻聆听 `data-listen-pin`、`exit()`、被听音空间打断后自动恢复）；版面模式在 `<html>` 上写 `data-stage-mode='page'`，穿行可以照这个写 `'travel'`，styles.css 里星云在版面模式下的压暗规则可参考。
-- **漫游 → 舞台的转场**：版面用「克隆替身」把漫游歌词正在唱的那句逐字飞到版面上（`LyricPage.tsx` 的 startMorph / stepMorph），版面 ↔ 听音空间用 `lyric-page/toListen.ts`（LsFly）。用户非常在意「一镜到底」，穿行进出大概率也会要求同样的无缝转场，可以复用 LsFly 的做法（每个字两份克隆、读写分离、只飞两边都看得见的句子）。
+- **交接与常驻**：`lib/listenMode.ts`（`--lk`、`data-listen`、常驻聆听 `data-listen-pin`、`exit()`；常驻聆听下打开听音空间时底层舞台保持 `k = 1` 原地待命，硬阻断解除后自动恢复）；版面模式在 `<html>` 上写 `data-stage-mode='page'`，穿行可以照这个写 `'travel'`，styles.css 里星云在版面模式下的压暗规则可参考（注意加 `[data-lk]` 限定仅在聆听中生效，漫游态 `k = 0` 不压暗）。
+- **漫游 ↔ 舞台 / 舞台 ↔ 听音空间的转场**：漫游 ↔ 版面用 `LyricPage.tsx` 的 `startMorph / stepMorph`；主舞台（版面 / 漫游歌词 / 底部字幕）↔ 听音空间已统一抽到共用引擎 `src/lib/listen/flyTransition.ts`（`LsFly`、`launchStageToListenFly`、`matchColumnLines`、`plainColumnText`、`isPageStageActive`，样式在 `src/components/listen/fly-transition.css`，旧 `lyric-page/toListen.ts` 已移除）。穿行接入听音空间双向一镜到底时直接复用 `flyTransition.ts`，切勿另写一套（注意更新 `isPageStageActive` 或扩为非漫游主舞台的统一接管判定，避免和 `LyricsLayer` 抢跑）。
 - **测试探针的写法**：版面在 `window.__nebulaLyricPage` 上暴露了 probe / pair / pages / force / bounds / lsProbe；QA（`scripts/qa.cjs`）用它们量落位、越界和可见性。穿行也照这个做，QA 至少要量：替身落位、文字不出画面、帧耗时。
 
 ## 5. 实现方式的初步判断（还没和用户确认）
@@ -53,5 +53,5 @@
 ## 7. 分支与合并（新窗口先问用户）
 
 - 前端工作在短命工作树 `E:\CUFE\vibecoding\fe\nebula`，本地分支 `fe/next`，没推远端；main 在主目录 `E:\CUFE\vibecoding\nebula`，后端会话在那里工作（常有它未提交的改动，不要碰）。
-- fe/next 领先 main 二十多个提交，main 这期间也前进了（#233 署名行过滤、#234 后端结项等）。CHANGE_LOG 里 fe/next 的条目编号是「#待编（fe/next-N）」，合回 main 时按 main 顶部最新编号依次取号；CHANGE_LOG、CONTEXT_SNAPSHOT 两边都改过，合并会冲突，要手工合。
+- fe/next 领先 main 二十多个提交，main 这期间也前进了（其中 #233 署名行过滤已同字节同步进 fe/next；main 另有 #234 后端结项等）。CHANGE_LOG 里 fe/next 的条目编号是「#待编（fe/next-N）」，合回 main 时按 main 顶部最新编号依次取号；CHANGE_LOG、CONTEXT_SNAPSHOT 两边都改过，合并会冲突，要手工合。
 - 项目规则（AGENTS.md）是单主线、短命分支合并后即删；这个工作树是用户批准的临时例外。**穿行在 fe/next 上接着做，还是先把 fe/next 合回 main 再开新的短命分支，问用户。**
