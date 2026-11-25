@@ -290,6 +290,17 @@ const CREDIT_OP_SP = /^(op|sp)\s*[:：]/i;
  * 只认后面紧跟韩文、假名或字母的，免得把「曲终人散」这类正文第一句当成署名。
  */
 const CREDIT_BARE = /^(作词|作曲|编曲|作詞|編曲|词|曲)[가-힯぀-ヿA-Za-z]/;
+/**
+ * 「标签 + 空格 + 名字」型的署名行（#233）：整行很短、以制作标签开头、后面跟一个名字。
+ * 来源里很常见：「编曲 n-buna」「作曲 米津玄師」「ギター n-buna」「Programming Cirkut」。
+ * 这些行没有冒号，也不是「标签紧贴名字」，上面两条规则都漏掉了，会混进正文。
+ *
+ * 只用「整行很短（≤30 字）」+「标签在行首」+「标签后面确实有别的词」三个条件，
+ * 不往「是否像人名」上猜——「我爱你 中国」「曲终人散」这类正文首句不会被误杀
+ * （前者不以标签开头，后者标签后面紧跟的不是独立词）。
+ */
+const CREDIT_SPACED_LABEL = String.raw`(?:作词|作詞|作曲|编曲|編曲|词|曲|制作人?|監製|监制|混音|录音|錄音|和声|合声|吉他|貝斯|贝斯|鼓|键盘|鍵盤|弦乐|母带|配唱|ギター|ベース|ドラム|ピアノ|ストリングス|コーラス|編曲者|作詞者|作曲者|producer|composer|arranger|lyrics?|programming|guitars?|bass|drums?|keyboards?|strings?|piano|vocals?|mixing|mastering|recording|engineer(?:ing)?)`;
+const CREDIT_SPACED = new RegExp(String.raw`^${CREDIT_SPACED_LABEL}\s*[:：·・/、]?\s+(?=\S)[^:：]{0,26}$`, 'i');
 /** QQ 给带音译的歌加的说明行（「以下音译标注由AI工具生产」等，#161）。 */
 const ROMAN_NOTE = /^以下.{0,6}(音译|罗马音|注音|翻译).{0,8}(生产|生成|提供|制作)/;
 /**
@@ -328,6 +339,8 @@ export function filterCreditLines(lines: LyricLineUI[], title?: string, artist?:
     }
     if (NOTE_ONLY.test(text)) continue;
     if (CREDIT_CN.test(text) || CREDIT_EN.test(text) || CREDIT_OP_SP.test(text) || isEnglishCreditLabel(text)) continue;
+    // 「标签 + 空格 + 名字」型署名（#233）：只看行首标签 + 整行很短，正片正文首句不会被误杀
+    if (CREDIT_SPACED.test(text)) continue;
     if (!sawText && (ROMAN_NOTE.test(text) || (CREDIT_BARE.test(text) && text.length <= 40))) continue;
     // 开头“歌名 - 歌手”标题行：仅清正文开始前的最多 2 行。
     // QQ 也有去掉空格和括号挤在一起的写法（「SeattleAlone-脸红的思春期볼빨간사춘기」，#161）

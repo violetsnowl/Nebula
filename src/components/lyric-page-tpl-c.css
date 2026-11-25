@@ -121,6 +121,13 @@
   position: relative;
 }
 
+/* 转角 L 形细线（2026-11-23）：沿句眼下缘到内拐点折向竖排尾巴，颜色取封面强调色 */
+.lyric-page .lp-corner-line {
+  position: absolute;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--lp-acc) 38%, transparent);
+}
+
 .lt-corner .lp-seg {
   position: absolute;
   display: block;

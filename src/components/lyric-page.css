@@ -12,14 +12,14 @@
   overflow: hidden;
   pointer-events: none;
   opacity: 0;
-  --lc-rest: rgba(255, 255, 255, 0.16);
+  --lc-rest: rgba(255, 255, 255, 0.24);
   --lp-ink: var(--lc-a);
   --lp-tr: rgba(255, 255, 255, 0.36);
   --lp-tr-on: rgba(255, 255, 255, 0.62);
 }
 
 .lyric-page[data-scheme='mono'] {
-  --lc-rest: color-mix(in srgb, color-mix(in srgb, var(--lc-a) 58%, #fff) 18%, transparent);
+  --lc-rest: color-mix(in srgb, color-mix(in srgb, var(--lc-a) 58%, #fff) 24%, transparent);
   --lp-ink: color-mix(in srgb, var(--lc-a) 8%, #fff);
 }
 
@@ -92,7 +92,7 @@
 .lpm-b.is-grad .lpm-u.is-v .u:not(.has-ch),
 .lpm-b.is-grad .lpm-u.is-v .u .ch {
   --fw: calc(var(--fn, 0.3) * (100% - 0.28em));
-  --P: calc(0.12em + var(--p, 0) * (100% - 0.28em + 2 * var(--fw)) - var(--fw));
+  --P: calc(var(--p, 0) * (100% - 0.28em + 2 * var(--fw)) - var(--fw) + 0.12em * var(--p, 0));
   background-image: linear-gradient(180deg, var(--sung, #fff) 0, var(--sung, #fff) calc(var(--P) - var(--fw)), var(--edge) var(--P), var(--un) calc(var(--P) + var(--fw)));
 }
 
@@ -183,7 +183,7 @@
 .lpm-b.is-grad .u:not(.has-ch),
 .lpm-b.is-grad .u .ch {
   --fw: calc(var(--fn, 0.3) * (100% - 0.4em));
-  --P: calc(0.2em + var(--p, 0) * (100% - 0.4em + 2 * var(--fw)) - var(--fw));
+  --P: calc(var(--p, 0) * (100% - 0.4em + 2 * var(--fw)) - var(--fw) + 0.2em * var(--p, 0));
   background-image: linear-gradient(90deg, var(--sung, #fff) 0, var(--sung, #fff) calc(var(--P) - var(--fw)), var(--edge) var(--P), var(--un) calc(var(--P) + var(--fw)));
 }
 
@@ -287,7 +287,7 @@
 .lyric-page .is-grad .lp-seg-v .u:not(.has-ch),
 .lyric-page .is-grad .lp-seg-v .u .ch {
   --fw: calc(var(--fn, 0.3) * (100% - 0.28em));
-  --P: calc(0.12em + var(--p, 0) * (100% - 0.28em + 2 * var(--fw)) - var(--fw));
+  --P: calc(var(--p, 0) * (100% - 0.28em + 2 * var(--fw)) - var(--fw) + 0.12em * var(--p, 0));
   background-image: linear-gradient(180deg, var(--sung, #fff) 0, var(--sung, #fff) calc(var(--P) - var(--fw)), var(--edge) var(--P), var(--un) calc(var(--P) + var(--fw)));
 }
 

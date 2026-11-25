@@ -163,18 +163,39 @@ export function lift(c: TCtx, l: TLine, left: number, top: number, cls = ''): HT
 /** 词的规范写法：小写、去掉标点（比较重复词用）。 */
 export const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}']/gu, '');
 
-/** 一句里组成 hook 的字（拉丁 = 等于它的词；中日韩 = 连起来等于它的几个字）。 */
+/** 一句里组成 hook 的字（拉丁 = 等于它的词或连续两词短语；中日韩 = 连起来等于它的几个字）。 */
 export function hookRuns(l: TLine, hook: string, cjk: boolean): number[][] {
   const ts = l.units.map((u) => norm(u.textContent ?? ''));
   const out: number[][] = [];
   if (!cjk) {
-    ts.forEach((t, i) => {
-      if (t === hook) out.push([i]);
-    });
+    const parts = hook.split(/\s+/).map(norm).filter(Boolean);
+    if (!parts.length) return out;
+    const m = parts.length;
+    for (let i = 0; i + m <= ts.length; i++) {
+      let ok = true;
+      for (let k = 0; k < m; k++) {
+        if (ts[i + k] !== parts[k]) {
+          ok = false;
+          break;
+        }
+      }
+      if (ok) out.push(Array.from({ length: m }, (_, k) => i + k));
+    }
     return out;
   }
-  const n = [...hook].length;
-  for (let i = 0; i + n <= ts.length; i++) if (ts.slice(i, i + n).join('') === hook) out.push(Array.from({ length: n }, (_, k) => i + k));
+  const target = norm(hook);
+  if (!target) return out;
+  for (let i = 0; i < ts.length; i++) {
+    let acc = '';
+    for (let j = i; j < ts.length; j++) {
+      acc += ts[j];
+      if (acc === target) {
+        out.push(Array.from({ length: j - i + 1 }, (_, k) => i + k));
+        break;
+      }
+      if (acc.length >= target.length) break;
+    }
+  }
   return out;
 }
 

@@ -345,7 +345,7 @@ export const grid: Tpl = {
   },
 };
 
-// ———— 转角（副歌）：句子断成两截，前半放大成句眼，后半转 90° 接着写 ————
+// ———— 转角（副歌，2026-11-23 单拐点 L 形定稿）：第一句前半横排放大到拐点，后半转 90° 竖排向下（┓）；其余小字排在左下 ————
 interface Pair {
   l: TLine;
   /** 第几个字起是后半句。 */
@@ -353,14 +353,6 @@ interface Pair {
   /** [句眼, 尾巴]。 */
   segs: HTMLElement[];
 }
-
-interface Box {
-  x: number;
-  y: number;
-  w: number;
-  h: number;
-}
-const hit = (a: Box, b: Box, m = 8) => a.x < b.x + b.w + m && b.x < a.x + a.w + m && a.y < b.y + b.h + m && b.y < a.y + a.h + m;
 
 const at = (el: HTMLElement, x: number, y: number) => {
   el.style.left = px(x);
@@ -391,133 +383,109 @@ function fitLen(c: TCtx, el: HTMLElement, fs0: number, avail: number, vert: bool
   return fs;
 }
 
-/** 中文（样张 bCorner）：第一句「┓」横着写完拐下来，第二句「┗」竖着写完拐出去，其余句子小字竖排塞进拐角下的空当。 */
-function cornerV(c: TCtx, A: Pair, B: Pair, rest: TLine[]): void {
+/** 中文竖排（2026-11-23 单拐点）：第一句横排句眼折向竖排尾巴（┓），其余句子小字竖排在左下、严格从右往左排。 */
+function cornerV(c: TCtx, A: Pair, rest: TLine[]): void {
   const [aE, aT] = A.segs as [HTMLElement, HTMLElement];
-  const [bE, bT] = B.segs as [HTMLElement, HTMLElement];
-  // ┓：句眼横排（900 字重 150px），后半句竖排 56px，从句眼最后一个字的正下方拐下来
-  const EX = 150;
-  const EY = 120;
-  at(aE, EX, EY);
-  const fsA = fitLen(c, aE, 150, 700, false);
+  const MIN_X = 136;
+  const EY = 116;
+  const Y_SAFE = 792;
+  const fsA = fitLen(c, aE, 148, 1060, false);
   const aSz = c.size(aE);
-  const aTop = EY + aSz.h + 30;
-  fitLen(c, aT, 56, 820 - aTop, true);
+  const aTop = EY + aSz.h + 34;
+  fitLen(c, aT, 56, Y_SAFE - aTop, true);
   const colA = c.size(aT).w;
-  const aLeft = EX + aSz.w - fsA / 2 - colA / 2;
-  at(aT, aLeft, aTop);
-  // ┗：句眼竖排 130px（放不下就缩），后半句横排 56px，从句眼最后一个字的右边拐出去
-  const BX = 880;
-  const BY = 300;
-  at(bE, BX, BY);
-  const fsB = fitLen(c, bE, 130, 820 - BY, true);
-  const bSz = c.size(bE);
-  const bLeft = BX + bSz.w + 30;
-  fitLen(c, bT, 56, 1480 - bLeft, false);
-  at(bT, bLeft, BY + bSz.h - fsB / 2 - c.size(bT).h / 2);
-  // 其余句子：小字竖排（34px，字距 .2em），从第一句拐角左边起往左排
-  let x = Math.min(470, aLeft - 36 - 41);
-  rest.forEach((l) => {
+
+  // 先量左下旁注列所需的总宽度，保证竖排尾巴右侧落位与旁注区不撞字
+  const restTop = Math.max(aTop + 36, 480);
+  const restAvailH = Math.max(180, Y_SAFE - restTop);
+  const restWidths: number[] = [];
+  for (const l of rest) {
     l.el.classList.add('lt-cs');
     l.tx.style.letterSpacing = '.2em';
-    fitTo(c, l.tx, 820 - 330, true, 34);
-    x = Math.min(x, aLeft - 36 - c.size(l.tx).w);
-    put(l, x, 330);
-    x -= 66;
+    fitTo(c, l.tx, restAvailH, true, 34);
+    restWidths.push(c.size(l.tx).w);
+  }
+  const COL_GAP = 28;
+  const restSpan = restWidths.reduce((s, w) => s + w, 0) + Math.max(0, rest.length - 1) * COL_GAP;
+  const minTailLeft = MIN_X + restSpan + 60;
+
+  const relTail = Math.max(0, aSz.w - lastAdv(c, A, false, fsA) / 2 - colA / 2);
+  const eyeX = clamp(Math.max(MIN_X, minTailLeft - relTail), MIN_X, 1460 - aSz.w);
+  at(aE, eyeX, EY);
+  const aLeft = clamp(eyeX + relTail, minTailLeft, 1460 - colA);
+  at(aT, aLeft, aTop);
+
+  // 中文旁注列：从右往左排（第 2 句靠近内拐角，后续句依次往左）
+  let right = Math.min(aLeft - 56, Math.max(eyeX + restSpan, MIN_X + restSpan));
+  rest.forEach((l, i) => {
+    const w = restWidths[i]!;
+    put(l, right - w, restTop);
+    right -= w + COL_GAP;
   });
 }
 
-/** 横排语言（拉丁、日韩，样张没有画，按对照表）：句眼 Inter 800 大写 / 粗体，尾巴竖排（拉丁字母侧躺着从上往下读）。 */
-function cornerH(c: TCtx, A: Pair, B: Pair, rest: TLine[]): void {
+/** 横排语言（2026-11-23 单拐点）：第一句横排大字到拐点，后半竖排向下（┓）；其余句子小字横排在左下。 */
+function cornerH(c: TCtx, A: Pair, rest: TLine[]): void {
   const [aE, aT] = A.segs as [HTMLElement, HTMLElement];
-  const [bE, bT] = B.segs as [HTMLElement, HTMLElement];
-  const X0 = 130;
-  const Y0 = 96;
-  const YB = 300;
-  const YMAX = 820;
-  const XMAX = 1480;
-  const tailFs = (fs: number) => clamp(fs * 0.6, 22, 44);
-  const occ: Box[] = [];
-  // ┓ 的句眼：横排，按宽度撑到 900px 以内
-  at(aE, X0, Y0);
-  const fsA = fitLen(c, aE, 120, 900, false);
+  const X0 = 136;
+  const Y0 = 148;
+  const Y_SAFE = 792;
+  const fsA = fitLen(c, aE, 112, 1080, false);
   const aSz = c.size(aE);
-  // ┗ 的句眼：竖排（侧躺），贴左边从 y = 300 往下；它先排，第一句的尾巴要避开它的尾巴
-  at(bE, X0, YB);
-  const fsB = fitLen(c, bE, 100, YMAX - YB, true);
-  const bSz = c.size(bE);
-  const bLeft = X0 + bSz.w + 30;
-  fitLen(c, bT, tailFs(fsB), XMAX - bLeft, false);
-  const bTs = c.size(bT);
-  // 尾巴从句眼底部右边拐出去：以句眼最后一个词的中线对齐，但不低于句眼底边
-  const bBottom = YB + bSz.h;
-  const bTop = bBottom - Math.max(Math.min(lastAdv(c, B, true, fsB), bTs.h * 3) / 2, bTs.h / 2) - bTs.h / 2;
-  at(bT, bLeft, bTop);
-  const bTail: Box = { x: bLeft, y: bTop, w: bTs.w, h: bTs.h };
-  occ.push({ x: X0, y: YB, w: bSz.w, h: bSz.h }, bTail);
-  // ┓ 的尾巴：竖排，从句眼最后一个词的正下方拐下来
-  const aTopY = Y0 + aSz.h + 24;
-  aT.style.fontSize = px(tailFs(fsA));
+  const aTop = Y0 + aSz.h + 34;
+  fitLen(c, aT, 52, Y_SAFE - aTop, true);
   const colA = c.size(aT).w;
-  const aLeft = clamp(X0 + aSz.w - lastAdv(c, A, false, fsA) / 2 - colA / 2, X0 + bSz.w + 24, XMAX - colA);
-  const overlapB = aLeft < bTail.x + bTail.w + 16 && bTail.x < aLeft + colA + 16;
-  fitLen(c, aT, tailFs(fsA), (overlapB ? bTop - 20 : YMAX) - aTopY, true);
-  at(aT, aLeft, aTopY);
-  const aTs = c.size(aT);
-  const aTail: Box = { x: aLeft, y: aTopY, w: aTs.w, h: aTs.h };
-  occ.push({ x: X0, y: Y0, w: aSz.w, h: aSz.h }, aTail);
-  // 其余句子：小字横排，放进两个拐角之间的空当（左边或 A 尾巴右边，哪边宽放哪边）
+
+  const minTailLeft = X0 + 380;
+  const relTail = Math.max(0, aSz.w - lastAdv(c, A, false, fsA) / 2 - colA / 2);
+  const eyeX = clamp(Math.max(X0, minTailLeft - relTail), X0, 1450 - aSz.w);
+  at(aE, eyeX, Y0);
+  const aLeft = clamp(eyeX + relTail, minTailLeft, 1450 - colA);
+  at(aT, aLeft, aTop);
+
   if (rest.length) {
-    const regions = [
-      { x: X0 + bSz.w + 40, w: aTail.x - 36 - (X0 + bSz.w + 40) },
-      { x: aTail.x + aTail.w + 40, w: XMAX - (aTail.x + aTail.w + 40) },
-    ].sort((p, q) => q.w - p.w);
-    const place = (r: { x: number; w: number }): Box => {
-      let y = 330;
-      let w = 0;
-      for (const l of rest) {
-        l.el.classList.add('lt-cs');
-        if (!c.cjk) l.el.classList.add('lt-ital');
-        if (l.tr) l.tr.className = 'lp-tr is-under';
-        fitTo(c, l.tx, Math.max(60, r.w), false, 32);
-        put(l, r.x, y);
-        const s = c.size(l.el);
-        w = Math.max(w, s.w);
-        y += s.h + 14;
-      }
-      return { x: r.x, y: 330, w, h: y - 330 };
-    };
-    // 先试宽的那边，压到别的字就换另一边，两边都不行仍用宽的那边
-    let boxed = place(regions[0]!);
-    if (occ.some((o) => hit(o, boxed))) {
-      const alt = place(regions[1]!);
-      boxed = occ.some((o) => hit(o, alt)) ? place(regions[0]!) : alt;
+    const restW = Math.max(280, Math.min(820, aLeft - 52 - X0));
+    const restTop = Math.max(aTop + 24, 476);
+    const availH = Math.max(160, Y_SAFE - restTop);
+    const baseFs: number[] = [];
+    for (const l of rest) {
+      l.el.classList.add('lt-cs');
+      if (!c.cjk) l.el.classList.add('lt-ital');
+      if (l.tr) l.tr.className = 'lp-tr is-under';
+      baseFs.push(fitTo(c, l.tx, restW, false, 32));
     }
-    occ.push(boxed);
+    let gap = 14;
+    const totalH = () => rest.reduce((s, l) => s + c.size(l.el).h, 0) + Math.max(0, rest.length - 1) * gap;
+    const h0 = totalH();
+    if (h0 > availH) {
+      const k = availH / h0;
+      gap *= k;
+      rest.forEach((l, i) => {
+        l.tx.style.fontSize = px(baseFs[i]! * k);
+        if (l.tr) l.tr.style.fontSize = px(15 * Math.max(0.8, k));
+      });
+    }
+    let y = restTop;
+    for (const l of rest) {
+      put(l, X0, y);
+      y += c.size(l.el).h + gap;
+    }
   }
-  // 翻译：放在每句尾巴附近；放不下（出画幅或压到别的字）就不显示
-  const putTr = (p: Pair, cands: (w: number, h: number) => Array<{ x: number; y: number }>) => {
-    const tr = lift(c, p.l, 0, 0, 'is-corner');
-    if (!tr) return;
-    tr.style.fontSize = '15px';
-    const s = c.size(tr);
-    for (const q of cands(s.w, s.h)) {
-      const b: Box = { x: q.x, y: q.y, w: s.w, h: s.h };
-      if (b.x < 120 || b.x + b.w > XMAX || b.y < 80 || b.y + b.h > 830 || occ.some((o) => hit(o, b, 6))) continue;
-      at(tr, q.x, q.y);
-      occ.push(b);
-      return;
+
+  if (A.l.tr) {
+    const tr = lift(c, A.l, 0, aTop, 'is-corner');
+    if (tr) {
+      tr.style.fontSize = '17px';
+      tr.style.writingMode = 'vertical-rl';
+      tr.style.maxHeight = px(Y_SAFE - aTop);
+      const tw = c.size(tr).w;
+      if (aLeft + colA + 20 + tw <= 1472) {
+        at(tr, aLeft + colA + 20, aTop);
+      } else {
+        tr.style.display = 'none';
+      }
     }
-    tr.style.display = 'none';
-  };
-  putTr(A, (w) => [
-    { x: aTail.x + aTail.w + 14, y: aTail.y },
-    { x: aTail.x - 14 - w, y: aTail.y },
-  ]);
-  putTr(B, (_w, h) => [
-    { x: bTail.x, y: bTail.y - 8 - h },
-    { x: bTail.x, y: bTail.y + bTail.h + 8 },
-  ]);
+  }
 }
 
 export const corner: Tpl = {
@@ -525,32 +493,44 @@ export const corner: Tpl = {
   bold: true,
   fits: (c) => {
     const n = c.lines.length;
-    if (n < 2 || n > 4 || maxGlyphs(c) > (c.cjk ? 14 : 40)) return false;
-    return c.lines.filter((l) => splitAt(l, c.cjk, c.cjk ? 5 : 12) > 0).length >= 2;
+    if (n < 2 || n > 4 || maxGlyphs(c) > (c.cjk ? 16 : 42)) return false;
+    // 只拐第一句：第一句必须能自然断成两截，绝不把后面句子拎到顶部颠倒唱序
+    return splitAt(c.lines[0]!, c.cjk, c.cjk ? 5 : 12) > 0;
   },
   layout: (c) => {
-    const min = c.cjk ? 5 : 12;
-    const cuts = c.lines.map((l) => splitAt(l, c.cjk, min));
-    const idx = c.lines.map((_, i) => i).filter((i) => cuts[i]! > 0);
-    const i1 = idx[0];
-    const i2 = idx[1];
-    if (i1 == null || i2 == null) return;
+    const cut = splitAt(c.lines[0]!, c.cjk, c.cjk ? 5 : 12);
+    if (cut <= 0) return;
     for (const l of c.lines) {
       l.el.classList.add('lt-corner');
       put(l, 0, 0);
     }
-    // 两句都按「横 + 竖」分段：A = 句眼横排 + 尾巴竖排（┓），B = 句眼竖排 + 尾巴横排（┗）；竖的那段靠 .lp-seg-v，整句不再竖排
-    const mk = (i: number, vertFirst: boolean): Pair => {
-      const l = c.lines[i]!;
-      l.vert = false;
-      l.el.classList.toggle('is-vert', false);
-      const segs = segment(l, [cuts[i]!], (k) => (k === 0 ? 'lt-eye' : 'lt-tail') + ((k === 0) === vertFirst ? ' lp-seg-v' : ''));
-      return { l, cut: cuts[i]!, segs };
-    };
-    const A = mk(i1, false);
-    const B = mk(i2, true);
-    const rest = c.lines.filter((l) => l !== A.l && l !== B.l);
-    if (c.vert) cornerV(c, A, B, rest);
-    else cornerH(c, A, B, rest);
+    const first = c.lines[0]!;
+    first.vert = false;
+    first.el.classList.toggle('is-vert', false);
+    const segs = segment(first, [cut], (k) => (k === 0 ? 'lt-eye' : 'lt-tail lp-seg-v'));
+    const A: Pair = { l: first, cut, segs };
+    const rest = c.lines.slice(1);
+    if (c.vert) cornerV(c, A, rest);
+    else cornerH(c, A, rest);
+  },
+  finish: (c) => {
+    // 内拐角 L 形细线（┓）：沿句眼下缘水平延伸至竖排尾巴左侧内拐点，再折向下方伴随尾巴
+    const eye = c.page.querySelector<HTMLElement>('.lt-corner .lt-eye');
+    const tail = c.page.querySelector<HTMLElement>('.lt-corner .lt-tail');
+    if (!eye || !tail) return;
+    const pr = c.page.getBoundingClientRect();
+    const S = pr.width / PW || 1;
+    const er = eye.getBoundingClientRect();
+    const tr = tail.getBoundingClientRect();
+    const ex0 = (er.left - pr.left) / S;
+    const ey1 = (er.bottom - pr.top) / S;
+    const tx0 = (tr.left - pr.left) / S;
+    const ty0 = (tr.top - pr.top) / S;
+    const th = tr.height / S;
+    const kx = tx0 - 18;
+    const ky = ey1 + 15;
+    const hx0 = Math.min(ex0, kx - 100);
+    deco(c, 'lp-corner-line', { left: px(hx0), top: px(ky), width: px(Math.max(80, kx - hx0)), height: '1px' });
+    deco(c, 'lp-corner-line', { left: px(kx), top: px(ky), width: '1px', height: px(Math.max(80, ty0 - ky + Math.min(180, th * 0.6))) });
   },
 };

@@ -355,5 +355,25 @@ await test('#214 逐行补逐字再配四种：对方拆两行、本平台拆两
  const r2=b.mergeWordsByLine({raw:'',lines:dup},sup);
  assert.ok(b.lyricCoverage(r2.lyric).wordLines<11,'两行正文相同、对方只有一行：不硬配');
 });
+await test('#233 「标签 + 空格 + 名字」型署名行不再混进正文（编曲 n-buna 等）',()=>{
+  const lines = [
+    { timeMs: 0, text: '编曲 n-buna' },
+    { timeMs: 0, text: '編曲 n-buna' },
+    { timeMs: 0, text: '作曲 米津玄師' },
+    { timeMs: 0, text: '作词 张三' },
+    { timeMs: 0, text: 'Programming Cirkut' },
+    { timeMs: 0, text: 'ギター n-buna' },
+    { timeMs: 0, text: 'producer Rick Rubin' },
+    { timeMs: 1000, text: '夢ならばどれほどよかったでしょう' },
+  ];
+  const kept = ui.filterCreditLines(lines, 'Lemon', '米津玄師');
+  assert.deepEqual(kept.map((l) => l.text), ['夢ならばどれほどよかったでしょう'], '八种署名写法全部丢掉，正文留下');
+});
+await test('#233 正文首句不会被误杀（标签字开头的正常歌词）',()=>{
+  for (const text of ['我爱你 中国', '曲终人散', '词不达意', '我和我的祖国', '走吧 走吧', '春风十里 不如你', '鼓浪屿之波', '爱 是不能忘记的']) {
+    const kept = ui.filterCreditLines([{ timeMs: 0, text }], '某某', '某某');
+    assert.equal(kept.length, 1, `「${text}」是正文，不能当署名行丢掉`);
+  }
+});
 console.log(`歌词回归 ${count}/${count}`);
 }finally{fs.rmSync(temp,{recursive:true,force:true})}

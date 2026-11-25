@@ -13,7 +13,7 @@
   letter-spacing: -0.03em;
   white-space: nowrap;
   color: transparent;
-  -webkit-text-stroke: 1.5px rgba(255, 255, 255, 0.17);
+  -webkit-text-stroke: 1.5px rgba(255, 255, 255, 0.26);
   pointer-events: none;
 }
 
@@ -101,8 +101,8 @@
    没唱到 = 深色 34% 透明、唱过 / 正在唱 = 深色。逐字层的颜色变量由引擎每帧写在 .u 的行内 style 上，
    所以这里用 !important 把 --sung / --edge / --un 压住；唱过的句子走 --lp-ink、没唱到的走 --lc-rest，在这一层上直接改写。 */
 .lp-field-on {
-  --lp-field-ink: color-mix(in srgb, var(--lp-acc) 22%, rgb(6 7 9));
-  --lc-rest: color-mix(in srgb, var(--lp-field-ink) 34%, transparent);
+  --lp-field-ink: color-mix(in srgb, var(--lp-acc) 9%, rgb(4 5 6));
+  --lc-rest: color-mix(in srgb, var(--lp-field-ink) 45%, transparent);
   --lp-ink: var(--lp-field-ink);
   --lp-tr: color-mix(in srgb, var(--lp-field-ink) 50%, transparent);
   --lp-tr-on: color-mix(in srgb, var(--lp-field-ink) 82%, transparent);

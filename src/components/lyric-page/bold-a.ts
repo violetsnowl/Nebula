@@ -1,4 +1,4 @@
-import { deco, fitTo, glyphs, heldRange, lift, put, px, segment, splitAt } from './kit';
+import { deco, fitTo, glyphs, heldRange, lift, put, px, segment, splitAt, wordBounds } from './kit';
 import { PH, type TCtx, type TLine, type Tpl } from './types';
 
 /**
@@ -8,6 +8,38 @@ import { PH, type TCtx, type TLine, type Tpl } from './types';
 
 const allTimed = (c: TCtx) => c.lines.every((l) => l.units.length > 0);
 const maxGlyphs = (c: TCtx) => Math.max(...c.lines.map((l) => glyphs(l.text)));
+
+/** 中文虚词：不参与竖排「一词放大」的主角词选择。 */
+const STOP_HOLD_ZH = new Set([...'的了我你是在不有就都也和他她它们这那个一着过吗呢吧啊哦呀与而之把被让给对从向到得地又还啦嘛哟']);
+
+/** 整页挑一个唱得最久的非虚词（中文竖排用）：按分词候选遍历，避免某句最长字碰巧是「的」就漏掉同句实词。 */
+function heldPickZh(c: TCtx): { l: TLine; from: number; to: number; dur: number } | null {
+  let best: { l: TLine; from: number; to: number; dur: number } | null = null;
+  const consider = (l: TLine, a: number, b: number) => {
+    const raw = l.units
+      .slice(a, b + 1)
+      .map((u) => u.textContent ?? '')
+      .join('')
+      .replace(/[^\p{L}\p{N}]/gu, '');
+    if (!raw || [...raw].every((ch) => STOP_HOLD_ZH.has(ch))) return;
+    const dur = l.eu!.slice(a, b + 1).reduce((s, u) => s + (u.e - u.s), 0) + glyphs(raw) * 0.001;
+    if (!best || dur > best.dur) best = { l, from: a, to: b, dur };
+  };
+  for (const l of c.lines) {
+    if (!l.eu?.length || l.eu.length !== l.units.length) continue;
+    const starts = [...wordBounds(l)].sort((x, y) => x - y);
+    for (let m = 0; m < starts.length; m++) {
+      const a = starts[m]!;
+      const b = (starts[m + 1] ?? l.units.length) - 1;
+      if (b - a <= 2) {
+        consider(l, a, b);
+      } else {
+        for (let k = a; k <= b; k++) consider(l, k, k);
+      }
+    }
+  }
+  return best;
+}
 
 // ———— 一词放大（主歌）：每句唱得最久的词放大，其余小字 ————
 export const held: Tpl = {
@@ -23,16 +55,105 @@ export const held: Tpl = {
       if (l.tr) l.tr.className = 'lp-tr is-under';
     }
     if (c.vert) {
-      // 竖排：从右往左一列一句，大字与小字沿列中轴对齐
-      let f = 1;
-      for (const l of c.lines) {
-        l.tx.style.fontSize = '30px';
-        f = Math.min(f, 640 / Math.max(1, c.size(l.tx).h));
+      // 中文竖排（2026-11-23 用户定稿）：整页只放大一个实词，按词在句中的位置自然切成
+      // 「前半列（右）→ 大字列（中）→ 后半列（左）」，从右往左阅读不断句；全部留在 .lp-line.is-vert 内。
+      const pick = heldPickZh(c);
+      if (!pick) {
+        let f = 1;
+        for (const l of c.lines) {
+          l.tx.style.fontSize = '30px';
+          f = Math.min(f, 590 / Math.max(1, c.size(l.tx).h));
+        }
+        const fs = 30 * f;
+        const col = fs * 4.2;
+        const step = col + 44 * f;
+        const totalW = n * col + Math.max(0, n - 1) * 44 * f;
+        const right0 = (1600 + totalW) / 2;
+        c.lines.forEach((l, i) => put(l, right0 - i * step - col, 136 + (i % 2) * 32, fs));
+        return;
       }
-      const fs = 30 * f;
-      const col = fs * 4.2;
-      const step = col + 44 * f;
-      c.lines.forEach((l, i) => put(l, 1300 - i * step - col, 150 + (i % 2) * 40, fs));
+      for (const l of c.lines) for (const u of l.units) u.classList.remove('lp-big');
+      const uLen = pick.l.units.length;
+      const hasGlyph = (a: number, b: number) =>
+        a <= b &&
+        glyphs(
+          pick.l.units
+            .slice(a, b + 1)
+            .map((u) => u.textContent ?? '')
+            .join(''),
+        ) > 0;
+      const from = hasGlyph(0, pick.from - 1) ? pick.from : 0;
+      const to = hasGlyph(pick.to + 1, uLen - 1) ? pick.to : uLen - 1;
+      const cuts: number[] = [];
+      if (from > 0) cuts.push(from);
+      if (to + 1 < uLen) cuts.push(to + 1);
+      const bigIdx = from > 0 ? 1 : 0;
+      pick.l.el.classList.add('lt-held-host');
+      put(pick.l, 0, 0);
+      const segs = segment(pick.l, cuts, (k) => (k === bigIdx ? 'lt-held-big' : 'lt-held-sub'));
+
+      interface Col {
+        el: HTMLElement;
+        line: TLine;
+        lineIdx: number;
+        isSeg: boolean;
+        isBig: boolean;
+        fs: number;
+        w: number;
+      }
+      const cols: Col[] = [];
+      c.lines.forEach((l, lineIdx) => {
+        if (l === pick.l) {
+          segs.forEach((seg, si) => {
+            cols.push({ el: seg, line: l, lineIdx, isSeg: true, isBig: si === bigIdx, fs: 46, w: 0 });
+          });
+        } else {
+          cols.push({ el: l.tx, line: l, lineIdx, isSeg: false, isBig: false, fs: 46, w: 0 });
+        }
+      });
+
+      const MAX_H = 580;
+      for (const col of cols) {
+        if (col.isBig) {
+          col.el.style.fontSize = '100px';
+          const h100 = c.size(col.el).h;
+          col.fs = Math.min(190, h100 > 0 ? (100 * MAX_H) / h100 : 190);
+        } else {
+          col.el.style.fontSize = '46px';
+          const h46 = c.size(col.el).h;
+          col.fs = 46 * Math.min(1, MAX_H / Math.max(1, h46));
+        }
+        col.el.style.fontSize = px(col.fs);
+        col.w = c.size(col.el).w;
+      }
+      const AVAIL_W = 1600 - 2 * 128;
+      const MIN_GAP = 40;
+      const gaps = Math.max(0, cols.length - 1);
+      let sumW = cols.reduce((s, col) => s + col.w, 0);
+      if (gaps > 0 && sumW + gaps * MIN_GAP > AVAIL_W) {
+        const shrink = (AVAIL_W - gaps * MIN_GAP) / Math.max(1, sumW);
+        for (const col of cols) {
+          col.fs *= shrink;
+          col.el.style.fontSize = px(col.fs);
+          col.w = c.size(col.el).w;
+        }
+        sumW = cols.reduce((s, col) => s + col.w, 0);
+      }
+      if (segs[0]) pick.l.tx.style.fontSize = segs[0].style.fontSize;
+      const S = gaps > 0 ? Math.min(130, Math.max(MIN_GAP, (AVAIL_W - sumW) / gaps)) : 0;
+      const totalW = sumW + S * gaps;
+      let right = 800 + totalW / 2;
+      for (const col of cols) {
+        const left = right - col.w;
+        const top = 136 + (col.lineIdx % 2) * 32;
+        if (col.isSeg) {
+          col.el.style.left = px(left);
+          col.el.style.top = px(top);
+        } else {
+          put(col.line, left, top);
+        }
+        right = left - S;
+      }
       return;
     }
     const X = [150, 336, 214, 412, 270];

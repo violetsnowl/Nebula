@@ -68,10 +68,10 @@ interface PPage {
 }
 
 
-/** 没唱到的字（浅灰的「先印好」）：封面色模式是白 16%，同色系带一点主色。 */
+/** 没唱到的字（浅灰的「先印好」）：封面色模式是白 24%，同色系带一点主色（与 lyric-page.css 的 --lc-rest 一致）。 */
 const GHOST = {
-  cover: 'rgba(255,255,255,.16)',
-  mono: 'color-mix(in srgb, color-mix(in srgb, var(--lc-a) 58%, #fff) 18%, transparent)',
+  cover: 'rgba(255,255,255,.24)',
+  mono: 'color-mix(in srgb, color-mix(in srgb, var(--lc-a) 58%, #fff) 24%, transparent)',
 } as const;
 
 /** 纸面颗粒：一张 256px 的灰度噪点，第一次用到时生成（样张 M 的纸面质感）。 */
@@ -443,6 +443,8 @@ export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
       ctx.style.letterSpacing = cs.letterSpacing;
       ctx.style.lineHeight = cs.lineHeight;
       ctx.style.textTransform = cs.textTransform;
+      const to = cs.getPropertyValue('text-orientation');
+      if (to) ctx.style.setProperty('text-orientation', to);
       for (const v of ['--lc-rest', '--lp-ink', '--lc-a']) {
         const val = cs.getPropertyValue(v);
         if (val) ctx.style.setProperty(v, val);
@@ -902,7 +904,10 @@ export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
             if (state !== 'cur' || !l.rts?.length) continue;
             // 正在唱（和唱完后 0.9s 的尾韵）：扫光、波浪、长音；没唱到的部分是浅灰的「先印好」
             const singing = t <= e.e + 0.3;
-            const wave = singing ? waveOf(l.rts, e.dens, t, PAGE_WAVE) : null;
+            const rawWave = singing ? waveOf(l.rts, e.dens, t, PAGE_WAVE) : null;
+            // 波浪在句首前已预淡入，候选句不应用；切入当前句后的 0.15s 内从 0 过渡接上，避免首帧轻跳
+            const waveK = smooth(clamp((t - (e.s - 0.05)) / 0.15, 0, 1));
+            const wave = rawWave ? (c: number) => rawWave(c) * waveK : null;
             for (const rt of l.rts) {
               unitFrame(rt, t, scheme, singing, wave, e.dens);
               rt.v.set('--un', ghost);
