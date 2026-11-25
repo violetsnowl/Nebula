@@ -6,6 +6,24 @@
 
 ---
 
+## #274 — 2026-11-25 — 清理文档中与现行代码及记录不一致的过时表述
+
+**目标**：新窗口接手后按事实核对仓库文档，刷新与当前代码和现行记录相矛盾或过时的表述（只改文档，未改任何源码）。
+
+**改动点**
+- `docs/README.md`：标注 `TRAVEL_HANDOFF.md` 起草来源分支 `fe/next` 已于 `#264` 合回 `main` 并清理。
+- `docs/meta/HANDOFF.md`：将环境速查中的「八平台导入契约」更正为「九平台导入契约」（与 `scripts/import-regression.mjs` 一致）。
+- `docs/meta/USER_PROFILE.md`：刷新「领域现状速记」为九平台接入、各平台取链兜底及汽水车机协议已落地的现行状态。
+- `docs/meta/CONTEXT_SNAPSHOT.md`：补全 Apple Music 小节里「目录搜索已于 `#232` 接入（待订阅登录态核验）」，消除文档内部矛盾。
+- `docs/project/PROJECT.md`：补齐 `adapters/` 与 `login/` 的九平台清单、更新 `qa.cjs` 与九平台登录方式及「4.4 测试约定」里的「九平台导入契约」。
+- `docs/project/ARCHITECTURE.md`：按 `lyricService.ts` 现状更新专辑页兜底目标（含 Spotify，`#226`），并将歌词缓存版本号由 `schema 4` 更新为现行 `schema 6`（与 `lyricCache.ts` 一致）。
+- `docs/project/PLATFORM_MATRIX.md`：更新 Apple Music 逐字 TTML（`#195`）与目录搜索（`#232`）、汽水公开搜索（`#231`）现状，统一将误标的 `#194` 更正为 `#195`，清理已被 `#197/#201` 取代的旧触发条件、更新 `#196/#214` 对齐方式与 `#206` AMLL 搜索覆盖状态。
+- `docs/project/NOTES.md`：刷新汽水登录、待办「平台功能缺口」已完成项（`#180–#232`）与现行歌词缓存 `schema=6`。
+
+**验证**：`pnpm build` + `pnpm qa` 全部通过（0 报错）；`git status` 仅包含上述 9 份文档改动，未触碰代码文件与 `.claude/`。
+
+**遗留与风险**：无；代码未变更。
+
 ## #273 — 2026-11-25 — 结窗口收尾：刷新上下文快照与本轮踩坑记录
 
 **目标**：本窗口 `#264–#272` 均已验收并合入单主线 `main`，按交接规范在换窗口前把当前现状、用户拍板决策、踩坑经验与已知风险固化进仓库文档。

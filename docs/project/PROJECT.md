@@ -21,9 +21,9 @@ React 18 + TypeScript + Vite（单文件构建）+ Electron 43 + esbuild（主�
 music-nebula/
 ├─ src/
 │  ├─ main/                    # 主进程 / Node 后端逻辑（纯 TS，可独立于 Electron 运行）
-│  │  ├─ adapters/             # 平台适配器：netease / qq / kugou / spotify + 字段映射 mappers
+│  │  ├─ adapters/             # 平台适配器：netease / qq / kugou / kuwo / bodian / qishui(+qishuiCar) / spotify / ytmusic / applemusic + 字段映射 mappers
 │  │  ├─ encrypt/ncmCrypto.ts  # 网易云 weapi / eapi 加密（AES/RSA/MD5，登录与后续加密接口共用）
-│  │  ├─ login/                # 多平台登录适配器（neteaseLogin / qqLogin / index）
+│  │  ├─ login/                # 多平台登录适配器（neteaseLogin / qqLogin / kugouLogin / kuwoLogin / bodianLogin / qishuiLogin / qishuiCarLogin / ytmusicLogin / applemusicLogin + qishui-sign-engine + index）
 │  │  ├─ parsers/              # LRC 歌词解析、双语时间轴归并
 │  │  ├─ services/             # SongResolver（音源兜底）、LyricService
 │  │  ├─ cookieStore.ts        # 按平台隔离 + 原子写入持久化
@@ -39,7 +39,7 @@ music-nebula/
 │  └─ preload.cjs              # contextBridge 暴露 nebulaAPI
 ├─ scripts/
 │  ├─ backend-smoke.mjs        # 后端冒烟测试（解析/映射/加密/兜底/IPC）
-│  ├─ qa.cjs                   # 前端自动化 QA（无头 Chrome：密度/鱼眼/平移/播放/容错）
+│  ├─ qa.cjs                   # 前端自动化 QA（无头 Chrome：星云舞台 / 缩放平移 / 播放 / 歌词与版面 / 一镜到底 / 容错）
 │  ├─ desktop-check.mjs        # 桌面版启动前环境自检
 │  ├─ desktop-play-smoke.mjs   # 桌面版播放链路冒烟（需 Playwright）
 │  ├─ check-arch.mjs           # 架构依赖守卫（Dependency Rules 机制化执行）
@@ -96,8 +96,11 @@ pnpm qa:playback-live # 默认 108 条公开跨平台挑战样本联网统计
 - 登录成功后 cookie 存入 `CookieStore`（按平台隔离，明文 JSON，位于 `app.getPath('userData')`）。
 - QQ 走官方登录页（独立分区 `persist:qq-music-login`）扫码，读取分区 Cookie 落库；ptlogin2 扫码为实验性。
 - 酷狗：手机端扫码登录（#164），歌单接口只认手机端票据。
-- 汽水：扫码登录（签名引擎）。
-- Spotify：OAuth，默认用 Spotify 桌面客户端的公开 Client ID（#165），设了 `SPOTIFY_CLIENT_ID` 环境变量则用自己的；账号和歌单走 Spotify 自家查询服务（#171）。
+- 汽水：扫码登录（签名引擎）；整曲播放另支持车机协议抖音扫码授权（#212）。
+- Spotify：OAuth，默认浏览器授权（#183），使用 Spotify 桌面客户端的公开 Client ID（#165），设了 `SPOTIFY_CLIENT_ID` 环境变量则用自己的；账号和歌单走 Spotify 自家查询服务（#171）。
+- 酷我 / Apple Music：官网 / 官方网页在软件内弹窗（`embeddedSheet`）登录（#183、#191）。
+- 波点：波点 App 扫码登录（#182）。
+- YouTube Music：设备码登录，默认浏览器打开 `google.com/device` 输入代码（#185）。
 
 ### 4.3 音源 / 防盗链
 
@@ -106,7 +109,7 @@ pnpm qa:playback-live # 默认 108 条公开跨平台挑战样本联网统计
 
 ### 4.4 测试约定
 
-- 后端整修回归：`pnpm qa:backend` 包括播放代次、路由/代理、录音匹配、QQ 契约、歌词、封面隐私、五平台导入。
+- 后端整修回归：`pnpm qa:backend` 包括播放代次、路由/代理、录音匹配、QQ 契约、歌词、封面隐私、九平台导入契约及各平台离线回归套件。
 - 联网统计：`pnpm qa:playback-live --samples=scripts/fixtures/public-playlists.json`（100 首公开榜单）；`public-benchmark.json` 为 108 首跨平台挑战集。输出默认在仓库外；切勿提交私人账号的歌曲列表或原始凭据。
 - 原生媒体：先 build，再 `pnpm qa:media`；可传 `--baseline=../baseline-ui` 比较归档源码。固定本地 WAV 与延时，输出媒体事件间隔和舞台帧时间，不宣称声卡实际延迟。
 - 原生桌面：`pnpm qa:electron` 使用仓库外隔离 userData、隐藏窗口与合成 WAV，不碰原账号文件。

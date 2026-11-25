@@ -90,7 +90,7 @@
 - 改动 `src/main`（后端）后必须 `pnpm build:main` 才能让 Electron 与冒烟测试生效。
 - `pnpm build` 产物在**仓库外**的同级目录 `../nebula-outputs/`（本机 `E:\CUFE\vibecoding\nebula-outputs`）；`pnpm qa` 读取该产物，所以**先 build 再 qa**。
 - **换机器的坑**：`scripts/qa.cjs` 经 `scripts/qa-env.cjs` 找依赖，可用 `NEBULA_QA_MODULES` / `NEBULA_CHROME` 两个环境变量覆盖（默认仍指本机的 Codex runtime 和 Chrome）；`scripts/desktop-play-smoke.mjs` 可能仍是硬编码，换机先核对。outputs 目录是相对仓库的 `../nebula-outputs`（与 `vite.config.ts` 的 `outDir` 一致）。
-- `pnpm qa:backend` 现在跑十几套后端回归（取链、路由、录音匹配、地址寿命、QQ 会话与续期、歌词、韩语罗马音、八平台导入契约、酷我、波点、YouTube Music、汽水扫码、内嵌页面宿主、Spotify 令牌等），全部离线，不需要账号。
+- `pnpm qa:backend` 现在跑十几套后端回归（取链、路由、录音匹配、地址寿命、QQ 会话与续期、歌词、韩语罗马音、九平台导入契约、酷我、波点、YouTube Music、汽水扫码、内嵌页面宿主、Spotify 令牌等），全部离线，不需要账号。
 - `pnpm qa` 不再依赖外网：演示曲目的音频（soundhelix.com）由 QA 脚本就地拦下、换成本地静音 WAV（#193）。以前「重新播放成功后置灰恢复」网慢时偶发失败（2026-11-18～19 出现过多次），已根治；现在 `pnpm qa` 再出红就是真问题，不要靠重跑。
 - **Windows 工作树坑**：删除含 `node_modules` 的工作树可能报 `Filename too long`——先 `git config core.longpaths true`，仍失败则用 robocopy 镜像空目录清空后再删；目录被改名导致注册失效时用 `git worktree repair <新路径>` 修复。
 - 凭证：`qq-cookie.txt` / `.env` 均被 `.gitignore` 排除，切勿提交；仓库内现无任何真实凭证（旧的已过期 `qq-cookie.txt` 已于 2026-10-14 删除，重新做实账号验证需重新导出）。
