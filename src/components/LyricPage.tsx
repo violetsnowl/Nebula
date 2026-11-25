@@ -12,9 +12,20 @@ import { TYPO, measureUnits, renderUnits, restUnit, unitFrame, waveOf, type Unit
 import { useSpaceLab } from '../lib/space/lab';
 import { flatten } from './lyric-page/kit';
 import { FALLBACK_H, newPickState, pickTpl, songHook } from './lyric-page/pools';
-import { LsFly, type FlyPair, type FlySide } from './lyric-page/toListen';
+import {
+  LsFly,
+  columnSideOf,
+  columnUnitsOf,
+  hideFlyElements,
+  isPageStageActive,
+  launchStageToListenFly,
+  matchColumnLines,
+  type FlyPair,
+  type FlySide,
+} from '../lib/listen/flyTransition';
 import { PH, PW, type PageHooks, type TCtx, type TLine, type Tpl } from './lyric-page/types';
 import './listen/lyric-words.css';
+import './listen/fly-transition.css';
 import './lyric-page.css';
 import './lyric-page-tpl.css';
 import './lyric-page-tpl-b.css';
@@ -699,11 +710,15 @@ export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
       },
     };
 
-    // —— 版面 ↔ 听音空间一镜到底（2026-11-22 用户要求，lyric-page/toListen.ts）——
-    // 打开听音空间时，版面正在显示的这一页逐字飞到听音空间歌词栏里对应的字上；常驻聆听时收起听音空间会回到版面，字再飞回来。
+    // —— 版面 ↔ 听音空间一镜到底（共用引擎 lib/listen/flyTransition.ts）——
     let lsFly: LsFly | null = null;
-    /** 飞进听音空间期间：版面（译文、装饰、纸面）跟着飞行进度更快淡出，不等交接曲线。 */
-    let lsIn = false;
+    /** 本次打开听音空间是否从版面聆听态起飞（收起时只有从版面起飞过或此刻仍在版面聆听态才飞回版面，杜绝漫游态收起闪版面）。 */
+    let enteredFromPage = false;
+    /** 飞进听音空间期间：版面（译文、装饰、纸面）按飞行进度更快淡出，不等交接曲线。 */
+    let flyingOutToLs = false;
+    /** 翻页过渡瞬间可能尚未拿到 >0.5 透明度的页，1.2s 内每 60ms 补试一次。 */
+    let lsWantAt = 0;
+    let lsAttemptAt = 0;
     /** 一镜到底的起落记录（QA 排查用，最多 20 条）。 */
     const lsLog: string[] = [];
     const lsNote = (m: string) => {
@@ -713,117 +728,58 @@ export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
     let lsPrev = lsOpenRef.current;
     /** 收起听音空间、飞回版面期间版面直接满显（不等交接曲线慢慢升起），直到交接追上。 */
     let lsBoostUntil = 0;
-    const normText = (s: string) => s.replace(/\s+/g, '');
     const unitsOfPage = (l: PLine): HTMLElement[] => (l.rts ? l.rts.map((r) => r.v.el) : l.whole ? [l.whole] : []);
     const pageSide = (l: PLine, el: HTMLElement): FlySide => ({ el, ctx: `lpm-b ${l.el.className}`, rot: rotTarget(l, el), vert: unitVert(l, el) });
-    const colSide = (line: HTMLElement, el: HTMLElement): FlySide => ({
-      el,
-      ctx: `lpm-c${line.classList.contains('is-grad') ? ' is-grad' : ''}`,
-      rot: 0,
-      vert: false,
-      opEl: line,
-      blend: line.classList.contains('is-cur') ? undefined : 'plus-lighter',
-    });
-    /**
-     * 歌词栏里这一句现在看得见：句子至少 3/4 落在歌词栏的范围里，且没被边缘淡出（引擎按景深逐句写透明度，≥ .25）。
-     * 当前句之前，歌词栏一般只看得见两句半（折行的句子占两行时更少）；当前句和它之后的句子在版面这一页里都看得见。
-     */
-    const colVisible = (line: HTMLElement): boolean => {
-      const box = document.querySelector('.ls-col')?.getBoundingClientRect();
-      const r = line.getBoundingClientRect();
-      if (!box || !(r.height > 0)) return false;
-      // 只看位置：歌词栏刚打开时各句还在淡入（真实速度下要 300–450ms），按当时的透明度判断会一句都配不上（2026-11-22 用户：不飞了）。
-      // 被边缘淡出的句子本来就在栏的边上，3/4 落在栏内这一条已经把它们排除了
-      const vis = Math.min(r.bottom, box.bottom) - Math.max(r.top, box.top);
-      return vis >= r.height * 0.75;
-    };
-    /**
-     * 听音空间歌词栏里和版面这几句对应的句子——只取两边都看得见的公共部分（2026-11-22 用户：只让两个场景都显示的句子转场，
-     * 其余原地淡出，免得飞到看不见的地方）。对齐按「当前句对当前句」的偏移（歌词栏去掉间奏行，和版面是同一串句子），
-     * 文字对不上时只在前后两句里找；对不上或歌词栏里看不见的句子返回 null（这句不飞）。
-     */
-    const colLinesFor = (ls: PLine[], t: number): (HTMLElement | null)[] => {
-      const cols = [...document.querySelectorAll<HTMLElement>('.ls-col .ly-line:not(.is-gapline)')];
-      // 歌词栏刚建好、引擎还没排版（还没有当前句）时先不对齐
-      if (!cols.length || !cols.some((c) => c.classList.contains('is-cur'))) return ls.map(() => null);
-      const texts = cols.map((c) => normText(c.querySelector('.ly-main')?.textContent ?? ''));
-      let curC = cols.findIndex((c) => c.classList.contains('is-cur'));
-      let curP = -1;
-      ls.forEach((l, i) => {
-        if (l.eng.s <= t + 0.05) curP = i;
-      });
-      if (curP < 0) curP = 0;
-      if (curC < 0) curC = Math.max(0, texts.indexOf(normText(ls[curP]!.eng.text)));
-      return ls.map((l, i) => {
-        const want = normText(l.eng.text);
-        const guess = curC + (i - curP);
-        let best = texts[guess] === want ? guess : -1;
-        for (let d = 1; best < 0 && d <= 2; d++) {
-          if (texts[guess - d] === want) best = guess - d;
-          else if (texts[guess + d] === want) best = guess + d;
-        }
-        return best >= 0 && colVisible(cols[best]!) ? cols[best]! : null;
-      });
-    };
-    const colUnits = (line: HTMLElement | null): HTMLElement[] => (line ? [...line.querySelectorAll<HTMLElement>(':scope > .ly-main > .u, :scope > .ly-main.ly-whole')] : []);
-    const hideEls = (els: HTMLElement[], on: boolean) => {
-      // 用属性而不是行内样式藏：替身每帧把原字的行内样式和类名同步过去，写在那里会把替身也藏掉（2026-11-22 用户：一镜到底看不见，只有一段黑）
-      for (const el of els) el.toggleAttribute('data-flyhide', on);
-    };
     /** 现在该显示哪一页：已经出现的最后一页。 */
     const pageAt = (t: number): PPage | null => {
       let pg: PPage | null = null;
       for (const p of pages) if (p.tIn <= t) pg = p;
       return pg;
     };
+    const queriesOfPage = (ls: PLine[], t: number) => {
+      let curP = -1;
+      ls.forEach((l, i) => {
+        if (l.eng.s <= t + 0.05) curP = i;
+      });
+      if (curP < 0) curP = 0;
+      return ls.map((l, i) => ({ text: l.eng.text, offsetFromCur: i - curP }));
+    };
     const startLsIn = (t: number) => {
       const pg = pages.find((p) => p.on && Number(p.el.style.opacity || 1) > 0.5) ?? null;
       lsNote(`in page=${pg ? pages.indexOf(pg) : -1}`);
       if (!pg) return;
-      const pairs: (FlyPair & { line: PLine; i: number })[] = [];
-      pg.lines.forEach((l) => unitsOfPage(l).forEach((el, i) => pairs.push({ from: pageSide(l, el), to: null, line: l, i })));
-      if (!pairs.length) return;
-      // 歌词栏刚建好时可能还没有字：每帧补找；一句的字数对不上时这一句不飞到栏里（原地淡出）
-      // 歌词栏刚打开时还在排版：飞行前 60% 里每帧（最多一次）重新判断哪些句子看得见，还没配上的字可以晚一点接上
-      // （从接上那一刻、当时的位置起按剩下的时间飞，不跳）；过了 60% 还没配上的这句就原地淡出
-      let cols: (HTMLElement | null)[] = pg.lines.map(() => null);
-      let colsAt = -1;
-      let fly: LsFly | null = null;
-      lsFly = fly = new LsFly(
-        pairs,
-        (p) => {
-          const q = p as FlyPair & { line: PLine; i: number };
-          if (fly && fly.progress > 0.6) return null;
-          const now = performance.now();
-          if (now - colsAt > 8) {
-            colsAt = now;
-            const before = cols.filter(Boolean).length;
-            cols = colLinesFor(pg.lines, t);
-            if (cols.filter(Boolean).length !== before) lsNote(`cols matched ${cols.filter(Boolean).length}/${pg.lines.length} at ${(fly?.progress ?? 0).toFixed(2)}`);
-          }
-          const col = cols[pg.lines.indexOf(q.line)] ?? null;
-          const us = colUnits(col);
-          if (!col || us.length !== unitsOfPage(q.line).length) return null;
-          return colSide(col, us[q.i]!);
+      const queries = queriesOfPage(pg.lines, t);
+      lsFly = launchStageToListenFly(
+        pg.lines.map((l, i) => ({
+          text: l.eng.text,
+          offsetFromCur: queries[i]!.offsetFromCur,
+          units: unitsOfPage(l),
+          sideOf: (el) => pageSide(l, el),
+        })),
+        {
+          flightMs: 650,
+          waitMs: 1200,
+          settleMs: 150,
+          onMatchChange: (matched, total, prog) => lsNote(`cols matched ${matched}/${total} at ${prog.toFixed(2)}`),
         },
-        650,
-        hideEls,
       );
     };
     const startLsOut = (t: number) => {
       const pg = pageAt(t);
       if (!pg) return;
-      const cols = colLinesFor(pg.lines, t);
+      const cols = matchColumnLines(queriesOfPage(pg.lines, t));
       const pairs: FlyPair[] = [];
       pg.lines.forEach((l, li) => {
-        const us = colUnits(cols[li] ?? null);
+        const col = cols[li] ?? null;
+        const us = columnUnitsOf(col);
         const ps = unitsOfPage(l);
-        if (!us.length || us.length !== ps.length) return;
-        us.forEach((el, i) => pairs.push({ from: colSide(cols[li]!, el), to: pageSide(l, ps[i]!) }));
+        if (!col || !us.length || us.length !== ps.length) return;
+        us.forEach((el, i) => pairs.push({ from: columnSideOf(col, el), to: pageSide(l, ps[i]!) }));
       });
       lsBoostUntil = performance.now() + 2600;
       if (!pairs.length) return;
-      lsFly = new LsFly(pairs, () => null, 700, hideEls);
+      lsFly = new LsFly(pairs, () => null, 700, hideFlyElements);
+      if (lsFly.done) lsFly = null;
     };
 
     const tick = (now: number) => {
@@ -840,25 +796,46 @@ export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
       smoothT = cand;
       const t = cand;
       const k = listenBus.enabled ? listenBus.k : 0;
-      // 听音空间开合：开 = 版面飞到歌词栏；常驻聆听时收起 = 飞回版面
+      const pageOwnsStage = isPageStageActive(true, listenBus.enabled, k);
       const lsNow = lsOpenRef.current;
       if (lsNow !== lsPrev) {
         lsFly?.end();
         lsFly = null;
         lsNote(`ls ${lsNow} k=${k.toFixed(2)}`);
-        lsIn = false;
-        if (lsNow && k > 0.5) {
-          startLsIn(t);
-          lsIn = !!lsFly;
+        if (lsNow) {
+          enteredFromPage = pageOwnsStage;
+          flyingOutToLs = false;
+          if (enteredFromPage) {
+            startLsIn(t);
+            flyingOutToLs = !!lsFly;
+            lsWantAt = lsFly ? 0 : now;
+            lsAttemptAt = now;
+          } else {
+            lsWantAt = 0;
+          }
+        } else {
+          lsWantAt = 0;
+          flyingOutToLs = false;
+          if (pinRef.current && (enteredFromPage || pageOwnsStage)) {
+            startLsOut(t);
+          }
+          enteredFromPage = false;
         }
-        else if (!lsNow && pinRef.current) startLsOut(t);
         lsPrev = lsNow;
+      }
+      if (lsNow && enteredFromPage && !lsFly && lsWantAt && now - lsWantAt < 1200 && now - lsAttemptAt > 60) {
+        lsAttemptAt = now;
+        startLsIn(t);
+        if (lsFly) {
+          flyingOutToLs = true;
+          lsWantAt = 0;
+        }
       }
       if (lsFly && lsFly.step(now)) lsFly = null;
       const boost = now < lsBoostUntil && k < 0.99 ? 1 : 0;
       if (k >= 0.99) lsBoostUntil = 0;
-      const fade = lsIn && lsFly ? 1 - smooth(lsFly.progress / 0.55) : lsIn ? 0 : 1;
-      if (lsIn && !lsNow) lsIn = false;
+      const fade = flyingOutToLs && lsFly ? 1 - smooth(lsFly.progress / 0.55) : flyingOutToLs ? 0 : 1;
+      if (flyingOutToLs && !lsNow) flyingOutToLs = false;
       const op = Math.min(Math.max(k, boost), fade).toFixed(3);
       if (op !== rootOp) {
         root.style.opacity = op;

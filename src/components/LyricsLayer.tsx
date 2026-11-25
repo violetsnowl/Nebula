@@ -21,7 +21,22 @@ import {
   type UnitRt,
 } from '../lib/listen/words';
 import type { FrameBus } from '../lib/stage';
+import {
+  LsFly,
+  columnSideOf,
+  columnUnitsOf,
+  hideFlyElements,
+  isColumnLineVisible,
+  isPageStageActive,
+  launchStageToListenFly,
+  normLyricText,
+  plainColumnText,
+  queryColumnLines,
+  type FlyPair,
+  type FlySide,
+} from '../lib/listen/flyTransition';
 import './listen/lyric-words.css';
+import './listen/fly-transition.css';
 
 interface LyricsLayerProps {
   lines: LyricLineUI[];
@@ -31,6 +46,8 @@ interface LyricsLayerProps {
   /** 前奏/纯音乐时居中展示的歌曲信息。 */
   songTitle?: string;
   songArtist?: string;
+  /** 听音空间是否打开：漫游态与漫游聆听态下双向一镜到底。 */
+  lsOpen?: boolean;
 }
 
 type Role = 'current' | 'next' | 'nextNext' | 'leaving';
@@ -182,10 +199,12 @@ function buildLineDom(host: HTMLElement, e: EngineLine): LineDom {
  * - 漫游时（交接启用、还没进入聆听）按设置退成「氛围」（只留当前句、缩小半透明微虚）和 / 或「字幕」；
  * - 前奏/纯音乐居中展示歌曲信息。
  */
-export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }: LyricsLayerProps) {
+export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist, lsOpen = false }: LyricsLayerProps) {
   const playState = useAudioPlayer();
   const currentTime = playState.currentTime;
   const playing = playState.playing;
+  const lsOpenRef = useRef(lsOpen);
+  lsOpenRef.current = lsOpen;
   const { lyricSettings: settings } = useInterfaceSettingsContext();
   const listen = useListenSettings();
   const containerRef = useRef<HTMLDivElement>(null);
@@ -301,6 +320,131 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
     let gapK = 0;
     let wroteVars = false;
     const rootStyle = document.documentElement.style;
+
+    // —— 漫游 / 字幕 ↔ 听音空间双向一镜到底（共用 lib/listen/flyTransition.ts）——
+    let lsPrev = !!lsOpenRef.current;
+    let roamFly: LsFly | null = null;
+    let roamFlyInKind: 'flow' | 'caption' | null = null;
+    let lsWantDir: 'out' | 'in' | null = null;
+    let lsWantAt = 0;
+    let lsAttemptAt = 0;
+
+    interface RoamSource {
+      key: number;
+      offsetFromCur: number;
+      text: string;
+      units: HTMLElement[];
+      sideOf: (el: HTMLElement) => FlySide;
+      kind: 'flow' | 'caption';
+    }
+    const collectRoamSources = (): RoamSource[] => {
+      const out: RoamSource[] = [];
+      const els = [...container.querySelectorAll<HTMLElement>(':scope > .flow-lyric')];
+      els.forEach((el, idx) => {
+        const role = el.dataset.role;
+        if (role !== 'current' && role !== 'next' && role !== 'nextNext') return;
+        const op = parseFloat(el.style.opacity || getComputedStyle(el).opacity);
+        if (!Number.isFinite(op) || op < 0.08) return;
+        const words = el.querySelector<HTMLElement>('.fl-words');
+        if (!words) return;
+        const units = [...words.querySelectorAll<HTMLElement>(':scope > .u, :scope > .fl-whole')];
+        const text = normLyricText(words.textContent ?? '');
+        if (!units.length || !text) return;
+        const rot = Number((el.style.transform.match(/rotate\((-?[\d.]+)deg\)/) ?? [])[1] ?? 0);
+        const ctx = `lpm-r${up ? ' is-shape' : ''}${role === 'current' ? ' is-grad' : ''}`;
+        const offsetFromCur = role === 'current' ? 0 : role === 'next' ? 1 : 2;
+        out.push({
+          key: idx,
+          offsetFromCur,
+          text,
+          units,
+          kind: 'flow',
+          sideOf: (u) => ({ el: u, ctx, rot, vert: false, opacity: op, opEl: el }),
+        });
+      });
+      // 只开底部字幕时没有可见的 .flow-lyric，从底部字幕起飞 / 落回（styles.css 保留其真实布局盒子）
+      if (!out.length) {
+        const capRoot = captionRef.current;
+        const capOp = capRoot ? parseFloat(capRoot.style.getPropertyValue('--cap-o') || '0') : 0;
+        const host = capRoot?.querySelector<HTMLElement>(':scope > .is-grad');
+        if (host && Number.isFinite(capOp) && capOp >= 0.08) {
+          const units = [...host.querySelectorAll<HTMLElement>(':scope > .u, :scope > .fl-whole')];
+          const text = normLyricText(host.textContent ?? '');
+          if (units.length && text) {
+            out.push({
+              key: -1,
+              offsetFromCur: 0,
+              text,
+              units,
+              kind: 'caption',
+              sideOf: (u) => ({ el: u, ctx: 'lpm-r is-grad', rot: 0, vert: false, opacity: capOp, endOpacity: capOp }),
+            });
+          }
+        }
+      }
+      out.sort((a, b) => a.offsetFromCur - b.offsetFromCur);
+      return out;
+    };
+    const startRoamOut = (): boolean => {
+      const src = collectRoamSources();
+      if (!src.length) return false;
+      roamFlyInKind = null;
+      roamFly = launchStageToListenFly(src, { flightMs: 650, waitMs: 1200, settleMs: 150 });
+      return !!roamFly;
+    };
+    const startRoamIn = (): boolean => {
+      const cols = queryColumnLines();
+      const box = document.querySelector('.ls-col')?.getBoundingClientRect() ?? null;
+      const roam = collectRoamSources();
+      if (!cols.length || !roam.length) return false;
+      const used = new Set<number>();
+      const pairs: FlyPair[] = [];
+      let kind: 'flow' | 'caption' | null = null;
+      for (const col of cols) {
+        if (!isColumnLineVisible(col, box)) continue;
+        const text = plainColumnText(col);
+        const us = columnUnitsOf(col);
+        if (!text || !us.length) continue;
+        const target = roam.find((r) => !used.has(r.key) && r.text === text && r.units.length === us.length);
+        if (!target) continue;
+        used.add(target.key);
+        kind = target.kind;
+        us.forEach((el, i) => pairs.push({ from: columnSideOf(col, el), to: target.sideOf(target.units[i]!) }));
+      }
+      if (!pairs.length) return false;
+      roamFly = new LsFly(pairs, () => null, 700, hideFlyElements);
+      if (roamFly.done) {
+        roamFly = null;
+        return false;
+      }
+      roamFlyInKind = kind;
+      return true;
+    };
+
+    const probeWin = window as unknown as {
+      __nebulaRoamFly?: {
+        probe: () => { n: number; err: number[][]; off: number; starts: Array<{ x: number; y: number; f: number; rot: number }> } | null;
+      };
+    };
+    probeWin.__nebulaRoamFly = {
+      probe: () => {
+        if (!roamFly) return null;
+        const starts = roamFly.starts();
+        roamFly.render(1);
+        const err = roamFly.probe();
+        const box = document.querySelector('.ls-col')?.getBoundingClientRect();
+        const off =
+          box && !roamFlyInKind
+            ? roamFly
+                .targets()
+                .filter((el) => {
+                  const r = el.getBoundingClientRect();
+                  return r.top < box.top - 2 || r.bottom > box.bottom + 2;
+                }).length
+            : 0;
+        return { n: err.length, err, off, starts };
+      },
+    };
     /** 这一句属于第几个句组、哪种段落（升级关闭或不在引擎里时为 null）。 */
     const lineShape = (lineIdx: number): { stanza: number; kind: string } | null => {
       if (!up) return null;
@@ -766,6 +910,7 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
         const fil = blur > 0.02 ? `blur(${blur.toFixed(2)}px)` : '';
         if (el.style.filter !== fil) el.style.filter = fil;
         el.classList.toggle('is-current', fl.role === 'current');
+        el.dataset.role = fl.role;
         // 第 11 条：当前句身后的暗晕（下一句淡一些）
         el.style.setProperty('--halo', fl.role === 'current' ? '1' : fl.role === 'next' ? '0.45' : '0');
         wordsFrame(fl, el, tSec);
@@ -809,13 +954,75 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
           }
         } else if (playingNow || relayoutNow) pokeListenFrame();
       } else if (lightRef.current && lightRef.current.style.opacity !== '0') lightRef.current.style.opacity = '0';
-      captionFrame(cur, tSec, captionOn && !(pageMode && pageBus.morph && pageBus.caption) ? 1 - k : 0);
+      // 先同步本帧底部字幕（保证打开/收起听音空间的那一帧 captionDom 与 --cap-o 已是最新当前句）
+      const rawCapShow = captionOn && !(pageMode && pageBus.morph && pageBus.caption) ? 1 - k : 0;
+      const capFadeIn =
+        roamFly && roamFlyInKind === 'flow'
+          ? (() => {
+              const p = Math.min(1, Math.max(0, (roamFly.progress - 0.6) / 0.4));
+              return p * p * (3 - 2 * p);
+            })()
+          : 1;
+      captionFrame(cur, tSec, rawCapShow * capFadeIn);
+
+      // 在本帧 .flow-lyric 与底部字幕都更新完毕后调度听音空间双向一镜到底
+      const pageOwns = isPageStageActive(pageMode, enabled, listenBus.k);
+      const lsNow = !!lsOpenRef.current;
+      if (pageOwns && roamFly) {
+        roamFly.end();
+        roamFly = null;
+        roamFlyInKind = null;
+        lsWantDir = null;
+      }
+      if (lsNow !== lsPrev) {
+        roamFly?.end();
+        roamFly = null;
+        roamFlyInKind = null;
+        if (!pageOwns) {
+          if (lsNow) {
+            if (startRoamOut()) lsWantDir = null;
+            else {
+              lsWantDir = 'out';
+              lsWantAt = now;
+              lsAttemptAt = now;
+            }
+          } else if (startRoamIn()) {
+            lsWantDir = null;
+          } else {
+            lsWantDir = 'in';
+            lsWantAt = now;
+            lsAttemptAt = now;
+          }
+        } else {
+          lsWantDir = null;
+        }
+        lsPrev = lsNow;
+      }
+      if (!pageOwns && !roamFly && lsWantDir) {
+        const limit = lsWantDir === 'out' ? 1200 : 240;
+        const interval = lsWantDir === 'out' ? 60 : 16;
+        if (now - lsWantAt < limit && now - lsAttemptAt >= interval) {
+          lsAttemptAt = now;
+          const ok = lsWantDir === 'out' ? startRoamOut() : startRoamIn();
+          if (ok) lsWantDir = null;
+        } else if (now - lsWantAt >= limit) {
+          lsWantDir = null;
+        }
+      }
+      if (roamFly && roamFly.step(now)) {
+        roamFly = null;
+        roamFlyInKind = null;
+      }
+
       syncActive();
       raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
     return () => {
       cancelAnimationFrame(raf);
+      roamFly?.end();
+      roamFly = null;
+      delete probeWin.__nebulaRoamFly;
       // 卸载 / 重建循环时把升级写出去的状态收回（下一轮循环第一帧会重新写）
       stageShapeBus.on = false;
       stageShapeBus.lk = 0;

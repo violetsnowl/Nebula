@@ -1,0 +1,125 @@
+/* 舞台（版面 / 漫游歌词 / 底部字幕）↔ 听音空间的逐字克隆替身共用样式。
+   供 LyricPage（漫游 ↔ 版面、版面 ↔ 听音空间）与 LyricsLayer（漫游 / 字幕 ↔ 听音空间）共同引入，
+   避免跨组件隐式依赖各自的样式表。必须在 listen/lyric-words.css 之后引入。 */
+
+.lp-morph {
+  position: absolute;
+  inset: 0;
+  z-index: 12;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  --lp-ink: var(--lc-a);
+  filter: drop-shadow(0 1px 2.4px rgba(4, 6, 12, 0.5)) drop-shadow(0 0 4.8px rgba(4, 6, 12, 0.26));
+}
+
+/* 舞台 ↔ 听音空间的全局替身层：挂在 body 上、压在所有层之上，不加全屏 drop-shadow 以避免大面积合成重算 */
+.lp-morph.lp-lsfly {
+  position: fixed;
+  z-index: 300;
+  opacity: 1;
+  filter: none;
+}
+
+.lp-morph .lpm-ctx {
+  position: absolute;
+  left: 0;
+  top: 0;
+  white-space: pre;
+}
+
+/* 替身里的字与整句节点一律使用定位框 .lpm-u 上算好的视觉字号，防止 .lp-big 等倍数类二次放大 */
+.lp-morph .lpm-u > .u,
+.lp-morph .lpm-u > .fl-whole,
+.lp-morph .lpm-u > .ly-whole,
+.lp-morph .lpm-u > .lp-whole {
+  font-size: 1em !important;
+}
+
+.lpm-u {
+  position: absolute;
+  left: 0;
+  top: 0;
+  white-space: pre;
+  transform-origin: 50% 50%;
+  will-change: transform;
+}
+
+/* 克隆自身的波浪浮起 / 长音放大乘 --lw：只在起飞与落地两端保留，交叉渐变中段收平以避免重影 */
+.lpm-ctx .u,
+.lpm-ctx .u .ch {
+  will-change: transform;
+  transform: translate3d(0, calc(var(--lift, 0) * -1em * var(--lw, 1) * var(--lfk, 1)), 0) scale(calc(1 + (var(--sc, 1) - 1) * var(--lw, 1)));
+}
+
+/* 漫游歌词启用段落起伏（data-shape）时，舞台当前句的长音放大系数为 2.8 倍，替身起点同步一致避免首帧缩放跳变 */
+.lpm-r.is-shape.is-grad .u,
+.lpm-r.is-shape.is-grad .u .ch {
+  transform: translate3d(0, calc(var(--lift, 0) * -1em * var(--lw, 1)), 0) scale(calc(1 + (var(--sc, 1) - 1) * 2.8 * var(--lw, 1)));
+}
+
+/* 漫游 / 字幕那份替身补中性外羽化（只在每个小字盒上，不在整屏层上），亮封面上不发虚 */
+.lpm-r .u,
+.lpm-r .fl-whole {
+  filter: drop-shadow(0 1px 2.4px rgba(4, 6, 12, 0.55)) drop-shadow(0 0 4.8px rgba(4, 6, 12, 0.28));
+}
+
+/* 无逐字时间轴的整句克隆：关掉颜色过渡，直接采用从原节点采样的精确文字色与受控浮起 */
+.lpm-ctx .fl-whole,
+.lpm-ctx .ly-whole,
+.lpm-ctx .lp-whole {
+  display: inline-block;
+  color: var(--lc-rest, #fff);
+  transition: none !important;
+  will-change: transform;
+  transform: translate3d(0, calc(var(--lift, 0) * -1em * var(--lw, 1)), 0);
+}
+
+/* 版面那份（.lpm-b）：保留扫光上色留白但去掉负边距，独立定位框与原字盒子同大 */
+.lpm-b .u,
+.lpm-b .u .ch {
+  padding: 0.12em 0.2em 0.16em;
+  margin: 0;
+}
+.lpm-b .u.has-ch {
+  padding: 0;
+}
+.lpm-b .u .ch {
+  margin: -0.12em -0.2em -0.16em;
+}
+
+.lpm-b.is-grad .u:not(.has-ch),
+.lpm-b.is-grad .u .ch {
+  --fw: calc(var(--fn, 0.3) * (100% - 0.4em));
+  --P: calc(var(--p, 0) * (100% - 0.4em + 2 * var(--fw)) - var(--fw) + 0.2em * var(--p, 0));
+  background-image: linear-gradient(90deg, var(--sung, #fff) 0, var(--sung, #fff) calc(var(--P) - var(--fw)), var(--edge) var(--P), var(--un) calc(var(--P) + var(--fw)));
+}
+
+.lpm-b .lpm-u.is-v {
+  writing-mode: vertical-rl;
+}
+
+.lpm-b .lpm-u.is-v .u,
+.lpm-b .lpm-u.is-v .u .ch {
+  transform: translate3d(calc(var(--lift, 0) * 1em * var(--lw, 1) * var(--lfk, 1)), 0, 0) scale(calc(1 + (var(--sc, 1) - 1) * var(--lw, 1)));
+  transform-origin: 50% 50%;
+}
+
+.lpm-b.is-grad .lpm-u.is-v .u:not(.has-ch),
+.lpm-b.is-grad .lpm-u.is-v .u .ch {
+  --fw: calc(var(--fn, 0.3) * (100% - 0.28em));
+  --P: calc(var(--p, 0) * (100% - 0.28em + 2 * var(--fw)) - var(--fw) + 0.12em * var(--p, 0));
+  background-image: linear-gradient(180deg, var(--sung, #fff) 0, var(--sung, #fff) calc(var(--P) - var(--fw)), var(--edge) var(--P), var(--un) calc(var(--P) + var(--fw)));
+}
+
+/* 听音空间歌词栏那份（.lpm-c）：无额外留白，与歌词栏真字盒子一致 */
+.lpm-c .u,
+.lpm-c .u .ch {
+  padding: 0;
+  margin: 0;
+}
+
+/* 飞行期间用属性隐藏两端的真字（替身只同步行内样式和类名，不同步属性，因此替身可见） */
+[data-flyhide] {
+  visibility: hidden !important;
+}

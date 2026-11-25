@@ -3046,9 +3046,12 @@ body {
   overflow: hidden;
   pointer-events: none;
 }
-/* 听音空间打开时不出字幕（那里有自己的歌词栏） */
-.app[data-ls] .lyric-caption {
-  display: none;
+/* 听音空间打开时隐藏字幕视觉，但保留布局盒子（不用 display: none），
+   否则点播放条封面打开听音空间那一帧字幕宽高归零，一镜到底会量不到真实底部起点坐标；飞回期间暗晕随隐藏字一同暂隐 */
+.app[data-ls] .lyric-caption > .is-grad,
+.app[data-ls] .lyric-caption > .lc-haze,
+.lyric-caption:has([data-flyhide]) > .lc-haze {
+  opacity: 0;
 }
 @media (max-width: 900px) {
   .lyric-caption {

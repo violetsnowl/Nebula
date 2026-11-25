@@ -317,10 +317,10 @@ export const ListenSpace = memo(function ListenSpace({
           clearPaint();
           setPhase('open');
         } else {
-          // 落地这一帧：小封面显示、大封面卸下，同一帧交接，没有淡入淡出
+          // 落地这一帧：小封面显示、大封面卸下，同一帧交接，没有淡入淡出。
+          // 收起分支不提前 clearPaint：React 卸载若晚一帧，清空 transform 会让大封面在左侧槽原位闪一帧残影。
           const b = barCover();
           if (b) b.style.visibility = '';
-          clearPaint();
           setPhase('closed');
         }
       };

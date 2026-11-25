@@ -6,6 +6,18 @@
 
 ---
 
+## #待编（fe/next-26）— 2026-11-24 — 统一主舞台 ↔ 听音空间双向一镜到底引擎与克隆保真修复
+
+**目标**：抽离版面、漫游歌词与底部字幕共用的听音空间转场引擎，消除跨组件重复实现、克隆失色、底部字幕起点归零与切歌残留浮层问题，并修复大封面收起左侧闪影。
+
+**改动点**
+- **共用转场引擎与样式**（新增 `src/lib/listen/flyTransition.ts`、`src/components/listen/fly-transition.css`，移除 `lyric-page/toListen.ts`）：统一 `isPageStageActive` 接管判定——版面聆听态（`k > 0.5`）归 `LyricPage`（用独立的 `enteredFromPage` 记忆进入路径，漫游态收起绝不误触发版面闪现），其余漫游/漫游聆听态归 `LyricsLayer`；两端消除重复匹配代码与跨组件 CSS 隐式依赖。
+- **CJK 注音与克隆色彩保真**：歌词栏行匹配统一用跳过 `.ly-rb` 假名注音的 `TreeWalker` 纯正文（`WeakMap` 缓存），等 `.is-cur` 就绪并留 150ms 开始滚动后再配对可见句，首字接上后 `rebase(650)`；克隆节点剥离 `.ly-rb/.ly-ro/.ly-tr/.ly-bg`，非扫光句（如歌词栏 `.is-past` 已唱句、整句 `.ly-whole/.fl-whole/.lp-whole`）采样原节点精确实色写入 `--lc-rest`，漫游段落起伏当前句保留 2.8 倍长音缩放。
+- **底部字幕真实坐标与生命周期清理**（`LyricsLayer.tsx`、`styles.css`、`App.tsx`）：`.app[data-ls]` 下底部字幕改为子元素 `opacity: 0` 而非 `display: none`，保留真实底部布局盒供起落测量（不可测节点在引擎中丢弃，不再兜底堆到屏幕正中心）；转场调度放在本帧漫游句与字幕更新之后，并在 `LyricsLayer` 卸载/切歌清理中补齐 `roamFly.end()`。
+- **听音空间大封面收起无残影**（`ListenSpace.tsx`）：收起动画落地时不提前清空 `transform`，保持到组件卸载，消除左侧大封面槽 1 帧闪影。
+
+**验证**：`pnpm build`、`pnpm check:arch`、`pnpm qa` 全绿。
+
 ## #待编（fe/next-25）— 2026-11-24 — 版面精修、钩子词分级与署名行过滤合入
 
 **目标**：按用户确认的版面视觉参数精修五套版式细节，分级筛选出血大字钩子词，并合入主线 `#233` 的无冒号署名行过滤。

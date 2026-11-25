@@ -529,6 +529,7 @@ export default function App() {
         <LyricsLayer
           lines={lyricLines}
           frameBus={frameBusRef.current}
+          lsOpen={nowPlayingOpen}
           songKey={
             playerState.song
               ? `${playerState.song.source}:${playerState.song.sourceId ?? playerState.song.id}`
