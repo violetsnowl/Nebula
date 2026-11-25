@@ -6,6 +6,21 @@
 
 ---
 
+## #267 — 2026-11-25 — 修复版面「色场（field）」进出听音空间色块内深色字提前露出的问题
+
+**背景**：用户实测版面模式 10 套大胆版式时，发现仅「色场（`field`）」版式从听音空间退回版面时，色块内应由飞行替身落位后再接管的深色字提前在色块内显现（其他 9 套版式正常）。
+
+**根因**：
+1. `bold-b.ts` 的 `field.finish` 会将每句 `l.el` 深拷贝一份压成深色墨水盖在色块上（`.lp-field-on` 裁切层），每帧通过 `kit.ts` 的 `syncClone(p.from, p.copy)` 同步状态。
+2. `LsFly`（`flyTransition.ts`）通过给起飞 / 落点字元设置 `data-flyhide` 属性来隐藏原位字，而 `kit.ts` 的 `syncClone` 只同步了 `style.cssText` 与 `className`，漏掉了 `data-flyhide` 属性，导致原图层已隐藏、但 `.lp-field-on` 色块深色副本仍可见。
+3. 非常驻或 `k = 0` 下进入听音空间与 `LsFly` 启停帧若未同步触发当页 `hooks.frame(t)`，也会出现 `.lp-field-on` 同步延迟或退场清理漏帧。
+
+**改动点**
+- `src/components/lyric-page/kit.ts`：`syncClone(from, to)` 同步 `data-flyhide` 属性至克隆节点及子节点（不影响 `LyricPage.tsx` 内部给 `morph` 替身使用的局部 `syncClone`）。
+- `src/components/LyricPage.tsx`：记录当前 `LsFly` 关联页面 `lsFlyPage`，新增 `endLsFly(t)`；在 `startLsIn` / `startLsOut` 启动、`k === 0` 飞行期间及 `lsFly` 结束或中断时立即同步一次 `lsFlyPage.hooks?.frame?.(t)`，保证 `.lp-field-on` 隐藏与恢复零漏帧、零残留。
+
+**验证**：Playwright 专项验证 `field` 版式双向一镜到底（入 / 出中段 `.lp-field-on` 漏字数为 `0`，结束后 `[data-flyhide]` 残留为 `0`）；`pnpm build`、`pnpm qa:backend`、`pnpm qa`（0 错误）、`pnpm build:desktop` 全绿。
+
 ## #266 — 2026-11-25 — 修复漫游歌词模式聆听 ↔ 听音空间双向转场掉帧
 
 **背景**：用户反馈仅在「漫游歌词模式」下从聆听态进出听音空间时双向都存在明显掉帧，而漫游态及版面模式均流畅。

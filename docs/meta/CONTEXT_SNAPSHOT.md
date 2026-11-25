@@ -21,7 +21,7 @@
 - 连续性因此分三层：① 线程对话历史（会在压缩中损失细节）；② 仓库文档（本目录 + CHANGE_LOG + 冻结设计规格，人类可读、可无限增长）；③ git 提交历史（事实基准）。
 - **协议**：新会话 / 新 agent / 换模型后按上面「恢复路径」读完再动手；重大里程碑或会话结束时刷新本文件「当前状态」小节。`AGENTS.md` 已配置自动指向这条路径。
 
-## 当前状态（2026-11-25 刷新，#266）
+## 当前状态（2026-11-25 刷新，#267）
 
 > 本节只写「现在是什么样、还剩什么」。每一步的背景、改动和验证都在 `docs/project/CHANGE_LOG.md`（按编号）和 git 提交里，2026-11-18 之前的逐日流水账已从本节移除。
 
@@ -40,7 +40,7 @@
   - 段落引擎 `src/lib/listen/sections.ts`（主歌 / 预副歌 / 副歌 / 桥段 / 尾声、间奏、句组、开合）与漫游歌词随段落起伏（规格 LYRICS_SYSTEM §7.5、NEBULA_UI_SYSTEM §7.1）。
   - **版面与精修**（规格 §7.1b）：样张 N 的纸面 + 十套大胆版式（一词放大、书脊、满版齐行、脚注、出血大字、斜线、唱片纹、稿纸、转角、色场）+ 稳险交替轮换；未唱字提亮至 24%（同步 `GHOST`）、出血描边 26%、色场块墨色加深、句首 0.15s 波浪淡入与斜体左缘防提前露色；中文竖排「一词放大」列内拆列居中不断句；「转角」单拐第 1 句、中文左下从右往左排避开播放条并补内拐角 L 线；「出血大字」强词 / 双词短语分级；包含 `main` `#233` 的无冒号空格署名行过滤。代码在 `src/components/LyricPage.tsx` + `src/components/lyric-page/` + `lyric-page*.css`。
   - **逐字波浪**（听音空间、漫游、版面共用 `src/lib/listen/words.ts`）：用户已确认听音空间和漫游歌词逐字层「完美」，**不要再动 `words.ts` 与 `engine.ts`**。
-  - **主舞台 ↔ 听音空间双向一镜到底统一引擎**（`src/lib/listen/flyTransition.ts` + `src/components/listen/fly-transition.css`、`src/components/listen/LyricColumn.tsx`）：版面聆听态（`k > 0.5`）、漫游歌词与底部字幕共用同一套克隆替身引擎与 `isPageStageActive` 接管契约；跳过 `.ly-rb` 假名注音匹配并清洗克隆副行，采样原节点实色保证 `.is-past` 与整句节点不掉色，保留 `.lyric-caption` 真实底部测量盒（起落不再堆到屏幕中心），飞行途中切歌即时回收浮层，收起听音空间大封面左侧零残影；`#265` 去掉进入听音空间的 150ms 等待与 `rebase` 重计时，挂载即同步落位并与大封面同用 `600ms` `easeStd` 起飞；`#266` 修复漫游聆听 ↔ 听音空间双向掉帧（转场期暂停 `pokeListenFrame` 与根变量写、全模式非常驻直落、去掉 `.lpm-r` 逐字 `drop-shadow` 与重复 `will-change`）。
+  - **主舞台 ↔ 听音空间双向一镜到底统一引擎**（`src/lib/listen/flyTransition.ts` + `src/components/listen/fly-transition.css`、`src/components/listen/LyricColumn.tsx`）：版面聆听态（`k > 0.5`）、漫游歌词与底部字幕共用同一套克隆替身引擎与 `isPageStageActive` 接管契约；跳过 `.ly-rb` 假名注音匹配并清洗克隆副行，采样原节点实色保证 `.is-past` 与整句节点不掉色，保留 `.lyric-caption` 真实底部测量盒（起落不再堆到屏幕中心），飞行途中切歌即时回收浮层，收起听音空间大封面左侧零残影；`#265` 去掉进入听音空间的 150ms 等待与 `rebase` 重计时，挂载即同步落位并与大封面同用 `600ms` `easeStd` 起飞；`#266` 修复漫游聆听 ↔ 听音空间双向掉帧（转场期暂停 `pokeListenFrame` 与根变量写、全模式非常驻直落、去掉 `.lpm-r` 逐字 `drop-shadow` 与重复 `will-change`）；`#267` 修复版面「色场（`field`）」`.lp-field-on` 深色副本未同步 `data-flyhide` 导致转场时色块内深色字提前露出的问题。
   - **常驻聆听交接收敛与回归**（`src/lib/listenMode.ts`、`scripts/qa.cjs`）：听音空间开关从硬阻断拆出直传并同步通知，常驻聆听下进出听音空间底层舞台保持 `k = 1` 原地待命不闪星云；版面漫游态（`k = 0`）进出听音空间不误加星云虚化压暗滤镜；`stageFlyExtra` 四项扩展断言已进 `pnpm qa`。
 - **2026-11-24 ~ 25 窗口用户拍板的关键决策与原因**：
   - **推倒缝补重做**：回退掉此前弱模型留下的 10 条反复打补丁提交，基于 `#258（原 fe/next-24）` 重新按正交分层落地并通过桌面验收。

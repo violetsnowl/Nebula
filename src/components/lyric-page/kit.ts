@@ -199,10 +199,12 @@ export function hookRuns(l: TLine, hook: string, cjk: boolean): number[][] {
   return out;
 }
 
-/** 把原元素的逐帧状态（行内变量、类名，含子节点）同步到它的克隆上（色场的「色块里那一份」用）。 */
+/** 把原元素的逐帧状态（行内变量、类名、转场隐藏标记，含子节点）同步到它的克隆上（色场的「色块里那一份」用）。 */
 export function syncClone(from: HTMLElement, to: HTMLElement): void {
   if (to.style.cssText !== from.style.cssText) to.style.cssText = from.style.cssText;
   if (to.className !== from.className) to.className = from.className;
+  const hide = from.hasAttribute('data-flyhide');
+  if (to.hasAttribute('data-flyhide') !== hide) to.toggleAttribute('data-flyhide', hide);
   const fc = from.children;
   const tc = to.children;
   for (let i = 0; i < fc.length && i < tc.length; i++) syncClone(fc[i] as HTMLElement, tc[i] as HTMLElement);

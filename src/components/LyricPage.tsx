@@ -712,6 +712,15 @@ export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
 
     // —— 版面 ↔ 听音空间一镜到底（共用引擎 lib/listen/flyTransition.ts）——
     let lsFly: LsFly | null = null;
+    let lsFlyPage: PPage | null = null;
+    const endLsFly = (t: number) => {
+      lsFly?.end();
+      lsFly = null;
+      if (lsFlyPage) {
+        lsFlyPage.hooks?.frame?.(t);
+        lsFlyPage = null;
+      }
+    };
     /** 本次打开听音空间是否从版面聆听态起飞（收起时只有从版面起飞过或此刻仍在版面聆听态才飞回版面，杜绝漫游态收起闪版面）。 */
     let enteredFromPage = false;
     /** 飞进听音空间期间：版面（译文、装饰、纸面）按飞行进度更快淡出，不等交接曲线。 */
@@ -761,6 +770,10 @@ export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
           onMatchChange: (matched, total, prog) => lsNote(`cols matched ${matched}/${total} at ${prog.toFixed(2)}`),
         },
       );
+      if (lsFly) {
+        lsFlyPage = pg;
+        pg.hooks?.frame?.(t);
+      }
     };
     const startLsOut = (t: number) => {
       const pg = pageAt(t);
@@ -777,7 +790,12 @@ export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
       lsBoostUntil = performance.now() + 2600;
       if (!pairs.length) return;
       lsFly = new LsFly(pairs, () => null, 700, hideFlyElements);
-      if (lsFly.done) lsFly = null;
+      if (lsFly.done) {
+        lsFly = null;
+        return;
+      }
+      lsFlyPage = pg;
+      pg.hooks?.frame?.(t);
     };
 
     const tick = (now: number) => {
@@ -797,8 +815,7 @@ export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
       const pageOwnsStage = isPageStageActive(true, listenBus.enabled, k);
       const lsNow = lsOpenRef.current;
       if (lsNow !== lsPrev) {
-        lsFly?.end();
-        lsFly = null;
+        endLsFly(t);
         lsNote(`ls ${lsNow} k=${k.toFixed(2)}`);
         if (lsNow) {
           enteredFromPage = pageOwnsStage;
@@ -829,9 +846,19 @@ export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
           lsWantAt = 0;
         }
       }
-      if (lsFly && lsFly.step(now)) lsFly = null;
       const boost = now < lsBoostUntil && k < 0.99 ? 1 : 0;
       if (k >= 0.99) lsBoostUntil = 0;
+      if (lsFly) {
+        if (lsFly.step(now)) {
+          lsFly = null;
+          if (lsFlyPage) {
+            lsFlyPage.hooks?.frame?.(t);
+            lsFlyPage = null;
+          }
+        } else if (lsFlyPage && !(k > 0.001 || boost) && lsFlyPage.on) {
+          lsFlyPage.hooks?.frame?.(t);
+        }
+      }
       const fade = flyingOutToLs && lsFly ? 1 - smooth(lsFly.progress / 0.55) : flyingOutToLs ? 0 : 1;
       if (flyingOutToLs && !lsNow) flyingOutToLs = false;
       const op = Math.min(Math.max(k, boost), fade).toFixed(3);
