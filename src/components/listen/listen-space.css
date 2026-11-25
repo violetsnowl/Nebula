@@ -308,6 +308,70 @@
   position: absolute;
   inset: 0;
 }
+/* 展示过加载三点后拿到歌词时轻柔浮现（动画结束撤掉 class，不长期留合成层） */
+.ls-lyrics.is-arrive {
+  animation: ls-lyric-arrive 0.28s var(--ease-std) both;
+}
+@keyframes ls-lyric-arrive {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 10px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+/* 取歌空档期（>250ms）三点循环波浪呼吸：与间奏三点同比例同脉搏，左对齐焦点行高度 */
+.ls-loading {
+  position: absolute;
+  left: 0;
+  top: 34%;
+  display: flex;
+  align-items: center;
+  gap: 0.32em;
+  font-size: clamp(32px, 4.4vh, 48px);
+  pointer-events: none;
+  opacity: 0;
+  transform: scale(0.78);
+  transform-origin: 0 50%;
+  transition:
+    opacity 0.18s var(--ease-std),
+    transform 0.18s var(--ease-std);
+}
+.ls-loading.is-on {
+  opacity: 1;
+  transform: scale(1);
+  transition-duration: 0.24s;
+}
+.ls-loading i {
+  width: 0.2em;
+  height: 0.2em;
+  border-radius: 50%;
+  background: var(--ly-a, rgb(238 240 244));
+  opacity: 0.24;
+  transform: scale(0.82);
+}
+.ls-loading.is-on i {
+  animation: ls-dot-wave 1.4s ease-in-out infinite;
+}
+.ls-loading.is-on i:nth-child(2) {
+  animation-delay: 0.18s;
+}
+.ls-loading.is-on i:nth-child(3) {
+  animation-delay: 0.36s;
+}
+@keyframes ls-dot-wave {
+  0%,
+  100% {
+    opacity: 0.24;
+    transform: translateY(0) scale(0.82);
+  }
+  42% {
+    opacity: 0.88;
+    transform: translateY(-2px) scale(1.06);
+  }
+}
 .ls-root:not(.is-shown) .ls-col {
   opacity: 0;
   transition-delay: 0s;
@@ -713,9 +777,16 @@
   .ls-light,
   .ls-meta > *,
   .ls-col,
+  .ls-lyrics.is-arrive,
+  .ls-loading,
+  .ls-loading.is-on i,
   .lp-pane {
     transition: none !important;
     animation: none !important;
+  }
+  .ls-loading.is-on i {
+    opacity: 0.65;
+    transform: none;
   }
   .ls-root.is-shown .ls-glow {
     animation: none;

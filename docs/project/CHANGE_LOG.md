@@ -6,6 +6,19 @@
 
 ---
 
+## #271 — 2026-11-25 — 移除遗留「纯音乐 · 暂无歌词」误报提示，并增加切歌取词三点呼吸加载与轻柔显现
+
+**背景**：新歌切歌取词尚未返回的那 1–2 秒空档期内，主舞台前奏因只看 `lines.length === 0` 会误显示「纯音乐 · 暂无歌词」随后又闪灭，而听音空间和版面则呈现一段空白。用户拍板删掉该早期遗留提示，并在取词超过 `250ms` 时于听音空间和版面展示与间奏一脉相承的三点循环呼吸动画。
+
+**改动点**
+- `src/components/LyricsLayer.tsx` & `src/styles.css`：删掉 `.li-note`（`纯音乐 · 暂无歌词`）节点与样式，前奏居中只保留干净的歌名与歌手信息。
+- `src/hooks/lyrics/useLyrics.ts`：新增精确的 `lyricLoading` 状态及 `250ms` 防闪烁延迟；缓存命中、预取命中及手动换歌词（`keepOld = true`）均不亮加载点；请求返回、失败或被新切歌取消时同步清理。
+- `src/App.tsx`、`src/components/OverlayStack.tsx`：透传 `lyricLoading` 至 `<ListenSpace>` 与 `<LyricPage>`。
+- `src/components/listen/ListenSpace.tsx` & `src/components/listen/listen-space.css`：听音空间 `.ls-col` 左对齐焦点行增加 `.ls-loading` 三点循环波浪呼吸（周期 `1.4s`、相邻错开 `0.18s`，随封面主色）；仅在已展开并实际展示过加载三点后拿到歌词时，为 `.ls-lyrics` 触发一次 `280ms` 轻浮显现（`.is-arrive`，`320ms` 后移除，不破坏 `plus-lighter` 环境透色）。
+- `src/components/LyricPage.tsx` & `src/components/lyric-page.css`：版面中心增加 `.lp-loading` 同款三点循环波浪呼吸，并在加载后成页时对 `.lp-frame` 做 `280ms` 轻柔淡入（`.is-arrive`，只动 `opacity` 不触碰居中缩放 `transform`）。
+
+**验证**：Playwright 验证 `1000ms` 慢取词期间前奏无 `.li-note`、`60ms` 快取词零闪烁、慢取词 `120ms` 未显 / `480ms` 双端三点正常呼吸 / 到词后 `.is-arrive` 轻浮并在稳态清理完毕、`errors = []`；`pnpm build`、`pnpm qa`（0 报错）、`pnpm build:desktop` 全绿。
+
 ## #270 — 2026-11-25 — 修复无逐字整句一镜到底巨字闪现，并优化漫游 ↔ 版面双向转场性能
 
 **背景**：用户反馈两部分问题：① 汽水歌单等无逐字时间轴的整句歌词（如 `Nobody / No-****ing-body / Nobody`）在版面 ↔ 听音空间一镜到底时，位置对但中途变巨字、落地瞬间闪回真实大小；② 版面模式下从漫游主舞台进出版面的双向转场存在明显掉帧。

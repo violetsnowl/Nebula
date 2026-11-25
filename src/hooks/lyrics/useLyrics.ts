@@ -91,6 +91,7 @@ function loadLyricSettings(): LyricVisualSettings {
  */
 export function useLyrics() {
   const [lyricLines, setLyricLines] = useState<LyricLineUI[]>([]);
+  const [lyricLoading, setLyricLoading] = useState(false);
   const [lyricSettings, setLyricSettings] = useState<LyricVisualSettings>(loadLyricSettings);
   const [lyricTranslationEnabled, setLyricTranslationEnabled] = useState(
     () => typeof localStorage === 'undefined' || localStorage.getItem('music-nebula.lyric-translate') !== '0',
@@ -109,6 +110,7 @@ export function useLyrics() {
     // 2) 临近结尾播放器解析好下一首音源时，按实际供流那首再取——兜底播放的歌这时才知道是哪首。同一首只取一次。
     const warmed=new Set<string>();
     let warmTimer:ReturnType<typeof setTimeout>|undefined;
+    let loadDelayTimer:ReturnType<typeof setTimeout>|undefined;
     const warmUp=(next:Track|undefined)=>{
       if(!next?.sourceId || !hasDesktopAPI())return;
       const key=lyricKey(next);
@@ -120,23 +122,38 @@ export function useLyrics() {
     const load = async (song: Track | null, keepOld = false) => {
       cancel();
       clearTimeout(warmTimer);
+      clearTimeout(loadDelayTimer);
       const seq = ++loadSeqRef.current;
-      if (!keepOld) { setLyricLines([]);setLyricDebugInfo(null); }
+      if (!keepOld) {
+        setLyricLines([]);
+        setLyricDebugInfo(null);
+        setLyricLoading(false);
+      }
       if (!song) {
         setLyricLines([]);
         setLyricDebugInfo(null);
+        setLyricLoading(false);
         return;
       }
       if (!hasDesktopAPI() || !song.sourceId) {
         setLyricLines([]);
         setLyricDebugInfo(null);
+        setLyricLoading(false);
         return;
+      }
+      // 超过 250ms 还没返回才显示加载三点，缓存命中或预取秒回时不闪烁
+      if (!keepOld) {
+        loadDelayTimer = setTimeout(() => {
+          if (seq === loadSeqRef.current) setLyricLoading(true);
+        }, 250);
       }
       try {
         requestId=`lyric-${seq}-${Date.now()}`;
         // 兜底播放时再带上原曲（Spotify id / Apple 目录 id / isrc 供 AMLL、Apple 歌词查询）；缓存键仍按实际供流那首
         const res = await window.nebulaAPI!.fetchLyric(streamTrack(song),song.via?{requestId,origin:toBackendTrack(song)}:{requestId});
         if (seq !== loadSeqRef.current) return;
+        clearTimeout(loadDelayTimer);
+        setLyricLoading(false);
         const data = res.ok ? res.data : null;
         const lines = normalizeLyricLines(data, song.title, song.artist);
         setLyricLines(lines);
@@ -162,6 +179,8 @@ export function useLyrics() {
         }
       } catch {
         if (seq !== loadSeqRef.current) return;
+        clearTimeout(loadDelayTimer);
+        setLyricLoading(false);
         setLyricLines([]);
         setLyricDebugInfo(null);
       }
@@ -183,7 +202,7 @@ export function useLyrics() {
     window.addEventListener(LYRIC_RELOAD_EVENT, reload);
     const unsubscribe=audioPlayer.subscribe(check);
     const unsubscribeUpcoming=audioPlayer.onUpcomingResolved(warmUp);
-    return ()=>{window.removeEventListener(LYRIC_RELOAD_EVENT, reload);loadSeqRef.current++;songRef.current='';cancel();clearTimeout(warmTimer);unsubscribe();unsubscribeUpcoming();};
+    return ()=>{window.removeEventListener(LYRIC_RELOAD_EVENT, reload);loadSeqRef.current++;songRef.current='';cancel();clearTimeout(warmTimer);clearTimeout(loadDelayTimer);unsubscribe();unsubscribeUpcoming();};
   }, []);
 
   const persistLyricSettings = useCallback((next: LyricVisualSettings) => {
@@ -232,6 +251,7 @@ export function useLyrics() {
 
   return {
     lyricLines,
+    lyricLoading,
     lyricDebugInfo,
     lyricSettings,
     lyricTranslationEnabled,

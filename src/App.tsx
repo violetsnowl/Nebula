@@ -179,6 +179,7 @@ export default function App() {
     handleListenSettings,
     toggleTranslation,
     lyricDebugInfo,
+    lyricLoading,
   } = lyrics;
 
   // ---------- 边缘感应面板（useEdgePanels） ----------
@@ -544,6 +545,7 @@ export default function App() {
       {!uiHideLyrics && (
         <LyricPage
           lines={lyricLines}
+          loading={lyricLoading}
           songKey={playerState.song ? `${playerState.song.source}:${playerState.song.sourceId ?? playerState.song.id}` : 'none'}
           lsOpen={nowPlayingOpen}
         />
@@ -685,6 +687,7 @@ export default function App() {
       <OverlayStack
         nowPlayingOpen={nowPlayingOpen}
         lines={lyricLines}
+        lyricLoading={lyricLoading}
         listenPane={listenPane}
         onListenPaneBack={closeListenPane}
         onOpenSongDetail={openSongDetailModal}

@@ -213,6 +213,7 @@ interface ListenSpaceProps {
   open: boolean;
   onClose: () => void;
   lines: LyricLineUI[];
+  loading?: boolean;
   /** 右栏正在显示的详情（null = 歌词）。 */
   pane: InfoPaneState | null;
   onPaneBack: () => void;
@@ -232,6 +233,7 @@ export const ListenSpace = memo(function ListenSpace({
   open,
   onClose,
   lines,
+  loading,
   pane,
   onPaneBack,
   onOpenSongDetail,
@@ -265,6 +267,37 @@ export const ListenSpace = memo(function ListenSpace({
   const hasRoman = lines.some((l) => !!l.roman || !!l.ruby?.length);
   // 日语歌（#173）：读音按钮带一个悬停 / 右键小面板，选罗马音、汉字注音
   const hasJa = lines.some((l) => !!l.ja);
+
+  // 切歌取词加载三点：仅在听音空间已展开且确实展示过加载三点后，再拿到歌词时做一次 280ms 柔和显现，动画结束立刻撤掉 class（绝不长期隔离 plus-lighter）
+  const shown = phase === 'in' || phase === 'open';
+  const showLoading = shown && !!loading && lines.length === 0 && !pane;
+  const [arriving, setArriving] = useState(false);
+  const wasLoadingRef = useRef(false);
+  const arriveTimerRef = useRef(0);
+  useEffect(() => {
+    if (!shown) {
+      wasLoadingRef.current = false;
+      window.clearTimeout(arriveTimerRef.current);
+      setArriving(false);
+      return;
+    }
+    if (showLoading) {
+      wasLoadingRef.current = true;
+      window.clearTimeout(arriveTimerRef.current);
+      setArriving(false);
+      return;
+    }
+    if (wasLoadingRef.current && lines.length > 0) {
+      wasLoadingRef.current = false;
+      setArriving(true);
+      window.clearTimeout(arriveTimerRef.current);
+      arriveTimerRef.current = window.setTimeout(() => setArriving(false), 320);
+    } else if (!loading && lines.length === 0) {
+      wasLoadingRef.current = false;
+      setArriving(false);
+    }
+  }, [shown, showLoading, loading, lines.length]);
+  useEffect(() => () => window.clearTimeout(arriveTimerRef.current), []);
 
   // 大封面逐帧插值：只改 transform / 圆角 / 阴影（都按真实尺寸换算），封面本身不做任何模糊或变暗
   const paint = useCallback((r: Rect, slot: Rect) => {
@@ -368,7 +401,6 @@ export const ListenSpace = memo(function ListenSpace({
   }, [open, pane, onPaneBack, onClose]);
 
   if (phase === 'closed') return null;
-  const shown = phase === 'in' || phase === 'open';
   const heroStyle = art.cur.style;
   const prevArt = art.prev && <i key={art.prev.key} className="ls-art-prev" style={art.prev.style} aria-hidden="true" />;
   const artistName = song?.artist ?? '';
@@ -420,7 +452,12 @@ export const ListenSpace = memo(function ListenSpace({
             onOpenLyricVersions();
           }}
         >
-          <LyricColumn className="ls-lyrics" lines={lines} settings={settings} />
+          <LyricColumn className={`ls-lyrics${arriving ? ' is-arrive' : ''}`} lines={lines} settings={settings} />
+          <div className={`ls-loading${showLoading ? ' is-on' : ''}`} aria-hidden="true">
+            <i />
+            <i />
+            <i />
+          </div>
           {hasRoman && <ReadingButton settings={settings} japanese={hasJa} solo={!hasTranslation} />}
           {hasTranslation && (
             <button

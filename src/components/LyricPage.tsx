@@ -42,6 +42,7 @@ import './lyric-page-tpl-c.css';
 
 interface LyricPageProps {
   lines: LyricLineUI[];
+  loading?: boolean;
   songKey?: string;
   /** 听音空间开着（版面 ↔ 听音空间一镜到底用）。 */
   lsOpen?: boolean;
@@ -198,7 +199,7 @@ function measureLine(l: PLine, S: number): void {
 
 
 
-export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
+export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: LyricPageProps) {
   const lab = useSpaceLab();
   const active = lab.stageMode === 'page';
   const listen = useListenSettings();
@@ -240,6 +241,30 @@ export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
       delete d.stageMode;
     };
   }, [active]);
+
+  // 切歌取词加载三点：仅在展示过加载三点后再拿到歌词时，给版面画幅做一次轻柔淡入
+  const showLoading = !!loading && model.els.length === 0;
+  const [arriving, setArriving] = useState(false);
+  const wasLoadingRef = useRef(false);
+  const arriveTimerRef = useRef(0);
+  useEffect(() => {
+    if (showLoading) {
+      wasLoadingRef.current = true;
+      window.clearTimeout(arriveTimerRef.current);
+      setArriving(false);
+      return;
+    }
+    if (wasLoadingRef.current && model.els.length > 0) {
+      wasLoadingRef.current = false;
+      setArriving(true);
+      window.clearTimeout(arriveTimerRef.current);
+      arriveTimerRef.current = window.setTimeout(() => setArriving(false), 320);
+    } else if (!loading && model.els.length === 0) {
+      wasLoadingRef.current = false;
+      setArriving(false);
+    }
+  }, [showLoading, loading, model.els.length]);
+  useEffect(() => () => window.clearTimeout(arriveTimerRef.current), []);
 
   useEffect(() => {
     const root = rootRef.current;
@@ -1020,7 +1045,12 @@ export function LyricPage({ lines, songKey, lsOpen = false }: LyricPageProps) {
         {/* 纸面（样张 N，2026-11-22 用户定稿）：封面最深的色、九成不透明，随交接进度和版面一起升起，压住你设的背景与星云 */}
         <i className="lp-paper" />
         <i className="lp-grain" style={{ backgroundImage: `url(${grain()})` }} />
-        <div ref={frameRef} className="lp-frame" />
+        <div ref={frameRef} className={`lp-frame${arriving ? ' is-arrive' : ''}`} />
+        <div className={`lp-loading${showLoading ? ' is-on' : ''}`} aria-hidden="true">
+          <i />
+          <i />
+          <i />
+        </div>
       </div>
       {/* 转场替身：不放在版面根里（版面根的透明度随交接从 0 起，替身要一直看得见） */}
       <div ref={morphRef} className="lp-morph lw" data-scheme={listen.scheme} style={vars} aria-hidden="true" />

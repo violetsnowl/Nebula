@@ -3130,12 +3130,6 @@ body {
   text-shadow: var(--ly-feather-shadow);
 }
 
-.lyrics-intro .li-note {
-  margin-top: 6px;
-  font-size: calc(var(--lyric-size, 24px) * 0.34);
-  color: rgba(255, 255, 255, 0.4);
-}
-
 /* ============================================================
    Z4 二级播放窗口
    ============================================================ */

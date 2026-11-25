@@ -13,6 +13,7 @@ import { InfoModals, type InfoPaneState } from './InfoModals';
 interface OverlayStackProps {
   nowPlayingOpen: boolean;
   lines: LyricLineUI[];
+  lyricLoading?: boolean;
   /** 听音空间右栏正在显示的详情（null = 歌词）。 */
   listenPane: InfoPaneState | null;
   onListenPaneBack: () => void;
@@ -124,6 +125,7 @@ function ContextMenu({
 export const OverlayStack = memo(function OverlayStack({
   nowPlayingOpen,
   lines,
+  lyricLoading,
   listenPane,
   wallpaperOpen,
   infoModal,
@@ -156,6 +158,7 @@ export const OverlayStack = memo(function OverlayStack({
         open={nowPlayingOpen}
         onClose={onCloseNowPlaying}
         lines={lines}
+        loading={lyricLoading}
         pane={listenPane}
         onPaneBack={onListenPaneBack}
         onOpenSongDetail={onOpenSongDetail}

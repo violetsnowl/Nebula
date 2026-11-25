@@ -82,6 +82,65 @@
   opacity: 0;
 }
 
+/* 切歌取歌词空档期：画幅正中三点循环波浪呼吸（180ms 收拢淡出，歌词到时柔和显现） */
+.lp-loading {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  gap: 0.32em;
+  font-size: 48px;
+  pointer-events: none;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.78);
+  transition:
+    opacity 0.18s var(--ease-std, cubic-bezier(0.2, 0, 0, 1)),
+    transform 0.18s var(--ease-std, cubic-bezier(0.2, 0, 0, 1));
+}
+.lp-loading.is-on {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+  transition-duration: 0.24s;
+}
+.lp-loading i {
+  width: 0.2em;
+  height: 0.2em;
+  border-radius: 50%;
+  background: var(--lp-ink, #fff);
+  opacity: 0.24;
+  transform: scale(0.82);
+}
+.lp-loading.is-on i {
+  animation: lp-dot-wave 1.4s ease-in-out infinite;
+}
+.lp-loading.is-on i:nth-child(2) {
+  animation-delay: 0.18s;
+}
+.lp-loading.is-on i:nth-child(3) {
+  animation-delay: 0.36s;
+}
+@keyframes lp-dot-wave {
+  0%,
+  100% {
+    opacity: 0.24;
+    transform: translateY(0) scale(0.82);
+  }
+  42% {
+    opacity: 0.88;
+    transform: translateY(-2px) scale(1.06);
+  }
+}
+/* 仅在展示过加载三点后首次成页时做轻量淡入（不动 transform，避免盖掉 .lp-frame 的居中缩放） */
+.lp-frame.is-arrive {
+  animation: lp-frame-arrive 0.28s var(--ease-std, cubic-bezier(0.2, 0, 0, 1)) both;
+}
+@keyframes lp-frame-arrive {
+  from {
+    opacity: 0;
+  }
+}
+
 /* 页眉只留页码（用户 2026-11-22：左上角不写这页是哪一段） */
 .lp-no {
   position: absolute;
@@ -219,8 +278,16 @@
 
 @media (prefers-reduced-motion: reduce) {
   .lp-whole,
-  .lp-tr {
+  .lp-tr,
+  .lp-loading,
+  .lp-loading.is-on i,
+  .lp-frame.is-arrive {
     transition: none;
+    animation: none;
+  }
+  .lp-loading.is-on i {
+    opacity: 0.65;
+    transform: none;
   }
 }
 

@@ -1076,7 +1076,6 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist, l
           <div className="lyrics-intro">
             <div className="li-title">{songTitle}</div>
             {songArtist && <div className="li-artist">{songArtist}</div>}
-            {lines.length === 0 && <div className="li-note">纯音乐 · 暂无歌词</div>}
           </div>
         )}
         {activeKeys.map((lineIdx) => {
