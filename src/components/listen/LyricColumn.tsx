@@ -1,4 +1,4 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useLayoutEffect, useRef, type AnimationEventHandler } from 'react';
 import { audioPlayer } from '../../lib/audio/AudioPlayer';
 import { LyricEngine } from '../../lib/listen/engine';
 import { buildEntries, detectScript, type EngineEntry } from '../../lib/listen/model';
@@ -22,9 +22,10 @@ export interface LyricColumnProps {
   /** 不读播放器，内部时钟循环播放传入的歌词（预览在没播歌 / 没歌词时用）。 */
   demo?: boolean;
   className?: string;
+  onAnimationEnd?: AnimationEventHandler<HTMLDivElement>;
 }
 
-export function LyricColumn({ lines, settings, compact, demo, className }: LyricColumnProps) {
+export function LyricColumn({ lines, settings, compact, demo, className, onAnimationEnd }: LyricColumnProps) {
   const hostRef = useRef<HTMLDivElement>(null);
   const engineRef = useRef<LyricEngine | null>(null);
   // 最新的 props，供引擎重建 / 时钟循环读取
@@ -57,6 +58,10 @@ export function LyricColumn({ lines, settings, compact, demo, className }: Lyric
       a.entries = buildEntries(cur.lines);
       eng.setLyrics(a.entries, detectScript(cur.lines));
       a.lines = cur.lines;
+      // 新歌词到达的同一帧绘制前即落到当前播放位置，避免先以第 0 句起位再跳句
+      if (!cur.demo && a.entries.length > 0) {
+        eng.frame(audioPlayer.position(), audioPlayer.state.playing, performance.now());
+      }
     }
   };
 
@@ -139,10 +144,10 @@ export function LyricColumn({ lines, settings, compact, demo, className }: Lyric
     // sync 只读 ref，不需要进依赖
   }, [compact]);
 
-  // 歌词 / 设置变化
-  useEffect(() => {
+  // 歌词 / 设置变化：在浏览器绘制前同步建行与落位，杜绝新歌词首帧位置跳动
+  useLayoutEffect(() => {
     sync();
   }, [lines, settings.scheme, settings.font, settings.translation, settings.roman, settings.jaRoman, settings.jaKana]);
 
-  return <div ref={hostRef} className={className ? `lc-root ${className}` : 'lc-root'} />;
+  return <div ref={hostRef} className={className ? `lc-root ${className}` : 'lc-root'} onAnimationEnd={onAnimationEnd} />;
 }

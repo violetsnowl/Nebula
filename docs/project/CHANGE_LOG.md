@@ -6,6 +6,16 @@
 
 ---
 
+## #272 — 2026-11-25 — 消除切歌取词加载三点切入新歌词瞬间的 1 帧闪动与跳动
+
+**背景**：`#271` 上线后用户实测确认加载动效整体满意，但拿到歌词、三点消失并切入新歌词的那一瞬间会出现一下闪动与位置跳动。
+
+**根因与改动点**
+1. `src/components/listen/ListenSpace.tsx`、`src/components/LyricPage.tsx`：原先在浏览器绘制后才执行的 `useEffect` 里设置 `arriving = true`，导致新歌词到达首帧先按满不透明度画出 1 帧、下一帧突然被拉回 `opacity: 0`（听音空间还向下瞬移 `10px`）再淡入形成闪跳；改为 `useLayoutEffect` 在首帧绘制前同步挂上 `.is-arrive`，配合 `onAnimationEnd` 精确撤类与 `animation-fill-mode: backwards`。
+2. `src/components/listen/LyricColumn.tsx`：将歌词/设置同步的 `useEffect` 改为 `useLayoutEffect`，并在 `setLyrics()` 后立即同步调用一次 `eng.frame(audioPlayer.position(), ...)`（不改动 `engine.ts` 与 `words.ts`），使新歌词在绘制前即直接落到当前播放句高度，不再先按第 0 句起位再跳句。
+
+**验证**：Playwright 逐帧 `rAF` 采样验证慢取词到达瞬间听音空间 `.ls-lyrics` 与版面 `.lp-frame` 首帧即带 `.is-arrive`、透明度 `0 → 1` 单调平滑递增、当前句直接落位；`pnpm build`、`pnpm qa`（0 报错）、`pnpm build:desktop` 全绿。
+
 ## #271 — 2026-11-25 — 移除遗留「纯音乐 · 暂无歌词」误报提示，并增加切歌取词三点呼吸加载与轻柔显现
 
 **背景**：新歌切歌取词尚未返回的那 1–2 秒空档期内，主舞台前奏因只看 `lines.length === 0` 会误显示「纯音乐 · 暂无歌词」随后又闪灭，而听音空间和版面则呈现一段空白。用户拍板删掉该早期遗留提示，并在取词超过 `250ms` 时于听音空间和版面展示与间奏一脉相承的三点循环呼吸动画。

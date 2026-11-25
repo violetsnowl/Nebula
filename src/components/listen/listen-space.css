@@ -308,9 +308,9 @@
   position: absolute;
   inset: 0;
 }
-/* 展示过加载三点后拿到歌词时轻柔浮现（动画结束撤掉 class，不长期留合成层） */
+/* 展示过加载三点后拿到歌词时轻柔浮现（backwards 避免首帧闪回，动画结束立刻释放合成层） */
 .ls-lyrics.is-arrive {
-  animation: ls-lyric-arrive 0.28s var(--ease-std) both;
+  animation: ls-lyric-arrive 0.28s var(--ease-std) backwards;
 }
 @keyframes ls-lyric-arrive {
   from {

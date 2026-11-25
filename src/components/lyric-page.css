@@ -131,9 +131,9 @@
     transform: translateY(-2px) scale(1.06);
   }
 }
-/* 仅在展示过加载三点后首次成页时做轻量淡入（不动 transform，避免盖掉 .lp-frame 的居中缩放） */
+/* 仅在展示过加载三点后首次成页时做轻量淡入（backwards 防止首帧闪回，不动 transform） */
 .lp-frame.is-arrive {
-  animation: lp-frame-arrive 0.28s var(--ease-std, cubic-bezier(0.2, 0, 0, 1)) both;
+  animation: lp-frame-arrive 0.28s var(--ease-std, cubic-bezier(0.2, 0, 0, 1)) backwards;
 }
 @keyframes lp-frame-arrive {
   from {

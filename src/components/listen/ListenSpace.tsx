@@ -268,13 +268,13 @@ export const ListenSpace = memo(function ListenSpace({
   // 日语歌（#173）：读音按钮带一个悬停 / 右键小面板，选罗马音、汉字注音
   const hasJa = lines.some((l) => !!l.ja);
 
-  // 切歌取词加载三点：仅在听音空间已展开且确实展示过加载三点后，再拿到歌词时做一次 280ms 柔和显现，动画结束立刻撤掉 class（绝不长期隔离 plus-lighter）
+  // 切歌取词加载三点：用 useLayoutEffect 在浏览器绘制前同步挂上 .is-arrive，杜绝首帧满显后突然拉黑再淡入的闪跳
   const shown = phase === 'in' || phase === 'open';
   const showLoading = shown && !!loading && lines.length === 0 && !pane;
   const [arriving, setArriving] = useState(false);
   const wasLoadingRef = useRef(false);
   const arriveTimerRef = useRef(0);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (!shown) {
       wasLoadingRef.current = false;
       window.clearTimeout(arriveTimerRef.current);
@@ -291,7 +291,7 @@ export const ListenSpace = memo(function ListenSpace({
       wasLoadingRef.current = false;
       setArriving(true);
       window.clearTimeout(arriveTimerRef.current);
-      arriveTimerRef.current = window.setTimeout(() => setArriving(false), 320);
+      arriveTimerRef.current = window.setTimeout(() => setArriving(false), 340);
     } else if (!loading && lines.length === 0) {
       wasLoadingRef.current = false;
       setArriving(false);
@@ -452,7 +452,17 @@ export const ListenSpace = memo(function ListenSpace({
             onOpenLyricVersions();
           }}
         >
-          <LyricColumn className={`ls-lyrics${arriving ? ' is-arrive' : ''}`} lines={lines} settings={settings} />
+          <LyricColumn
+            className={`ls-lyrics${arriving ? ' is-arrive' : ''}`}
+            lines={lines}
+            settings={settings}
+            onAnimationEnd={(e) => {
+              if (e.animationName === 'ls-lyric-arrive') {
+                window.clearTimeout(arriveTimerRef.current);
+                setArriving(false);
+              }
+            }}
+          />
           <div className={`ls-loading${showLoading ? ' is-on' : ''}`} aria-hidden="true">
             <i />
             <i />

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { audioPlayer } from '../lib/audio/AudioPlayer';
 import { useAudioPlayer } from '../lib/audio/useAudioPlayer';
 import { useInterfaceSettingsContext } from '../hooks/interfaceSettings/InterfaceSettingsContext';
@@ -242,12 +242,12 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
     };
   }, [active]);
 
-  // 切歌取词加载三点：仅在展示过加载三点后再拿到歌词时，给版面画幅做一次轻柔淡入
+  // 切歌取词加载三点：用 useLayoutEffect 在首帧绘制前同步挂上 .is-arrive，杜绝先满显一帧再闪暗淡入
   const showLoading = !!loading && model.els.length === 0;
   const [arriving, setArriving] = useState(false);
   const wasLoadingRef = useRef(false);
   const arriveTimerRef = useRef(0);
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (showLoading) {
       wasLoadingRef.current = true;
       window.clearTimeout(arriveTimerRef.current);
@@ -258,7 +258,7 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
       wasLoadingRef.current = false;
       setArriving(true);
       window.clearTimeout(arriveTimerRef.current);
-      arriveTimerRef.current = window.setTimeout(() => setArriving(false), 320);
+      arriveTimerRef.current = window.setTimeout(() => setArriving(false), 340);
     } else if (!loading && model.els.length === 0) {
       wasLoadingRef.current = false;
       setArriving(false);
@@ -1045,7 +1045,16 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
         {/* 纸面（样张 N，2026-11-22 用户定稿）：封面最深的色、九成不透明，随交接进度和版面一起升起，压住你设的背景与星云 */}
         <i className="lp-paper" />
         <i className="lp-grain" style={{ backgroundImage: `url(${grain()})` }} />
-        <div ref={frameRef} className={`lp-frame${arriving ? ' is-arrive' : ''}`} />
+        <div
+          ref={frameRef}
+          className={`lp-frame${arriving ? ' is-arrive' : ''}`}
+          onAnimationEnd={(e) => {
+            if (e.animationName === 'lp-frame-arrive') {
+              window.clearTimeout(arriveTimerRef.current);
+              setArriving(false);
+            }
+          }}
+        />
         <div className={`lp-loading${showLoading ? ' is-on' : ''}`} aria-hidden="true">
           <i />
           <i />
