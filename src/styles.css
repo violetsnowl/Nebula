@@ -4405,10 +4405,9 @@ body {
   filter: brightness(calc(1 - 0.62 * var(--lk) * var(--sdep, 1.29))) saturate(calc(1 - 0.5 * var(--lk))) blur(calc(2.4px * var(--lk)));
 }
 
-/* 听音空间开着（含开合动画）时星云的滤镜冻住（2026-11-22 用户：版面进听音空间掉帧严重）：交接曲线退回漫游的那 0.4s 里，
-   上面那条的虚化半径每帧都在变，整片星云（上千张卡片）每帧带虚化重画一遍；听音空间的遮罩本来就把星云盖住、模糊了，
-   这里定在聆听时的样子不再变 */
-:root[data-stage-mode='page'] .app[data-listen-style]:has(.ls-root) .stage-3d.stage-3d {
+/* 听音空间开着（含开合动画）时已进入聆听的星云滤镜冻住（2026-11-22 用户：版面进听音空间掉帧严重）：交接曲线退回漫游的那 0.4s 里，
+   上面那条的虚化半径每帧都在变，整片星云（上千张卡片）每帧带虚化重画一遍；加 [data-lk] 限定仅在聆听中生效，避免版面模式漫游态（k=0）进出听音空间误压暗虚化星云 */
+:root[data-stage-mode='page'] .app[data-listen-style][data-lk]:has(.ls-root) .stage-3d.stage-3d {
   filter: brightness(calc(1 - 0.62 * var(--sdep, 1.29))) saturate(0.5) blur(2.4px);
 }
 
@@ -4469,6 +4468,12 @@ body {
 .app[data-listen-pin][data-lk] .listen-exit {
   opacity: var(--lk);
   pointer-events: auto;
+}
+/* 听音空间开着（含开合动画）时常驻收起键让位给听音空间自己的 .ls-exit */
+.app[data-listen-pin][data-ls] .listen-exit,
+.app[data-listen-pin]:has(.ls-root) .listen-exit {
+  opacity: 0;
+  pointer-events: none;
 }
 .listen-exit:hover {
   color: #fff;

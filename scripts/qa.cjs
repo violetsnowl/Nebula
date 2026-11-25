@@ -1870,6 +1870,219 @@ async function main() {
     await pickStage('漫游歌词');
     await page.keyboard.press('Control+Shift+M');
   }
+  // 主舞台（版面漫游态 / 底部字幕 / 日语假名注音 / 途中切歌）↔ 听音空间一镜到底回归（fe/next-27）
+  const stageFlyExtra = await (async () => {
+    const worst = (p) => (p && p.err && p.err.length ? Math.max(...p.err.flat().map(Math.abs)) : null);
+    const tab = (name) =>
+      page.evaluate((n) => [...document.querySelectorAll('.sd-panel.sd-right .seg.wide button')].find((b) => b.textContent === n)?.click(), name);
+    const pickRoam = (label) =>
+      page.evaluate((lb) => [...document.querySelectorAll('.sd-panel.sd-right [aria-label="平时的歌词"] button')].find((b) => b.textContent === lb)?.click(), label);
+
+    // 1) 版面模式处于漫游态（k = 0）时进出听音空间：不闪版面、星云不误加虚化压暗滤镜、由漫游歌词双向飞入飞回
+    await page.keyboard.press('Control+Shift+M');
+    await page.waitForTimeout(250);
+    await pickStage('版面');
+    await page.keyboard.press('Control+Shift+M');
+    await page.evaluate(() => window.__nebula.player.seek(3.6));
+    await page.mouse.move(620, 320);
+    await page.mouse.move(660, 350);
+    await page.waitForFunction(() => !document.querySelector('.app[data-lk]'), null, { timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(180);
+    await page.evaluate(() => document.querySelector('.bp-cover[data-np-cover]')?.click());
+    await page.waitForTimeout(260);
+    const prIn = await page.evaluate(() => {
+      const p = window.__nebulaRoamFly?.probe() ?? null;
+      return {
+        pageOp: Number(document.querySelector('.lyric-page')?.style.opacity || 0),
+        stageFilter: getComputedStyle(document.querySelector('.stage-3d')).filter,
+        n: p ? p.n : 0,
+        off: p ? p.off : -1,
+        err: p ? p.err : [],
+      };
+    });
+    await page.waitForTimeout(900);
+    await page.evaluate(() => document.querySelector('.ls-exit')?.click());
+    await page.waitForTimeout(260);
+    const prOut = await page.evaluate(() => {
+      const p = window.__nebulaRoamFly?.probe() ?? null;
+      return {
+        pageOp: Number(document.querySelector('.lyric-page')?.style.opacity || 0),
+        stageFilter: getComputedStyle(document.querySelector('.stage-3d')).filter,
+        n: p ? p.n : 0,
+        err: p ? p.err : [],
+      };
+    });
+    await page.waitForTimeout(750);
+    await page.keyboard.press('Control+Shift+M');
+    await page.waitForTimeout(250);
+    await pickStage('漫游歌词');
+    await page.keyboard.press('Control+Shift+M');
+
+    // 2) 只开底部字幕（平时的歌词 = 底部字幕）：从屏幕底部真实坐标起飞并落回，不堆到屏幕正中心
+    await tab('聆听');
+    await page.waitForTimeout(180);
+    await pickRoam('底部字幕');
+    await page.evaluate(() => window.__nebula.player.seek(3.6));
+    await page.mouse.move(610, 310);
+    await page.mouse.move(650, 340);
+    await page.waitForFunction(() => !document.querySelector('.app[data-lk]'), null, { timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(220);
+    await page.evaluate(() => document.querySelector('.bp-cover[data-np-cover]')?.click());
+    await page.waitForTimeout(260);
+    const capIn = await page.evaluate(() => {
+      const p = window.__nebulaRoamFly?.probe() ?? null;
+      const vh = window.innerHeight || 1;
+      const xs = p ? p.starts.map((s) => s.x) : [];
+      const ys = p ? p.starts.map((s) => s.y) : [];
+      return {
+        n: p ? p.n : 0,
+        off: p ? p.off : -1,
+        err: p ? p.err : [],
+        minYRatio: ys.length ? Math.round((Math.min(...ys) / vh) * 1000) / 1000 : 0,
+        spanX: xs.length ? Math.round((Math.max(...xs) - Math.min(...xs)) * 10) / 10 : 0,
+      };
+    });
+    await page.waitForTimeout(900);
+    await page.evaluate(() => document.querySelector('.ls-exit')?.click());
+    await page.waitForTimeout(260);
+    const capOut = await page.evaluate(() => {
+      const p = window.__nebulaRoamFly?.probe() ?? null;
+      return { n: p ? p.n : 0, err: p ? p.err : [] };
+    });
+    await page.waitForTimeout(750);
+    await pickRoam('淡淡一句');
+    await tab('歌词');
+    await page.waitForTimeout(180);
+
+    // 3) 日语假名注音行（.ly-rb 挂在 .u 内）一镜到底匹配与克隆清洗 + 4) 飞行途中切歌零 DOM 残留
+    const jaAudio = `data:audio/wav;base64,${makeWav(45).toString('base64')}`;
+    await page.evaluate((audio) => {
+      const jp = ['君の名前を呼んでいる', '星の海を渡って'];
+      const ro = ['kimi no namae wo yonde iru', 'hoshi no umi wo watatte'];
+      const fmt = (ms) =>
+        `[${String(Math.floor(ms / 60000)).padStart(2, '0')}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}.${String(Math.floor((ms % 1000) / 10)).padStart(2, '0')}]`;
+      const lines = [];
+      let yrc = '';
+      let romalrc = '';
+      for (let i = 0; i < 12; i++) {
+        const t = 1000 + i * 3200;
+        const text = jp[i % 2];
+        const cs = [...text];
+        const d = 240;
+        lines.push({ timeMs: t, text });
+        yrc += `[${t},${cs.length * d + 400}]` + cs.map((c, j) => `(${t + j * d},${j === cs.length - 1 ? d + 400 : d},0)${c}`).join('') + '\n';
+        romalrc += `${fmt(t)}${ro[i % 2]}\n`;
+      }
+      window.nebulaAPI.fetchLyric = async () => ({ ok: true, data: { source: 'netease', lines, yrc, romalrc } });
+      const n = window.__nebula;
+      const s0 = { ...n.songsData()[0], source: 'netease', sourceId: 'qa-ja-fly', title: '君の名前', audio };
+      n.player.playSong(s0, [s0]);
+    }, jaAudio);
+    await page.waitForTimeout(600);
+    await page.evaluate(() => document.querySelector('.bp-cover[data-np-cover]')?.click());
+    await page.waitForFunction(() => !!document.querySelector('.ls-lyrics .ly-rb'), null, { timeout: 4000 }).catch(() => {});
+    await page.evaluate(() => {
+      const btn = document.querySelector('.ls-rob');
+      if (btn && btn.getAttribute('aria-pressed') !== 'true') btn.click();
+    });
+    await page.waitForTimeout(200);
+    await page.evaluate(() => document.querySelector('.ls-exit')?.click());
+    await page.waitForTimeout(800);
+    await page.evaluate(() => window.__nebula.player.seek(1.4));
+    await page.mouse.move(630, 330);
+    await page.mouse.move(670, 360);
+    await page.waitForFunction(() => !document.querySelector('.app[data-lk]'), null, { timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(220);
+    await page.evaluate(() => document.querySelector('.bp-cover[data-np-cover]')?.click());
+    await page.waitForTimeout(240);
+    const jaFly = await page.evaluate(() => {
+      const p = window.__nebulaRoamFly?.probe() ?? null;
+      return {
+        colRuby: document.querySelectorAll('.ls-col .ly-rb').length,
+        flyDirty: document.querySelectorAll('.lp-lsfly .ly-rb, .lp-lsfly .ly-ro, .lp-lsfly .ly-tr, .lp-lsfly .ly-bg').length,
+        aliveBefore: document.querySelectorAll('.lp-lsfly').length,
+        n: p ? p.n : 0,
+        off: p ? p.off : -1,
+        err: p ? p.err : [],
+      };
+    });
+    // 飞行尚未结束（240ms < 800ms）时立即切歌：旧歌曲的 .lp-lsfly 与 [data-flyhide] 必须随清理归零
+    await page.evaluate((audio) => {
+      const n = window.__nebula;
+      const s2 = { ...n.songsData()[1], source: 'netease', sourceId: 'qa-switch-clean', title: 'Switch Clean', audio };
+      n.player.playSong(s2, [s2]);
+    }, jaAudio);
+    await page.waitForTimeout(160);
+    const midSwitch = await page.evaluate(() => ({
+      layers: document.querySelectorAll('.lp-lsfly').length,
+      hidden: document.querySelectorAll('[data-flyhide]').length,
+    }));
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(750);
+
+    return {
+      pageRoam: {
+        inPageOp: prIn.pageOp,
+        inFilter: prIn.stageFilter,
+        inN: prIn.n,
+        inOff: prIn.off,
+        inErr: worst(prIn),
+        outPageOp: prOut.pageOp,
+        outFilter: prOut.stageFilter,
+        outN: prOut.n,
+        outErr: worst(prOut),
+      },
+      caption: {
+        inN: capIn.n,
+        inOff: capIn.off,
+        inErr: worst(capIn),
+        minYRatio: capIn.minYRatio,
+        spanX: capIn.spanX,
+        outN: capOut.n,
+        outErr: worst(capOut),
+      },
+      ruby: {
+        colRuby: jaFly.colRuby,
+        flyDirty: jaFly.flyDirty,
+        aliveBefore: jaFly.aliveBefore,
+        n: jaFly.n,
+        off: jaFly.off,
+        err: worst(jaFly),
+      },
+      midSwitch,
+    };
+  })();
+  log('主舞台 ↔ 听音空间扩展回归（版面漫游态 / 底部字幕 / 日语注音 / 途中切歌）', JSON.stringify(stageFlyExtra));
+  const stageFlyExtraOk =
+    stageFlyExtra.pageRoam.inPageOp === 0 &&
+    stageFlyExtra.pageRoam.inFilter === 'none' &&
+    stageFlyExtra.pageRoam.inN > 0 &&
+    stageFlyExtra.pageRoam.inOff === 0 &&
+    stageFlyExtra.pageRoam.inErr !== null &&
+    stageFlyExtra.pageRoam.inErr <= 1.5 &&
+    stageFlyExtra.pageRoam.outPageOp === 0 &&
+    stageFlyExtra.pageRoam.outFilter === 'none' &&
+    stageFlyExtra.pageRoam.outN > 0 &&
+    stageFlyExtra.pageRoam.outErr !== null &&
+    stageFlyExtra.pageRoam.outErr <= 1.5 &&
+    stageFlyExtra.caption.inN >= 5 &&
+    stageFlyExtra.caption.inOff === 0 &&
+    stageFlyExtra.caption.inErr !== null &&
+    stageFlyExtra.caption.inErr <= 1.5 &&
+    stageFlyExtra.caption.minYRatio > 0.72 &&
+    stageFlyExtra.caption.spanX > 30 &&
+    stageFlyExtra.caption.outN >= 5 &&
+    stageFlyExtra.caption.outErr !== null &&
+    stageFlyExtra.caption.outErr <= 1.5 &&
+    stageFlyExtra.ruby.colRuby > 0 &&
+    stageFlyExtra.ruby.flyDirty === 0 &&
+    stageFlyExtra.ruby.aliveBefore === 1 &&
+    stageFlyExtra.ruby.n > 0 &&
+    stageFlyExtra.ruby.off === 0 &&
+    stageFlyExtra.ruby.err !== null &&
+    stageFlyExtra.ruby.err <= 1.5 &&
+    stageFlyExtra.midSwitch.layers === 0 &&
+    stageFlyExtra.midSwitch.hidden === 0;
   const gapOk = !!gapDots && gapDots.count >= 1 && gapDots.shown && gapDots.ops.some((o) => o > 0.2) && gapDots.shownPages === 0;
   log('版面·间奏三点', JSON.stringify(gapDots));
   log('版面转场·横排逐字飞入（两句之间进入聆听）', JSON.stringify(morphEn));
@@ -1972,6 +2185,7 @@ async function main() {
     !morphPass ||
     !tplOk ||
     !lsFlyOk ||
+    !stageFlyExtraOk ||
     !pinOk ||
     !capHazeOk ||
     !idleOk ||
@@ -2035,6 +2249,7 @@ async function main() {
     pageMorph: !morphPass,
     pageTemplates: !tplOk,
     pageToListen: !lsFlyOk,
+    stageFlyExtra: !stageFlyExtraOk,
     listenPin: !pinOk,
     captionHaze: !capHazeOk,
     idleInPanel: !idleOk,
