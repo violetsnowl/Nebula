@@ -1,0 +1,188 @@
+/* 版面·样张 N 第三批（唱片纹、稿纸、转角）的样子；版式逻辑在 lyric-page/bold-c.ts。
+   位置、字号由版式按 1600 × 900 的逻辑像素写在行内；颜色只取封面（--lp-acc 来自 lyric-page-tpl.css）。 */
+
+/* ———— 唱片纹：沟槽是一张静态 SVG，沿弧摆字的外壳在 finish 里包上 ———— */
+.lp-groove {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.lp-groove svg {
+  position: absolute;
+  inset: 0;
+}
+
+/* 当前轨道：正在唱的那句的圈往里一道封面色细线（半径由 frame 钩子写） */
+.lp-g-track {
+  fill: none;
+  stroke: var(--lp-acc);
+  stroke-opacity: 0.42;
+  stroke-width: 1.2;
+}
+
+/* 底部露出的唱片标签：封面色压暗 */
+.lp-g-label {
+  fill: color-mix(in srgb, var(--lp-acc) 30%, rgb(16 14 14));
+}
+
+.lp-g-ring {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.12);
+}
+
+/* 平排：Inter 600 40px 大写、字距 .16em；中日韩用歌词字体、不大写、字距 .1em */
+.lt-groove .lp-tx {
+  font-family: Inter, 'Segoe UI', sans-serif;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.is-cjk .lt-groove .lp-tx {
+  font-family: var(--lc-font);
+  font-weight: var(--lyric-weight, 600);
+  letter-spacing: 0.1em;
+  text-transform: none;
+}
+
+/* 译文：15px，逐字沿内圈摆（先平排量，再包外壳） */
+.tpl-groove .lp-tr {
+  font-size: 15px;
+  line-height: 1;
+  letter-spacing: 0.06em;
+}
+
+.tpl-groove .lp-tr .lp-arcg {
+  display: inline-block;
+}
+
+/* 沿弧摆字的外壳：绝对定位到弧上并旋转（位置、旋转由 bold-c.ts 写）。
+   里面的 .u 照常每帧写 transform 做波浪浮起——在外壳的局部坐标里就是沿半径向外 */
+.lp-arcw {
+  position: absolute;
+  display: flex;
+  align-items: flex-start;
+  white-space: pre;
+}
+
+.lp-arcw > .u {
+  flex: none;
+}
+
+.lp-arcw.lp-arct {
+  display: block;
+}
+
+/* ———— 稿纸：一格一字，平排本身就对齐格子 ———— */
+.lp-grid,
+.lp-grid-in {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.lp-grid svg {
+  position: absolute;
+  inset: 0;
+}
+
+.lp-cellg {
+  fill: none;
+  stroke: var(--lp-acc);
+}
+
+/* 正在唱的格子：底下垫一层极淡的封面色（位置由 frame 钩子写） */
+.lp-gcell {
+  position: absolute;
+  background: color-mix(in srgb, var(--lp-acc) 10%, transparent);
+  pointer-events: none;
+}
+
+/* 一句的字排成一串 flex 项：字间的空格文本不再占位，一格一字才不会错位（竖排时 flex 主轴就是竖的） */
+.lt-grid .lp-tx {
+  display: flex;
+}
+
+.lang-zh .lt-grid .lp-tx {
+  font-family: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+  font-weight: 600;
+}
+
+/* 横排稿纸的译文：排在行下面的空里 */
+.tpl-grid .lp-tr.is-grid {
+  font-size: 14px;
+  line-height: 1;
+}
+
+/* ———— 转角：两截各自绝对定位，坐标在 .lp-tx 的局部（句子放在页的左上角，等于页内坐标） ———— */
+.lt-corner .lp-tx {
+  position: relative;
+}
+
+/* 转角 L 形细线（2026-11-23）：沿句眼下缘到内拐点折向竖排尾巴，颜色取封面强调色 */
+.lyric-page .lp-corner-line {
+  position: absolute;
+  pointer-events: none;
+  background: color-mix(in srgb, var(--lp-acc) 38%, transparent);
+}
+
+.lt-corner .lp-seg {
+  position: absolute;
+  display: block;
+  line-height: 1;
+}
+
+/* 句眼：粗大。中文 Noto Serif SC 900；拉丁 Inter 800 大写；日韩 Noto Sans JP / KR 900 */
+.lyric-page .lt-corner .lt-eye {
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.lyric-page .lang-zh .lt-corner .lt-eye {
+  font-family: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+}
+
+.lyric-page .lang-en .lt-corner .lt-eye {
+  font-family: Inter, 'Segoe UI', sans-serif;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  text-transform: uppercase;
+}
+
+.lyric-page .lang-ja .lt-corner .lt-eye {
+  font-family: 'Noto Sans JP', 'Yu Gothic', 'Meiryo', sans-serif;
+}
+
+.lyric-page .lang-ko .lt-corner .lt-eye {
+  font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+}
+
+/* 尾巴：中文 600 .08em；拉丁 Newsreader 600（竖排时字母侧躺着从上往下读）；日韩歌词字体 */
+.lyric-page .lt-corner .lt-tail {
+  font-weight: 600;
+  letter-spacing: 0.08em;
+}
+
+.lyric-page .lang-zh .lt-corner .lt-tail {
+  font-family: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+}
+
+.lyric-page .lang-en .lt-corner .lt-tail {
+  font-family: Newsreader, Georgia, serif;
+  letter-spacing: 0.01em;
+}
+
+.lyric-page .lang-ja .lt-corner .lt-tail,
+.lyric-page .lang-ko .lt-corner .lt-tail {
+  font-family: var(--lc-font);
+  font-weight: var(--lyric-weight, 600);
+  letter-spacing: 0.06em;
+}
+
+/* 其余句子：小字（中文竖排 Noto Serif SC 600；拉丁斜体衬线、日韩歌词字体，由 lt-ital 给） */
+.lang-zh .lt-cs .lp-tx {
+  font-family: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+  font-weight: 600;
+}

@@ -21,6 +21,12 @@ export interface ListenConfig {
   style: ListenStyle;
   /** 聆听时播放条一起变淡。 */
   dimBar: boolean;
+  /**
+   * 进入聆听后常驻（2026-11-22 用户要求）：动鼠标、点击、滚轮都不再退出，像听音空间一样待着；
+   * 按 Esc 或左上角收起键（exit）离开。常驻期间不因暂停、在输入框打字、两侧面板开着而退出；打开听音空间时底层舞台保持常驻聆听（k=1）原地待命，
+   * 只在硬阻断条件（右键菜单、信息弹窗、壁纸、登录、导入）出现时暂退漫游并在解除后恢复。根元素带 data-listen-pin：光标、两侧边缘入口、播放条照常（styles.css）。
+   */
+  pin: boolean;
   /** 歌词图层在卡片之下（决定「沉降」是否需要换层）。 */
   lyricsUnder: boolean;
   /** 歌词三句布局（决定「散开」的让开中心）。 */
@@ -48,6 +54,15 @@ export function onListenFrame(fn: () => void): () => void {
   };
 }
 
+/**
+ * 聆听中由别处（漫游歌词的段落开合、字照亮空间）请舞台刷新一帧：交接曲线跑完后舞台不会自己每帧刷新。
+ * 只在交接启用、正在聆听或交接进行中时有效。
+ */
+export function pokeListenFrame(): void {
+  if (!listenBus.enabled || listenBus.k <= 0.001) return;
+  for (const fn of frameSubs) fn();
+}
+
 /** 交接曲线时长：进入像灯光调暗，回来不让人等。 */
 const ENTER_MS = 1600;
 const EXIT_MS = 380;
@@ -61,10 +76,10 @@ const MOVE_PX = 6;
 const MOVE_WINDOW_MS = 400;
 const CHECK_MS = 250;
 /**
- * 这些弹层存在时不进入聆听：只剩覆盖全局的（听音空间、信息弹窗）和右键菜单。
+ * 这些弹层存在时不进入聆听（硬阻断）：信息弹窗和右键菜单。听音空间由 isListenSpaceOpen 单独传入（含 .ls-root.is-shown 兜底）。
  * 侧栏、设置、播放队列 / 音质 / 音量小弹层里鼠标不动也算静止（#125，用户反馈「在设置面板里一直不进入」）。
  */
-const BUSY_SELECTOR = '.ctx-menu, .info-modal, .ls-root.is-shown';
+const HARD_BUSY_SELECTOR = '.ctx-menu, .info-modal';
 /** 这些输入框获得焦点才算「正在打字」；滑杆、复选框、按钮点过后留着焦点不算。 */
 const TEXT_INPUT = /^(text|search|email|url|tel|password|number)$/;
 
@@ -102,8 +117,10 @@ export function partOffset(
 
 export interface ListenDirectorDeps {
   isPlaying: () => boolean;
-  /** 应用层的阻断条件（悬停卡片、弹窗、面板、导入中等）。 */
+  /** 应用层的硬阻断条件（右键菜单、信息弹窗、壁纸、登录、导入中等；不含听音空间）。 */
   isBlocked: () => boolean;
+  /** 听音空间是否打开（由 React 状态直传，避免轮询 DOM 的首帧/收起尾帧竞态）。 */
+  isListenSpaceOpen?: () => boolean;
 }
 
 interface Tween {
@@ -139,10 +156,13 @@ export class ListenDirector {
     delayMs: 6000,
     style: 'sink',
     dimBar: true,
+    pin: false,
     lyricsUnder: true,
     layout: 'stacked',
   };
   private mode: 'roam' | 'listen' = 'roam';
+  /** 常驻聆听被阻断条件打断（比如打开了听音空间）：条件解除时直接回到聆听，不重新计静止时间。 */
+  private resume = false;
   private lastAct = performance.now();
   private moveAcc = 0;
   private lastX: number | null = null;
@@ -164,17 +184,19 @@ export class ListenDirector {
 
   start(): void {
     window.addEventListener('pointermove', this.onMove, { passive: true, capture: true });
-    for (const t of ['pointerdown', 'wheel', 'keydown', 'touchstart'] as const) {
+    for (const t of ['pointerdown', 'wheel', 'touchstart'] as const) {
       window.addEventListener(t, this.onActivity, { passive: true, capture: true });
     }
+    window.addEventListener('keydown', this.onKey, { passive: true, capture: true });
     this.timer = window.setInterval(this.check, CHECK_MS);
   }
 
   dispose(): void {
     window.removeEventListener('pointermove', this.onMove, { capture: true });
-    for (const t of ['pointerdown', 'wheel', 'keydown', 'touchstart'] as const) {
+    for (const t of ['pointerdown', 'wheel', 'touchstart'] as const) {
       window.removeEventListener(t, this.onActivity, { capture: true });
     }
+    window.removeEventListener('keydown', this.onKey, { capture: true });
     window.clearInterval(this.timer);
     if (this.raf) cancelAnimationFrame(this.raf);
     this.raf = 0;
@@ -200,6 +222,8 @@ export class ListenDirector {
     const d = this.root.dataset;
     d.listenStyle = cfg.style;
     d.listenBar = cfg.dimBar ? 'dim' : 'keep';
+    if (this.mode === 'listen' && cfg.pin) d.listenPin = 'on';
+    else delete d.listenPin;
     if (!prev.enabled) {
       this.lastAct = performance.now();
       this.lyrOp = LYR_ROAM;
@@ -211,8 +235,18 @@ export class ListenDirector {
       this.lyrOp = on ? 1 : LYR_ROAM;
       this.lyrTop = on && this.needsTop();
     }
+    if (this.mode === 'listen' && !cfg.pin && this.lsOpen()) {
+      this.resume = false;
+      this.setMode('roam', document.documentElement.dataset.stageMode === 'page');
+      return;
+    }
     this.write();
     this.emit();
+  }
+
+  /** 应用层阻断条件或听音空间开关变化时立即复核，不等 250ms 轮询。 */
+  notify(): void {
+    this.check();
   }
 
   /** 沉降、退潮都把歌词换到卡片之上（退潮时卡片化成薄雾，留在下面会被挡住，#124）。 */
@@ -227,6 +261,7 @@ export class ListenDirector {
     delete d.listen;
     delete d.lk;
     delete d.lyrTop;
+    delete d.listenPin;
     for (const v of ['--lk', '--lo', '--ls']) this.root.style.removeProperty(v);
     listenBus.k = 0;
   }
@@ -246,20 +281,70 @@ export class ListenDirector {
 
   private onActivity = (): void => {
     this.lastAct = performance.now();
-    if (this.mode === 'listen') this.setMode('roam');
+    if (this.mode === 'listen' && !this.cfg.pin) this.setMode('roam');
   };
 
-  private blocked(): boolean {
-    return this.deps.isBlocked() || editableFocused() || !!document.querySelector(BUSY_SELECTOR);
+  /** 常驻聆听：Esc 离开（别的浮层——听音空间、队列 / 音质 / 音量弹层、右键菜单、打开的侧面板、信息弹窗——开着时让给它们）。 */
+  private onKey = (e: KeyboardEvent): void => {
+    if (this.cfg.pin && this.mode === 'listen' && e.key === 'Escape') {
+      if (
+        this.lsOpen() ||
+        document.querySelector('.queue-pop, .quality-pop, .vol-pop, .ctx-menu, .sd-panel.is-open, .info-overlay, .ls-root.is-shown')
+      ) {
+        return;
+      }
+      this.exit();
+      return;
+    }
+    this.onActivity();
+  };
+
+  /** 离开聆听（常驻聆听的收起键、Esc）：回到漫游，重新开始计静止时间。 */
+  exit(): void {
+    this.resume = false;
+    this.lastAct = performance.now();
+    if (this.mode === 'listen') this.setMode('roam');
+  }
+
+  private lsOpen(): boolean {
+    return !!this.deps.isListenSpaceOpen?.() || !!document.querySelector('.ls-root.is-shown');
+  }
+
+  private hardBlocked(): boolean {
+    return this.deps.isBlocked() || !!document.querySelector(HARD_BUSY_SELECTOR);
   }
 
   private check = (): void => {
     if (!this.cfg.enabled) return;
     const now = performance.now();
-    const ok = this.deps.isPlaying() && !this.blocked();
+    const hard = this.hardBlocked();
+    const ls = this.lsOpen();
+    const ok = this.deps.isPlaying() && !hard && !ls && !editableFocused();
     if (this.mode === 'listen') {
-      if (!ok) this.setMode('roam');
+      if (this.cfg.pin) {
+        // 常驻聆听：打开听音空间时底层舞台保持 k=1 原地待命（不改根元素 --lk、收起后直接飞回常驻舞台不闪星云）；
+        // 只有硬阻断条件出现时才暂退漫游，条件解除后自动恢复
+        if (hard) {
+          this.resume = true;
+          this.setMode('roam');
+        } else {
+          this.resume = false;
+        }
+      } else if (!ok) {
+        // 非常驻的版面模式下因听音空间打开而退回漫游时直接落位（避免 0.4s 退场每帧改根元素 --lk 重算整棵页面）
+        const lsOpening = document.documentElement.dataset.stageMode === 'page' && ls;
+        this.setMode('roam', lsOpening);
+      }
       return;
+    }
+    // 常驻聆听被硬阻断打断后，硬阻断与听音空间都收起时直接回到聆听
+    if (this.resume) {
+      if (!this.cfg.pin) this.resume = false;
+      else if (!hard && !ls) {
+        this.resume = false;
+        this.setMode('listen');
+        return;
+      }
     }
     // 条件不满足期间计时清零：恢复播放、关掉弹层后重新数
     if (!ok) {
@@ -269,18 +354,20 @@ export class ListenDirector {
     if (now - this.lastAct >= this.cfg.delayMs) this.setMode('listen');
   };
 
-  private setMode(m: 'roam' | 'listen'): void {
+  private setMode(m: 'roam' | 'listen', instant = false): void {
     if (this.mode === m) return;
     this.mode = m;
     if (m === 'listen') this.root.dataset.listen = 'on';
     else delete this.root.dataset.listen;
+    if (m === 'listen' && this.cfg.pin) this.root.dataset.listenPin = 'on';
+    else delete this.root.dataset.listenPin;
     const to = m === 'listen' ? 1 : 0;
     const base = m === 'listen' ? ENTER_MS : EXIT_MS;
     this.tw = {
       from: this.k,
       to,
       t0: performance.now(),
-      dur: this.reduce ? 1 : base * Math.max(0.35, Math.abs(to - this.k)),
+      dur: this.reduce || instant ? 1 : base * Math.max(0.35, Math.abs(to - this.k)),
       lyrFrom: this.lyrOp,
       needSwap: this.needsTop() && (m === 'listen') !== this.lyrTop,
     };

@@ -8,6 +8,8 @@ import { useSyncExternalStore } from 'react';
  * 设置在「设置 › 外观 › 星云怎么排」；开发者面板「舞台实验室」（Ctrl+Shift+M）另外能调透镜强度和镜头倾角。
  */
 export type StageLayout = 'cluster' | 'chroma' | 'random';
+export type StageMode = 'roam' | 'page';
+const STAGE_MODES: StageMode[] = ['roam', 'page'];
 
 export interface SpaceLab {
   /** 用户设置的排法 */
@@ -20,6 +22,10 @@ export interface SpaceLab {
   tilt: number;
   /** 环境色跟随镜头所在区域的封面颜色。 */
   tint: boolean;
+  /** 漫游歌词升级（样张 M，2026-11-22）：段落开合、间奏让位、字照亮空间、大小对比、同段同向。关掉 = 旧样子，用来对比。 */
+  lyricShape: boolean;
+  /** 聆听时的舞台（样张 M）：漫游歌词（默认）/ 版面。先挂在实验室里，验收后再进设置。 */
+  stageMode: StageMode;
   /** 开发者面板是否打开（不持久化）。 */
   open: boolean;
 }
@@ -28,7 +34,7 @@ export interface SpaceLab {
 // 都不带过来，新星云从默认的「按颜色」开始（#137）。v3 里若还存着旧卡片墙的 classic 标记，读取时直接忽略
 const KEY = 'music-nebula.stage-space.v3';
 const LAYOUTS: StageLayout[] = ['cluster', 'chroma', 'random'];
-const DEFAULTS: SpaceLab = { layout: 'chroma', mode: 'chroma', lens: 0.8, tilt: 0, tint: true, open: false };
+const DEFAULTS: SpaceLab = { layout: 'chroma', mode: 'chroma', lens: 0.8, tilt: 0, tint: true, lyricShape: true, stageMode: 'roam', open: false };
 
 function withMode(s: Omit<SpaceLab, 'mode'>): SpaceLab {
   return { ...s, mode: s.layout };
@@ -44,6 +50,8 @@ function load(): SpaceLab {
       lens: typeof v.lens === 'number' ? Math.min(1.5, Math.max(0, v.lens)) : DEFAULTS.lens,
       tilt: typeof v.tilt === 'number' ? Math.min(20, Math.max(0, v.tilt)) : DEFAULTS.tilt,
       tint: typeof v.tint === 'boolean' ? v.tint : DEFAULTS.tint,
+      lyricShape: typeof v.lyricShape === 'boolean' ? v.lyricShape : DEFAULTS.lyricShape,
+      stageMode: STAGE_MODES.includes(v.stageMode as StageMode) ? (v.stageMode as StageMode) : DEFAULTS.stageMode,
       open: false,
     });
   } catch {

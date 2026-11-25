@@ -9,6 +9,7 @@ import type { Track } from '../../lib/catalog';
 import { matchSongs, type SearchMatch } from '../../lib/search';
 import { PanController } from '../../lib/panEngine';
 import { listenBus, onListenFrame, partOffset } from '../../lib/listenMode';
+import { stageShapeBus } from '../../lib/listen/stageBus';
 import type { PanFrame } from '../../lib/panEngine';
 import { hasDesktopAPI, toBackendTrack, toFrontendTrack, viaOf } from '../../lib/playlist/ipcClient';
 import type { DesktopTrack } from '../../lib/playlist/ipcClient';
@@ -224,7 +225,9 @@ export function useStage({
     const p = projRef.current;
     const pool = pickPoolRef.current;
     // 聆听「沉降」：整片星云往下沉、后退（缩到 86%、下移 4vh，中心在 50% / 45%），在屏幕坐标上算（见 lens.applyXf）
-    const sinkK = listenBus.style === 'sink' ? listenBus.k : 0;
+    // 漫游歌词升级（样张 M）：沉降幅度随段落开合、间奏让位变化（主歌略沉，副歌浮起一半，间奏完全浮起）
+    const shape = stageShapeBus.on ? stageShapeBus : null;
+    const sinkK = listenBus.style === 'sink' ? listenBus.k * (shape ? shape.sinkPos : 1) : 0;
     const xf: ScreenXf | null = sinkK > 0.0005 ? { f: 1 - 0.14 * sinkK, ox: vw / 2, oy: vh * 0.45, ty: vh * 0.04 * sinkK } : null;
     const qk = xf ? 1 / xf.f : 1; // 缩小后一屏装得下更大一片世界，查询范围跟着放大
     let np = 0;
@@ -286,6 +289,17 @@ export function useStage({
     const spawnSet = spawnFromCenterRef.current;
     const partK = listenBus.style === 'part' ? listenBus.k : 0;
     const ebbK = listenBus.style === 'ebb' ? listenBus.k : 0;
+    // 字照亮空间：正在唱的字附近的卡片提亮（高斯衰减，半径约 0.22 屏宽）。
+    // lk = 光心处卡片从让开后的暗度往原亮度（1.05）拉回的比例，所以要知道这一刻整片星云被压到多暗
+    const lightK = shape ? shape.lk * listenBus.k : 0;
+    const lightR = vw * 0.22;
+    const dimBase =
+      listenBus.style === 'sink'
+        ? 1 - 0.62 * listenBus.k * (shape ? shape.sinkDepth : 1)
+        : listenBus.style === 'part'
+          ? 1 - 0.16 * listenBus.k * (shape ? shape.sinkDepth : 1)
+          : 1 - 0.08 * listenBus.k;
+    const lightGain = 1.05 / Math.max(0.2, dimBase) - 1;
     partActiveRef.current = partK > 0 || ebbK > 0 || xf !== null;
     const metaPool = metaPoolRef.current;
     let metaN = 0;
@@ -331,7 +345,17 @@ export function useStage({
       el.style.setProperty('--y', `${y}px`);
       el.style.setProperty('--scale', String(scale));
       el.style.setProperty('--card-a', (domA * airA).toFixed(3));
-      el.style.setProperty('--card-filter', pushDim > 0.01 ? `brightness(${(1 - 0.42 * pushDim).toFixed(3)})` : 'none');
+      let lit = 0;
+      if (lightK > 0.01) {
+        const dx = (sx - shape!.lx) / lightR;
+        const dy = (sy - shape!.ly) / lightR;
+        lit = lightK * Math.exp(-(dx * dx + dy * dy));
+      }
+      const bright = (1 - 0.42 * pushDim) * (1 + lightGain * lit);
+      el.style.setProperty(
+        '--card-filter',
+        Math.abs(bright - 1) > 0.01 ? `brightness(${bright.toFixed(3)})${lit > 0.01 ? ` saturate(${(1 + 0.3 * lit).toFixed(3)})` : ''}` : 'none',
+      );
       const zi = Math.round((1 - Math.min(1, q.u)) * 5000) + 1;
       el.style.zIndex = String(zi);
       const base = q.u < 0.3 && z > 0.55 ? 1 : 0;

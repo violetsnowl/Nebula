@@ -3,8 +3,11 @@ import { audioPlayer } from '../lib/audio/AudioPlayer';
 import { useAudioPlayer } from '../lib/audio/useAudioPlayer';
 import { useInterfaceSettingsContext } from '../hooks/interfaceSettings/InterfaceSettingsContext';
 import { currentLyricIndex, type LyricLineUI } from '../lib/lyrics';
-import { listenBus } from '../lib/listenMode';
+import { listenBus, pokeListenFrame } from '../lib/listenMode';
 import { detectScript, songPace, toEngineLine, type EngineLine } from '../lib/listen/model';
+import { analyzeSong, stageAt, type ShapeLine } from '../lib/listen/sections';
+import { pageBus, shapeSink, stageShapeBus } from '../lib/listen/stageBus';
+import { getSpaceLab, useSpaceLab } from '../lib/space/lab';
 import { useListenSettings } from '../lib/listen/settings';
 import {
   TYPO,
@@ -18,7 +21,22 @@ import {
   type UnitRt,
 } from '../lib/listen/words';
 import type { FrameBus } from '../lib/stage';
+import {
+  LsFly,
+  columnSideOf,
+  columnUnitsOf,
+  hideFlyElements,
+  isColumnLineVisible,
+  isPageStageActive,
+  launchStageToListenFly,
+  normLyricText,
+  plainColumnText,
+  queryColumnLines,
+  type FlyPair,
+  type FlySide,
+} from '../lib/listen/flyTransition';
 import './listen/lyric-words.css';
+import './listen/fly-transition.css';
 
 interface LyricsLayerProps {
   lines: LyricLineUI[];
@@ -28,6 +46,8 @@ interface LyricsLayerProps {
   /** 前奏/纯音乐时居中展示的歌曲信息。 */
   songTitle?: string;
   songArtist?: string;
+  /** 听音空间是否打开：漫游态与漫游聆听态下双向一镜到底。 */
+  lsOpen?: boolean;
 }
 
 type Role = 'current' | 'next' | 'nextNext' | 'leaving';
@@ -70,7 +90,20 @@ interface Flight {
   exitVy: number;
   /** 离场时转出的角度（往飞出方向倾，#124）。 */
   exitRot: number;
+  /** 漫游歌词升级（样张 M）：副歌的句子从下往上升起（候句在当前句下方，离场往上）。 */
+  rise: boolean;
+  /** 漫游歌词升级：同一个句组朝同一个方向流过。-1 = 从左进、往右出；1 = 从右进、往左出；0 = 不按句组（旧样子）。 */
+  flow: number;
 }
+
+/** 漫游歌词升级（样张 M）的大小对比：候句缩小变淡，当前句随段落开合变大。 */
+const UP_NEXT = 0.56;
+const UP_NN = 0.42;
+const UP_OP_NEXT = 0.5;
+const UP_OP_NN = 0.3;
+/** 副歌升起时候句的位置上限（不压到底部播放条和字幕）。 */
+const RISE_NEXT_MAX = 0.2;
+const RISE_NN_MAX = 0.32;
 
 const MARGIN = 240;
 /** 主带：垂直中心 ±12%。 */
@@ -166,14 +199,17 @@ function buildLineDom(host: HTMLElement, e: EngineLine): LineDom {
  * - 漫游时（交接启用、还没进入聆听）按设置退成「氛围」（只留当前句、缩小半透明微虚）和 / 或「字幕」；
  * - 前奏/纯音乐居中展示歌曲信息。
  */
-export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }: LyricsLayerProps) {
+export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist, lsOpen = false }: LyricsLayerProps) {
   const playState = useAudioPlayer();
   const currentTime = playState.currentTime;
   const playing = playState.playing;
+  const lsOpenRef = useRef(lsOpen);
+  lsOpenRef.current = lsOpen;
   const { lyricSettings: settings } = useInterfaceSettingsContext();
   const listen = useListenSettings();
   const containerRef = useRef<HTMLDivElement>(null);
   const captionRef = useRef<HTMLDivElement>(null);
+  const lightRef = useRef<HTMLElement>(null);
   const elRefs = useRef(new Map<number, HTMLSpanElement>());
   const lineDoms = useRef(new Map<number, LineDom>());
   const flights = useRef(new Map<number, Flight>());
@@ -204,6 +240,20 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
   }, [lines]);
   const engineLinesRef = useRef(engineLines);
   engineLinesRef.current = engineLines;
+  // 段落引擎（sections.ts）：主歌 / 副歌 / 桥段、间奏、句组；pos = 歌词行下标 → 引擎里的句子下标
+  const shapeData = useMemo(() => {
+    const sl: ShapeLine[] = [];
+    const pos = new Map<number, number>();
+    engineLines.forEach((e, i) => {
+      if (!e) return;
+      pos.set(i, sl.length);
+      sl.push({ s: e.s, e: e.e, text: e.text });
+    });
+    return { sl, pos, shape: analyzeSong(sl) };
+  }, [engineLines]);
+  const shapeRef = useRef(shapeData);
+  shapeRef.current = shapeData;
+  const lab = useSpaceLab();
   const script = useMemo(() => detectScript(lines), [lines]);
   const typo = TYPO[listen.font][script];
 
@@ -260,6 +310,151 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
             : rand(NEXT_MAG[0], NEXT_MAG[1]) * frameBus.vh;
       }
     }
+    // 漫游歌词升级（样张 M）：每帧从实验室读开关，按段落引擎算开合 / 间奏让位
+    let up = getSpaceLab().lyricShape;
+    /** 聆听时的舞台是「版面」：聆听中漫游歌词淡出，由 LyricPage 接手；星云沉得更深当纸面。 */
+    let pageMode = false;
+    let pokedDepth = -1;
+    let pokedPos = -1;
+    let open = 0;
+    let gapK = 0;
+    let wroteVars = false;
+    const rootStyle = document.documentElement.style;
+
+    // —— 漫游 / 字幕 ↔ 听音空间双向一镜到底（共用 lib/listen/flyTransition.ts）——
+    let lsPrev = !!lsOpenRef.current;
+    let roamFly: LsFly | null = null;
+    let roamFlyInKind: 'flow' | 'caption' | null = null;
+    let lsWantDir: 'out' | 'in' | null = null;
+    let lsWantAt = 0;
+    let lsAttemptAt = 0;
+
+    interface RoamSource {
+      key: number;
+      offsetFromCur: number;
+      text: string;
+      units: HTMLElement[];
+      sideOf: (el: HTMLElement) => FlySide;
+      kind: 'flow' | 'caption';
+    }
+    const collectRoamSources = (): RoamSource[] => {
+      const out: RoamSource[] = [];
+      const els = [...container.querySelectorAll<HTMLElement>(':scope > .flow-lyric')];
+      els.forEach((el, idx) => {
+        const role = el.dataset.role;
+        if (role !== 'current' && role !== 'next' && role !== 'nextNext') return;
+        const op = parseFloat(el.style.opacity || getComputedStyle(el).opacity);
+        if (!Number.isFinite(op) || op < 0.08) return;
+        const words = el.querySelector<HTMLElement>('.fl-words');
+        if (!words) return;
+        const units = [...words.querySelectorAll<HTMLElement>(':scope > .u, :scope > .fl-whole')];
+        const text = normLyricText(words.textContent ?? '');
+        if (!units.length || !text) return;
+        const rot = Number((el.style.transform.match(/rotate\((-?[\d.]+)deg\)/) ?? [])[1] ?? 0);
+        const ctx = `lpm-r${up ? ' is-shape' : ''}${role === 'current' ? ' is-grad' : ''}`;
+        const offsetFromCur = role === 'current' ? 0 : role === 'next' ? 1 : 2;
+        out.push({
+          key: idx,
+          offsetFromCur,
+          text,
+          units,
+          kind: 'flow',
+          sideOf: (u) => ({ el: u, ctx, rot, vert: false, opacity: op, opEl: el }),
+        });
+      });
+      // 只开底部字幕时没有可见的 .flow-lyric，从底部字幕起飞 / 落回（styles.css 保留其真实布局盒子）
+      if (!out.length) {
+        const capRoot = captionRef.current;
+        const capOp = capRoot ? parseFloat(capRoot.style.getPropertyValue('--cap-o') || '0') : 0;
+        const host = capRoot?.querySelector<HTMLElement>(':scope > .is-grad');
+        if (host && Number.isFinite(capOp) && capOp >= 0.08) {
+          const units = [...host.querySelectorAll<HTMLElement>(':scope > .u, :scope > .fl-whole')];
+          const text = normLyricText(host.textContent ?? '');
+          if (units.length && text) {
+            out.push({
+              key: -1,
+              offsetFromCur: 0,
+              text,
+              units,
+              kind: 'caption',
+              sideOf: (u) => ({ el: u, ctx: 'lpm-r is-grad', rot: 0, vert: false, opacity: capOp, endOpacity: capOp }),
+            });
+          }
+        }
+      }
+      out.sort((a, b) => a.offsetFromCur - b.offsetFromCur);
+      return out;
+    };
+    const startRoamOut = (): boolean => {
+      const src = collectRoamSources();
+      if (!src.length) return false;
+      roamFlyInKind = null;
+      roamFly = launchStageToListenFly(src, { flightMs: 650, waitMs: 1200, settleMs: 150 });
+      return !!roamFly;
+    };
+    const startRoamIn = (): boolean => {
+      const cols = queryColumnLines();
+      const box = document.querySelector('.ls-col')?.getBoundingClientRect() ?? null;
+      const roam = collectRoamSources();
+      if (!cols.length || !roam.length) return false;
+      const used = new Set<number>();
+      const pairs: FlyPair[] = [];
+      let kind: 'flow' | 'caption' | null = null;
+      for (const col of cols) {
+        if (!isColumnLineVisible(col, box)) continue;
+        const text = plainColumnText(col);
+        const us = columnUnitsOf(col);
+        if (!text || !us.length) continue;
+        const target = roam.find((r) => !used.has(r.key) && r.text === text && r.units.length === us.length);
+        if (!target) continue;
+        used.add(target.key);
+        kind = target.kind;
+        us.forEach((el, i) => pairs.push({ from: columnSideOf(col, el), to: target.sideOf(target.units[i]!) }));
+      }
+      if (!pairs.length) return false;
+      roamFly = new LsFly(pairs, () => null, 700, hideFlyElements);
+      if (roamFly.done) {
+        roamFly = null;
+        return false;
+      }
+      roamFlyInKind = kind;
+      return true;
+    };
+
+    const probeWin = window as unknown as {
+      __nebulaRoamFly?: {
+        probe: () => { n: number; err: number[][]; off: number; starts: Array<{ x: number; y: number; f: number; rot: number }> } | null;
+      };
+    };
+    probeWin.__nebulaRoamFly = {
+      probe: () => {
+        if (!roamFly) return null;
+        const starts = roamFly.starts();
+        roamFly.render(1);
+        const err = roamFly.probe();
+        const box = document.querySelector('.ls-col')?.getBoundingClientRect();
+        const off =
+          box && !roamFlyInKind
+            ? roamFly
+                .targets()
+                .filter((el) => {
+                  const r = el.getBoundingClientRect();
+                  return r.top < box.top - 2 || r.bottom > box.bottom + 2;
+                }).length
+            : 0;
+        return { n: err.length, err, off, starts };
+      },
+    };
+    /** 这一句属于第几个句组、哪种段落（升级关闭或不在引擎里时为 null）。 */
+    const lineShape = (lineIdx: number): { stanza: number; kind: string } | null => {
+      if (!up) return null;
+      const d = shapeRef.current;
+      const k = d.pos.get(lineIdx);
+      if (k == null) return null;
+      const sh = d.shape;
+      const sec = sh.sections[sh.lineSection[k]!];
+      return sec ? { stanza: sh.lineStanza[k]!, kind: sec.kind } : null;
+    };
     // 字体晚到：重新量
     let fontsDirty = false;
     document.fonts?.ready.then(() => {
@@ -287,6 +482,9 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
       let y: number;
       if (role === 'current') {
         y = ch * MAIN_Y;
+      } else if (fl.rise) {
+        // 副歌从下往上升起：候句在当前句下方，不压到底部
+        y = ch * MAIN_Y + Math.min(role === 'next' ? fl.yMag : fl.yMagNext, ch * (role === 'next' ? RISE_NEXT_MAX : RISE_NN_MAX));
       } else if (role === 'next') {
         const mag = fl.yMag;
         y = settings.lyricLayout === 'stacked' ? ch * MAIN_Y - mag : fl.side === 'above' ? ch * MAIN_Y - mag : ch * MAIN_Y + mag;
@@ -309,15 +507,17 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
       const nat = naturalW(fl.lineIdx);
       const fitC = nat > 0 ? (FIT_CUR * cw) / nat : 9;
       const fitW = nat > 0 ? (FIT_WAIT * cw) / nat : 9;
+      const upNow = fl.flow !== 0 || fl.rise;
       if (role !== 'leaving') {
         fl.targetScale =
           (role === 'current'
-            ? Math.min(settings.currentScale, fitC)
+            ? Math.min(settings.currentScale * (upNow ? 1.04 + 0.2 * open : 1), fitC)
             : role === 'next'
-              ? Math.min(0.82, fitW)
-              : Math.min(0.68, fitW * 0.85)) * fl.baseScale;
+              ? Math.min(upNow ? UP_NEXT : 0.82, fitW)
+              : Math.min(upNow ? UP_NN : 0.68, fitW * 0.85)) * fl.baseScale;
       }
-      fl.targetOpacity = role === 'current' ? 1 : role === 'next' ? 0.62 : role === 'nextNext' ? 0.42 : 0.95;
+      fl.targetOpacity =
+        role === 'current' ? 1 : role === 'next' ? (upNow ? UP_OP_NEXT : 0.62) : role === 'nextNext' ? (upNow ? UP_OP_NN : 0.42) : 0.95;
       const nnSign = Math.sign(fl.angleNext) || 1;
       const targetAngle =
         role === 'current'
@@ -332,8 +532,13 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
 
     const spawnFlight = (lineIdx: number, role: Role, t: number, cw: number, ch: number): Flight => {
       const side = Math.random() < 0.5 ? 'above' : 'below';
+      // 升级：副歌升起；其余按句组决定从哪边进（偶数句组从左进、往右出，奇数反过来）
+      const ls = lineShape(lineIdx);
+      const rise = !!ls && ls.kind === 'chorus';
+      const flow = ls && !rise ? (ls.stanza % 2 ? 1 : -1) : 0;
       let xSign: number;
-      if (balanceRef.current >= 1) xSign = -1;
+      if (flow) xSign = flow;
+      else if (balanceRef.current >= 1) xSign = -1;
       else if (balanceRef.current <= -1) xSign = 1;
       else xSign = sign();
       balanceRef.current = clamp(balanceRef.current + xSign * 0.5, -2, 2);
@@ -370,7 +575,14 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
         exitVx: 0,
         exitVy: 0,
         exitRot: 0,
+        rise,
+        flow,
       };
+      if (rise) {
+        // 升起的句子几乎不斜、水平只轻微错开
+        fl.xOff = xSign * rand(0, 0.04) * cw;
+        fl.angleNext = sign() * rand(0, 2);
+      }
       const target = roleTarget(fl, role, cw, ch);
       const timeToStart = lines[lineIdx]?.timeMs != null ? lines[lineIdx]!.timeMs - t : 0;
       if (role === 'current') {
@@ -380,15 +592,15 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
         fl.entryT = 1;
         fl.entering = false;
       } else if (timeToStart > 2000) {
-        const vertical = Math.random() < VERTICAL_P;
+        const vertical = rise || (!flow && Math.random() < VERTICAL_P);
         fl.entryDur = clamp(rand(1.1, 1.7), 0.6, Math.max(0.6, (timeToStart * 0.85) / 1000));
         if (vertical) {
-          const fromTop = Math.random() < 0.5;
+          const fromTop = rise ? false : Math.random() < 0.5;
           fl.entryFromX = target.x;
           fl.entryFromY = fromTop ? -MARGIN : ch + MARGIN;
           fl.rot = fl.angleNext;
         } else {
-          const fromLeft = Math.random() < 0.5;
+          const fromLeft = flow ? flow < 0 : Math.random() < 0.5;
           fl.entryFromX = fromLeft ? -MARGIN : cw + MARGIN;
           fl.entryFromY = target.y + rand(-ch * 0.06, ch * 0.06);
           // 进场带大角度：从左边来往下倾、从右边来往上倾，再收到等候角
@@ -496,6 +708,41 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
       }
       lastT = t;
       const tSec = t / 1000;
+      // 漫游歌词升级：段落开合、间奏让位（stageAt 自带进段落提前 0.8s、1.6s 平滑过渡）
+      const labNow = getSpaceLab();
+      up = labNow.lyricShape;
+      pageMode = labNow.stageMode === 'page';
+      if (up || pageMode) {
+        const sd = shapeRef.current;
+        const st = stageAt(sd.shape, sd.sl, tSec);
+        const sk = shapeSink(st.lift, st.gap);
+        open = up ? sk.open : 0;
+        gapK = up ? st.gap : 0;
+        let depth = sk.sinkDepth;
+        let posK = sk.sinkPos;
+        if (pageMode) {
+          // 版面：星云沉成纸面——主歌压到约 .20、副歌 .39，间奏里浮起大半（styles.css 另加轻微虚化）
+          depth = (1.29 - 0.3 * sk.open) * (1 - 0.7 * st.gap);
+          posK = 1 - 0.5 * st.gap;
+        }
+        stageShapeBus.open = sk.open;
+        stageShapeBus.gap = st.gap;
+        stageShapeBus.sinkDepth = depth;
+        stageShapeBus.sinkPos = posK;
+        rootStyle.setProperty('--sdep', depth.toFixed(3));
+        rootStyle.setProperty('--sopen', sk.open.toFixed(3));
+        wroteVars = true;
+      } else {
+        open = 0;
+        gapK = 0;
+        stageShapeBus.lk = 0;
+        if (wroteVars) {
+          rootStyle.removeProperty('--sdep');
+          rootStyle.removeProperty('--sopen');
+          wroteVars = false;
+        }
+      }
+      stageShapeBus.on = up || pageMode;
 
       const active = flights.current;
       if (!linesReadyRef.current) {
@@ -536,12 +783,13 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
           if (newRole === 'current') fl.xOff = (fl.xOff >= 0 ? 1 : -1) * cw * 0.03;
           if (newRole === 'leaving') {
             // 离开：左右 50%，带 ±1.5°–5° 小角度的非水平柔和飞出（1.0–1.4s），字往飞出方向转出 10–16°
-            const dir = sign();
+            // 升级：按句组往进来的反方向出（同一个句组像一股流一样流过）；副歌往上升出画面
+            const dir = fl.flow ? -fl.flow : sign();
             fl.exitT = 0;
             fl.exitDur = rand(1.0, 1.4);
             const wPx = lineWidthPx(fl);
-            const exitX = dir > 0 ? cw + MARGIN * 2 : -MARGIN * 2 - wPx;
-            const exitY = fl.sy + rand(-ch * 0.1, ch * 0.08);
+            const exitX = fl.rise ? fl.sx + rand(-cw * 0.03, cw * 0.03) : dir > 0 ? cw + MARGIN * 2 : -MARGIN * 2 - wPx;
+            const exitY = fl.rise ? -MARGIN * 2 : fl.sy + rand(-ch * 0.1, ch * 0.08);
             const dx = exitX - fl.sx;
             const dy = exitY - fl.sy;
             const ang = (sign() * rand(1.5, 5) * Math.PI) / 180;
@@ -549,12 +797,15 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
             const sinA = Math.sin(ang);
             fl.exitVx = (dx * cosA - dy * sinA) / fl.exitDur;
             fl.exitVy = (dx * sinA + dy * cosA) / fl.exitDur;
-            fl.exitRot = dir * rand(ANG_EXIT[0], ANG_EXIT[1]);
+            fl.exitRot = fl.rise ? sign() * rand(2, 5) : dir * rand(ANG_EXIT[0], ANG_EXIT[1]);
           }
         }
         applyRoleVisuals(fl, cw);
       }
 
+      let lightX = 0;
+      let lightY = 0;
+      let lightK = 0;
       for (const [lineIdx, fl] of active) {
         if (fl.role === 'leaving') {
           if (playingNow && fl.exitT < 1) {
@@ -616,11 +867,50 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
             scM = 0.84 + 0.16 * k;
           } else opM = k;
         } else if (enabled) opM = k;
-        el.style.transform = `translate3d(${fl.sx.toFixed(1)}px, ${fl.sy.toFixed(1)}px, 0) rotate(${fl.rot.toFixed(2)}deg) scale(${(fl.scale * scM).toFixed(4)})`;
+        // 版面模式：聆听中漫游歌词让给版面（漫游时的氛围 / 字幕不变）。淡得比交接曲线快（交接过半多就看不见），
+        // 免得交接途中换了句时，新的那句还留在原位、和逐字飞行的替身同时出现
+        if (pageMode && enabled) {
+          const q = Math.min(1, k / 0.55);
+          opM *= 1 - q * q * (3 - 2 * q);
+        }
+        // 升级·间奏让位：候场的句子退开、变淡，把舞台让给星云；下一句前 1.2s 收回
+        let gapDy = 0;
+        if (gapK > 0.001 && (fl.role === 'next' || fl.role === 'nextNext')) {
+          opM *= 1 - 0.82 * gapK;
+          scM *= 1 - 0.12 * gapK;
+          gapDy = (fl.sy < ch * MAIN_Y ? -1 : 1) * ch * 0.065 * gapK;
+        }
+        // 版面转场（逐字飞入）：这句正由 LyricPage 的替身逐字飞往版面，原句（不论当前还是正在离场）藏起来
+        if (pageMode && pageBus.morph) {
+          const e = engineLinesRef.current[lineIdx];
+          if (e && Math.abs(e.s - pageBus.morphS) < 0.12) opM = 0;
+        }
+        el.style.transform = `translate3d(${fl.sx.toFixed(1)}px, ${(fl.sy + gapDy).toFixed(1)}px, 0) rotate(${fl.rot.toFixed(2)}deg) scale(${(fl.scale * scM).toFixed(4)})`;
+        // 升级·字照亮空间：光源 = 当前句正在唱（或下一个要唱）的字，按元素中心缩放 / 旋转换到屏幕坐标
+        if (up && !pageMode && fl.role === 'current') {
+          const d = lineDoms.current.get(lineIdx);
+          const e = engineLinesRef.current[lineIdx];
+          const w = naturalW(lineIdx);
+          const h = el.offsetHeight;
+          let wx = w / 2;
+          if (d?.rts?.length) {
+            const rt = d.rts.find((r) => tSec >= r.u.s && tSec <= r.u.e) ?? d.rts.find((r) => tSec < r.u.s) ?? d.rts[d.rts.length - 1]!;
+            if (rt.w > 0) wx = rt.left + rt.w / 2;
+          }
+          const a = (fl.rot * Math.PI) / 180;
+          const off = (wx - w / 2) * fl.scale * scM;
+          lightX = fl.sx + w / 2 + off * Math.cos(a);
+          lightY = fl.sy + gapDy + h / 2 + off * Math.sin(a);
+          // 强度（样张 M）：主歌 .3、最后一次副歌 .62（= 光心处卡片从沉降的暗度往原亮度拉回的比例）；
+          // 唱完这句后 0.6s 内熄掉；间奏里没有
+          const sung = e ? clamp(1 - (tSec - e.e) / 0.6, 0, 1) : 1;
+          lightK = (0.3 + 0.32 * open) * (1 - gapK) * sung;
+        }
         el.style.opacity = (fl.opacity * opM).toFixed(3);
         const fil = blur > 0.02 ? `blur(${blur.toFixed(2)}px)` : '';
         if (el.style.filter !== fil) el.style.filter = fil;
         el.classList.toggle('is-current', fl.role === 'current');
+        el.dataset.role = fl.role;
         // 第 11 条：当前句身后的暗晕（下一句淡一些）
         el.style.setProperty('--halo', fl.role === 'current' ? '1' : fl.role === 'next' ? '0.45' : '0');
         wordsFrame(fl, el, tSec);
@@ -636,12 +926,109 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
         }
       }
       fontsDirty = false;
-      captionFrame(cur, tSec, captionOn ? 1 - k : 0);
+      // 升级·字照亮空间：光源交给舞台（卡片提亮），身后一团很淡的主色光跟着字走；聆听中每帧请舞台刷新
+      if (up || pageMode) {
+        // 光源位置平滑一点，换字时不跳（版面模式没有光源，光强衰减到 0）
+        const kk = 1 - Math.exp(-dt * 10);
+        if (stageShapeBus.lk <= 0.001 && lightK > 0) {
+          stageShapeBus.lx = lightX;
+          stageShapeBus.ly = lightY;
+        } else if (lightK > 0) {
+          stageShapeBus.lx += (lightX - stageShapeBus.lx) * kk;
+          stageShapeBus.ly += (lightY - stageShapeBus.ly) * kk;
+        }
+        stageShapeBus.lk += (lightK - stageShapeBus.lk) * (1 - Math.exp(-dt * 6));
+        const glow = lightRef.current;
+        if (glow) {
+          glow.style.transform = `translate3d(${stageShapeBus.lx.toFixed(1)}px, ${stageShapeBus.ly.toFixed(1)}px, 0)`;
+          glow.style.opacity = Math.min(1, stageShapeBus.lk * (enabled ? k : 1) * 1.6).toFixed(3);
+        }
+        if (pageMode) {
+          // 版面模式下星云带虚化，每帧刷新代价高：只在沉降倍数真的变了时请舞台刷新
+          const d = stageShapeBus.sinkDepth;
+          const p = stageShapeBus.sinkPos;
+          if (Math.abs(d - pokedDepth) > 0.004 || Math.abs(p - pokedPos) > 0.004 || stageShapeBus.lk > 0.001) {
+            pokedDepth = d;
+            pokedPos = p;
+            pokeListenFrame();
+          }
+        } else if (playingNow || relayoutNow) pokeListenFrame();
+      } else if (lightRef.current && lightRef.current.style.opacity !== '0') lightRef.current.style.opacity = '0';
+      // 先同步本帧底部字幕（保证打开/收起听音空间的那一帧 captionDom 与 --cap-o 已是最新当前句）
+      const rawCapShow = captionOn && !(pageMode && pageBus.morph && pageBus.caption) ? 1 - k : 0;
+      const capFadeIn =
+        roamFly && roamFlyInKind === 'flow'
+          ? (() => {
+              const p = Math.min(1, Math.max(0, (roamFly.progress - 0.6) / 0.4));
+              return p * p * (3 - 2 * p);
+            })()
+          : 1;
+      captionFrame(cur, tSec, rawCapShow * capFadeIn);
+
+      // 在本帧 .flow-lyric 与底部字幕都更新完毕后调度听音空间双向一镜到底
+      const pageOwns = isPageStageActive(pageMode, enabled, listenBus.k);
+      const lsNow = !!lsOpenRef.current;
+      if (pageOwns && roamFly) {
+        roamFly.end();
+        roamFly = null;
+        roamFlyInKind = null;
+        lsWantDir = null;
+      }
+      if (lsNow !== lsPrev) {
+        roamFly?.end();
+        roamFly = null;
+        roamFlyInKind = null;
+        if (!pageOwns) {
+          if (lsNow) {
+            if (startRoamOut()) lsWantDir = null;
+            else {
+              lsWantDir = 'out';
+              lsWantAt = now;
+              lsAttemptAt = now;
+            }
+          } else if (startRoamIn()) {
+            lsWantDir = null;
+          } else {
+            lsWantDir = 'in';
+            lsWantAt = now;
+            lsAttemptAt = now;
+          }
+        } else {
+          lsWantDir = null;
+        }
+        lsPrev = lsNow;
+      }
+      if (!pageOwns && !roamFly && lsWantDir) {
+        const limit = lsWantDir === 'out' ? 1200 : 240;
+        const interval = lsWantDir === 'out' ? 60 : 16;
+        if (now - lsWantAt < limit && now - lsAttemptAt >= interval) {
+          lsAttemptAt = now;
+          const ok = lsWantDir === 'out' ? startRoamOut() : startRoamIn();
+          if (ok) lsWantDir = null;
+        } else if (now - lsWantAt >= limit) {
+          lsWantDir = null;
+        }
+      }
+      if (roamFly && roamFly.step(now)) {
+        roamFly = null;
+        roamFlyInKind = null;
+      }
+
       syncActive();
       raf = requestAnimationFrame(frame);
     };
     raf = requestAnimationFrame(frame);
-    return () => cancelAnimationFrame(raf);
+    return () => {
+      cancelAnimationFrame(raf);
+      roamFly?.end();
+      roamFly = null;
+      delete probeWin.__nebulaRoamFly;
+      // 卸载 / 重建循环时把升级写出去的状态收回（下一轮循环第一帧会重新写）
+      stageShapeBus.on = false;
+      stageShapeBus.lk = 0;
+      rootStyle.removeProperty('--sdep');
+      rootStyle.removeProperty('--sopen');
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [lines, relayoutKey]);
 
@@ -667,9 +1054,11 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist }:
         ref={containerRef}
         className={`lyrics-layer lw${settings.layerMode === 'over' ? ' lyrics-over' : ''}`}
         data-scheme={listen.scheme}
+        data-shape={lab.lyricShape ? '' : undefined}
         style={fontVars}
         aria-hidden="true"
       >
+        <i ref={lightRef} className="fl-light" aria-hidden="true" />
         {introVisible && (
           <div className="lyrics-intro">
             <div className="li-title">{songTitle}</div>

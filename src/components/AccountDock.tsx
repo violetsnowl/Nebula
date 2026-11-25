@@ -2146,6 +2146,15 @@ export const AccountDock = memo(function AccountDock({
             <span className="lbl">播放条也变淡</span>
             <Tg checked={lyricSettings.listenDimBar} onChange={(b) => onListenSettings({ listenDimBar: b })} label="聆听时播放条也变淡" />
           </div>
+          <div className="row">
+            <span className="lbl">进入后常驻</span>
+            <Tg checked={lyricSettings.listenPin} onChange={(b) => onListenSettings({ listenPin: b })} label="进入聆听后常驻" />
+          </div>
+          <span className="row-hint">
+            {lyricSettings.listenPin
+              ? '进入聆听后动鼠标也不退出，两侧面板和播放条照常可用；按 Esc 或左上角的收起键离开。'
+              : '进入聆听后，一动鼠标就回到星云。'}
+          </span>
         </div>
       </div>
     </>

@@ -1479,6 +1479,34 @@ async function main() {
     intro: !!document.querySelector('.sd-panel.sd-right .intro'),
   }));
   await page.locator('.sd-panel.sd-right button', { hasText: '3 秒' }).first().click();
+  // 常驻聆听（2026-11-22）：打开「进入后常驻」，静止进入聆听后动鼠标不退出、光标照常、左上角收起键可点，点了回到漫游
+  let pinCheck = null;
+  {
+    const tg = page.locator('.sd-panel.sd-right [aria-label="进入聆听后常驻"]');
+    const hasTg = (await tg.count()) > 0;
+    if (hasTg) {
+      await tg.click();
+      await page.waitForTimeout(200);
+      await page.waitForFunction(() => !!document.querySelector('.app[data-listen]'), null, { timeout: 9000 }).catch(() => {});
+      await page.waitForTimeout(1800);
+      const inPin = await page.evaluate(() => ({ listen: !!document.querySelector('.app[data-listen]'), pin: !!document.querySelector('.app[data-listen-pin]') }));
+      await page.mouse.move(700, 400);
+      await page.mouse.move(760, 460, { steps: 6 });
+      await page.mouse.wheel(0, 40);
+      await page.waitForTimeout(600);
+      const afterMove = await page.evaluate(() => {
+        const app = document.querySelector('.app');
+        const exit = document.querySelector('.listen-exit');
+        return { listen: !!document.querySelector('.app[data-listen]'), cursor: getComputedStyle(app).cursor, exitOp: exit ? Number(getComputedStyle(exit).opacity) : -1, exitPe: exit ? getComputedStyle(exit).pointerEvents : '' };
+      });
+      await page.evaluate(() => document.querySelector('.listen-exit')?.click());
+      await page.waitForTimeout(500);
+      const afterExit = await page.evaluate(() => ({ listen: !!document.querySelector('.app[data-listen]'), pin: !!document.querySelector('.app[data-listen-pin]') }));
+      await tg.click();
+      await page.waitForTimeout(200);
+      pinCheck = { inPin, afterMove, afterExit };
+    } else pinCheck = { hasTg };
+  }
   await page.locator('.sd-panel.sd-right .seg.wide button', { hasText: '歌词' }).click();
   await page.waitForTimeout(300);
   // 歌词页：一张预览 + 手动切换；同页两段控件左右对齐；「更多排版」默认收起
@@ -1500,6 +1528,11 @@ async function main() {
     listenPage.tiles === 3 && listenPage.intro && lyricPage.head === 2 && lyricPage.previews === 1 && !lyricPage.oldListenPreview &&
     lyricPage.segs >= 3 && lyricPage.aligned && !lyricPage.moreOpen && !lyricPage.nativeColor;
   log('设置面板重排', JSON.stringify({ listenPage, lyricPage }));
+  log('常驻聆听（动鼠标不退出、收起键离开）', JSON.stringify(pinCheck));
+  const pinOk =
+    !!pinCheck && !!pinCheck.inPin && pinCheck.inPin.listen && pinCheck.inPin.pin &&
+    pinCheck.afterMove.listen && pinCheck.afterMove.cursor !== 'none' && pinCheck.afterMove.exitOp > 0.9 && pinCheck.afterMove.exitPe === 'auto' &&
+    !pinCheck.afterExit.listen && !pinCheck.afterExit.pin;
   await page.evaluate(() => document.querySelector('.sd-panel.sd-right input[type="range"]')?.focus());
   const idleStart = await page.evaluate(() => ({
     panel: !!document.querySelector('.sd-panel.sd-right'),
@@ -1512,6 +1545,559 @@ async function main() {
   }));
   const idleOk = idleStart.panel && idleInPanel.listening && idleInPanel.panelStill;
   log('设置面板里静止也进入聆听', JSON.stringify({ idleStart, idleInPanel }));
+
+  // 漫游歌词升级（样张 M，fe/next）：聆听中段落引擎在写星云的压暗倍数，字的光在；舞台实验室里关掉后回到旧样子
+  await page.waitForTimeout(500);
+  const shapeOn = await page.evaluate(() => {
+    const root = document.documentElement.style;
+    const light = document.querySelector('.lyrics-layer .fl-light');
+    return {
+      sdep: root.getPropertyValue('--sdep'),
+      sopen: root.getPropertyValue('--sopen'),
+      attr: document.querySelector('.lyrics-layer')?.hasAttribute('data-shape') ?? false,
+      light: !!light,
+      stageFilter: getComputedStyle(document.querySelector('.stage-3d')).filter,
+    };
+  });
+  await page.keyboard.press('Control+Shift+M');
+  await page.waitForTimeout(300);
+  await page.evaluate(() => [...document.querySelectorAll('.space-lab .sl-row')].find((b) => b.textContent.includes('段落'))?.click());
+  await page.waitForTimeout(300);
+  const shapeOff = await page.evaluate(() => ({
+    sdep: document.documentElement.style.getPropertyValue('--sdep'),
+    attr: document.querySelector('.lyrics-layer')?.hasAttribute('data-shape') ?? false,
+    panel: !!document.querySelector('.space-lab'),
+    pressed: [...document.querySelectorAll('.space-lab .sl-row')].find((b) => b.textContent.includes('段落'))?.getAttribute('aria-pressed') ?? null,
+    lyr: document.querySelectorAll('.lyrics-layer').length,
+  }));
+  await page.evaluate(() => [...document.querySelectorAll('.space-lab .sl-row')].find((b) => b.textContent.includes('段落'))?.click());
+  await page.keyboard.press('Control+Shift+M');
+  await page.waitForTimeout(200);
+  const shapeOk =
+    Number(shapeOn.sdep) > 0 && shapeOn.sopen !== '' && shapeOn.attr && shapeOn.light && shapeOff.sdep === '' && !shapeOff.attr;
+  log('漫游歌词随段落起伏（开 / 关）', JSON.stringify({ shapeOn, shapeOff }));
+
+  // 版面（样张 M，fe/next）：实验室选「版面」→ 聆听中版面出现、漫游歌词让开；切回漫游歌词后版面卸掉
+  const pickStage = (label) =>
+    page.evaluate((lb) => [...document.querySelectorAll('.space-lab .sl-seg[aria-label="聆听时的舞台"] button')].find((b) => b.textContent === lb)?.click(), label);
+  // 版面转场（逐字飞入）：动一下鼠标回到漫游，等重新进入聆听，在交接进度 .35–.75 之间抓一帧：
+  // 替身的字数等于这句的字数、替身看得见、漫游歌词里这句藏起来了（按文字匹配：中文演示歌每句文字相同，
+  // 还在淡出的下一句也会被算进来，所以阈值放到 .12；被接手那句本身是 0）
+  const sampleMorph = async (shot) => {
+    await page.mouse.move(640, 300);
+    await page.mouse.move(672, 330);
+    await page.waitForFunction(() => !document.querySelector('.app[data-lk]'), null, { timeout: 3000 }).catch(() => {});
+    await page
+      .waitForFunction(
+        () => {
+          const v = parseFloat(document.querySelector('.app')?.style.getPropertyValue('--lk') || '0');
+          return v > 0.35 && v < 0.75;
+        },
+        null,
+        { timeout: 9000, polling: 16 },
+      )
+      .catch(() => {});
+    const r = await page.evaluate(() => {
+      const m = document.querySelector('.lp-morph');
+      const text = m ? [...m.querySelectorAll('.lpm-a .lpm-u')].map((s) => s.textContent).join('') : '';
+      const norm = (s) => (s || '').replace(/\s+/g, '');
+      // 被接手的那句（不论当前还是正在离场）要藏起来；其余漫游句子要已经淡得很低
+      const fls = [...document.querySelectorAll('.lyrics-layer .flow-lyric')];
+      const same = fls.filter((f) => norm(f.textContent) === norm(text));
+      const others = fls.filter((f) => norm(f.textContent) !== norm(text));
+      return {
+        lk: parseFloat(document.querySelector('.app')?.style.getPropertyValue('--lk') || '0'),
+        spans: m ? m.querySelectorAll('.lpm-a .lpm-u').length : 0,
+        clonesB: m ? m.querySelectorAll('.lpm-b .lpm-u').length : 0,
+        text,
+        op: m ? Number(m.style.opacity) : 0,
+        z1Op: same.length ? Math.max(...same.map((f) => Number(f.style.opacity))) : null,
+        othersOp: others.length ? Math.max(...others.map((f) => Number(f.style.opacity))) : null,
+      };
+    });
+    // 落位精度（第三版「克隆替身」）：把替身推到交接终点，版面那份克隆和版面真字逐字比中心 / 宽高；
+    // 推到起点，漫游那份克隆和漫游真字比（漫游的句子带 0–3° 倾斜，外接框会大一点，放宽到 2.5px）
+    const landing = await page.evaluate(() => {
+      const p = window.__nebulaLyricPage;
+      const max = (rows) => (rows && rows.length ? Math.max(...rows.flat().map((v) => Math.abs(v))) : null);
+      const pair = p?.pair(0.5);
+      const endRows = p?.probe(1);
+      // 落位最差的那个字（中心 x / y、宽、高的偏差），排查用
+      const worst = endRows && endRows.length ? endRows.reduce((a, b) => (Math.max(...b.map(Math.abs)) > Math.max(...a.map(Math.abs)) ? b : a)) : null;
+      // 中心偏差决定落位跳不跳；盒子宽高差 1–2px 时字号相同、字形不动（大字在竖排里的盒子高度会差一点），单独放宽到 2px
+      return { end: max(endRows && endRows.map((r) => r.slice(0, 2))), size: max(endRows && endRows.map((r) => r.slice(2))), worst, start: max(p?.probe(0)), mid: pair ? pair[0] : null };
+    });
+    r.landEnd = landing.end;
+    r.worst = landing.worst;
+    r.landSize = landing.size;
+    r.landStart = landing.start;
+    r.mid = landing.mid;
+    if (shot && process.env.NEBULA_QA_SHOT) await page.screenshot({ path: path.join(process.env.NEBULA_QA_SHOT, shot) });
+    return r;
+  };
+  const morphOk = (r) =>
+    !!r && r.lk > 0.3 && r.lk < 0.8 && r.spans > 0 && r.clonesB === r.spans && r.op > 0.5 && (r.z1Op === null || r.z1Op < Math.max(0.12, 1 - (Math.min(1, r.lk / 0.55) ** 2) * (3 - 2 * Math.min(1, r.lk / 0.55)) + 0.03)) &&
+    (r.othersOp === null || r.othersOp < Math.max(0.25, 1 - (Math.min(1, r.lk / 0.55) ** 2) * (3 - 2 * Math.min(1, r.lk / 0.55)) + 0.03)) && r.landEnd !== null && r.landEnd <= 1 && (r.landSize === null || r.landSize <= 2) && r.landStart !== null && r.landStart <= 2.5;
+  await page.keyboard.press('Control+Shift+M');
+  await page.waitForTimeout(300);
+  await pickStage('版面');
+  await page.keyboard.press('Control+Shift+M');
+  await page.waitForFunction(() => !!document.querySelector('.app[data-listen]'), null, { timeout: 8000 }).catch(() => {});
+  await page.waitForTimeout(2200);
+  const pageOn = await page.evaluate(() => {
+    const root = document.querySelector('.lyric-page');
+    const shown = [...document.querySelectorAll('.lyric-page .lp-page')].filter((p) => p.style.display === 'block');
+    const cur = document.querySelector('.lyric-page .lp-line.is-cur, .lyric-page .lp-line.is-past');
+    const fl = document.querySelector('.lyrics-layer .flow-lyric');
+    return {
+      listening: !!document.querySelector('.app[data-listen]'),
+      mode: document.documentElement.dataset.stageMode ?? null,
+      op: root ? Number(root.style.opacity) : -1,
+      pages: document.querySelectorAll('.lyric-page .lp-page').length,
+      shown: shown.length,
+      pageNo: shown[0]?.querySelector('.lp-no')?.textContent ?? null,
+      folio: !!document.querySelector('.lyric-page .lp-folio'),
+      unitOverlap: window.__nebulaLyricPage?.overlap() ?? null,
+      grain: !!document.querySelector('.lyric-page .lp-grain'),
+      lineState: cur ? cur.className : null,
+      units: cur ? cur.querySelectorAll('.u').length : 0,
+      flOp: fl ? Number(fl.style.opacity) : null,
+      stageFilter: getComputedStyle(document.querySelector('.stage-3d')).filter,
+    };
+  });
+  // 调试用：设了 NEBULA_QA_SHOT（目录）时拍下聆听中的版面，只给开发时目测，不进仓库
+  if (process.env.NEBULA_QA_SHOT) await page.screenshot({ path: path.join(process.env.NEBULA_QA_SHOT, 'lyric-page.png') });
+  // 中文竖排的逐字飞入
+  const morphZh = await sampleMorph('morph-zh.png');
+  log('版面转场·竖排逐字飞入', JSON.stringify(morphZh));
+  await page.keyboard.press('Control+Shift+M');
+  await page.waitForTimeout(300);
+  await pickStage('漫游歌词');
+  await page.keyboard.press('Control+Shift+M');
+  await page.waitForTimeout(300);
+  const pageOff = await page.evaluate(() => ({
+    root: !!document.querySelector('.lyric-page'),
+    mode: document.documentElement.dataset.stageMode ?? null,
+  }));
+  const pageOk =
+    pageOn.listening && pageOn.mode === 'page' && pageOn.op > 0.5 && pageOn.pages >= 1 && pageOn.shown >= 1 && !!pageOn.pageNo && !pageOn.folio && pageOn.grain && pageOn.unitOverlap !== null && pageOn.unitOverlap <= 0.5 &&
+    !!pageOn.lineState && pageOn.units > 0 && (pageOn.flOp === null || pageOn.flOp < 0.2) && /blur/.test(pageOn.stageFilter) &&
+    !pageOff.root && pageOff.mode === null;
+  log('版面（聆听中取代漫游歌词）', JSON.stringify({ pageOn, pageOff }));
+
+  // 版面·英文占位歌（样张 M 的原创歌词，带中文翻译，有主歌 / 预副歌 / 副歌 / 间奏 / 桥段）：
+  // 判定间奏三点（跳到间奏中段，三点出现且在亮、这时没有页）；设了 NEBULA_QA_SHOT 时另外跳到各段拍一张给开发目测
+  let gapDots = null;
+  let morphEn = null;
+  const tplChecks = { en: null, zh: null };
+  let lsFlyCheck = null;
+  const TPLS = ['held', 'spine', 'justify', 'foot', 'bleed', 'diag', 'field', 'groove', 'grid', 'corner'];
+  /** 逐套强制版式：跳到用了这套的第一页的第一句唱到一半，量 bounds（out = 跑出画幅的字数，clash = 不同句子的字互相压住多少像素）。 */
+  const checkTemplates = async (tag) => {
+    const out = {};
+    // 前面的步骤把设置面板留在右边开着：逐套检查和截图时先藏起来（不影响量字，只为了截图看得到右半边）
+    await page.evaluate(() => document.querySelector('.sd-panel.sd-right')?.style.setProperty('visibility', 'hidden'));
+    for (const id of TPLS) {
+      await page.evaluate((x) => window.__nebulaLyricPage && window.__nebulaLyricPage.force(x), id);
+      await page.waitForTimeout(500);
+      const pg = await page.evaluate((x) => (window.__nebulaLyricPage ? window.__nebulaLyricPage.pages().find((p) => p.tpl === x) : null), id);
+      if (!pg) {
+        out[id] = 'n/a';
+        continue;
+      }
+      await page.evaluate((s) => window.__nebula.player.seek(s), pg.s + 1.4);
+      await page.waitForFunction(() => !!document.querySelector('.app[data-listen]'), null, { timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(1300);
+      const b = await page.evaluate((x) => (window.__nebulaLyricPage.bounds() || []).find((q) => q.tpl === x) || null, id);
+      out[id] = b ? { units: b.units, out: b.out, clash: b.clash } : 'hidden';
+      if (process.env.NEBULA_QA_SHOT) await page.screenshot({ path: path.join(process.env.NEBULA_QA_SHOT, `tpl-${tag}-${id}.png`) });
+    }
+    await page.evaluate(() => window.__nebulaLyricPage && window.__nebulaLyricPage.force(null));
+    await page.evaluate(() => document.querySelector('.sd-panel.sd-right')?.style.removeProperty('visibility'));
+    await page.waitForTimeout(300);
+    return out;
+  };
+  {
+    const EN = {
+      V1: [['Streetlights hum the song they never finish', '路灯哼着那首从没唱完的歌'], ['I keep your letters folded in my coat', '我把你的信折好放在大衣里'], ['Every bus goes somewhere I have been before', '每一班车都开往我去过的地方'], ['Every window holds a light I used to know', '每扇窗都亮着我认得的灯']],
+      P: [['And when the evening tears along the seam', '当夜色沿着缝线裂开'], ['I hear you calling through the static', '我听见你穿过杂音在喊我']],
+      C: [['We are paper lanterns', '我们是纸灯笼'], ['Rising over the river tonight', '今夜升起在河面上'], ['If the wind will not carry us home', '如果风不肯带我们回家'], ['We will burn our own way to the light', '我们就自己烧出一条路到光那里']],
+      V2: [['The city folds its map along the water', '城市沿着河水折起它的地图'], ['The radio keeps reading out our names', '收音机一遍遍念着我们的名字'], ['I counted every bridge from here to morning', '我数过从这里到清晨的每一座桥'], ['None of them were ever quite the same', '没有哪一座完全相同']],
+      B: [['Hold the flame a little longer', '再护住火光久一点'], ['Let it shake but never fall', '让它摇晃 但别落下'], ['Even ashes learn to fly', '灰烬也会学会飞']],
+      O: [['Paper lanterns', '纸灯笼'], ['Over the river', '在河面上']],
+    };
+    const plan = [['V1'], ['P'], ['C'], ['V2'], ['P'], ['C'], ['gap'], ['B'], ['C'], ['C'], ['O']];
+    const lines = [];
+    let yrc = '';
+    let t = 3000;
+    const shots = [];
+    let gapMid = 0;
+    for (const [key] of plan) {
+      if (key === 'gap') {
+        // 上一句唱完是 t − 450 − 800；间奏三点占 [唱完 + 1.6s, 下一句 − 2.2s]
+        const gapS = t - 1250;
+        t += 6000;
+        gapMid = (gapS + 1600 + t - 2200) / 2;
+        continue;
+      }
+      shots.push([key, t + 2600]);
+      for (const [text, tr] of EN[key]) {
+        const ws = text.split(' ');
+        const d = 330;
+        lines.push({ timeMs: t, text, translation: tr });
+        yrc += `[${t},${ws.length * d + 700}]` + ws.map((w, j) => `(${t + j * d},${j === ws.length - 1 ? d + 700 : d},0)${w}${j < ws.length - 1 ? ' ' : ''}`).join('') + '\n';
+        t += ws.length * d + 700 + 450;
+      }
+      t += 800;
+    }
+    const longAudio = `data:audio/wav;base64,${makeWav(Math.ceil(t / 1000) + 5).toString('base64')}`;
+    await page.evaluate((data) => {
+      window.nebulaAPI.fetchLyric = async () => ({ ok: true, data });
+    }, { source: 'netease', lines, yrc });
+    await page.keyboard.press('Control+Shift+M');
+    await page.waitForTimeout(300);
+    await pickStage('版面');
+    await page.keyboard.press('Control+Shift+M');
+    await page.evaluate((audio) => {
+      const n = window.__nebula;
+      const s0 = { ...n.songsData()[1], source: 'netease', sourceId: 'qa-en-page', title: 'Paper Lanterns', audio };
+      n.player.playSong(s0, [s0]);
+    }, longAudio);
+    await page.waitForTimeout(1500);
+    let shotN = 0;
+    for (const [key, at] of process.env.NEBULA_QA_SHOT ? shots : []) {
+      await page.evaluate((s) => window.__nebula.player.seek(s), at / 1000);
+      await page.waitForFunction(() => !!document.querySelector('.app[data-listen]'), null, { timeout: 8000 }).catch(() => {});
+      await page.waitForTimeout(1800);
+      await page.screenshot({ path: path.join(process.env.NEBULA_QA_SHOT, `page-en-${String(++shotN).padStart(2, '0')}-${key}.png`) });
+    }
+    await page.evaluate((s) => window.__nebula.player.seek(s), (gapMid - 800) / 1000);
+    await page.waitForFunction(() => !!document.querySelector('.app[data-listen]'), null, { timeout: 8000 }).catch(() => {});
+    await page.evaluate((s) => window.__nebula.player.seek(s), (gapMid - 300) / 1000);
+    await page.waitForTimeout(900);
+    gapDots = await page.evaluate(() => {
+      const g = [...document.querySelectorAll('.lyric-page .lp-gap')].find((x) => x.style.display === 'flex');
+      const shownPages = [...document.querySelectorAll('.lyric-page .lp-page')].filter((p) => p.style.display === 'block' && Number(p.style.opacity) > 0.5).length;
+      return {
+        count: document.querySelectorAll('.lyric-page .lp-gap').length,
+        shown: !!g,
+        ops: g ? [...g.children].map((i) => Number(i.style.opacity)) : [],
+        shownPages,
+        t: window.__nebula.player.getState().currentTime,
+      };
+    });
+    if (process.env.NEBULA_QA_SHOT) await page.screenshot({ path: path.join(process.env.NEBULA_QA_SHOT, 'page-en-gap.png') });
+    // 英文横排的逐字飞入：卡在两句之间（上一句刚唱完、下一句还没开始）进入聆听——上一版在这里不接手
+    const v2 = lines.findIndex((l) => l.text.startsWith('The radio'));
+    const between = (lines[v2].timeMs - 300) / 1000;
+    await page.evaluate((s) => window.__nebula.player.seek(s), between - 3.25);
+    morphEn = await sampleMorph('morph-en.png');
+    // 样张 N 的十套大胆版式：逐套强制（__nebulaLyricPage.force），跳到用了这套的第一页，查字不出画幅、不同句子的字不互相压住
+    // 版面 ↔ 听音空间一镜到底（2026-11-22）：打开常驻聆听，聆听中点开听音空间，版面这一页逐字飞到歌词栏；
+    // 收起后回到常驻聆听，字飞回版面。量两次落位（替身推到终点，终点那份克隆和真字的中心差）
+    lsFlyCheck = await (async () => {
+      const tab = (name) => page.evaluate((n) => [...document.querySelectorAll('.sd-panel.sd-right .seg.wide button')].find((b) => b.textContent === n)?.click(), name);
+      const pinTg = () => page.evaluate(() => document.querySelector('.sd-panel.sd-right [aria-label="进入聆听后常驻"]')?.click());
+      await tab('聆听');
+      await page.waitForTimeout(200);
+      await pinTg();
+      // 跳到这一页最后一句：前面唱完的三句里，歌词栏一般只看得见两句半，看不见的那句不该飞（只飞两边都看得见的公共部分）
+      await page.evaluate((s) => window.__nebula.player.seek(s), lines[3].timeMs / 1000 + 1);
+      await page.waitForFunction(() => !!document.querySelector('.app[data-listen-pin]'), null, { timeout: 9000 }).catch(() => {});
+      await page.waitForTimeout(1800);
+      const pinned = await page.evaluate(() => !!document.querySelector('.app[data-listen-pin]'));
+      await page.evaluate(() => document.querySelector('.bp-cover[data-np-cover]')?.click());
+      await page.waitForTimeout(250);
+      // 替身要看得见（上一版替身同步了原字的隐藏样式，全程不可见、QA 只量了位置没发现）
+      // 也不能半路淡没（上上版全程乘歌词栏还在淡入的透明度，替身几乎看不见）：数透明度 > .3 且字本身可见的替身
+      const inVis = await page.evaluate(() => [...document.querySelectorAll('.lp-lsfly .lpm-u')].filter((u) => getComputedStyle(u.firstElementChild).visibility === 'visible' && parseFloat(u.parentElement.style.opacity || '1') > 0.3).length);
+      const inFly = await page.evaluate(() => window.__nebulaLyricPage?.lsProbe());
+      if (process.env.NEBULA_QA_SHOT) await page.screenshot({ path: path.join(process.env.NEBULA_QA_SHOT, 'ls-fly-in.png') });
+      await page.waitForTimeout(1300);
+      const inDone = await page.evaluate(() => ({ layer: !!document.querySelector('.lp-lsfly'), hidden: [...document.querySelectorAll('.ls-col .u')].filter((u) => u.hasAttribute('data-flyhide')).length }));
+      await page.evaluate(() => document.querySelector('.ls-exit')?.click());
+      await page.waitForTimeout(350);
+      const outFly = await page.evaluate(() => window.__nebulaLyricPage?.lsProbe());
+      if (process.env.NEBULA_QA_SHOT) await page.screenshot({ path: path.join(process.env.NEBULA_QA_SHOT, 'ls-fly-out.png') });
+      await page.waitForTimeout(2200);
+      const back = await page.evaluate(() => ({ pin: !!document.querySelector('.app[data-listen-pin]'), layer: !!document.querySelector('.lp-lsfly'), hidden: [...document.querySelectorAll('.lyric-page .u')].filter((u) => u.hasAttribute('data-flyhide')).length }));
+      await page.evaluate(() => document.querySelector('.listen-exit')?.click());
+      await pinTg();
+      await tab('歌词');
+      await page.waitForTimeout(300);
+      const worst = (p) => (p && p.err.length ? Math.max(...p.err.flat().map(Math.abs)) : null);
+      const lsLog = await page.evaluate(() => (window.__nebulaLyricPage?.lsLog || []).slice(-8));
+      return { lsLog, pinned, inVis, inOff: inFly ? inFly.off : -1, inN: inFly ? inFly.n : 0, inErr: worst(inFly), inDone, outN: outFly ? outFly.n : 0, outErr: worst(outFly), back };
+    })();
+    tplChecks.en = await checkTemplates('en');
+    // 中文占位歌（原创歌词、逐字时间、无翻译，主歌 / 预副歌 / 副歌 / 桥段 / 尾声）：同样逐套查一遍竖排（唱片纹强制横排）
+    {
+      const ZH = {
+        V1: ['晚风把旧信吹到窗前', '路灯一盏一盏替我数着', '你说过的那条河', '现在流到哪里了'],
+        P: ['我把心事折成纸船', '放进没有名字的河'],
+        C: ['等一束光　穿过很长的夜', '等一束光　落在你的肩', '我们都是迟到的人', '却还在路上'],
+        V2: ['车站的钟停在九点', '我数着站台上的雨', '每一班车都开走了', '只剩下我的影子'],
+        B: ['把名字写在水上', '看它慢慢走远', '远到再也看不见'],
+        O: ['等一束光', '落在你的肩'],
+      };
+      const zlines = [];
+      let zyrc = '';
+      let zt = 3000;
+      for (const key of ['V1', 'P', 'C', 'V2', 'P', 'C', 'B', 'C', 'O']) {
+        for (const text of ZH[key]) {
+          const cs = [...text];
+          const d = 300;
+          zlines.push({ timeMs: zt, text });
+          zyrc += `[${zt},${cs.length * d + 700}]` + cs.map((c, j) => `(${zt + j * d},${j === cs.length - 1 ? d + 700 : d},0)${c}`).join('') + '\n';
+          zt += cs.length * d + 700 + 450;
+        }
+        zt += 800;
+      }
+      const zAudio = `data:audio/wav;base64,${makeWav(Math.ceil(zt / 1000) + 5).toString('base64')}`;
+      await page.evaluate((data) => {
+        window.nebulaAPI.fetchLyric = async () => ({ ok: true, data });
+      }, { source: 'netease', lines: zlines, yrc: zyrc });
+      await page.evaluate((audio) => {
+        const n = window.__nebula;
+        const s0 = { ...n.songsData()[2], source: 'netease', sourceId: 'qa-zh-page', title: '等一束光', audio };
+        n.player.playSong(s0, [s0]);
+      }, zAudio);
+      await page.waitForTimeout(1500);
+      tplChecks.zh = await checkTemplates('zh');
+    }
+    await page.keyboard.press('Control+Shift+M');
+    await page.waitForTimeout(300);
+    await pickStage('漫游歌词');
+    await page.keyboard.press('Control+Shift+M');
+  }
+  // 主舞台（版面漫游态 / 底部字幕 / 日语假名注音 / 途中切歌）↔ 听音空间一镜到底回归（fe/next-27）
+  const stageFlyExtra = await (async () => {
+    const worst = (p) => (p && p.err && p.err.length ? Math.max(...p.err.flat().map(Math.abs)) : null);
+    const tab = (name) =>
+      page.evaluate((n) => [...document.querySelectorAll('.sd-panel.sd-right .seg.wide button')].find((b) => b.textContent === n)?.click(), name);
+    const pickRoam = (label) =>
+      page.evaluate((lb) => [...document.querySelectorAll('.sd-panel.sd-right [aria-label="平时的歌词"] button')].find((b) => b.textContent === lb)?.click(), label);
+
+    // 1) 版面模式处于漫游态（k = 0）时进出听音空间：不闪版面、星云不误加虚化压暗滤镜、由漫游歌词双向飞入飞回
+    await page.keyboard.press('Control+Shift+M');
+    await page.waitForTimeout(250);
+    await pickStage('版面');
+    await page.keyboard.press('Control+Shift+M');
+    await page.evaluate(() => window.__nebula.player.seek(3.6));
+    await page.mouse.move(620, 320);
+    await page.mouse.move(660, 350);
+    await page.waitForFunction(() => !document.querySelector('.app[data-lk]'), null, { timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(180);
+    await page.evaluate(() => document.querySelector('.bp-cover[data-np-cover]')?.click());
+    await page.waitForTimeout(260);
+    const prIn = await page.evaluate(() => {
+      const p = window.__nebulaRoamFly?.probe() ?? null;
+      return {
+        pageOp: Number(document.querySelector('.lyric-page')?.style.opacity || 0),
+        stageFilter: getComputedStyle(document.querySelector('.stage-3d')).filter,
+        n: p ? p.n : 0,
+        off: p ? p.off : -1,
+        err: p ? p.err : [],
+      };
+    });
+    await page.waitForTimeout(900);
+    await page.evaluate(() => document.querySelector('.ls-exit')?.click());
+    await page.waitForTimeout(260);
+    const prOut = await page.evaluate(() => {
+      const p = window.__nebulaRoamFly?.probe() ?? null;
+      return {
+        pageOp: Number(document.querySelector('.lyric-page')?.style.opacity || 0),
+        stageFilter: getComputedStyle(document.querySelector('.stage-3d')).filter,
+        n: p ? p.n : 0,
+        err: p ? p.err : [],
+      };
+    });
+    await page.waitForTimeout(750);
+    await page.keyboard.press('Control+Shift+M');
+    await page.waitForTimeout(250);
+    await pickStage('漫游歌词');
+    await page.keyboard.press('Control+Shift+M');
+
+    // 2) 只开底部字幕（平时的歌词 = 底部字幕）：从屏幕底部真实坐标起飞并落回，不堆到屏幕正中心
+    await tab('聆听');
+    await page.waitForTimeout(180);
+    await pickRoam('底部字幕');
+    await page.evaluate(() => window.__nebula.player.seek(3.6));
+    await page.mouse.move(610, 310);
+    await page.mouse.move(650, 340);
+    await page.waitForFunction(() => !document.querySelector('.app[data-lk]'), null, { timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(220);
+    await page.evaluate(() => document.querySelector('.bp-cover[data-np-cover]')?.click());
+    await page.waitForTimeout(260);
+    const capIn = await page.evaluate(() => {
+      const p = window.__nebulaRoamFly?.probe() ?? null;
+      const vh = window.innerHeight || 1;
+      const xs = p ? p.starts.map((s) => s.x) : [];
+      const ys = p ? p.starts.map((s) => s.y) : [];
+      return {
+        n: p ? p.n : 0,
+        off: p ? p.off : -1,
+        err: p ? p.err : [],
+        minYRatio: ys.length ? Math.round((Math.min(...ys) / vh) * 1000) / 1000 : 0,
+        spanX: xs.length ? Math.round((Math.max(...xs) - Math.min(...xs)) * 10) / 10 : 0,
+      };
+    });
+    await page.waitForTimeout(900);
+    await page.evaluate(() => document.querySelector('.ls-exit')?.click());
+    await page.waitForTimeout(260);
+    const capOut = await page.evaluate(() => {
+      const p = window.__nebulaRoamFly?.probe() ?? null;
+      return { n: p ? p.n : 0, err: p ? p.err : [] };
+    });
+    await page.waitForTimeout(750);
+    await pickRoam('淡淡一句');
+    await tab('歌词');
+    await page.waitForTimeout(180);
+
+    // 3) 日语假名注音行（.ly-rb 挂在 .u 内）一镜到底匹配与克隆清洗 + 4) 飞行途中切歌零 DOM 残留
+    const jaAudio = `data:audio/wav;base64,${makeWav(45).toString('base64')}`;
+    await page.evaluate((audio) => {
+      const jp = ['君の名前を呼んでいる', '星の海を渡って'];
+      const ro = ['kimi no namae wo yonde iru', 'hoshi no umi wo watatte'];
+      const fmt = (ms) =>
+        `[${String(Math.floor(ms / 60000)).padStart(2, '0')}:${String(Math.floor((ms % 60000) / 1000)).padStart(2, '0')}.${String(Math.floor((ms % 1000) / 10)).padStart(2, '0')}]`;
+      const lines = [];
+      let yrc = '';
+      let romalrc = '';
+      for (let i = 0; i < 12; i++) {
+        const t = 1000 + i * 3200;
+        const text = jp[i % 2];
+        const cs = [...text];
+        const d = 240;
+        lines.push({ timeMs: t, text });
+        yrc += `[${t},${cs.length * d + 400}]` + cs.map((c, j) => `(${t + j * d},${j === cs.length - 1 ? d + 400 : d},0)${c}`).join('') + '\n';
+        romalrc += `${fmt(t)}${ro[i % 2]}\n`;
+      }
+      window.nebulaAPI.fetchLyric = async () => ({ ok: true, data: { source: 'netease', lines, yrc, romalrc } });
+      const n = window.__nebula;
+      const s0 = { ...n.songsData()[0], source: 'netease', sourceId: 'qa-ja-fly', title: '君の名前', audio };
+      n.player.playSong(s0, [s0]);
+    }, jaAudio);
+    await page.waitForTimeout(600);
+    await page.evaluate(() => document.querySelector('.bp-cover[data-np-cover]')?.click());
+    await page.waitForFunction(() => !!document.querySelector('.ls-lyrics .ly-rb'), null, { timeout: 4000 }).catch(() => {});
+    await page.evaluate(() => {
+      const btn = document.querySelector('.ls-rob');
+      if (btn && btn.getAttribute('aria-pressed') !== 'true') btn.click();
+    });
+    await page.waitForTimeout(200);
+    await page.evaluate(() => document.querySelector('.ls-exit')?.click());
+    await page.waitForTimeout(800);
+    await page.evaluate(() => window.__nebula.player.seek(1.4));
+    await page.mouse.move(630, 330);
+    await page.mouse.move(670, 360);
+    await page.waitForFunction(() => !document.querySelector('.app[data-lk]'), null, { timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(220);
+    await page.evaluate(() => document.querySelector('.bp-cover[data-np-cover]')?.click());
+    await page.waitForTimeout(240);
+    const jaFly = await page.evaluate(() => {
+      const p = window.__nebulaRoamFly?.probe() ?? null;
+      return {
+        colRuby: document.querySelectorAll('.ls-col .ly-rb').length,
+        flyDirty: document.querySelectorAll('.lp-lsfly .ly-rb, .lp-lsfly .ly-ro, .lp-lsfly .ly-tr, .lp-lsfly .ly-bg').length,
+        aliveBefore: document.querySelectorAll('.lp-lsfly').length,
+        n: p ? p.n : 0,
+        off: p ? p.off : -1,
+        err: p ? p.err : [],
+      };
+    });
+    // 飞行尚未结束（240ms < 800ms）时立即切歌：旧歌曲的 .lp-lsfly 与 [data-flyhide] 必须随清理归零
+    await page.evaluate((audio) => {
+      const n = window.__nebula;
+      const s2 = { ...n.songsData()[1], source: 'netease', sourceId: 'qa-switch-clean', title: 'Switch Clean', audio };
+      n.player.playSong(s2, [s2]);
+    }, jaAudio);
+    await page.waitForTimeout(160);
+    const midSwitch = await page.evaluate(() => ({
+      layers: document.querySelectorAll('.lp-lsfly').length,
+      hidden: document.querySelectorAll('[data-flyhide]').length,
+    }));
+    await page.keyboard.press('Escape');
+    await page.waitForTimeout(750);
+
+    return {
+      pageRoam: {
+        inPageOp: prIn.pageOp,
+        inFilter: prIn.stageFilter,
+        inN: prIn.n,
+        inOff: prIn.off,
+        inErr: worst(prIn),
+        outPageOp: prOut.pageOp,
+        outFilter: prOut.stageFilter,
+        outN: prOut.n,
+        outErr: worst(prOut),
+      },
+      caption: {
+        inN: capIn.n,
+        inOff: capIn.off,
+        inErr: worst(capIn),
+        minYRatio: capIn.minYRatio,
+        spanX: capIn.spanX,
+        outN: capOut.n,
+        outErr: worst(capOut),
+      },
+      ruby: {
+        colRuby: jaFly.colRuby,
+        flyDirty: jaFly.flyDirty,
+        aliveBefore: jaFly.aliveBefore,
+        n: jaFly.n,
+        off: jaFly.off,
+        err: worst(jaFly),
+      },
+      midSwitch,
+    };
+  })();
+  log('主舞台 ↔ 听音空间扩展回归（版面漫游态 / 底部字幕 / 日语注音 / 途中切歌）', JSON.stringify(stageFlyExtra));
+  const stageFlyExtraOk =
+    stageFlyExtra.pageRoam.inPageOp === 0 &&
+    stageFlyExtra.pageRoam.inFilter === 'none' &&
+    stageFlyExtra.pageRoam.inN > 0 &&
+    stageFlyExtra.pageRoam.inOff === 0 &&
+    stageFlyExtra.pageRoam.inErr !== null &&
+    stageFlyExtra.pageRoam.inErr <= 1.5 &&
+    stageFlyExtra.pageRoam.outPageOp === 0 &&
+    stageFlyExtra.pageRoam.outFilter === 'none' &&
+    stageFlyExtra.pageRoam.outN > 0 &&
+    stageFlyExtra.pageRoam.outErr !== null &&
+    stageFlyExtra.pageRoam.outErr <= 1.5 &&
+    stageFlyExtra.caption.inN >= 5 &&
+    stageFlyExtra.caption.inOff === 0 &&
+    stageFlyExtra.caption.inErr !== null &&
+    stageFlyExtra.caption.inErr <= 1.5 &&
+    stageFlyExtra.caption.minYRatio > 0.72 &&
+    stageFlyExtra.caption.spanX > 30 &&
+    stageFlyExtra.caption.outN >= 5 &&
+    stageFlyExtra.caption.outErr !== null &&
+    stageFlyExtra.caption.outErr <= 1.5 &&
+    stageFlyExtra.ruby.colRuby > 0 &&
+    stageFlyExtra.ruby.flyDirty === 0 &&
+    stageFlyExtra.ruby.aliveBefore === 1 &&
+    stageFlyExtra.ruby.n > 0 &&
+    stageFlyExtra.ruby.off === 0 &&
+    stageFlyExtra.ruby.err !== null &&
+    stageFlyExtra.ruby.err <= 1.5 &&
+    stageFlyExtra.midSwitch.layers === 0 &&
+    stageFlyExtra.midSwitch.hidden === 0;
+  const gapOk = !!gapDots && gapDots.count >= 1 && gapDots.shown && gapDots.ops.some((o) => o > 0.2) && gapDots.shownPages === 0;
+  log('版面·间奏三点', JSON.stringify(gapDots));
+  log('版面转场·横排逐字飞入（两句之间进入聆听）', JSON.stringify(morphEn));
+  const morphPass = morphOk(morphZh) && morphOk(morphEn);
+  log('版面·十套大胆版式（英文 / 中文）', JSON.stringify(tplChecks));
+  log('版面 ↔ 听音空间一镜到底', JSON.stringify(lsFlyCheck));
+  const lsFlyOk =
+    !!lsFlyCheck && lsFlyCheck.pinned && lsFlyCheck.inVis > 0 && lsFlyCheck.inOff === 0 && lsFlyCheck.inN > 0 && lsFlyCheck.inErr !== null && lsFlyCheck.inErr <= 1.5 && !lsFlyCheck.inDone.layer && lsFlyCheck.inDone.hidden === 0 &&
+    lsFlyCheck.outN > 0 && lsFlyCheck.outErr !== null && lsFlyCheck.outErr <= 1.5 && lsFlyCheck.back.pin && !lsFlyCheck.back.layer && lsFlyCheck.back.hidden === 0;
+  // 每套至少在一首歌里用上；用上的页：没有字跑出画幅、不同句子的字最多压住 2px
+  const tplOk =
+    !!tplChecks.en &&
+    !!tplChecks.zh &&
+    TPLS.every((id) => [tplChecks.en[id], tplChecks.zh[id]].some((r) => r && typeof r === 'object')) &&
+    TPLS.every((id) => [tplChecks.en[id], tplChecks.zh[id]].every((r) => r === 'n/a' || (r && typeof r === 'object' && r.units > 0 && r.out === 0 && r.clash <= 2)));
 
   // #220 播放偏好随重开保留：音量、静音、播放顺序写进 localStorage，刷新后读回
   const prefsSet = await page.evaluate(() => {
@@ -1593,6 +2179,14 @@ async function main() {
     !volOk ||
     !volUiOk ||
     !z1Ok ||
+    !shapeOk ||
+    !pageOk ||
+    !gapOk ||
+    !morphPass ||
+    !tplOk ||
+    !lsFlyOk ||
+    !stageFlyExtraOk ||
+    !pinOk ||
     !capHazeOk ||
     !idleOk ||
     !setOk ||
@@ -1649,6 +2243,14 @@ async function main() {
     volHover: !volOk,
     volSlider: !volUiOk,
     z1Words: !z1Ok,
+    lyricShape: !shapeOk,
+    lyricPage: !pageOk,
+    pageGapDots: !gapOk,
+    pageMorph: !morphPass,
+    pageTemplates: !tplOk,
+    pageToListen: !lsFlyOk,
+    stageFlyExtra: !stageFlyExtraOk,
+    listenPin: !pinOk,
     captionHaze: !capHazeOk,
     idleInPanel: !idleOk,
     settingsLayout: !setOk,

@@ -81,6 +81,25 @@ export const SpaceLabPanel = memo(function SpaceLabPanel({ songCount }: { songCo
           <span>环境色跟随镜头</span>
           <i aria-hidden="true" />
         </button>
+        <button type="button" className="sl-row sl-tg" aria-pressed={lab.lyricShape} onClick={() => setSpaceLab({ lyricShape: !lab.lyricShape })}>
+          <span>漫游歌词随段落起伏</span>
+          <i aria-hidden="true" />
+        </button>
+        <div className="sl-row">
+          <span>聆听时的舞台</span>
+        </div>
+        <div className="sl-seg" role="group" aria-label="聆听时的舞台">
+          {(
+            [
+              ['roam', '漫游歌词'],
+              ['page', '版面'],
+            ] as const
+          ).map(([v, label]) => (
+            <button key={v} type="button" aria-pressed={lab.stageMode === v} onClick={() => setSpaceLab({ stageMode: v })}>
+              {label}
+            </button>
+          ))}
+        </div>
         <div className="sl-actions">
           <button type="button" onClick={() => runSpaceCommand('focusCurrent')}>
             回到正在播放

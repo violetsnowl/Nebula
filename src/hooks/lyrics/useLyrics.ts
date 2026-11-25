@@ -42,6 +42,7 @@ function loadLyricSettings(): LyricVisualSettings {
   let listenDelay = 6;
   let listenStyle: LyricVisualSettings['listenStyle'] = 'sink';
   let listenDimBar = true;
+  let listenPin = false;
   let roamLyrics: LyricVisualSettings['roamLyrics'] = 'ambient';
   try {
     const s = typeof localStorage !== 'undefined' ? localStorage.getItem('music-nebula.lyric-settings') : null;
@@ -60,6 +61,7 @@ function loadLyricSettings(): LyricVisualSettings {
       if (p.listenDelay === 3 || p.listenDelay === 6 || p.listenDelay === 10) listenDelay = p.listenDelay;
       if (p.listenStyle === 'sink' || p.listenStyle === 'part' || p.listenStyle === 'ebb') listenStyle = p.listenStyle;
       if (typeof p.listenDimBar === 'boolean') listenDimBar = p.listenDimBar;
+      if (typeof p.listenPin === 'boolean') listenPin = p.listenPin;
       if (p.roamLyrics === 'ambient' || p.roamLyrics === 'caption' || p.roamLyrics === 'both') roamLyrics = p.roamLyrics;
     }
   } catch {
@@ -77,6 +79,7 @@ function loadLyricSettings(): LyricVisualSettings {
     listenDelay,
     listenStyle,
     listenDimBar,
+    listenPin,
     roamLyrics,
   };
 }

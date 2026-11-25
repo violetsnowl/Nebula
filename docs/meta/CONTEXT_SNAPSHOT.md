@@ -21,17 +21,34 @@
 - 连续性因此分三层：① 线程对话历史（会在压缩中损失细节）；② 仓库文档（本目录 + CHANGE_LOG + 冻结设计规格，人类可读、可无限增长）；③ git 提交历史（事实基准）。
 - **协议**：新会话 / 新 agent / 换模型后按上面「恢复路径」读完再动手；重大里程碑或会话结束时刷新本文件「当前状态」小节。`AGENTS.md` 已配置自动指向这条路径。
 
-## 当前状态（2026-11-22 刷新，#233）
+## 当前状态（2026-11-25 刷新，#264）
 
 > 本节只写「现在是什么样、还剩什么」。每一步的背景、改动和验证都在 `docs/project/CHANGE_LOG.md`（按编号）和 git 提交里，2026-11-18 之前的逐日流水账已从本节移除。
 
-### 工作区与分支（⚠️ 与 AGENTS.md 的「单主线」约定不一致，见下）
+### 工作区与分支
 
-- 主工作目录 `E:\CUFE\vibecoding\nebula`，在 `main`；构建产物在同级 `nebula-outputs`。精确 HEAD 用 `git log -1` 取。
-- **另有一个并行工作树 `E:\CUFE\vibecoding\fe\nebula`，分支 `fe/next`，领先 main 约 19 个提交**（歌词版面「样张 M / N」、段落引擎、漫游歌词升级、逐字波浪等前端工作；提交信息里用 `fe/next-N` 编号，注明「合回 main 时取号」）。它由另一个窗口维护，**不要在 main 窗口里删、合并、覆盖或提交它的东西**。
-  - 注意：`AGENTS.md` 的分支纪律原本写着「不再开第二个工作树」、`HANDOFF.md` §2 原本写着「只有一个工作目录」——2026-11-22 收尾时已在两份文件里补了「现场例外」说明（记录 `fe/next` 的存在与「不要动」），但**没有改掉原来那条约定本身**：这个并行分支是否已获正式授权、要不要合回 main 并删除，**由用户决定，新窗口先问**。
-- 远端 `github.com/violetsnowl/Nebula`，远端只有 `main`（`fe/next` 未推）；标签 `v0.1.0-z1-random-checkpoint`、`archive/ui-nebula-design`（旧原型，不作为实现真源）。
-- main 上的新功能仍是小步提交、每步 build + qa 全绿；实验性改动挂在默认隐藏的开发者开关后面。
+- 只有一个工作目录 `E:\CUFE\vibecoding\nebula`、一条分支 `main`；构建产物在同级 `nebula-outputs`。精确 HEAD 用 `git log -1` 取。
+- 新功能直接在 main 上小步提交，每步 `pnpm build` + `pnpm qa` 全绿；实验性改动挂在默认隐藏的开发者开关后面；确需分支用短命分支，合并后即删。
+- 远端 `github.com/violetsnowl/Nebula`，只有 `main`；标签 `v0.1.0-z1-random-checkpoint`、`archive/ui-nebula-design`（旧原型，不作为实现真源）。
+- **已收尾的临时例外**：2026-11-22～25 期间曾批准前端在短命工作树 `E:\CUFE\vibecoding\fe\nebula`（本地分支 `fe/next`）并行开发，已于 `#264` 合回 `main` 并清理工作树与分支，恢复单主线。
+
+### 2026-11-22 ~ 25 前端主舞台歌词模式与一镜到底精修（#235–#263，全部桌面验收通过，下一步穿行）
+
+> 穿行的接手材料在 `docs/project/TRAVEL_HANDOFF.md`。
+
+- **已完成并经用户桌面验收确认（`#235–#263`，原 `fe/next-1 ~ 29`）**：
+  - 段落引擎 `src/lib/listen/sections.ts`（主歌 / 预副歌 / 副歌 / 桥段 / 尾声、间奏、句组、开合）与漫游歌词随段落起伏（规格 LYRICS_SYSTEM §7.5、NEBULA_UI_SYSTEM §7.1）。
+  - **版面与精修**（规格 §7.1b）：样张 N 的纸面 + 十套大胆版式（一词放大、书脊、满版齐行、脚注、出血大字、斜线、唱片纹、稿纸、转角、色场）+ 稳险交替轮换；未唱字提亮至 24%（同步 `GHOST`）、出血描边 26%、色场块墨色加深、句首 0.15s 波浪淡入与斜体左缘防提前露色；中文竖排「一词放大」列内拆列居中不断句；「转角」单拐第 1 句、中文左下从右往左排避开播放条并补内拐角 L 线；「出血大字」强词 / 双词短语分级；包含 `main` `#233` 的无冒号空格署名行过滤。代码在 `src/components/LyricPage.tsx` + `src/components/lyric-page/` + `lyric-page*.css`。
+  - **逐字波浪**（听音空间、漫游、版面共用 `src/lib/listen/words.ts`）：用户已确认听音空间和漫游歌词逐字层「完美」，**不要再动 `words.ts` 与 `engine.ts`**。
+  - **主舞台 ↔ 听音空间双向一镜到底统一引擎**（`src/lib/listen/flyTransition.ts` + `src/components/listen/fly-transition.css`）：版面聆听态（`k > 0.5`）、漫游歌词与底部字幕共用同一套克隆替身引擎与 `isPageStageActive` 接管契约；跳过 `.ly-rb` 假名注音匹配并清洗克隆副行，采样原节点实色保证 `.is-past` 与整句节点不掉色，保留 `.lyric-caption` 真实底部测量盒（起落不再堆到屏幕中心），飞行途中切歌即时回收浮层，收起听音空间大封面左侧零残影。
+  - **常驻聆听交接收敛与回归**（`src/lib/listenMode.ts`、`scripts/qa.cjs`）：听音空间开关从硬阻断拆出直传并同步通知，常驻聆听下进出听音空间底层舞台保持 `k = 1` 原地待命不闪星云；版面漫游态（`k = 0`）进出听音空间不误加星云虚化压暗滤镜；`stageFlyExtra` 四项扩展断言已进 `pnpm qa`。
+- **2026-11-24 ~ 25 窗口用户拍板的关键决策与原因**：
+  - **推倒缝补重做**：回退掉此前弱模型留下的 10 条反复打补丁提交，基于 `#258（原 fe/next-24）` 重新按正交分层落地并通过桌面验收。
+  - **中文竖排「一词放大」不断碎句**：主角词位于句中时，在 `.lp-line.is-vert` 内按「前半列（右）→ 大字列（中）→ 后半列（左）」自然拆列并等距水平居中，保持从右往左连贯阅读。
+  - **「出血大字」宁缺毋滥**：钩子词按重复强实词（≥3 次，单汉字 ≥4 次）→ 重复双词短语（≥3 次）分级；副歌无重复钩子时直接跳过出血版式，绝不拿单次词硬凑。
+- **没有做到一半的改动**；舞台实验室里的「聆听时的舞台」现在有 漫游歌词 / 版面 两项。
+- **下一步：穿行**（作为「聆听时的舞台」第三个选项，尚未开始写代码，接手直接看 `docs/project/TRAVEL_HANDOFF.md`）。
+- **待用户拍板**：① 「聆听时的舞台」入口要不要从舞台实验室（`Ctrl+Shift+M`）搬进「设置 › 聆听」；② 全软件性能专项留到发布前单独做。
 
 ### 2026-11-21～22 后端补齐轮（按矩阵缺陷清单，已完成，待验收）
 
@@ -108,11 +125,11 @@
   - 登录页一律在软件内弹窗；需要 Google 账号的走默认浏览器。
 - 再加平台时：先探路；参照 folia（AGPL）只借思路和参数，代码自写；改动点见 ARCHITECTURE「加一个平台要改的地方」；模板用 `git log --grep '#185'`（YouTube Music）、`git log --grep '#191'`（Apple Music，页面引擎类）。
 
-### 待用户验收（2026-11-22 收尾时）
+### 待用户验收
 
-**已验收通过**：#227（搜歌合并 / 来源展开）、#228（搜歌手多平台 + 头像）——用户 2026-11-21 验收。
+**已验收通过**：#227（搜歌合并 / 来源展开）、#228（搜歌手多平台 + 头像）——用户 2026-11-21 验收；#235–#263（主舞台歌词模式、版面精修与一镜到底）——用户 2026-11-25 桌面验收通过。
 
-**等用户验收的（都在 main 上，已推送）**：
+**等用户验收的（后端补齐轮，均已合入 main）**：
 - **#229 酷我音质**：播放酷我歌曲 → 音质菜单应出现「无损 / 较高 320k / 标准 128k」三档；匿名账号选高档位会自动落回 128k 并照常出声（不报错）。**关键待核验：登录酷我后选 320k / 无损，是否真的拿到高音质**（这是唯一没被验证的部分）。
 - **#230 汽水登录过期**：汽水票据失效后，账号区应显示「汽水登录已过期，请重新登录」，而不是继续装作登录着。
 - **#231 汽水搜索**：搜索框搜「晴天」，全网歌曲里应出现汽水来源的条目（带封面）——以前汽水公开搜索恒为空。
@@ -133,8 +150,8 @@
 | 区域 | 代码 | 真源 |
 |---|---|---|
 | 主舞台星云 | `src/lib/space/`、`src/hooks/stage/useStage.ts` | NEBULA_UI_SYSTEM §8.0 |
-| 听音空间 / 歌词阅读栏 | `src/components/listen/`、`src/lib/listen/`（`engine.ts`、`words.ts`、`bigCover.ts`） | §9.9、§7.2 |
-| 星云漫游歌词（Z1） | `src/components/LyricsLayer.tsx`（逐字层共用 `src/lib/listen/words.ts`） | §7.1、LYRICS_SYSTEM |
+| 听音空间 / 歌词阅读栏 | `src/components/listen/`、`src/lib/listen/`（`engine.ts`、`words.ts`、`bigCover.ts`、`flyTransition.ts`） | §9.9、§7.2 |
+| 星云漫游歌词（Z1）与版面舞台 | `src/components/LyricsLayer.tsx`、`src/components/LyricPage.tsx`、`src/components/lyric-page/` | §7.1、§7.1b、LYRICS_SYSTEM |
 | 歌词解析 / 读音 | `src/lib/lyrics.ts`、`src/lib/furigana.ts`、`src/hooks/lyrics/useLyrics.ts` | §7.2 |
 | 账号 / 设置面板（登录页版式 `LoginSteps` / `ScanFlow`，文案 `platforms.ts` 的 `LOGIN_HOW`） | `src/components/AccountDock.tsx`、`src/hooks/accounts/useAccounts.ts` | §9.5 |
 | 长音判定 | `src/lib/listen/model.ts`（`songPace`、`markEmph`） | §7.2 |
@@ -147,10 +164,11 @@
 | **全网搜索（合并 / 交错）** | `services/searchGroup.ts`（`groupSearchResults`，按同一录音合并）、`services/lyricService.ts` 的 `searchSongs` / `searchArtists`（按平台交错）、`components/SearchBar.tsx` + `styles.css` 的 `.search-src-*`（来源展开） | NEBULA_UI_SYSTEM §9.3、CHANGE_LOG #227 / #228 |
 | **署名行过滤** | `src/lib/lyrics.ts` 的 `filterCreditLines`（`CREDIT_CN` / `CREDIT_EN` / `CREDIT_BARE` / `CREDIT_SPACED`） | CHANGE_LOG #233 |
 | 汽水车机协议 | `adapters/qishuiCar.ts`、`login/qishuiCarLogin.ts`（界面在 `AccountDock.tsx` 的 `QishuiCarAuth`） | CHANGE_LOG #212、#215、#216 |
-| 测试 | `scripts/qa.cjs`（主套件）、`pnpm qa:backend`；本轮新增 `album-` / `search-` / `content-regression.mjs` | — |
+| 测试 | `scripts/qa.cjs`（主套件）、`pnpm qa:backend`；新增 `album-` / `search-` / `content-` / `sections-regression.mjs` | — |
 
 ### 待办与排期
 
+- **前端下一步：穿行**（作为舞台实验室「聆听时的舞台」第三个选项，尚未开始写代码，接手看 `docs/project/TRAVEL_HANDOFF.md`）。
 - **后端补齐轮已告一段落**（#223–#233）。矩阵里还能离线自己做的基本做完了，剩下的都卡在账号或平台上，见下一节与 `PLATFORM_MATRIX.md` 缺陷清单。
 - **想做但没入口的**（探测结论见 `PLATFORM_MATRIX.md`，别重复试）：酷我 / 波点 / 汽水三家**本平台**评论与详情。汽水 `/luna/pc/comments` 参数已试对（`item_id` + `group_id=1`），只差登录态；酷我 `comment.kuwo.cn/com.s` 返回 `code:600`，波点 `/api/comment/*` 是 404、`music/info` 是 402。
 - **各家本平台专辑页仍未接**（矩阵专辑页那一行仍是 ❌，现在靠网易云 / QQ / Spotify 兜底）。
@@ -159,7 +177,7 @@
 - **YouTube Music**：接本平台音频是可选优化（用户 2026-11-18 定，暂不调研）；补「赞过的音乐」需要另加独立浏览器窗口登录。
 - **界面**：节奏光（加分项）：技术可行，表现要换，不做封面两侧随鼓点闪烁。
 - ~~**歌词小问题（#218 统计时发现）**：一首日语歌的制作人员行「编曲 n-buna」没被过滤~~ → **#233 已修**：根因是「标签 + 空格 + 名字」这种没有冒号的写法两条旧规则都拦不住，实测八种写法全漏（编曲 / 作曲 / Programming / ギター / producer…）。新增 `CREDIT_SPACED` 规则，真实缓存 175 首 9501 行验证：丢弃 554 行全是真署名行，正文零误杀。
-- **工程（用户明确排除在本轮之外，别顺手做）**：
+- **工程（全软件性能专项留到发布前单独做，不顺手做）**：
   - 主舞台在 2K、0.57 倍缩放下帧耗时 p50 约 12.5ms，可改为直接写 transform；
   - #137 拖动闪烁回归目前只跑在 16 首曲库上。
 
@@ -167,15 +185,15 @@
 
 - 用户在桌面版验收。**每一次回复**末尾都附两条运行命令（各占一个代码块，方便点击运行；2026-11-19 用户要求，不只交回时）：`pnpm build:desktop`、`pnpm desktop`。
 - 真实数据测试只用资料副本，做法见 `docs/project/NOTES.md`「真实数据测试的做法」。
-- 多会话并行规则见 HANDOFF §1 第 9 条：提交前一刻再读日志顶部取号，只提交自己的文件。2026-11-17~18 的后端分叉会话已结项。
-- **⚠️ 2026-11-22 起有并行工作树**：`E:\CUFE\vibecoding\fe\nebula`（分支 `fe/next`）在做前端歌词 / 版面相关工作，领先 main 约 19 个提交。**在 main 窗口里只碰 main 的文件**；`git status` 里看到 `fe/next` 或那个目录的东西不要清理、不要提交、不要合并。要合回 main 先问用户。
-- **提交前必读 CHANGE_LOG 顶部编号**再取下一个号（本轮用到 #233）；编号是全局唯一的，别按记忆里的数字写。
+- 多会话并行规则见 HANDOFF §1 第 9 条：提交前一刻再读日志顶部取号，只提交自己的文件。2026-11-17~18 的后端分叉会话与 2026-11-22~25 的 `fe/next` 工作树均已结项合回 `main`。
+- **提交前必读 CHANGE_LOG 顶部编号**再取下一个号（当前用到 #264）；编号是全局唯一的，别按记忆里的数字写。
 - 样张（私有页面，只用于做决定）：
   - 设计审查 <https://claude.ai/artifact/Kc9s3unScWUHbHSGsDQYLQ>
   - 播放器 I <https://claude.ai/artifact/SBNmfHR725ds1nE6H7PDDH>
   - 歌词 J <https://claude.ai/artifact/PHVmyDCvqnVn7R3JhnFQUa>
   - 漫游歌词 K <https://claude.ai/artifact/6F2PnRcE6fcacYfUAvLtPv>
   - 设置面板 L <https://claude.ai/artifact/JC3mxeaZpovAVX6EykGm2K>
+  - 主舞台歌词模式 M <https://claude.ai/artifact/CbkjKMV6sAxVuGfeaeFgNd>（2026-11-22，fe/next）
 - 参照：Mineradio（材质）、Folia（歌词、Spotify / 汽水路线）是 GPL / AGPL，只借思路不搬代码。
 
 ### 已废弃 / 不再排期

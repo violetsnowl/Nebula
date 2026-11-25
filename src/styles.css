@@ -2933,6 +2933,37 @@ body {
   display: inline-block;
 }
 
+/* 漫游歌词升级·大小对比（样张 M）：长音在舞台尺度上放大得更明显（听音空间是 107%，舞台上约 120%），只作用于当前句 */
+.lyrics-layer[data-shape] .flow-lyric.is-current .u,
+.lyrics-layer[data-shape] .flow-lyric.is-current .u .ch {
+  transform: translate3d(0, calc(var(--lift, 0) * -1em), 0) scale(calc(1 + (var(--sc, 1) - 1) * 2.8));
+}
+
+/* 字照亮空间（样张 M）：正在唱的字身后一团很淡的歌词主色光，跟着字移动；卡片的提亮在舞台帧循环里。
+   用户验收（2026-11-22）：线性衰减在浅色封面上能看出一圈圆边 → 改成横向椭圆（和一行字相称）+ 近似高斯的缓出衰减，
+   边缘降到零之前已经几乎看不见 */
+.lyrics-layer .fl-light {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 980px;
+  height: 600px;
+  margin: -300px 0 0 -490px;
+  background: radial-gradient(
+    closest-side,
+    color-mix(in srgb, var(--lc-a) 26%, transparent) 0%,
+    color-mix(in srgb, var(--lc-a) 22%, transparent) 14%,
+    color-mix(in srgb, var(--lc-a) 15%, transparent) 30%,
+    color-mix(in srgb, var(--lc-a) 8.5%, transparent) 46%,
+    color-mix(in srgb, var(--lc-a) 3.8%, transparent) 62%,
+    color-mix(in srgb, var(--lc-a) 1.2%, transparent) 78%,
+    transparent 100%
+  );
+  opacity: 0;
+  pointer-events: none;
+  will-change: transform, opacity;
+}
+
 .flow-lyric.is-current .u,
 .flow-lyric.is-current .u .ch,
 .flow-lyric.is-current .fl-whole {
@@ -3026,9 +3057,12 @@ body {
   overflow: hidden;
   pointer-events: none;
 }
-/* 听音空间打开时不出字幕（那里有自己的歌词栏） */
-.app[data-ls] .lyric-caption {
-  display: none;
+/* 听音空间打开时隐藏字幕视觉，但保留布局盒子（不用 display: none），
+   否则点播放条封面打开听音空间那一帧字幕宽高归零，一镜到底会量不到真实底部起点坐标；飞回期间暗晕随隐藏字一同暂隐 */
+.app[data-ls] .lyric-caption > .is-grad,
+.app[data-ls] .lyric-caption > .lc-haze,
+.lyric-caption:has([data-flyhide]) > .lc-haze {
+  opacity: 0;
 }
 @media (max-width: 900px) {
   .lyric-caption {
@@ -3055,6 +3089,13 @@ body {
      left:50% 的绝对定位默认只给一半视口宽的收缩空间，所以显式 max-content + max-width */
   width: max-content;
   max-width: min(80vw, 1100px);
+}
+
+/* 版面模式下前奏的歌名随交接淡出（2026-11-22 用户验收：聆听时版面第一页和歌名叠在一起）：版面从开头就把第一页印好，
+   聆听中由版面接手，歌名只在漫游时出现 */
+:root[data-stage-mode='page'] .app[data-lk] .lyrics-intro {
+  opacity: calc(0.92 * (1 - var(--lk)));
+  transition: none;
 }
 
 /* 前奏 / 纯音乐时居中的歌名：同样用衬线 Display，不发光（§6 发光授权只给正在唱的字） */
@@ -4335,15 +4376,18 @@ body {
 
 /* 聆听时环境光略微提亮（退潮不提亮：卡片化成薄雾时再提亮背景，整屏会发灰，审查第 12 条） */
 .app[data-lk]:not([data-listen-style='ebb']) .bg-layer {
-  filter: brightness(calc(1 + 0.12 * var(--lk))) saturate(calc(1 + 0.08 * var(--lk)));
+  filter: brightness(calc(1 + (0.12 + 0.1 * var(--sopen, 0)) * var(--lk))) saturate(calc(1 + 0.08 * var(--lk)));
 }
+
+/* 漫游歌词升级（样张 M，2026-11-22）：LyricsLayer 按段落引擎写 --sdep（压暗相对旧值的倍数：主歌 1.13、
+   最后一次副歌 .58、间奏里约 .17）和 --sopen（开合 0–1）。实验室里关掉升级时两个变量被移除，回到旧值 */
 
 /* 三种让开各有情绪（#124）：沉降是暗，散开是让，退潮是淡。
    沉降：整片星云往下沉、后退、压暗。下沉和后退（缩到 86%、下移 4vh）由舞台帧循环在屏幕坐标上算
    （useStage 的 sinkK / lens.applyXf）：不再给 .stage-3d 整体缩放——它自带裁剪、星层画布也只有一屏大，
    缩小后四周露空、边上的卡片被截断（2026-11-21）。这里只压暗；交接进行中关掉位移过渡，免得卡片拖在曲线后面 */
 .app[data-listen-style='sink'][data-lk] .stage-3d {
-  filter: brightness(calc(1 - 0.62 * var(--lk))) saturate(calc(1 - 0.45 * var(--lk)));
+  filter: brightness(calc(1 - 0.62 * var(--lk) * var(--sdep, 1))) saturate(calc(1 - 0.45 * var(--lk) * var(--sdep, 1)));
 }
 
 .app[data-listen-style='sink'][data-lk] .music-card {
@@ -4352,7 +4396,7 @@ body {
 
 /* 散开：卡片位移由舞台帧循环计算；交接进行中关掉位移过渡，免得卡片拖在曲线后面 */
 .app[data-listen-style='part'][data-lk] .stage-3d {
-  filter: brightness(calc(1 - 0.16 * var(--lk)));
+  filter: brightness(calc(1 - 0.16 * var(--lk) * var(--sdep, 1)));
 }
 
 .app[data-listen-style='part'][data-lk] .music-card {
@@ -4361,14 +4405,33 @@ body {
 
 /* 退潮：卡片向外、略向下漂散（位移在舞台帧循环里），化成一层薄雾——变淡、轻微虚化，不压暗，背景不提亮 */
 .app[data-listen-style='ebb'][data-lk] .stage-3d {
-  opacity: calc(1 - 0.68 * var(--lk));
-  filter: brightness(calc(1 - 0.08 * var(--lk))) blur(calc(2.2px * var(--lk)));
+  opacity: calc(1 - 0.68 * var(--lk) * min(1, var(--sdep, 1)));
+  filter: brightness(calc(1 - 0.08 * var(--lk))) blur(calc(2.2px * var(--lk) * min(1, var(--sdep, 1))));
+}
+
+/* 版面（样张 M）：聆听时星云不论哪种让开方式都沉成纸面——压暗（倍数由 LyricsLayer 写 --sdep：主歌约 .20、副歌 .39、
+   间奏里浮起大半）、降饱和、轻微虚化，不变淡（退潮的变淡在这里取消）。版面本身在 components/lyric-page.css */
+:root[data-stage-mode='page'] .app[data-listen-style][data-lk] .stage-3d {
+  opacity: 1;
+  filter: brightness(calc(1 - 0.62 * var(--lk) * var(--sdep, 1.29))) saturate(calc(1 - 0.5 * var(--lk))) blur(calc(2.4px * var(--lk)));
+}
+
+/* 听音空间开着（含开合动画）时已进入聆听的星云滤镜冻住（2026-11-22 用户：版面进听音空间掉帧严重）：交接曲线退回漫游的那 0.4s 里，
+   上面那条的虚化半径每帧都在变，整片星云（上千张卡片）每帧带虚化重画一遍；加 [data-lk] 限定仅在聆听中生效，避免版面模式漫游态（k=0）进出听音空间误压暗虚化星云 */
+:root[data-stage-mode='page'] .app[data-listen-style][data-lk]:has(.ls-root) .stage-3d.stage-3d {
+  filter: brightness(calc(1 - 0.62 * var(--sdep, 1.29))) saturate(0.5) blur(2.4px);
+}
+
+/* 版面转场：漫游歌词的当前句要飞到版面上，所以版面模式下歌词层在卡片之上、换层时不先淡一下 */
+:root[data-stage-mode='page'] .app[data-listen-style] .lyrics-layer {
+  z-index: 11;
+  opacity: 1;
 }
 
 /* 播放条变淡：最多淡到 70%（审查第 12 条：淡到一半读起来像「不可用」）。只降材质（::before）和内容。
    不能给 .player-surface 本身设 opacity，否则它会成为 ::before 的背景采样边界，玻璃采不到背后的画面 */
-.app[data-listen-bar='dim'][data-lk] .player-surface::before,
-.app[data-listen-bar='dim'][data-lk] .player-surface > * {
+.app[data-listen-bar='dim'][data-lk]:not([data-listen-pin]) .player-surface::before,
+.app[data-listen-bar='dim'][data-lk]:not([data-listen-pin]) .player-surface > * {
   opacity: calc(1 - 0.3 * var(--lk));
 }
 
@@ -4381,13 +4444,58 @@ body {
 }
 
 /* 聆听中：隐藏指针；卡片不响应悬停和点击（第一下移动先把界面叫回来） */
-.app[data-listen],
-.app[data-listen] * {
+.app[data-listen]:not([data-listen-pin]),
+.app[data-listen]:not([data-listen-pin]) * {
   cursor: none !important;
 }
 
 .app[data-listen] .music-card {
   pointer-events: none;
+}
+
+/* 常驻聆听（2026-11-22 用户要求，§7.1）：根元素带 data-listen-pin 时，动鼠标不退出；光标、两侧边缘入口照常，
+   播放条不变淡（上面三条规则都排除了它），和听音空间一样可以直接操作。左上角的收起键（同听音空间 .ls-exit）跟着交接淡入 */
+.listen-exit {
+  position: fixed;
+  left: 34px;
+  top: 30px;
+  z-index: 60;
+  width: 40px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  appearance: none;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  color: var(--fg-3s);
+  opacity: 0;
+  pointer-events: none;
+  transition: color 0.18s var(--ease-std);
+}
+.listen-exit svg {
+  transition: transform 0.18s var(--ease-std);
+}
+.app[data-listen-pin][data-lk] .listen-exit {
+  opacity: var(--lk);
+  pointer-events: auto;
+}
+/* 听音空间开着（含开合动画）时常驻收起键让位给听音空间自己的 .ls-exit */
+.app[data-listen-pin][data-ls] .listen-exit,
+.app[data-listen-pin]:has(.ls-root) .listen-exit {
+  opacity: 0;
+  pointer-events: none;
+}
+.listen-exit:hover {
+  color: #fff;
+}
+.listen-exit:hover svg {
+  transform: scale(1.07);
+}
+.listen-exit:focus-visible {
+  outline: 2px solid rgba(255, 255, 255, 0.55);
+  outline-offset: 2px;
+  border-radius: 8px;
 }
 
 /* 指针静止在卡片上也能进入聆听（2026-11-14，§7.1）：交接和聆听中把悬停态压回普通态（不放大、不出播放球、
@@ -4483,7 +4591,7 @@ body {
 }
 
 .sd-seam.is-hidden,
-.app[data-listen] .sd-seam {
+.app[data-listen]:not([data-listen-pin]) .sd-seam {
   opacity: 0;
 }
 

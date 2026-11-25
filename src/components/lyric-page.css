@@ -1,0 +1,238 @@
+/* 版面（样张 M，2026-11-22，fe/next）：聆听时的主舞台之一，见 components/LyricPage.tsx。
+   与「卡片之上」的歌词层同层（z-index 11，§5.5）；透明度由 LyricPage 按交接进度 --lk 逐帧写。
+   逐字层的 .u / .ch / 扫光 / 长音白光来自 listen/lyric-words.css（根上带 .lw），这里只管版式和三种状态的颜色：
+   没唱到 = 浅灰「先印好」（--lc-rest），正在唱 = 扫光，唱过 = 印成实色（封面色模式是歌词主色，同色系近白）。 */
+
+.lyric-page {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  /* 版面根的透明度逐帧随交接 / 飞进听音空间变化：单独成层，透明度变化只在合成阶段做，不把整页（带外羽化的大字、颗粒、纸面）每帧重画 */
+  will-change: opacity;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  --lc-rest: rgba(255, 255, 255, 0.24);
+  --lp-ink: var(--lc-a);
+  --lp-tr: rgba(255, 255, 255, 0.36);
+  --lp-tr-on: rgba(255, 255, 255, 0.62);
+}
+
+.lyric-page[data-scheme='mono'] {
+  --lc-rest: color-mix(in srgb, color-mix(in srgb, var(--lc-a) 58%, #fff) 24%, transparent);
+  --lp-ink: color-mix(in srgb, var(--lc-a) 8%, #fff);
+}
+
+/* 转场替身（.lp-morph / .lpm-* / [data-flyhide]）已抽至 listen/fly-transition.css 共用。 */
+
+/* 1600 × 900 的逻辑画幅，等比缩放到窗口中央 */
+.lp-frame {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 1600px;
+  height: 900px;
+  transform-origin: 50% 50%;
+}
+
+.lp-page {
+  position: absolute;
+  inset: 0;
+  display: none;
+  will-change: opacity, transform;
+}
+
+/* 纸面（样张 N）：封面最深的底色压得更暗、九成不透明，盖住你设的背景和沉下去的星云，只透出一点气色。
+   跟着整个版面随交接进度 --lk 升起（版面根的透明度），所以仍是同一个舞台、不是跳到新页面 */
+.lp-paper {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--ebase, rgb(12 13 18)) 42%, rgb(6 7 10));
+  opacity: 0.9;
+  pointer-events: none;
+}
+
+/* 纸面颗粒（样张 M）：一层很淡的灰度噪点，像印刷纸面；跟着整个版面一起随交接淡入 */
+.lp-grain {
+  position: absolute;
+  inset: 0;
+  background-size: 256px 256px;
+  opacity: 0.05;
+  pointer-events: none;
+}
+
+/* 间奏三点（2026-11-22 用户要求）：和听音空间的 .ly-gap 同样大小比例（点 .2em、间距 .32em，按 48px 字号），
+   居中；透明度和缩放由 LyricPage 逐帧写 */
+.lp-gap {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  display: none;
+  align-items: center;
+  gap: 0.32em;
+  font-size: 48px;
+  transform: translate(-50%, -50%);
+}
+
+.lp-gap i {
+  width: 0.2em;
+  height: 0.2em;
+  border-radius: 50%;
+  background: #fff;
+  opacity: 0;
+}
+
+/* 页眉只留页码（用户 2026-11-22：左上角不写这页是哪一段） */
+.lp-no {
+  position: absolute;
+  top: 96px;
+  right: 150px;
+  font-family: Inter, 'Segoe UI', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0.12em;
+  color: rgba(255, 255, 255, 0.32);
+  font-variant-numeric: tabular-nums;
+}
+
+/* 斜体、字尾伸出字的盒子的部分（I 的左下、y 的尾巴、s 的右边）原来扫不到颜色、看着像被切掉：
+   每个字的盒子四周加一圈留白、再用负边距抵消，排版位置不变，扫光的上色范围盖住整个字形（2026-11-22 用户反馈） */
+.lyric-page .u,
+.lyric-page .u .ch {
+  padding: 0.12em 0.2em 0.16em;
+  margin: -0.12em -0.2em -0.16em;
+}
+/* 扫光按「字本身」铺（2026-11-22 用户反馈：慢歌里一个词吞一次气口）：上面那圈留白让渐变铺在更宽的盒子上，
+   扫光的波前每个词开头、结尾都有一段时间走在空白留白里、字面上没有变化——短词、大字号时最明显，看着像每个词停顿一下。
+   这里把波前的行程换算回字本身的范围（横排左右各 .2em 留白），羽化宽度也按字本身的宽度算（--fn = 羽化占字宽的比例，
+   LyricPage 建字时写）。留白里仍有颜色：左边跟着已唱、右边跟着未唱，斜体伸出去的部分照样上色 */
+.lyric-page .is-grad .u:not(.has-ch),
+.lyric-page .is-grad .u .ch {
+  --fw: calc(var(--fn, 0.3) * (100% - 0.4em));
+  --P: calc(var(--p, 0) * (100% - 0.4em + 2 * var(--fw)) - var(--fw) + 0.2em * var(--p, 0));
+  background-image: linear-gradient(90deg, var(--sung, #fff) 0, var(--sung, #fff) calc(var(--P) - var(--fw)), var(--edge) var(--P), var(--un) calc(var(--P) + var(--fw)));
+}
+
+/* 版面的浮起量按字号封顶（2026-11-22 用户：满版齐行里下一句浮起时贴上上一句）：浮起按 em 算，150px 的大字浮起二十来像素。
+   --lfk 由 LyricPage 按每个字的字号写（相当于不超过 52px 字的浮起；粗大写的满版齐行 / 书脊再乘 .7） */
+.lyric-page .u,
+.lyric-page .u .ch {
+  transform: translate3d(0, calc(var(--lift, 0) * -1em * var(--lfk, 1)), 0) scale(var(--sc, 1));
+}
+
+.lyric-page .u.has-ch {
+  padding: 0;
+  margin: 0;
+}
+
+.lp-line {
+  position: absolute;
+  white-space: nowrap;
+}
+
+.lp-tx {
+  font-family: var(--lc-font, 'Noto Serif SC', serif);
+  font-weight: var(--lyric-weight, 600);
+  letter-spacing: var(--lc-ls, 0.02em);
+  line-height: 1.2;
+  /* 中性外羽化：压在亮封面上时把字托出来（同漫游歌词） */
+  filter: drop-shadow(0 1px 2.4px rgba(4, 6, 12, 0.5)) drop-shadow(0 0 4.8px rgba(4, 6, 12, 0.26));
+}
+
+/* 正在唱的那句的字各自上合成层：波浪浮起按亚像素走，慢歌里不会一格一格地跳（同听音空间 lyric-column.css、
+   漫游歌词 .flow-lyric.is-current；2026-11-22 用户发现版面漏了这一条，慢速时波浪附近有抖动） */
+.lp-line.is-cur .u,
+.lp-line.is-cur .u .ch {
+  will-change: transform;
+}
+
+/* 唱过：印成实色 */
+.lp-line.is-past .u,
+.lp-line.is-past .u .ch {
+  color: var(--lp-ink);
+}
+
+/* 没有逐字时间的句子：整句在开唱时 0.38s 内印上 */
+.lp-whole {
+  color: var(--lc-rest);
+  transition: color 0.38s ease;
+}
+
+.lp-whole.is-on {
+  color: var(--lp-ink);
+}
+
+/* 翻译：主歌排在右栏作旁注（和原文同一行），其余段落排在原文下面 */
+.lp-tr {
+  font-family: Inter, 'Segoe UI', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.5;
+  letter-spacing: 0.02em;
+  color: var(--lp-tr);
+  white-space: nowrap;
+  transition: color 0.5s ease;
+}
+
+.lp-tr.is-side {
+  position: absolute;
+  left: 990px;
+  top: 0.95em;
+}
+
+.lp-tr.is-under {
+  margin-top: 4px;
+  font-size: 15px;
+}
+
+.lp-line.is-cur .lp-tr,
+.lp-line.is-past .lp-tr {
+  color: var(--lp-tr-on);
+}
+
+/* 竖排（中文歌）：从右往左一列一句；扫光改成从上往下，波浪浮起改成往右。
+   样张 N 起按句（.lp-line.is-vert）或按段（.lp-seg-v：一句跨横竖两截时的竖排那截）决定，不再按整首歌 */
+.lyric-page .lp-line.is-vert .lp-tx,
+.lyric-page .lp-seg-v {
+  writing-mode: vertical-rl;
+  letter-spacing: 0.14em;
+}
+
+.lyric-page .lp-line.is-vert .u,
+.lyric-page .lp-line.is-vert .u .ch,
+.lyric-page .lp-seg-v .u,
+.lyric-page .lp-seg-v .u .ch {
+  transform: translate3d(calc(var(--lift, 0) * 1em * var(--lfk, 1)), 0, 0) scale(var(--sc, 1));
+  transform-origin: 50% 50%;
+}
+
+.lyric-page .lp-line.is-vert.is-grad .u:not(.has-ch),
+.lyric-page .lp-line.is-vert.is-grad .u .ch,
+.lyric-page .is-grad .lp-seg-v .u:not(.has-ch),
+.lyric-page .is-grad .lp-seg-v .u .ch {
+  --fw: calc(var(--fn, 0.3) * (100% - 0.28em));
+  --P: calc(var(--p, 0) * (100% - 0.28em + 2 * var(--fw)) - var(--fw) + 0.12em * var(--p, 0));
+  background-image: linear-gradient(180deg, var(--sung, #fff) 0, var(--sung, #fff) calc(var(--P) - var(--fw)), var(--edge) var(--P), var(--un) calc(var(--P) + var(--fw)));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-whole,
+  .lp-tr {
+    transition: none;
+  }
+}
+
+/* 排版时量的是「平排」的样子：版式的旋转先关掉，量完再打开（LyricPage.layoutAll） */
+.lp-page.is-measuring .lp-rot {
+  transform: none !important;
+}
+
+/* 版式挪出句子的翻译（脚注、右栏、书脊脚下）：跟着所属句子亮起 */
+.lp-tr.is-free {
+  position: absolute;
+}
+
+.lp-tr.is-free.is-on {
+  color: var(--lp-tr-on);
+}
