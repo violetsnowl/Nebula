@@ -144,7 +144,8 @@ function placeOf(
   let dx = 0;
   let dy = 0;
   let sc = 1;
-  const tf = getComputedStyle(el).transform;
+  const mayShift = side.ctx.includes('is-grad') || el.classList.contains('fl-whole') || el.classList.contains('ly-whole');
+  const tf = mayShift ? getComputedStyle(el).transform : '';
   if (tf && tf !== 'none') {
     const m = new DOMMatrixReadOnly(tf);
     sc = Math.hypot(m.a, m.b) || 1;

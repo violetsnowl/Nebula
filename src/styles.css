@@ -4409,6 +4409,12 @@ body {
   filter: brightness(calc(1 - 0.08 * var(--lk))) blur(calc(2.2px * var(--lk) * min(1, var(--sdep, 1))));
 }
 
+/* 退潮下打开 / 收起听音空间期间冻住虚化半径，避免每帧带 blur 重画整片星云 */
+.app[data-listen-style='ebb'][data-lk]:has(.ls-root) .stage-3d {
+  opacity: calc(1 - 0.68 * min(1, var(--sdep, 1)));
+  filter: brightness(0.92) blur(calc(2.2px * min(1, var(--sdep, 1))));
+}
+
 /* 版面（样张 M）：聆听时星云不论哪种让开方式都沉成纸面——压暗（倍数由 LyricsLayer 写 --sdep：主歌约 .20、副歌 .39、
    间奏里浮起大半）、降饱和、轻微虚化，不变淡（退潮的变淡在这里取消）。版面本身在 components/lyric-page.css */
 :root[data-stage-mode='page'] .app[data-listen-style][data-lk] .stage-3d {

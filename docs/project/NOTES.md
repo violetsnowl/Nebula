@@ -34,6 +34,7 @@
 - **需要量起落坐标的歌词节点别用 `display: none` 隐藏**（同上）：听音空间打开时若把 `.lyric-caption` 设成 `display: none`，`getBoundingClientRect()` 全为 0，若再拿屏幕中心兜底就会出现「整句从屏幕正中心炸开飞走」；应保持容器布局盒、只将子元素设 `opacity: 0`，对确实不可测的 0 尺寸节点直接跳过不飞。
 - **克隆非扫光歌词节点必须同步计算后的实色**（同上）：`.is-grad` 靠背景渐变上色，而 `.is-past`（已唱句，「变成白色」模式下为纯白）和整句节点（`.ly-whole / .fl-whole / .lp-whole`）靠 `color` 上色；脱离原父级选择器后若只给半透明 `--lc-rest` 兜底，飞行途中会发灰跳色，克隆时需把 `getComputedStyle(el).color` 写进 `--lc-rest`。
 - **常驻聆听不要靠轮询 `.ls-root` 退回漫游再恢复**（同上）：听音空间挂载晚一拍、收起有 600ms 退场动画，250ms 轮询 DOM 会跟交接曲线撞车闪出星云；将听音空间开关从硬阻断拆出直传 `ListenDirector`，常驻聆听下底层舞台保持 `k = 1` 原地待命即可零重算无缝往返。
+- **漫游聆听 ↔ 听音空间双向转场期间必须停掉后台舞台刷新，且替身单字不挂 `drop-shadow` / 双层 `will-change`**（2026-11-25，#266）：`LyricsLayer` 在听音空间开合与飞行期间（`lsBusy`）仍调 `pokeListenFrame()` 与每帧写根元素 `--sdep / --sopen`，会导致 `.ls-veil`（`backdrop-filter: blur(16px)`）背后的 140 张星云卡片 + 星层画布每帧重绘并被 `getBoundingClientRect()` 强制同步重排；同时漫游聆听三句 30–50+ 个 `.lpm-r .u` 逐字挂双层 `drop-shadow` 与嵌套 `will-change: transform` 会引发 GPU 模糊风暴。非常驻模式下打开听音空间也应统一对所有舞台模式直落（`instant = true`），避免 380ms `--lk` 根变量曲线触发全页重算。
 - 项目已接入 git；远程为 `github.com/violetsnowl/Nebula`（2026-11-14 改名；旧地址 `violetsnowl/nebula`、`a161858970-ux/nebula` 自动重定向，本地 origin 已更新）；文档随提交维护（docs/）。
 
 ### 歌词署名行过滤（2026-11-21，#233）

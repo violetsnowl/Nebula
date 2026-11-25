@@ -319,10 +319,14 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist, l
     let open = 0;
     let gapK = 0;
     let wroteVars = false;
+    let lastSdep = '';
+    let lastSopen = '';
     const rootStyle = document.documentElement.style;
 
     // —— 漫游 / 字幕 ↔ 听音空间双向一镜到底（共用 lib/listen/flyTransition.ts）——
     let lsPrev = !!lsOpenRef.current;
+    let lsClosingUntil = 0;
+    let lastK = listenBus.enabled ? listenBus.k : 1;
     let roamFly: LsFly | null = null;
     let roamFlyInKind: 'flow' | 'caption' | null = null;
     let lsWantDir: 'out' | 'in' | null = null;
@@ -708,6 +712,9 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist, l
       }
       lastT = t;
       const tSec = t / 1000;
+      const lsNow = !!lsOpenRef.current;
+      if (lsNow !== lsPrev && !lsNow) lsClosingUntil = now + 650;
+      const lsBusy = lsNow || !!roamFly || now < lsClosingUntil;
       // 漫游歌词升级：段落开合、间奏让位（stageAt 自带进段落提前 0.8s、1.6s 平滑过渡）
       const labNow = getSpaceLab();
       up = labNow.lyricShape;
@@ -729,9 +736,20 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist, l
         stageShapeBus.gap = st.gap;
         stageShapeBus.sinkDepth = depth;
         stageShapeBus.sinkPos = posK;
-        rootStyle.setProperty('--sdep', depth.toFixed(3));
-        rootStyle.setProperty('--sopen', sk.open.toFixed(3));
-        wroteVars = true;
+        // 听音空间打开 / 收起及一镜到底飞行期间冻住根元素 --sdep / --sopen，且仅在值变化时写入，避免每帧触发布局与样式重算
+        if (!lsBusy) {
+          const sdep = depth.toFixed(3);
+          const sopen = sk.open.toFixed(3);
+          if (sdep !== lastSdep) {
+            rootStyle.setProperty('--sdep', sdep);
+            lastSdep = sdep;
+          }
+          if (sopen !== lastSopen) {
+            rootStyle.setProperty('--sopen', sopen);
+            lastSopen = sopen;
+          }
+          wroteVars = true;
+        }
       } else {
         open = 0;
         gapK = 0;
@@ -739,6 +757,8 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist, l
         if (wroteVars) {
           rootStyle.removeProperty('--sdep');
           rootStyle.removeProperty('--sopen');
+          lastSdep = '';
+          lastSopen = '';
           wroteVars = false;
         }
       }
@@ -753,7 +773,9 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist, l
 
       // 漫游 / 聆听（§7.1）：交接没启用时没有「聆听」，歌词按聆听时的样子常显
       const enabled = listenBus.enabled;
-      const k = enabled ? listenBus.k : 1;
+      const liveK = enabled ? listenBus.k : 1;
+      // 非常驻聆听下点开听音空间时 listenBus.k 可能在同帧已被瞬间置 0，起飞首帧沿用上一帧透明度避免漏飞候选句
+      const k = lsNow && !lsPrev && enabled ? Math.max(liveK, lastK) : liveK;
       const roam = roamRef.current;
       const ambient = enabled && roam !== 'caption';
       const captionOn = enabled && roam !== 'ambient';
@@ -926,33 +948,35 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist, l
         }
       }
       fontsDirty = false;
-      // 升级·字照亮空间：光源交给舞台（卡片提亮），身后一团很淡的主色光跟着字走；聆听中每帧请舞台刷新
+      // 升级·字照亮空间：光源交给舞台（卡片提亮），身后一团很淡的主色光跟着字走；聆听中每帧请舞台刷新（听音空间开合与飞行期间暂停，避免遮罩背后整片星云每帧重绘）
       if (up || pageMode) {
-        // 光源位置平滑一点，换字时不跳（版面模式没有光源，光强衰减到 0）
-        const kk = 1 - Math.exp(-dt * 10);
-        if (stageShapeBus.lk <= 0.001 && lightK > 0) {
-          stageShapeBus.lx = lightX;
-          stageShapeBus.ly = lightY;
-        } else if (lightK > 0) {
-          stageShapeBus.lx += (lightX - stageShapeBus.lx) * kk;
-          stageShapeBus.ly += (lightY - stageShapeBus.ly) * kk;
-        }
-        stageShapeBus.lk += (lightK - stageShapeBus.lk) * (1 - Math.exp(-dt * 6));
-        const glow = lightRef.current;
-        if (glow) {
-          glow.style.transform = `translate3d(${stageShapeBus.lx.toFixed(1)}px, ${stageShapeBus.ly.toFixed(1)}px, 0)`;
-          glow.style.opacity = Math.min(1, stageShapeBus.lk * (enabled ? k : 1) * 1.6).toFixed(3);
-        }
-        if (pageMode) {
-          // 版面模式下星云带虚化，每帧刷新代价高：只在沉降倍数真的变了时请舞台刷新
-          const d = stageShapeBus.sinkDepth;
-          const p = stageShapeBus.sinkPos;
-          if (Math.abs(d - pokedDepth) > 0.004 || Math.abs(p - pokedPos) > 0.004 || stageShapeBus.lk > 0.001) {
-            pokedDepth = d;
-            pokedPos = p;
-            pokeListenFrame();
+        if (!lsBusy) {
+          // 光源位置平滑一点，换字时不跳（版面模式没有光源，光强衰减到 0）
+          const kk = 1 - Math.exp(-dt * 10);
+          if (stageShapeBus.lk <= 0.001 && lightK > 0) {
+            stageShapeBus.lx = lightX;
+            stageShapeBus.ly = lightY;
+          } else if (lightK > 0) {
+            stageShapeBus.lx += (lightX - stageShapeBus.lx) * kk;
+            stageShapeBus.ly += (lightY - stageShapeBus.ly) * kk;
           }
-        } else if (playingNow || relayoutNow) pokeListenFrame();
+          stageShapeBus.lk += (lightK - stageShapeBus.lk) * (1 - Math.exp(-dt * 6));
+          const glow = lightRef.current;
+          if (glow) {
+            glow.style.transform = `translate3d(${stageShapeBus.lx.toFixed(1)}px, ${stageShapeBus.ly.toFixed(1)}px, 0)`;
+            glow.style.opacity = Math.min(1, stageShapeBus.lk * (enabled ? k : 1) * 1.6).toFixed(3);
+          }
+          if (pageMode) {
+            // 版面模式下星云带虚化，每帧刷新代价高：只在沉降倍数真的变了时请舞台刷新
+            const d = stageShapeBus.sinkDepth;
+            const p = stageShapeBus.sinkPos;
+            if (Math.abs(d - pokedDepth) > 0.004 || Math.abs(p - pokedPos) > 0.004 || stageShapeBus.lk > 0.001) {
+              pokedDepth = d;
+              pokedPos = p;
+              pokeListenFrame();
+            }
+          } else if (playingNow || relayoutNow) pokeListenFrame();
+        }
       } else if (lightRef.current && lightRef.current.style.opacity !== '0') lightRef.current.style.opacity = '0';
       // 先同步本帧底部字幕（保证打开/收起听音空间的那一帧 captionDom 与 --cap-o 已是最新当前句）
       const rawCapShow = captionOn && !(pageMode && pageBus.morph && pageBus.caption) ? 1 - k : 0;
@@ -967,7 +991,6 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist, l
 
       // 在本帧 .flow-lyric 与底部字幕都更新完毕后调度听音空间双向一镜到底
       const pageOwns = isPageStageActive(pageMode, enabled, listenBus.k);
-      const lsNow = !!lsOpenRef.current;
       if (pageOwns && roamFly) {
         roamFly.end();
         roamFly = null;
@@ -1013,6 +1036,7 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist, l
         roamFly = null;
         roamFlyInKind = null;
       }
+      lastK = liveK;
 
       syncActive();
       raf = requestAnimationFrame(frame);

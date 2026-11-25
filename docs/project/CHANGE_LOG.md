@@ -6,6 +6,26 @@
 
 ---
 
+## #266 — 2026-11-25 — 修复漫游歌词模式聆听 ↔ 听音空间双向转场掉帧
+
+**背景**：用户反馈仅在「漫游歌词模式」下从聆听态进出听音空间时双向都存在明显掉帧，而漫游态及版面模式均流畅。
+
+**根因（四处叠加）**：
+1. **遮罩背后整片星云每帧被重绘**：`LyricsLayer` 在 `!pageMode && playingNow` 下每帧调用 `pokeListenFrame()`，在常驻聆听（`k = 1`）进出听音空间期间持续驱动 140 张星云卡片 DOM（含 `brightness/saturate` 滤镜）与星层画布在 `.ls-veil` 全屏 `backdrop-filter: blur(16px)` 背后每帧重绘，同时 `roamFly.step` 在同一帧后紧接调用 `getBoundingClientRect()` 强制同步全页样式重算与布局。
+2. **非常驻漫游聆听跑 380ms `--lk` 退场动画**：`listenMode.ts` 仅对 `stageMode === 'page'` 在打开听音空间时直落漫游，漫游模式下仍每帧写根元素 `--lk` 触发千张节点样式重算。
+3. **根元素 `--sdep / --sopen` 无缓存每帧写**：`LyricsLayer` 每帧向 `document.documentElement.style` 写入字符串，听音空间开合期间也未停写。
+4. **30–50+ 个漫游替身单字逐字挂双层 `drop-shadow` + 嵌套合成层**：漫游聆听下三句（`current / next / nextNext`）同时起飞，`fly-transition.css` 对每个 `.lpm-r .u` 单独施加双层 `drop-shadow`（每帧 60–100 次 GPU 模糊）并嵌套两层 `will-change: transform`。
+
+**改动点**
+- `src/components/LyricsLayer.tsx`：听音空间打开、飞行中及收起后 650ms 内（`lsBusy`）暂停 `pokeListenFrame()`、聚光灯 DOM 写与根元素 `--sdep / --sopen` 写入，并为 `--sdep / --sopen` 增加变化判定缓存；起飞首帧对非常驻瞬落保底沿用上一帧 `k` 值，确保候选句完整起飞。
+- `src/lib/listenMode.ts`：非常驻聆听因听音空间打开退回漫游时对所有舞台模式统一直落（`instant = true`），不再仅限版面模式。
+- `src/components/listen/fly-transition.css`：去掉 `.lpm-r .u / .fl-whole` 逐字 `drop-shadow`（`.lp-morph` 层级外羽化保留，`.lp-lsfly` 在 `.ls-veil` 上与 `.lpm-b / .lpm-c` 一致），`.lp-lsfly` 内层单元取消重复 `will-change: transform`。
+- `src/lib/listen/flyTransition.ts`：`placeOf()` 仅对可能带独立浮起/缩放的节点（`.is-grad` / `.fl-whole` / `.ly-whole`）读取 `getComputedStyle(el).transform`，候补句跳过无意义样式读取。
+- `src/styles.css`：为「退潮（`ebb`）」在听音空间开启期间补上 `:has(.ls-root)` 冻住星云 `blur` 半径。
+- `docs/project/NOTES.md`、`docs/meta/CONTEXT_SNAPSHOT.md`：补充漫游聆听 ↔ 听音空间转场性能踩坑与快照记录。
+
+**验证**：`pnpm build`、`pnpm qa:backend`、`pnpm qa`、`pnpm build:desktop` 全绿，漫游聆听 ↔ 听音空间双向 1000 卡片压测落位误差与替身帧耗时达标。
+
 ## #265 — 2026-11-25 — 去掉主舞台进听音空间一镜到底起飞延迟，同步大封面 600ms `easeStd`
 
 **背景**：用户反馈在版面漫游态、版面聆听态以及漫游模式下点击播放条封面进入听音空间时，歌词比大封面慢半拍——听音空间已就位才看到原歌词开始飞向目标位，而收起退出时没有延迟。

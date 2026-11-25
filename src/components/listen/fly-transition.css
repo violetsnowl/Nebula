@@ -52,16 +52,19 @@
   transform: translate3d(0, calc(var(--lift, 0) * -1em * var(--lw, 1) * var(--lfk, 1)), 0) scale(calc(1 + (var(--sc, 1) - 1) * var(--lw, 1)));
 }
 
+/* 舞台 ↔ 听音空间（.lp-lsfly）的外框 .lpm-u 已单独成层，内部字元不再重复建合成层，避免数十个字双层合成开销 */
+.lp-lsfly .lpm-ctx .u,
+.lp-lsfly .lpm-ctx .u .ch,
+.lp-lsfly .lpm-ctx .fl-whole,
+.lp-lsfly .lpm-ctx .ly-whole,
+.lp-lsfly .lpm-ctx .lp-whole {
+  will-change: auto;
+}
+
 /* 漫游歌词启用段落起伏（data-shape）时，舞台当前句的长音放大系数为 2.8 倍，替身起点同步一致避免首帧缩放跳变 */
 .lpm-r.is-shape.is-grad .u,
 .lpm-r.is-shape.is-grad .u .ch {
   transform: translate3d(0, calc(var(--lift, 0) * -1em * var(--lw, 1)), 0) scale(calc(1 + (var(--sc, 1) - 1) * 2.8 * var(--lw, 1)));
-}
-
-/* 漫游 / 字幕那份替身补中性外羽化（只在每个小字盒上，不在整屏层上），亮封面上不发虚 */
-.lpm-r .u,
-.lpm-r .fl-whole {
-  filter: drop-shadow(0 1px 2.4px rgba(4, 6, 12, 0.55)) drop-shadow(0 0 4.8px rgba(4, 6, 12, 0.28));
 }
 
 /* 无逐字时间轴的整句克隆：关掉颜色过渡，直接采用从原节点采样的精确文字色与受控浮起 */

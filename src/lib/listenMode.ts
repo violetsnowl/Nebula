@@ -237,7 +237,7 @@ export class ListenDirector {
     }
     if (this.mode === 'listen' && !cfg.pin && this.lsOpen()) {
       this.resume = false;
-      this.setMode('roam', document.documentElement.dataset.stageMode === 'page');
+      this.setMode('roam', true);
       return;
     }
     this.write();
@@ -331,9 +331,8 @@ export class ListenDirector {
           this.resume = false;
         }
       } else if (!ok) {
-        // 非常驻的版面模式下因听音空间打开而退回漫游时直接落位（避免 0.4s 退场每帧改根元素 --lk 重算整棵页面）
-        const lsOpening = document.documentElement.dataset.stageMode === 'page' && ls;
-        this.setMode('roam', lsOpening);
+        // 非常驻聆听因听音空间打开而退回漫游时直接落位（避免 0.38s 退场每帧改根元素 --lk 重算整棵页面）
+        this.setMode('roam', ls);
       }
       return;
     }
