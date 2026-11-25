@@ -32,21 +32,19 @@
 - 远端 `github.com/violetsnowl/Nebula`，只有 `main`；标签 `v0.1.0-z1-random-checkpoint`、`archive/ui-nebula-design`（旧原型，不作为实现真源）。
 - **临时例外（2026-11-22，用户批准）**：后端会话在主目录的 main 上修后端（常有它未提交的改动，不要碰），前端在短命工作树 `E:\CUFE\vibecoding\fe\nebula`（本地分支 `fe/next`，没推远端）上做，构建产物在 `E:\CUFE\vibecoding\fe\nebula-outputs`，互不覆盖。两边不要同时跑 `pnpm qa`（见 NOTES）。分支上的 CHANGE_LOG 条目写「#待编（fe/next-N）」，合回 main 时按主线日志顶部取号；合回后删工作树和分支，在 HANDOFF 记这次例外。
 
-### 2026-11-22 ~ 23 前端分支 fe/next：主舞台歌词模式（版面已收敛，下一步穿行）
+### 2026-11-22 ~ 24 前端分支 fe/next：主舞台歌词模式与一镜到底精修（已收敛，下一步穿行）
 
 > 本节是 fe/next 工作树里的现状；main 那边的快照由后端会话维护，两份合回时要手工合。穿行的接手材料在 `docs/project/TRAVEL_HANDOFF.md`。
 
-- **已完成、用户验收通过**：
-  - 段落引擎 `src/lib/listen/sections.ts`（主歌 / 预副歌 / 副歌 / 桥段 / 尾声、间奏、句组、开合）。
-  - 漫游歌词随段落起伏（规格 LYRICS_SYSTEM §7.5、NEBULA_UI_SYSTEM §7.1）。
-  - **版面**（规格 §7.1b，用户最后说「现在很完美了」）：样张 N 的纸面 + 十套大胆版式（一词放大、书脊、满版齐行、脚注、出血大字、斜线、唱片纹、稿纸、转角、色场）+ 稳和险交替的轮换，所有语言共用、只分横排 / 竖排；漫游 → 版面逐字飞入（克隆替身）；版面单独的波浪参数（拉丁歌波宽 × .6、浮起按字号封顶）；稿纸 / 色场 / 满版齐行的细节修正；前奏歌名不再叠在第一页上。代码在 `src/components/LyricPage.tsx` + `src/components/lyric-page/` + `lyric-page*.css`。
-  - 逐字波浪（听音空间、漫游、版面共用 `words.ts`）：拉丁歌按字距加宽、换词不跨空格瞬移、峰值随拉丁程度提高、再收窄 15%。用户说听音空间和漫游的歌词「完美」，**不要再动**。
-  - 常驻聆听：设置 › 聆听 › 细节「进入后常驻」，Esc / 左上角收起键离开（规格 §7.1）。
-  - 版面 ↔ 听音空间一镜到底（只飞两边都看得见的句子）及其性能减负（规格 §7.1b）。
-- **没有做到一半的改动**；舞台实验室里的「聆听时的舞台」现在有 漫游歌词 / 版面 两项。
+- **已完成并全量验证通过（`fe/next-1 ~ 28`）**：
+  - 段落引擎 `src/lib/listen/sections.ts`（主歌 / 预副歌 / 副歌 / 桥段 / 尾声、间奏、句组、开合）与漫游歌词随段落起伏（规格 LYRICS_SYSTEM §7.5、NEBULA_UI_SYSTEM §7.1）。
+  - **版面与精修**（规格 §7.1b）：样张 N 的纸面 + 十套大胆版式（一词放大、书脊、满版齐行、脚注、出血大字、斜线、唱片纹、稿纸、转角、色场）+ 稳险交替轮换；`fe/next-25` 完成版面精修——未唱字提亮至 24%（同步 `GHOST`）、出血描边 26%、色场块墨色加深、句首 0.15s 波浪淡入与斜体左缘防提前露色；中文竖排「一词放大」在列内按「前半列（右）→ 大字列（中）→ 后半列（左）」等距居中不断句；「转角」严格单拐第 1 句、中文左下旁注从右往左排避开播放条并补内拐角 L 线；「出血大字」按强词 / 双词短语分级（无重复钩子自动跳过、剥除首尾标点）；同步合入 `main` `#233` 的无冒号空格署名行过滤。代码在 `src/components/LyricPage.tsx` + `src/components/lyric-page/` + `lyric-page*.css`。
+  - **逐字波浪**（听音空间、漫游、版面共用 `src/lib/listen/words.ts`）：用户已确认听音空间和漫游歌词逐字层「完美」，**不要再动 `words.ts` 与 `engine.ts`**。
+  - **主舞台 ↔ 听音空间双向一镜到底统一引擎**（`fe/next-26`，`src/lib/listen/flyTransition.ts` + `src/components/listen/fly-transition.css`）：版面聆听态（`k > 0.5`）、漫游歌词与底部字幕共用同一套克隆替身引擎与 `isPageStageActive` 接管契约；跳过 `.ly-rb` 假名注音匹配并清洗克隆副行，采样原节点实色保证 `.is-past` 与整句节点不掉色，保留 `.lyric-caption` 真实底部测量盒（起落不再堆到屏幕中心），飞行途中切歌即时回收浮层，修复听音空间大封面收起左侧 1 帧闪影。
+  - **常驻聆听交接收敛与回归**（`fe/next-27`，`src/lib/listenMode.ts`、`scripts/qa.cjs`）：听音空间开关从硬阻断拆出直传并同步通知，常驻聆听下进出听音空间底层舞台保持 `k = 1` 原地待命不闪星云；版面漫游态（`k = 0`）进出听音空间不误加星云虚化压暗滤镜；`stageFlyExtra` 四项扩展断言已进 `pnpm qa`。
+- **没有做到一半的改动**；舞台实验室里的「聆听时的舞台」现在有 漫游歌词 / 版面 两项，桌面构建产物与自动化回归全部就绪待桌面实机验收。
 - **下一步：穿行**（同样作为「聆听时的舞台」的一个选项），还没开始写代码，见 `docs/project/TRAVEL_HANDOFF.md`。
-- **待用户拍板**：① fe/next 什么时候合回 main（还是穿行也在 fe/next 上做）；② 「聆听时的舞台」入口要不要从舞台实验室搬进「设置 › 聆听」；③ 全软件性能专项用户定在发布前单独做。
-- 已知小问题：版面截图里第一页会印出「演唱 飞行雪绒」这类「标签 + 空格 + 名字」署名行——main 的 #233 已修，fe/next 分叉早于它，合回后生效。
+- **待用户拍板**：① 本轮版面精修与全路径一镜到底桌面实机观感验收；② `fe/next` 什么时候合回 `main`（还是穿行也在 `fe/next` 上做）；③ 「聆听时的舞台」入口要不要从舞台实验室搬进「设置 › 聆听」；④ 全软件性能专项用户定在发布前单独做。
 
 ### 2026-11-21 后端补齐轮（进行中）：按矩阵缺陷清单逐条补
 
@@ -127,8 +125,8 @@
 | 区域 | 代码 | 真源 |
 |---|---|---|
 | 主舞台星云 | `src/lib/space/`、`src/hooks/stage/useStage.ts` | NEBULA_UI_SYSTEM §8.0 |
-| 听音空间 / 歌词阅读栏 | `src/components/listen/`、`src/lib/listen/`（`engine.ts`、`words.ts`、`bigCover.ts`） | §9.9、§7.2 |
-| 星云漫游歌词（Z1） | `src/components/LyricsLayer.tsx`（逐字层共用 `src/lib/listen/words.ts`） | §7.1、LYRICS_SYSTEM |
+| 听音空间 / 歌词阅读栏 | `src/components/listen/`、`src/lib/listen/`（`engine.ts`、`words.ts`、`bigCover.ts`、`flyTransition.ts`） | §9.9、§7.2 |
+| 星云漫游歌词（Z1）与版面舞台 | `src/components/LyricsLayer.tsx`、`src/components/LyricPage.tsx`、`src/components/lyric-page/` | §7.1、§7.1b、LYRICS_SYSTEM |
 | 歌词解析 / 读音 | `src/lib/lyrics.ts`、`src/lib/furigana.ts`、`src/hooks/lyrics/useLyrics.ts` | §7.2 |
 | 账号 / 设置面板（登录页版式 `LoginSteps` / `ScanFlow`，文案 `platforms.ts` 的 `LOGIN_HOW`） | `src/components/AccountDock.tsx`、`src/hooks/accounts/useAccounts.ts` | §9.5 |
 | 长音判定 | `src/lib/listen/model.ts`（`songPace`、`markEmph`） | §7.2 |

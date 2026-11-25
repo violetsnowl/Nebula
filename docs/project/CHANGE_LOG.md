@@ -6,6 +6,17 @@
 
 ---
 
+## #待编（fe/next-28）— 2026-11-24 — 结项交接：刷新快照、架构与踩坑文档并完成桌面构建收尾核验
+
+**目标**：固化 `fe/next-25 ~ 27` 重构成果与经验教训，刷新上下文快照、架构映射与踩坑记录，完成桌面构建与全套回归收尾检查。
+
+**改动（只有文档）**
+- `docs/meta/CONTEXT_SNAPSHOT.md`：刷新 `fe/next` 分支现状（版面精修、出血钩子词分级、统一双向一镜到底引擎、常驻聆听状态机收敛与扩展回归）、代码地图与待拍板项。
+- `docs/project/ARCHITECTURE.md`：更新 `lib/listen/` 模块清单（`sections.ts`、`stageBus.ts`、`flyTransition.ts`）与 `useListenMode` 接线职责。
+- `docs/project/NOTES.md`：补充四条一镜到底与常驻交接踩坑记录（`.ly-rb` 假名注音文本提取与清洗、保留 `.lyric-caption` 测量盒、非扫光节点实色克隆、常驻聆听拆离听音空间轮询）。
+
+**验证**：`pnpm build:desktop`、`pnpm build`、`pnpm check:arch`、`pnpm qa:backend`、`pnpm qa` 全绿，工作区干净。
+
 ## #待编（fe/next-27）— 2026-11-24 — 收敛常驻聆听交接状态机与主舞台一镜到底自动化回归
 
 **目标**：消除常驻聆听进出听音空间的 DOM 轮询竞态与星云误闪，补齐版面漫游态、底部字幕、日语注音与途中切歌的自动化回归断言。
