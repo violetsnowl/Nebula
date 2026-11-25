@@ -6,6 +6,21 @@
 
 ---
 
+## #268 — 2026-11-25 — 修复 2K 屏中等与最小缩放下主舞台过渡带卡片的双画重影
+
+**背景**：用户实测 2K 屏幕缩放到中等视角及最小时，在 DOM 卡片与画布缩略图过渡带内出现两类重影：① 鼠标 hover 卡片放大时原位残留一张同图重影；② 鼠标附近触发 `glassGlow` 邻近上浮（`--near-z: 26px` 在透视下产生屏幕位移）后，四周卡片都在原位露出静止重影。
+
+**根因**：
+1. **双层透明叠加同帧双画**：`useStage.ts` 与 `active.ts` 对尺寸在 `56–72px` 以及超过 `MAX_MOUNT = 140` 边界圈 `uCut - 0.12 ~ uCut` 内的卡片按比例拆分透明度（`domA` 与 `1 - domA`），令底层星层画布（`stars.ts`）与上层 DOM 卡片同时半透明重绘同一张图；一旦 DOM 卡片因 hover 放大或 `--near-z` 上浮离开原位，底层画布静止的缩略图即刻露底成为重影。
+2. **宽屏 `MAX_MOUNT = 140` 名额被屏外预挂卡片挤占**：16:9 宽屏下 `useStage.ts` 纯按归一化半径 `u` 截断 140 张，上下视口外预挂区（`padY`）里的不可见卡片排在左右视口内可见卡片前面，导致中等缩放即触及截断圈并在屏幕内画出一整圈双画过渡带。
+
+**改动点**
+- `src/lib/space/active.ts` & `src/hooks/stage/useStage.ts`：取消 `domShare(56–72px)` 与 `uCut` 边界圈的半透明交叉双画，改为单张卡片在 `mountedA` 上严格互斥（画布画时 `0`、DOM 画时 `1`），`--card-a` 直接走 `airAlpha(u)`；候选排序改为视口内优先（`inView`），再按离中心由近到远分配 `MAX_MOUNT = 140` 个 DOM 名额，2K 屏幕不再把名额浪费在上下屏外，同时不增加任何 DOM 上限与拖拽每帧开销。
+- `src/components/MusicCard.tsx` & `src/styles.css`：取消卡片 `<img>` 的 `loading="lazy"`；仅在封面尚未解码完成时暂挂 `data-pending`（用 `visibility: hidden` 避开 `opacity` 过渡滞后）并继续由画布兜底，解码就绪（`isCoverLoaded` / `onLoad` / `onError`）后于同一渲染帧内同步去掉 `data-pending` 并停止画布绘制，既无双画重影也不闪空白。
+- `docs/design/NEBULA_UI_SYSTEM.md`、`docs/meta/CONTEXT_SNAPSHOT.md`：同步 §8.0 画法说明为「同帧互斥归属 + 视口内优先」。
+
+**验证**：Playwright 2K（`2560×1440`）2800 曲在 `0.55` 与 `0.35`（56–72px 原过渡带）实测外圈挂载卡片 hover 与邻近态下底层画布对应坐标透明零重影；`pnpm build`、`pnpm qa`（0 错误）、`pnpm build:desktop` 全绿。
+
 ## #267 — 2026-11-25 — 修复版面「色场（field）」进出听音空间色块内深色字提前露出的问题
 
 **背景**：用户实测版面模式 10 套大胆版式时，发现仅「色场（`field`）」版式从听音空间退回版面时，色块内应由飞行替身落位后再接管的深色字提前在色块内显现（其他 9 套版式正常）。

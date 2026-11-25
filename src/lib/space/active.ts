@@ -15,18 +15,38 @@ export function setActiveWorld(w: SpaceWorld): void {
 
 const tmp: Proj = { sx: 0, sy: 0, s: 0, u: 0 };
 
-/** 屏幕上小于这个尺寸（px）的卡片不挂 DOM，由画布画缩略图；56–72px 之间两种画法交叉淡化。 */
+/** 屏幕上小于这个尺寸（px）的卡片不挂 DOM，由画布画缩略图。 */
 export const MIN_CARD_PX = 56;
-export const FULL_CARD_PX = 72;
+
+const loadedCovers = new Set<string>();
+const coverListeners = new Set<() => void>();
+let coverTimer = 0;
+
+export function isCoverLoaded(url: string | undefined): boolean {
+  return !!url && loadedCovers.has(url);
+}
+
+export function scheduleCardCoverRefresh(): void {
+  if (coverTimer || !coverListeners.size) return;
+  coverTimer = window.setTimeout(() => {
+    coverTimer = 0;
+    coverListeners.forEach((f) => f());
+  }, 50);
+}
+
+export function markCoverLoaded(url: string | undefined): void {
+  if (url) loadedCovers.add(url);
+  scheduleCardCoverRefresh();
+}
+
+export function onCardCoverReady(f: () => void): () => void {
+  coverListeners.add(f);
+  return () => coverListeners.delete(f);
+}
 
 function smoothstep(a: number, b: number, x: number): number {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
   return t * t * (3 - 2 * t);
-}
-
-/** 这首歌由 DOM 卡片显示的份额（只按屏幕上的大小算）：56px 以下全由画布画，72px 以上全是 DOM 卡片。 */
-export function domShare(size: number): number {
-  return smoothstep(MIN_CARD_PX, FULL_CARD_PX, size);
 }
 
 /**
@@ -38,8 +58,7 @@ export function airAlpha(u: number): number {
 }
 
 /**
- * 舞台帧循环每帧算出的卡片透明度（按歌曲序号，NaN = 还没算过）。卡片渲染时优先用它：
- * 超过挂载上限时交界处的淡化只有帧循环知道，按公式算会在挂上的第一帧闪一下。
+ * 舞台帧循环每帧算出的卡片透明度（按歌曲序号，NaN = 还没算过）。
  */
 let frameAlpha = new Float32Array(0);
 export function frameAlphaBuffer(n: number): Float32Array {
@@ -62,7 +81,7 @@ export function boundedCardStyle(card: CardSpec, pan: { x: number; y: number }, 
     '--scale': Math.min(3.4, p.s),
     '--card-filter': 'none',
     '--meta-a': p.u < 0.3 && zoom > 0.55 ? 1 : 0,
-    '--card-a': (Number.isNaN(frameAlpha[card.id] ?? NaN) ? domShare(CARD_WIDTH * p.s) * airAlpha(p.u) : frameAlpha[card.id]!).toFixed(3),
+    '--card-a': (Number.isNaN(frameAlpha[card.id] ?? NaN) ? airAlpha(p.u) : frameAlpha[card.id]!).toFixed(3),
     zIndex: Math.round((1 - Math.min(1, p.u)) * 5000) + 1,
   } as CSSProperties;
 }

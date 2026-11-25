@@ -1,9 +1,9 @@
-import { memo, useEffect, useRef, useState, type MouseEvent } from 'react';
+import { memo, useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent } from 'react';
 import type { CSSProperties } from 'react';
 import type { CardSpec } from '../lib/layout';
 import { registerGlass } from '../lib/glass';
 import { placeholderBg } from '../lib/coverPlaceholder';
-import { boundedCardStyle } from '../lib/space/active';
+import { boundedCardStyle, isCoverLoaded, markCoverLoaded, scheduleCardCoverRefresh } from '../lib/space/active';
 
 interface MusicCardProps {
   card: CardSpec;
@@ -34,7 +34,16 @@ function MusicCardImpl({
   registerEl,
 }: MusicCardProps) {
   const [coverError, setCoverError] = useState(false);
+  const articleRef = useRef<HTMLElement | null>(null);
+  const imgRef = useRef<HTMLImageElement>(null);
   const chipRef = useRef<HTMLSpanElement>(null);
+  const setArticleRef = useCallback(
+    (el: HTMLElement | null) => {
+      articleRef.current = el;
+      registerEl(card.id, el);
+    },
+    [card.id, registerEl],
+  );
   // hover 播放球：G2 透镜玻璃（NEBULA_UI_SYSTEM §8.3），只在 hover 时注册折射滤镜，避免每张卡常驻一个滤镜
   useEffect(() => {
     if (!hovered || !chipRef.current) return;
@@ -44,14 +53,32 @@ function MusicCardImpl({
   const style = boundedCardStyle(card, pan, zoom);
 
   const { track } = card;
+  const ready = !track.cover || coverError || isCoverLoaded(track.cover);
+  const markDomReady = () => {
+    const el = articleRef.current;
+    if (!el || el.dataset.pending === undefined || el.dataset.imgReady === '1') return;
+    el.dataset.imgReady = '1';
+    scheduleCardCoverRefresh();
+  };
+
+  useLayoutEffect(() => {
+    if (ready) return;
+    const img = imgRef.current;
+    if (img && img.complete && img.naturalWidth > 0) {
+      markCoverLoaded(track.cover);
+      markDomReady();
+    }
+  });
 
   return (
     <article
-      ref={(el) => registerEl(card.id, el)}
+      ref={setArticleRef}
       className={`music-card${hovered ? ' is-hovered' : ''}${isCurrent ? ' is-current' : ''}${
         isFailed ? ' is-failed' : ''
       }${matched ? ' is-match' : ''}`}
       style={style}
+      data-pending={ready ? undefined : ''}
+      data-img-ready={ready ? '1' : undefined}
       data-x={card.x}
       data-y={card.y}
       data-song-id={card.track.id}
@@ -82,11 +109,18 @@ function MusicCardImpl({
       >
         {track.cover && !coverError && (
           <img
+            ref={imgRef}
             className="cover-img"
             src={track.cover}
             alt=""
-            loading="lazy"
-            onError={() => setCoverError(true)}
+            onLoad={() => {
+              markCoverLoaded(track.cover);
+              markDomReady();
+            }}
+            onError={() => {
+              setCoverError(true);
+              markDomReady();
+            }}
           />
         )}
         {(!track.cover || coverError) && (

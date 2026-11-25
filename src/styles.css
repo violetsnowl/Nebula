@@ -786,6 +786,11 @@ body {
     transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1),
     opacity 0.35s ease;
 }
+/* 封面尚未解码完成时先隐藏 DOM、继续由画布绘制缩略图；用 visibility 避免 opacity transition 引发同帧双画重影 */
+.stage-3d.is-bounded .music-card[data-pending] {
+  visibility: hidden;
+  pointer-events: none;
+}
 /* 整片淡入只在打开 / 换排法时（舞台挂 data-arriving 约 0.9s）。拖动时从屏幕外进来的卡片本来就在那里，不淡入（#137）。
    只写起点：从 0 淡入到元素自己的透明度（由 --card-a 决定） */
 .stage-3d.is-bounded[data-arriving] .music-card {

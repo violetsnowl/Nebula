@@ -20,7 +20,7 @@ import { getSpaceLab, registerSpaceCommand, setSpaceLab, useSpaceLab, type Stage
 import { buildChroma, buildCluster, buildRandom, queryRect, zoomFloor, type SpaceWorld } from '../../lib/space/world';
 import { applyXf, camCenter, lensDelta, project, worldPerPixel, type Proj, type ScreenXf } from '../../lib/space/lens';
 import { ensureTones, oklabToRgb, toneOf, useToneProgress } from '../../lib/space/tone';
-import { airAlpha, domShare, frameAlphaBuffer, MIN_CARD_PX, setActiveWorld } from '../../lib/space/active';
+import { airAlpha, frameAlphaBuffer, MIN_CARD_PX, onCardCoverReady, setActiveWorld } from '../../lib/space/active';
 import { StarField, type StarFrame } from '../../lib/space/stars';
 import { onThumbsReady } from '../../lib/space/thumbs';
 
@@ -35,17 +35,13 @@ const MAX_MOUNT = 140;
  */
 const QUERY_PAD = 660;
 
-function smoothstep(a: number, b: number, x: number): number {
-  const t = Math.min(1, Math.max(0, (x - a) / (b - a)));
-  return t * t * (3 - 2 * t);
-}
-
 interface Pick {
   id: number;
   sx: number;
   sy: number;
   s: number;
   u: number;
+  inView: boolean;
 }
 
 /** contextMenu 的最小结构类型（与 useOverlays.ContextMenuState 结构化兼容）。 */
@@ -249,23 +245,20 @@ export function useStage({
         const padX = size * (keep ? 2.3 : 1.5) + 60;
         const padY = size * (keep ? 2.7 : 1.9) + 60;
         if (p.sx < -padX || p.sx > vw + padX || p.sy < -padY || p.sy > vh + padY) continue;
-        const slot = (pool[np] ??= { id: 0, sx: 0, sy: 0, s: 0, u: 0 });
+        const slot = (pool[np] ??= { id: 0, sx: 0, sy: 0, s: 0, u: 0, inView: false });
+        const margin = size * 0.6;
         slot.id = id;
         slot.sx = p.sx;
         slot.sy = p.sy;
         slot.s = p.s;
         slot.u = p.u;
+        slot.inView = p.sx >= -margin && p.sx <= vw + margin && p.sy >= -margin && p.sy <= vh + margin;
         np++;
       }
     }
-    const live = pool.slice(0, np).sort((a, b) => a.u - b.u);
-    // 超过上限时（2K 屏幕缩到中等远近），离中心最远的那些交给画布画。交界处按离中心的远近交叉淡化一小段（#137）：
-    // 卡片往里走时是慢慢从画布缩略图换成 DOM 卡片，而不是走到某一圈突然一换
-    let uCut = Infinity;
-    if (live.length > MAX_MOUNT) {
-      live.length = MAX_MOUNT;
-      uCut = live[MAX_MOUNT - 1]!.u;
-    }
+    const live = pool.slice(0, np).sort((a, b) => (a.inView === b.inView ? a.u - b.u : a.inView ? -1 : 1));
+    // 超过上限时优先保留视口内卡片，再按离中心由近到远分配名额，超出部分由画布画（单卡只在画布或 DOM 之一显示，不双画）
+    if (live.length > MAX_MOUNT) live.length = MAX_MOUNT;
     // 交给 React 的列表按 id 排，不按离镜头远近排（#137）：远近顺序每帧都在变，按它排的话每次有卡片进出，
     // React 都要在 DOM 里挪动一大批卡片节点，挪动会让卡片的动画从头再放一遍——拖动时满屏闪烁。
     // 按 id 排，已挂着的卡片相对顺序不变，进出只插入 / 删除；层叠靠 z-index，不靠 DOM 顺序。
@@ -305,16 +298,22 @@ export function useStage({
     let metaN = 0;
     const liveA = frameAlphaBuffer(n);
     for (const q of live) {
-      // 56–72px 之间 DOM 卡片和画布缩略图交叉淡化
-      const domA = domShare(CARD_WIDTH * q.s) * (uCut < Infinity ? smoothstep(uCut, uCut - 0.12, q.u) : 1);
-      // 透明度只看大小（和画布交叉淡化）和透镜外圈；屏幕边缘不淡出（#137，边缘像一扇窗）
       const airA = airAlpha(q.u);
-      mountedA[q.id] = domA;
-      liveA[q.id] = domA * airA; // 还没挂上的卡片第一次渲染时用这个值，挂上的第一帧就对
+      liveA[q.id] = airA; // 还没挂上的卡片第一次渲染时用这个值，挂上的第一帧就对
       const el = cardEls.current.get(q.id);
       if (!el) {
         mountedA[q.id] = 0; // 还没挂上（下一次渲染才有）：先由画布画
         continue;
+      }
+      if (el.dataset.pending !== undefined) {
+        if (el.dataset.imgReady === '1') {
+          delete el.dataset.pending;
+          mountedA[q.id] = 1;
+        } else {
+          mountedA[q.id] = 0;
+        }
+      } else {
+        mountedA[q.id] = 1; // 画布与 DOM 同帧互斥，杜绝双画重影
       }
       if (spawnSet?.has(q.id)) {
         el.style.setProperty('--x', `${vw / 2 - CARD_WIDTH / 2}px`);
@@ -344,7 +343,7 @@ export function useStage({
       el.style.setProperty('--x', `${x}px`);
       el.style.setProperty('--y', `${y}px`);
       el.style.setProperty('--scale', String(scale));
-      el.style.setProperty('--card-a', (domA * airA).toFixed(3));
+      el.style.setProperty('--card-a', airA.toFixed(3));
       let lit = 0;
       if (lightK > 0.01) {
         const dx = (sx - shape!.lx) / lightR;
@@ -459,6 +458,8 @@ export function useStage({
 
   // 小封面缩略图陆续到了：补画一帧
   useEffect(() => onThumbsReady(() => controllerRef.current?.refresh()), [world, controllerRef]);
+  // DOM 卡片封面解码完成后：同帧去掉 pending、让画布停画这张卡
+  useEffect(() => onCardCoverReady(() => controllerRef.current?.refresh()), [world, controllerRef]);
 
   // 点画布上的小封面也能播放（DOM 卡片自己处理点击）；按下到松开移动超过 5px 算拖动，不算点击
   useEffect(() => {
