@@ -40,8 +40,16 @@ function MusicCardImpl({
   const setArticleRef = useCallback(
     (el: HTMLElement | null) => {
       articleRef.current = el;
+      if (el && el.dataset.mountedOnce !== '1') {
+        el.dataset.mountedOnce = '1';
+        el.dataset.pending = '';
+        if (!card.track.cover || coverError || isCoverLoaded(card.track.cover)) {
+          el.dataset.imgReady = '1';
+        }
+      }
       registerEl(card.id, el);
     },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
     [card.id, registerEl],
   );
   // hover 播放球：G2 透镜玻璃（NEBULA_UI_SYSTEM §8.3），只在 hover 时注册折射滤镜，避免每张卡常驻一个滤镜
@@ -53,7 +61,6 @@ function MusicCardImpl({
   const style = boundedCardStyle(card, pan, zoom);
 
   const { track } = card;
-  const ready = !track.cover || coverError || isCoverLoaded(track.cover);
   const markDomReady = () => {
     const el = articleRef.current;
     if (!el || el.dataset.pending === undefined || el.dataset.imgReady === '1') return;
@@ -62,7 +69,12 @@ function MusicCardImpl({
   };
 
   useLayoutEffect(() => {
-    if (ready) return;
+    const el = articleRef.current;
+    if (!el || el.dataset.pending === undefined || el.dataset.imgReady === '1') return;
+    if (!track.cover || coverError || isCoverLoaded(track.cover)) {
+      markDomReady();
+      return;
+    }
     const img = imgRef.current;
     if (img && img.complete && img.naturalWidth > 0) {
       markCoverLoaded(track.cover);
@@ -77,8 +89,6 @@ function MusicCardImpl({
         isFailed ? ' is-failed' : ''
       }${matched ? ' is-match' : ''}`}
       style={style}
-      data-pending={ready ? undefined : ''}
-      data-img-ready={ready ? '1' : undefined}
       data-x={card.x}
       data-y={card.y}
       data-song-id={card.track.id}

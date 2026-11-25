@@ -4,7 +4,7 @@ import { audioPlayer, FOREIGN_SONG_ID } from '../../lib/audio/AudioPlayer';
 import { CARD_HEIGHT, CARD_WIDTH } from '../../lib/layout';
 import { makeMetaBox, resolveMetaVisibility, type MetaBox } from '../../lib/metaOverlap';
 import type { FrameBus } from '../../lib/stage';
-import { initGlassGlow, registerProximity, unregisterProximity } from '../../lib/glassGlow';
+import { initGlassGlow, clearProximity, registerProximity, unregisterProximity } from '../../lib/glassGlow';
 import type { Track } from '../../lib/catalog';
 import { matchSongs, type SearchMatch } from '../../lib/search';
 import { PanController } from '../../lib/panEngine';
@@ -41,6 +41,7 @@ interface Pick {
   sy: number;
   s: number;
   u: number;
+  sortU: number;
   inView: boolean;
 }
 
@@ -49,6 +50,13 @@ interface CtxMenuShape {
   x: number;
   y: number;
   track: Track;
+}
+
+interface CardMenuEvent {
+  preventDefault(): void;
+  stopPropagation(): void;
+  clientX: number;
+  clientY: number;
 }
 
 interface UseStageOptions {
@@ -62,6 +70,8 @@ interface UseStageOptions {
   applySearch: (matches: SearchMatch[], focusIndex: number | null) => void;
   /** 右键菜单打开时保留卡片悬浮态（防菜单抢占指针）。 */
   contextMenuRef: RefObject<CtxMenuShape | null>;
+  /** 右键打开歌曲菜单（供画布外围卡片复用 DOM 卡片菜单）。 */
+  onContextMenu?: (e: CardMenuEvent, track: Track) => void;
   /** 导入渐进揭示完成后的收尾（组合层接 usePlaylistImport.complete）。 */
   completeImport: (status: ImportStatus, message: string) => void;
   /** 当前播放歌曲 id（低频 context 注入，避免 stage 依赖 playback hook）。 */
@@ -81,6 +91,7 @@ export function useStage({
   searchMatches,
   applySearch,
   contextMenuRef,
+  onContextMenu,
   completeImport,
   currentSongId,
   worldRef,
@@ -140,6 +151,8 @@ export function useStage({
   const tintAtRef = useRef(0);
   const lastStarFrameRef = useRef<StarFrame | null>(null);
   const handleCardPlayRef = useRef<(songId: number) => Promise<void>>(async () => {});
+  const onContextMenuRef = useRef(onContextMenu);
+  onContextMenuRef.current = onContextMenu;
 
   const panRef = useRef({ x: 0, y: 0 });
   const frameBusRef = useRef<FrameBus>({
@@ -175,6 +188,28 @@ export function useStage({
     (id: number, hovered: boolean) => {
       // 右键菜单打开时保留卡片悬浮态，避免菜单抢占指针导致卡片“收回”
       if (!hovered && contextMenuRef.current) return;
+      if (hovered) {
+        const el = cardEls.current.get(id);
+        const w = worldNowRef.current;
+        if (el && id >= 0 && id < w.cards.length) {
+          const f = frameBusRef.current;
+          const delta = lensDelta(getSpaceLab().lens, f.zoom);
+          const shape = stageShapeBus.on ? stageShapeBus : null;
+          const sinkK = listenBus.style === 'sink' ? listenBus.k * (shape ? shape.sinkPos : 1) : 0;
+          const xf: ScreenXf | null =
+            sinkK > 0.0005 ? { f: 1 - 0.14 * sinkK, ox: f.vw / 2, oy: f.vh * 0.45, ty: f.vh * 0.04 * sinkK } : null;
+          const p = applyXf(project(w.px[id]!, w.py[id]!, f, delta, projRef.current, w.period), xf);
+          const t = Math.min(1, Math.max(0, (p.u - 0.35) / 0.65));
+          const edge = t * t * (3 - 2 * t);
+          const baseScale = Math.min(3.4, p.s);
+          const mul = 1.3 - 0.12 * edge;
+          const floor = 0.95 - 0.25 * edge;
+          const hoverScale = Math.max(baseScale * mul, floor, baseScale * 1.12);
+          const hoverZ = Math.round(130 - 55 * edge);
+          el.style.setProperty('--hover-s', String(hoverScale));
+          el.style.setProperty('--hover-z', `${hoverZ}px`);
+        }
+      }
       setHoveredId(hovered ? id : null);
     },
     [contextMenuRef],
@@ -245,18 +280,21 @@ export function useStage({
         const padX = size * (keep ? 2.3 : 1.5) + 60;
         const padY = size * (keep ? 2.7 : 1.9) + 60;
         if (p.sx < -padX || p.sx > vw + padX || p.sy < -padY || p.sy > vh + padY) continue;
-        const slot = (pool[np] ??= { id: 0, sx: 0, sy: 0, s: 0, u: 0, inView: false });
-        const margin = size * 0.6;
+        const slot = (pool[np] ??= { id: 0, sx: 0, sy: 0, s: 0, u: 0, sortU: 0, inView: false });
+        const margin = size * (keep ? 1.0 : 0.6);
         slot.id = id;
         slot.sx = p.sx;
         slot.sy = p.sy;
         slot.s = p.s;
         slot.u = p.u;
+        slot.sortU = keep ? p.u - 0.06 : p.u;
         slot.inView = p.sx >= -margin && p.sx <= vw + margin && p.sy >= -margin && p.sy <= vh + margin;
         np++;
       }
     }
-    const live = pool.slice(0, np).sort((a, b) => (a.inView === b.inView ? a.u - b.u : a.inView ? -1 : 1));
+    const live = pool
+      .slice(0, np)
+      .sort((a, b) => (a.inView === b.inView ? a.sortU - b.sortU : a.inView ? -1 : 1));
     // 超过上限时优先保留视口内卡片，再按离中心由近到远分配名额，超出部分由画布画（单卡只在画布或 DOM 之一显示，不双画）
     if (live.length > MAX_MOUNT) live.length = MAX_MOUNT;
     // 交给 React 的列表按 id 排，不按离镜头远近排（#137）：远近顺序每帧都在变，按它排的话每次有卡片进出，
@@ -275,7 +313,15 @@ export function useStage({
       }
     }
     if (changed) {
-      visibleRef.current = new Set(ids);
+      const nextSet = new Set(ids);
+      // 跌出 DOM 名额的卡片在本帧立刻隐藏，防止 React 异步卸载前旧 DOM 留在上一帧坐标、和画布一起出现双影跳跃
+      for (const oldId of cur) {
+        if (!nextSet.has(oldId)) {
+          const oldEl = cardEls.current.get(oldId);
+          if (oldEl) oldEl.style.visibility = 'hidden';
+        }
+      }
+      visibleRef.current = nextSet;
       setVisibleIds(ids);
     }
 
@@ -308,11 +354,13 @@ export function useStage({
       if (el.dataset.pending !== undefined) {
         if (el.dataset.imgReady === '1') {
           delete el.dataset.pending;
+          if (el.style.visibility) el.style.visibility = '';
           mountedA[q.id] = 1;
         } else {
           mountedA[q.id] = 0;
         }
       } else {
+        if (el.style.visibility) el.style.visibility = '';
         mountedA[q.id] = 1; // 画布与 DOM 同帧互斥，杜绝双画重影
       }
       if (spawnSet?.has(q.id)) {
@@ -461,31 +509,68 @@ export function useStage({
   // DOM 卡片封面解码完成后：同帧去掉 pending、让画布停画这张卡
   useEffect(() => onCardCoverReady(() => controllerRef.current?.refresh()), [world, controllerRef]);
 
-  // 点画布上的小封面也能播放（DOM 卡片自己处理点击）；按下到松开移动超过 5px 算拖动，不算点击
+  // 点 / 右键 / 静止悬停画布上的小封面也能交互（DOM 卡片自己处理）；拖拽期完全跳过，零拖拽开销
   useEffect(() => {
     const stage = stageRef.current;
     if (!stage) return;
     let down: { x: number; y: number } | null = null;
+    let lastHoverCheck = 0;
+    const setCursor = (on: boolean) => {
+      const next = on ? 'pointer' : '';
+      if (stage.style.cursor !== next) stage.style.cursor = next;
+    };
+    const hitAt = (clientX: number, clientY: number): number => {
+      const f = lastStarFrameRef.current;
+      const sf = starsRef.current;
+      if (!f || !sf) return -1;
+      const r = stage.getBoundingClientRect();
+      return sf.hit(f, clientX - r.left, clientY - r.top);
+    };
     const onDown = (e: PointerEvent) => {
       down = { x: e.clientX, y: e.clientY };
     };
+    const onMove = (e: PointerEvent) => {
+      if (
+        stage.classList.contains('is-panning') ||
+        stage.classList.contains('is-grabbing') ||
+        (e.target as Element | null)?.closest('.music-card')
+      ) {
+        setCursor(false);
+        return;
+      }
+      const now = performance.now();
+      if (now - lastHoverCheck < 80) return;
+      lastHoverCheck = now;
+      setCursor(hitAt(e.clientX, e.clientY) >= 0);
+    };
+    const onLeave = () => setCursor(false);
     const onClick = (e: MouseEvent) => {
       const d = down;
       down = null;
       if (!d || Math.hypot(e.clientX - d.x, e.clientY - d.y) > 5) return;
       if ((e.target as Element | null)?.closest('.music-card')) return;
-      const f = lastStarFrameRef.current;
-      const sf = starsRef.current;
-      if (!f || !sf) return;
-      const r = stage.getBoundingClientRect();
-      const id = sf.hit(f, e.clientX - r.left, e.clientY - r.top);
+      const id = hitAt(e.clientX, e.clientY);
       if (id >= 0) void handleCardPlayRef.current(id);
     };
+    const onCtx = (e: MouseEvent) => {
+      if ((e.target as Element | null)?.closest('.music-card')) return;
+      const id = hitAt(e.clientX, e.clientY);
+      const f = lastStarFrameRef.current;
+      const track = id >= 0 && f ? f.world.cards[id]?.track : undefined;
+      if (track) onContextMenuRef.current?.(e, track);
+    };
     stage.addEventListener('pointerdown', onDown);
+    stage.addEventListener('pointermove', onMove, { passive: true });
+    stage.addEventListener('pointerleave', onLeave);
     stage.addEventListener('click', onClick);
+    stage.addEventListener('contextmenu', onCtx);
     return () => {
+      setCursor(false);
       stage.removeEventListener('pointerdown', onDown);
+      stage.removeEventListener('pointermove', onMove);
+      stage.removeEventListener('pointerleave', onLeave);
       stage.removeEventListener('click', onClick);
+      stage.removeEventListener('contextmenu', onCtx);
     };
   }, [world]);
 
@@ -517,7 +602,11 @@ export function useStage({
         worldPerPixel: (sx, sy, f) => worldPerPixel(sx, sy, f, lensDelta(getSpaceLab().lens, f.zoom)),
       },
       onFrame: handleFrame,
-      onPanStart: () => setHoveredId(null),
+      onPanStart: () => {
+        setHoveredId(null);
+        clearProximity();
+        stage.style.cursor = '';
+      },
     });
     controllerRef.current = controller;
     controller.start();

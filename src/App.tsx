@@ -235,6 +235,7 @@ export default function App() {
     searchMatches,
     applySearch,
     contextMenuRef,
+    onContextMenu: openContextMenu,
     completeImport,
     currentSongId,
     worldRef,

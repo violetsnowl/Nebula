@@ -16,6 +16,7 @@ const proximityTargets = new Set<HTMLElement>();
 
 /** 每个目标上次写入的状态：没变就不写（写 CSS 变量会让整张卡连同子元素重算样式）。 */
 const nearState = new WeakMap<HTMLElement, boolean>();
+const nearSet = new Set<HTMLElement>();
 const nearBuf: { el: HTMLElement; near: boolean }[] = [];
 
 function onPointerMove(e: PointerEvent): void {
@@ -34,10 +35,22 @@ function onPointerMove(e: PointerEvent): void {
   for (const { el, near } of nearBuf) {
     if (nearState.get(el) === near) continue;
     nearState.set(el, near);
+    if (near) nearSet.add(el);
+    else nearSet.delete(el);
     el.style.setProperty('--near-z', near ? '26px' : '0px');
     el.style.setProperty('--near-s', near ? '1.045' : '1');
   }
   nearBuf.length = 0;
+}
+
+/** 拖拽开始前一键清除邻近上浮，避免带 26px 透视偏移的卡片跨越 DOM/画布边界时跳动。 */
+export function clearProximity(): void {
+  for (const el of nearSet) {
+    nearState.set(el, false);
+    el.style.setProperty('--near-z', '0px');
+    el.style.setProperty('--near-s', '1');
+  }
+  nearSet.clear();
 }
 
 export function initGlassGlow(): () => void {
@@ -59,4 +72,5 @@ export function registerProximity(el: HTMLElement | null): void {
 export function unregisterProximity(el: HTMLElement | null): void {
   if (!el) return;
   proximityTargets.delete(el);
+  nearSet.delete(el);
 }

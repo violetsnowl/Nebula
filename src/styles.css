@@ -635,11 +635,11 @@ body {
   cursor: pointer;
 }
 
-/* 悬浮焦点（§8.3，沿用原语义）：原地转正、放大、拉近、去模糊、置顶；不加白边、白色光晕和提亮 */
+/* 悬浮焦点（§8.3，#269 补充中心不变、边缘温和收敛的透视倍率）：原地转正、放大、拉近、去模糊、置顶；不加白边、白色光晕和提亮 */
 .music-card.is-hovered {
-  transform: translate3d(var(--x), var(--y), 130px)
+  transform: translate3d(var(--x), var(--y), var(--hover-z, 130px))
     rotateZ(0deg)
-    scale(max(calc(var(--scale) * 1.3), 0.95));
+    scale(var(--hover-s, max(calc(var(--scale) * 1.3), 0.95)));
   z-index: 10000 !important;
   filter: none;
 }

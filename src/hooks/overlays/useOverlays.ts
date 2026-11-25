@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { MouseEvent } from 'react';
 import { audioPlayer } from '../../lib/audio/AudioPlayer';
 import { libraryService } from '../../lib/library';
 import { hasDesktopAPI, toBackendTrack, toFrontendTrack, type DesktopTrack } from '../../lib/playlist/ipcClient';
@@ -56,11 +55,14 @@ export function useOverlays() {
     return () => window.clearTimeout(t);
   }, [modeToast]);
 
-  const openContextMenu = useCallback((e: MouseEvent, track: Track) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setContextMenu({ x: e.clientX, y: e.clientY, track });
-  }, []);
+  const openContextMenu = useCallback(
+    (e: { preventDefault(): void; stopPropagation(): void; clientX: number; clientY: number }, track: Track) => {
+      e.preventDefault();
+      e.stopPropagation();
+      setContextMenu({ x: e.clientX, y: e.clientY, track });
+    },
+    [],
+  );
 
   const closeContextMenu = useCallback(() => setContextMenu(null), []);
 
