@@ -118,7 +118,9 @@
 /* 色块里那一份：整层按色块的区域裁剪（clip-path 行内写），字换成深色——
    没唱到 = 深色 34% 透明、唱过 / 正在唱 = 深色。逐字层的颜色变量由引擎每帧写在 .u 的行内 style 上，
    所以这里用 !important 把 --sung / --edge / --un 压住；唱过的句子走 --lp-ink、没唱到的走 --lc-rest，在这一层上直接改写。 */
-.lp-field-on {
+/* .lpm-field = 转场替身里落进色块的那份（LyricPage 的 ctxF），配色同色块里的副本 */
+.lp-field-on,
+.lpm-field {
   --lc-rest: color-mix(in srgb, var(--lp-field-ink) 58%, transparent);
   --lp-ink: var(--lp-field-ink);
   --lp-tr: color-mix(in srgb, var(--lp-field-ink) 50%, transparent);
@@ -130,7 +132,9 @@
 }
 
 .lp-field-on .u,
-.lp-field-on .u .ch {
+.lp-field-on .u .ch,
+.lpm-field .u,
+.lpm-field .u .ch {
   --sung: var(--lp-field-ink) !important;
   --edge: color-mix(in srgb, var(--lp-field-ink) 70%, transparent) !important;
   --un: var(--lc-rest) !important;
@@ -139,6 +143,9 @@
 /* 去掉外羽化（暗字压在亮色上不需要托）和长音白光 */
 .lp-field-on .lp-tx,
 .lp-field-on .u.glow,
-.lp-field-on .u .ch.glow {
+.lp-field-on .u .ch.glow,
+.lpm-field .u,
+.lpm-field .u.glow,
+.lpm-field .u .ch.glow {
   filter: none;
 }

@@ -461,6 +461,9 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false, tit
       gB: [number, number];
       /** 版面上那个字的倾斜（度：整句倾斜，或沿弧线摆时这个字自己的角度）。 */
       tr: number;
+      /** 色场页：落进色块那部分的深墨副本（定位框与克隆），变换照抄 b。 */
+      f?: HTMLElement;
+      fc?: HTMLElement;
     }
     interface Morph {
       line: PLine;
@@ -470,6 +473,13 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false, tit
       ctxB: HTMLElement;
       srcHost: HTMLElement;
       rot: number;
+      /**
+       * 色场页（2026-11-26 修）：替身 B 照版面原文克隆，是原文的浅色；色块里的真字却是色块那份副本的深墨。
+       * 原来替身落进色块是浅字（色块正在淡入、半透明，还透出星云），交接走完换成真字时才「啪」地变深。
+       * 现在多一层深墨副本，按色块边线裁剪、叠在 B 上，和落地后的真字一致。
+       */
+      ctxF: HTMLElement | null;
+      fieldEl: HTMLElement | null;
     }
     let morph: Morph | null = null;
     let morphTried = false;
@@ -526,6 +536,16 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false, tit
       layer.append(ctxA, ctxB);
       copyType(ctxA, src[0]!);
       copyType(ctxB, tgt[0]!);
+      // 色场页：B 之上再叠一层深墨副本（色块里的配色由 lyric-page-tpl-b.css 的 .lpm-field 规则给），按色块边线裁剪
+      const fieldEl = page.tpl.id === 'field' ? page.el.querySelector<HTMLElement>('.lp-field') : null;
+      let ctxF: HTMLElement | null = null;
+      if (fieldEl) {
+        ctxF = document.createElement('div');
+        ctxF.className = `lpm-ctx lpm-b lpm-field ${line.el.className}`;
+        ctxF.style.setProperty('--lp-field-ink', getComputedStyle(page.el).getPropertyValue('--lp-field-ink'));
+        copyType(ctxF, tgt[0]!);
+        layer.append(ctxF);
+      }
       const pre = src.map((s, i) => {
         const g = tgt[i]!;
         const bv = unitVert(line, g);
@@ -553,7 +573,18 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false, tit
         ctxB.appendChild(b);
         a.style.fontSize = `${item.fsA}px`;
         b.style.fontSize = `${item.fsB}px`;
-        return { ...item, a, b, ac, bc };
+        let f: HTMLElement | undefined;
+        let fc: HTMLElement | undefined;
+        if (ctxF) {
+          f = document.createElement('span');
+          f.className = b.className;
+          copyType(f, item.g);
+          fc = item.g.cloneNode(true) as HTMLElement;
+          f.appendChild(fc);
+          f.style.fontSize = b.style.fontSize;
+          ctxF.appendChild(f);
+        }
+        return { ...item, a, b, ac, bc, f, fc };
       });
       // 第二遍（单次集中读取）：一次性量取所有自然盒子尺寸
       const units = built.map((u): MorphUnit => {
@@ -584,12 +615,14 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false, tit
           bh: rb.height || u.g.offsetHeight || 1,
           lastS: u.lastS,
           lastT: null,
+          f: u.f,
+          fc: u.fc,
         };
       });
       pageBus.morph = true;
       pageBus.morphS = line.eng.s;
       pageBus.caption = caption;
-      return { line, page, units, ctxA, ctxB, srcHost, rot: m ? Number(m) : 0 };
+      return { line, page, units, ctxA, ctxB, srcHost, rot: m ? Number(m) : 0, ctxF, fieldEl };
     };
     const endMorph = () => {
       const layer = morphRef.current;
@@ -658,6 +691,8 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false, tit
         const adj = mo.page.hooks?.fly?.(u.tgt) ?? null;
         return { rs, vsAll, oa, T: T && adj ? { x: T.x + adj.dx * S, y: T.y + adj.dy * S, f: T.f } : T, adj };
       });
+      // 色块的边线（屏幕坐标，跟着版面的进场位移走）：横排是左缘，竖排是上缘
+      const fr = mo.fieldEl && mo.ctxF ? mo.fieldEl.getBoundingClientRect() : null;
 
       // 第二遍（集中写入样式与变换）
       layer.style.opacity = '1';
@@ -668,6 +703,17 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false, tit
       const q = smooth((k - 0.2) / 0.6);
       mo.ctxA.style.opacity = (1 - q).toFixed(3);
       mo.ctxB.style.opacity = q.toFixed(3);
+      if (mo.ctxF && fr) {
+        mo.ctxF.className = `lpm-ctx lpm-b lpm-field ${mo.line.el.className}`;
+        mo.ctxF.style.opacity = q.toFixed(3);
+        mo.ctxF.style.setProperty('--lw', smooth((k - 0.8) / 0.2).toFixed(3));
+        // 裁成色块那一侧：多边形坐标相对替身层左上角，往外留足余量
+        const vert = mo.page.ctx.vert;
+        const e = vert ? fr.top - box.top : fr.left - box.left;
+        mo.ctxF.style.clipPath = vert
+          ? `polygon(-9999px ${e.toFixed(2)}px, 99999px ${e.toFixed(2)}px, 99999px 99999px, -9999px 99999px)`
+          : `polygon(${e.toFixed(2)}px -9999px, 99999px -9999px, 99999px 99999px, ${e.toFixed(2)}px 99999px)`;
+      }
       // 原字的波浪浮起 / 长音放大只在两端保留：漫游那份起飞后 .2 内收平，版面那份 .8 之后才浮起，渐变那段两份都是平的
       mo.ctxA.style.setProperty('--lw', (1 - smooth(k / 0.2)).toFixed(3));
       mo.ctxB.style.setProperty('--lw', smooth((k - 0.8) / 0.2).toFixed(3));
@@ -696,6 +742,10 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false, tit
         const by = gy - u.gB[1] * sB;
         u.a.style.transform = `translate(${(ax - u.aw / 2).toFixed(3)}px, ${(ay - u.ah / 2).toFixed(3)}px) scale(${(sA * qx).toFixed(5)}, ${(sA * qy).toFixed(5)}) rotate(${rot.toFixed(3)}deg)`;
         u.b.style.transform = `translate(${(bx - u.bw / 2).toFixed(3)}px, ${(by - u.bh / 2).toFixed(3)}px) scale(${(sB * qx).toFixed(5)}, ${(sB * qy).toFixed(5)}) rotate(${rot.toFixed(3)}deg)`;
+        if (u.f && u.fc) {
+          syncClone(u.tgt, u.fc);
+          u.f.style.transform = u.b.style.transform;
+        }
       }
     };
 
@@ -860,6 +910,9 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false, tit
     const unitsOfPage = (l: PLine): HTMLElement[] => (l.rts ? l.rts.map((r) => r.v.el) : l.whole ? [l.whole] : []);
     const pageSide = (pg: PPage, l: PLine, el: HTMLElement): FlySide => {
       const side: FlySide = { el, ctx: `lpm-b ${l.el.className}`, rot: rotTarget(l, el), vert: unitVert(l, el) };
+      // 色场页：落进色块那部分是深墨（色块那份副本），替身另叠一份深墨克隆按边线裁剪
+      const field = pg.tpl.id === 'field' ? pg.el.querySelector<HTMLElement>('.lp-field') : null;
+      if (field) side.ink = { field, vert: pg.ctx.vert, color: getComputedStyle(pg.el).getPropertyValue('--lp-field-ink') };
       const fly = pg.hooks?.fly;
       if (fly) {
         side.adj = () => {

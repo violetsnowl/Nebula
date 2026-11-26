@@ -28,6 +28,11 @@ export interface FlySide {
   opacity?: number;
   /** 看上去的位置和盒子的差（屏幕像素）与两个方向的压扁：版面「断层」错开的那半、「回声滚筒」上的行。 */
   adj?: () => { dx: number; dy: number; sx: number; sy: number } | null;
+  /**
+   * 版面「色场」页：这个字有一部分落在色块里，色块里的真字是深墨（色块那份副本）。替身另叠一份深墨克隆、按色块边线裁剪，
+   * 和真字一致（2026-11-26：原来替身是原文的浅色，落地换真字时才变深）。field = 色块元素；color = --lp-field-ink 的值。
+   */
+  ink?: { field: HTMLElement; vert: boolean; color: string };
 }
 
 export interface FlyPair {
@@ -67,6 +72,47 @@ interface Live {
   a0: number;
   /** 起点基础透明度。 */
   sOp: number;
+  /** 色场页那一侧的深墨克隆（起点 / 终点各自可有）。 */
+  ai?: InkClone;
+  bi?: InkClone;
+}
+
+interface InkClone {
+  wrap: HTMLElement;
+  clone: HTMLElement;
+  ctx: HTMLElement;
+  side: FlySide;
+}
+
+/** 色场页的深墨克隆：同一侧的类名与字体，外层加 lpm-field（配色见 lyric-page-tpl-b.css），裁剪每帧按色块边线写。 */
+function makeInk(layer: HTMLElement, side: FlySide, fs: number): InkClone | undefined {
+  if (!side.ink) return undefined;
+  const ctx = document.createElement('div');
+  ctx.className = `lpm-ctx ${side.ctx} lpm-field`;
+  ctx.style.setProperty('--lp-field-ink', side.ink.color);
+  const wrap = document.createElement('span');
+  wrap.className = side.vert ? 'lpm-u is-v' : 'lpm-u';
+  const clone = cleanClone(side.el.cloneNode(true) as HTMLElement);
+  wrap.appendChild(clone);
+  ctx.appendChild(wrap);
+  layer.appendChild(ctx);
+  copyTypeAndColor(wrap, side.el, side.ctx);
+  wrap.style.fontSize = `${fs}px`;
+  fitWholeCloneBox(wrap, side.el);
+  return { wrap, clone, ctx, side };
+}
+
+/** 深墨克隆跟着它那一侧：同步逐帧状态、透明度、变换，裁成色块那一边（坐标相对替身层，替身层铺满视口）。 */
+function stepInk(ink: InkClone | undefined, edge: number | undefined, opacity: string, lw: string, transform: string): void {
+  if (!ink || edge === undefined) return;
+  syncUnitClone(ink.side.el, ink.clone);
+  ink.ctx.style.opacity = opacity;
+  ink.ctx.style.setProperty('--lw', lw);
+  const e = edge.toFixed(2);
+  ink.ctx.style.clipPath = ink.side.ink!.vert
+    ? `polygon(-9999px ${e}px, 99999px ${e}px, 99999px 99999px, -9999px 99999px)`
+    : `polygon(${e}px -9999px, 99999px -9999px, 99999px 99999px, ${e}px 99999px)`;
+  ink.wrap.style.transform = transform;
 }
 
 const fsOf = (el: HTMLElement) => parseFloat(getComputedStyle(el).fontSize) || 16;
@@ -261,6 +307,7 @@ export class LsFly {
         a0: 1,
         sOp: p.from.opacity ?? 1,
       };
+      live.ai = makeInk(this.layer, p.from, fsA);
       this.lives.push(live);
       this.hidden.push(p.from.el);
     }
@@ -292,6 +339,7 @@ export class LsFly {
     l.bc = bc;
     l.bw = rb.width || 1;
     l.bh = rb.height || 1;
+    l.bi = makeInk(this.layer, to, l.fsB);
     this.hidden.push(to.el);
     this.hide([to.el], true);
   }
@@ -334,6 +382,16 @@ export class LsFly {
         opCache.set(oe, parseFloat(getComputedStyle(oe).opacity));
       }
     }
+    // 色场页的色块边线（集中读）：横排左缘、竖排上缘，相对替身层
+    const lb = this.layer.getBoundingClientRect();
+    const edges = new Map<HTMLElement, number>();
+    for (const l of this.lives) for (const ink of [l.ai, l.bi]) {
+      const fe = ink?.side.ink?.field;
+      if (fe && !edges.has(fe)) {
+        const fr = fe.getBoundingClientRect();
+        edges.set(fe, ink!.side.ink!.vert ? fr.top - lb.top : fr.left - lb.left);
+      }
+    }
     // 第三遍集中写样式
     for (const l of this.lives) {
       const le = l.b ? Math.min(1, Math.max(0, (e - l.e0) / Math.max(0.001, 1 - l.e0))) : 0;
@@ -362,9 +420,12 @@ export class LsFly {
       const qy = S.sy + (to.sy - S.sy) * le;
       const sA = f / l.fsA;
       l.a.style.transform = `translate(${(x - l.aw / 2).toFixed(3)}px, ${(y - l.ah / 2).toFixed(3)}px) scale(${(sA * qx).toFixed(5)}, ${(sA * qy).toFixed(5)}) rotate(${rot.toFixed(3)}deg)`;
+      if (l.ai) stepInk(l.ai, edges.get(l.ai.side.ink!.field), ctxA.style.opacity, lwA, l.a.style.transform);
       if (l.b) {
         const sB = f / l.fsB;
         l.b.style.transform = `translate(${(x - l.bw / 2).toFixed(3)}px, ${(y - l.bh / 2).toFixed(3)}px) scale(${(sB * qx).toFixed(5)}, ${(sB * qy).toFixed(5)}) rotate(${rot.toFixed(3)}deg)`;
+        const ctxB = l.b.parentElement!;
+        if (l.bi) stepInk(l.bi, edges.get(l.bi.side.ink!.field), ctxB.style.opacity, ctxB.style.getPropertyValue('--lw'), l.b.style.transform);
       }
     }
   }
