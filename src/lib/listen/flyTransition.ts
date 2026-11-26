@@ -26,12 +26,24 @@ export interface FlySide {
   blend?: string;
   /** 起点克隆的基础不透明度（漫游氛围句约 0.5，版面/聆听默认 1）。 */
   opacity?: number;
+  /** 看上去的位置和盒子的差（屏幕像素）与两个方向的压扁：版面「断层」错开的那半、「回声滚筒」上的行。 */
+  adj?: () => { dx: number; dy: number; sx: number; sy: number } | null;
 }
 
 export interface FlyPair {
   from: FlySide;
   /** 终点：打开听音空间时初始可为 null，由 retarget 在歌词栏就绪后补上。 */
   to: FlySide | null;
+}
+
+interface FlyPlace {
+  x: number;
+  y: number;
+  f: number;
+  rot: number;
+  /** 两个方向的压扁（滚筒），平常是 1。 */
+  sx: number;
+  sy: number;
 }
 
 interface Live {
@@ -47,9 +59,9 @@ interface Live {
   bw: number;
   bh: number;
   /** 起点：中心坐标、视觉字号、旋转角。 */
-  s: { x: number; y: number; f: number; rot: number };
+  s: FlyPlace;
   /** 最近一次量到的终点位置。 */
-  t: { x: number; y: number; f: number; rot: number } | null;
+  t: FlyPlace | null;
   /** 接上终点时的飞行进度与起点当时透明度，晚接上的字从当前进度平滑飞完，不跳变。 */
   e0: number;
   a0: number;
@@ -129,7 +141,7 @@ function copyTypeAndColor(to: HTMLElement, from: HTMLElement, ctxClass: string):
   to.style.textTransform = cs.textTransform;
   const toProp = cs.getPropertyValue('text-orientation');
   if (toProp) to.style.setProperty('text-orientation', toProp);
-  for (const v of ['--lc-rest', '--lp-ink', '--lc-a', '--sung', '--edge', '--un']) {
+  for (const v of ['--lc-rest', '--lp-ink', '--lc-a', '--lp-pc', '--sung', '--edge', '--un']) {
     const val = cs.getPropertyValue(v);
     if (val) to.style.setProperty(v, val);
   }
@@ -150,13 +162,16 @@ function placeOf(
   w: number,
   h: number,
   fs: number,
-): { x: number; y: number; f: number; rot: number } | null {
+): FlyPlace | null {
   const r = el.getBoundingClientRect();
   if (!(r.width > 0)) return null;
+  const adj = side.adj?.() ?? null;
+  const qx = adj?.sx ?? 1;
+  const qy = adj?.sy ?? 1;
   const th = (side.rot * Math.PI) / 180;
   const cos = Math.abs(Math.cos(th));
   const sin = Math.abs(Math.sin(th));
-  const vs = (r.width + r.height) / ((w + h) * (cos + sin) || 1);
+  const vs = (r.width + r.height) / ((w * qx + h * qy) * (cos + sin) || 1);
   let dx = 0;
   let dy = 0;
   let sc = 1;
@@ -171,7 +186,14 @@ function placeOf(
     dx = (lx * Math.cos(th) - ly * Math.sin(th)) * (vs / sc);
     dy = (lx * Math.sin(th) + ly * Math.cos(th)) * (vs / sc);
   }
-  return { x: r.left + r.width / 2 - dx, y: r.top + r.height / 2 - dy, f: fs * (vs / sc), rot: side.rot };
+  return {
+    x: r.left + r.width / 2 - dx * qx + (adj?.dx ?? 0),
+    y: r.top + r.height / 2 - dy * qy + (adj?.dy ?? 0),
+    f: fs * (vs / sc),
+    rot: side.rot,
+    sx: qx,
+    sy: qy,
+  };
 }
 
 export class LsFly {
@@ -336,11 +358,13 @@ export class LsFly {
       const y = S.y + (to.y - S.y) * le;
       const f = S.f + (to.f - S.f) * le;
       const rot = S.rot + (to.rot - S.rot) * le;
+      const qx = S.sx + (to.sx - S.sx) * le;
+      const qy = S.sy + (to.sy - S.sy) * le;
       const sA = f / l.fsA;
-      l.a.style.transform = `translate(${(x - l.aw / 2).toFixed(3)}px, ${(y - l.ah / 2).toFixed(3)}px) scale(${sA.toFixed(5)}) rotate(${rot.toFixed(3)}deg)`;
+      l.a.style.transform = `translate(${(x - l.aw / 2).toFixed(3)}px, ${(y - l.ah / 2).toFixed(3)}px) scale(${(sA * qx).toFixed(5)}, ${(sA * qy).toFixed(5)}) rotate(${rot.toFixed(3)}deg)`;
       if (l.b) {
         const sB = f / l.fsB;
-        l.b.style.transform = `translate(${(x - l.bw / 2).toFixed(3)}px, ${(y - l.bh / 2).toFixed(3)}px) scale(${sB.toFixed(5)}) rotate(${rot.toFixed(3)}deg)`;
+        l.b.style.transform = `translate(${(x - l.bw / 2).toFixed(3)}px, ${(y - l.bh / 2).toFixed(3)}px) scale(${(sB * qx).toFixed(5)}, ${(sB * qy).toFixed(5)}) rotate(${rot.toFixed(3)}deg)`;
       }
     }
   }
@@ -362,7 +386,8 @@ export class LsFly {
       .map((l) => {
         const a = l.bc!.getBoundingClientRect();
         const b = l.p.to!.el.getBoundingClientRect();
-        return [a.left + a.width / 2 - (b.left + b.width / 2), a.top + a.height / 2 - (b.top + b.height / 2)].map(
+        const o = l.p.to!.adj?.() ?? null;
+        return [a.left + a.width / 2 - (b.left + b.width / 2) - (o?.dx ?? 0), a.top + a.height / 2 - (b.top + b.height / 2) - (o?.dy ?? 0)].map(
           (v) => Math.round(v * 100) / 100,
         );
       });

@@ -30,6 +30,7 @@ import './lyric-page.css';
 import './lyric-page-tpl.css';
 import './lyric-page-tpl-b.css';
 import './lyric-page-tpl-c.css';
+import './lyric-page-tpl-d.css';
 
 /**
  * 版面（样张 M，2026-11-22，fe/next；规格 NEBULA_UI_SYSTEM §7.1b）：聆听时的另一种主舞台。完全不飞，靠排版：
@@ -143,7 +144,7 @@ function resetPage(pg: PPage): void {
       .join(' ');
     delete l.el.dataset.hb;
     l.tx.style.cssText = '';
-    for (const u of l.units) u.classList.remove('lp-big');
+    for (const u of l.units) u.classList.remove('lp-big', 'lp-still', 'lp-pc', 'lp-pb', 'lp-cutsrc');
     if (l.tr) {
       if (l.tr.parentElement !== l.el) l.el.appendChild(l.tr);
       l.tr.style.cssText = '';
@@ -337,7 +338,7 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
         pl.push({ eng: e, el: line, tx, tr, rts, whole, units: rts ? rts.map((r) => r.v.el) : [], eu: e.units, text: e.text, ts: e.s, te: e.e, vert, rot: 0, state: 'future', active: false, w: 0, h: 0 });
       }
       frame.appendChild(el);
-      const ctx: TCtx = { page: el, lines: pl, kind: sec.kind, vert, cjk, lang, hasTr: pl.some((l) => l.tr), hook, lastChorus: j === lastChorusStz, size };
+      const ctx: TCtx = { page: el, lines: pl, kind: sec.kind, vert, cjk, lang, hasTr: pl.some((l) => l.tr), hook, lastChorus: j === lastChorusStz, song: els, first: stz.from, size };
       let tpl = pickTpl(ctx, pick);
       if (tpl.dir) ctx.vert = tpl.dir === 'v';
       // 强制横排的经典版式不存在（经典竖排只给中文）：中文歌里这种页面若退到经典版式，用横排左栏
@@ -398,7 +399,7 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
           const heavy = l.el.classList.contains('lt-heavy') ? 0.7 : 1;
           for (const u of l.units) {
             const fpx = parseFloat(getComputedStyle(u).fontSize) || 40;
-            u.style.setProperty('--lfk', (Math.min(1, 52 / fpx) * heavy).toFixed(3));
+            u.style.setProperty('--lfk', (u.classList.contains('lp-still') ? 0 : Math.min(1, 52 / fpx) * heavy).toFixed(3));
           }
         }
         pg.el.classList.remove('is-measuring');
@@ -458,6 +459,7 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
     }
     interface Morph {
       line: PLine;
+      page: PPage;
       units: MorphUnit[];
       ctxA: HTMLElement;
       ctxB: HTMLElement;
@@ -487,7 +489,7 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
       ctx.style.textTransform = cs.textTransform;
       const to = cs.getPropertyValue('text-orientation');
       if (to) ctx.style.setProperty('text-orientation', to);
-      for (const v of ['--lc-rest', '--lp-ink', '--lc-a']) {
+      for (const v of ['--lc-rest', '--lp-ink', '--lc-a', '--lp-pc']) {
         const val = cs.getPropertyValue(v);
         if (val) ctx.style.setProperty(v, val);
       }
@@ -582,7 +584,7 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
       pageBus.morph = true;
       pageBus.morphS = line.eng.s;
       pageBus.caption = caption;
-      return { line, units, ctxA, ctxB, srcHost, rot: m ? Number(m) : 0 };
+      return { line, page, units, ctxA, ctxB, srcHost, rot: m ? Number(m) : 0 };
     };
     const endMorph = () => {
       const layer = morphRef.current;
@@ -647,7 +649,9 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
           T = { x: rt.left + rt.width / 2 - ob.dx - box.left, y: rt.top + rt.height / 2 - ob.dy - box.top, f: u.fsB * S };
           u.lastT = T;
         }
-        return { rs, vsAll, oa, T };
+        // 看上去的位置和盒子不一样的字（断层错开的那半、滚筒上压扁的行）：终点跟着算
+        const adj = mo.page.hooks?.fly?.(u.tgt) ?? null;
+        return { rs, vsAll, oa, T: T && adj ? { x: T.x + adj.dx * S, y: T.y + adj.dy * S, f: T.f } : T, adj };
       });
 
       // 第二遍（集中写入样式与变换）
@@ -664,7 +668,9 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
       mo.ctxB.style.setProperty('--lw', smooth((k - 0.8) / 0.2).toFixed(3));
       for (let i = 0; i < mo.units.length; i++) {
         const u = mo.units[i]!;
-        const { rs, vsAll, oa, T: measuredT } = meas[i]!;
+        const { rs, vsAll, oa, T: measuredT, adj } = meas[i]!;
+        const qx = 1 + ((adj?.sx ?? 1) - 1) * k;
+        const qy = 1 + ((adj?.sy ?? 1) - 1) * k;
         const rot = mo.rot * (1 - k) + u.tr * k;
         syncClone(u.src, u.ac);
         syncClone(u.tgt, u.bc);
@@ -683,8 +689,8 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
         const ay = gy - u.gA[1] * sA;
         const bx = gx - u.gB[0] * sB;
         const by = gy - u.gB[1] * sB;
-        u.a.style.transform = `translate(${(ax - u.aw / 2).toFixed(3)}px, ${(ay - u.ah / 2).toFixed(3)}px) scale(${sA.toFixed(5)}) rotate(${rot.toFixed(3)}deg)`;
-        u.b.style.transform = `translate(${(bx - u.bw / 2).toFixed(3)}px, ${(by - u.bh / 2).toFixed(3)}px) scale(${sB.toFixed(5)}) rotate(${rot.toFixed(3)}deg)`;
+        u.a.style.transform = `translate(${(ax - u.aw / 2).toFixed(3)}px, ${(ay - u.ah / 2).toFixed(3)}px) scale(${(sA * qx).toFixed(5)}, ${(sA * qy).toFixed(5)}) rotate(${rot.toFixed(3)}deg)`;
+        u.b.style.transform = `translate(${(bx - u.bw / 2).toFixed(3)}px, ${(by - u.bh / 2).toFixed(3)}px) scale(${(sB * qx).toFixed(5)}, ${(sB * qy).toFixed(5)}) rotate(${rot.toFixed(3)}deg)`;
       }
     };
 
@@ -708,7 +714,9 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
         return morph.units.map((u) => {
           const a = (kk >= 0.5 ? u.bc : u.ac).getBoundingClientRect();
           const b = (kk >= 0.5 ? u.tgt : u.src).getBoundingClientRect();
-          return [a.left + a.width / 2 - (b.left + b.width / 2), a.top + a.height / 2 - (b.top + b.height / 2), a.width - b.width, a.height - b.height].map((v) => Math.round(v * 100) / 100);
+          const o = kk >= 0.5 ? (morph?.page.hooks?.fly?.(u.tgt) ?? null) : null;
+          const S = frame.getBoundingClientRect().width / PW || 1;
+          return [a.left + a.width / 2 - (b.left + b.width / 2) - (o?.dx ?? 0) * S, a.top + a.height / 2 - (b.top + b.height / 2) - (o?.dy ?? 0) * S, a.width - b.width, a.height - b.height].map((v) => Math.round(v * 100) / 100);
         });
       },
       // 版面上每一句里相邻两个字「量出来的范围」最多重叠多少像素（应 ≤ 0：演唱位置只往前走）
@@ -743,7 +751,16 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
         return pages
           .filter((p) => p.on)
           .map((p) => {
-            const rs = p.lines.map((l) => l.units.filter((u) => !u.closest('.lp-deco')).map((u) => u.getBoundingClientRect()));
+            // 滚到筒边上的行（data-edge）压得很扁、本来就该出画，不算
+            // 量字本身（扣掉四周的上色留白）：撑满版面宽度的大字，留白本来就伸出画幅
+            const inner = (u: HTMLElement) => {
+              const r = u.getBoundingClientRect();
+              const cs = getComputedStyle(u);
+              const k = r.width / (u.offsetWidth || r.width || 1);
+              const n = (v: string) => (parseFloat(v) || 0) * k;
+              return new DOMRect(r.left + n(cs.paddingLeft), r.top + n(cs.paddingTop), r.width - n(cs.paddingLeft) - n(cs.paddingRight), r.height - n(cs.paddingTop) - n(cs.paddingBottom));
+            };
+            const rs = p.lines.map((l) => l.units.filter((u) => !u.closest('.lp-deco, [data-edge]')).map(inner));
             let out = 0;
             let clash = 0;
             rs.flat().forEach((r) => {
@@ -819,7 +836,25 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
     /** 收起听音空间、飞回版面期间版面直接满显（不等交接曲线慢慢升起），直到交接追上。 */
     let lsBoostUntil = 0;
     const unitsOfPage = (l: PLine): HTMLElement[] => (l.rts ? l.rts.map((r) => r.v.el) : l.whole ? [l.whole] : []);
-    const pageSide = (l: PLine, el: HTMLElement): FlySide => ({ el, ctx: `lpm-b ${l.el.className}`, rot: rotTarget(l, el), vert: unitVert(l, el) });
+    const pageSide = (pg: PPage, l: PLine, el: HTMLElement): FlySide => {
+      const side: FlySide = { el, ctx: `lpm-b ${l.el.className}`, rot: rotTarget(l, el), vert: unitVert(l, el) };
+      const fly = pg.hooks?.fly;
+      if (fly) {
+        side.adj = () => {
+          const a = fly(el);
+          if (!a) return null;
+          const S = frame.getBoundingClientRect().width / PW || 1;
+          return { dx: a.dx * S, dy: a.dy * S, sx: a.sx, sy: a.sy };
+        };
+      }
+      // 版式自己压暗的行（滚筒两边）：起点 / 落地的透明度跟着走
+      const op = el.closest<HTMLElement>('.lp-op');
+      if (op) {
+        side.opEl = op;
+        side.opacity = parseFloat(getComputedStyle(op).opacity) || 0;
+      }
+      return side;
+    };
     /** 现在该显示哪一页：已经出现的最后一页。 */
     const pageAt = (t: number): PPage | null => {
       let pg: PPage | null = null;
@@ -878,7 +913,7 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
           text: l.eng.text,
           offsetFromCur: queries[i]!.offsetFromCur,
           units: unitsOfPage(l),
-          sideOf: (el) => pageSide(l, el),
+          sideOf: (el) => pageSide(pg, l, el),
         })),
         {
           flightMs: 600,
@@ -913,7 +948,7 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
         const us = columnUnitsOf(col);
         const ps = unitsOfPage(l);
         if (!col || !us.length || us.length !== ps.length) return;
-        us.forEach((el, i) => pairs.push({ from: columnSideOf(col, el), to: pageSide(l, ps[i]!) }));
+        us.forEach((el, i) => pairs.push({ from: columnSideOf(col, el), to: pageSide(pg, l, ps[i]!) }));
       });
       lsBoostUntil = performance.now() + 2600;
       if (!pairs.length) return;
@@ -1071,6 +1106,7 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
     '--lc-font': typo.f,
     '--lc-ls': typo.ls,
     '--lyric-weight': settings.bold ? 700 : typo.w,
+    '--lp-grain': `url(${grain()})`,
   } as CSSProperties;
   return (
     <>

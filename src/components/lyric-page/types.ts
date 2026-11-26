@@ -60,15 +60,29 @@ export interface TCtx {
   hasTr: boolean;
   /** 这首歌副歌里重复最多的词（出血大字用）；没有为 null。 */
   hook: string | null;
-  /** 这一页是全曲最后一个副歌页（色场只给它）。 */
+  /** 这一页是全曲最后一个副歌页（色场、负形镂空只给它）。 */
   lastChorus: boolean;
+  /** 全曲的句子（回声滚筒数遍数、断层与斜线按歌轮流用）。 */
+  song: readonly { text: string; s: number; e: number; units: readonly { t: string; sp: boolean }[] | null }[];
+  /** 这一页第一句在全曲里的下标。 */
+  first: number;
   /** 量元素未变换时的尺寸（逻辑像素，带小数）。 */
   size: (el: HTMLElement) => { w: number; h: number };
+}
+
+/** 一个字「看上去的位置」和它的盒子差多少（逻辑像素）与两个方向的压扁（滚筒）：转场替身按看上去的位置起落。 */
+export interface FlyAdj {
+  dx: number;
+  dy: number;
+  sx: number;
+  sy: number;
 }
 
 export interface PageHooks {
   /** 页面显示时每帧调用，t = 播放位置（秒）。 */
   frame?: (t: number) => void;
+  /** 断层错开的那半、滚筒上压扁的行：替身要跟着算；不写 = 和盒子一样。 */
+  fly?: (u: HTMLElement) => FlyAdj | null;
   /** 重排之前撤销 finish 做的结构改动（比如沿弧线摆字时包的外壳）。 */
   undo?: () => void;
 }

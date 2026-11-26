@@ -1,0 +1,175 @@
+/* 版面的新四套（样张 O，2026-11-25 用户认可）：断层、回声滚筒。逻辑在 components/lyric-page/bold-d.ts。
+   位置、字号由版式按 1600 × 900 的逻辑像素写在行内；颜色只从封面算（--acc / --e2）。 */
+
+.lyric-page {
+  /* 纸面的不透明版：描边字用它盖掉笔画交叠的内线 */
+  --lp-paper: color-mix(in srgb, var(--ebase, rgb(12 13 18)) 42%, rgb(6 7 10));
+  /* 印色：封面强调色压到六成亮（--acc 本身偏浅，大面积铺开会发白） */
+  --lp-press: hsl(from var(--lp-acc) h s 60%);
+}
+
+/* 这四页画面上的字只有歌词和译文（样张 O） */
+.tpl-fault .lp-no,
+.tpl-drum .lp-no {
+  display: none;
+}
+
+/* ———— 断层 ———— */
+.lt-fault .lp-tx {
+  font-family: Newsreader, Georgia, serif;
+  font-weight: 600;
+  line-height: 0.9315;
+  letter-spacing: -0.028em;
+  filter: none;
+}
+
+.is-cjk .lt-fault .lp-tx {
+  font-family: 'Noto Serif SC', 'Noto Serif JP', 'Noto Serif KR', 'Songti SC', 'Yu Mincho', serif;
+  font-weight: 900;
+  letter-spacing: 0;
+}
+
+.lyric-page .lp-line.is-vert.lt-fault .lp-tx {
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.lp-slab {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  transition: transform 0.55s cubic-bezier(0.16, 1.15, 0.3, 1);
+}
+
+/* 色纸铺到窗口外面：窗口不是 16:9 时也没有边 */
+.lp-slab-in {
+  position: absolute;
+  left: -1200px;
+  top: -1200px;
+  width: 4000px;
+  height: 3300px;
+  background: oklch(from var(--e2) 0.3 min(c * 0.65, 0.085) h);
+}
+
+.lp-slab-in::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: var(--lp-grain);
+  background-size: 256px 256px;
+  opacity: 0.06;
+}
+
+.lp-slab-box {
+  position: absolute;
+  left: 1200px;
+  top: 1200px;
+  width: 1600px;
+  height: 900px;
+}
+
+/* 断口的暗缝和投影：一条静止的渐变，不用滤镜（错开的那半里有逐帧的字，滤镜会整层每帧重算） */
+.lp-slab-edge {
+  position: absolute;
+  width: 61px;
+  height: 3300px;
+  background:
+    linear-gradient(90deg, transparent 57px, rgba(0, 0, 0, 0.55) 57px),
+    linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.12) 45%, rgba(0, 0, 0, 0.42));
+}
+
+.lp-slab-edge.is-v {
+  width: 4000px;
+  height: 61px;
+  background:
+    linear-gradient(180deg, transparent 57px, rgba(0, 0, 0, 0.55) 57px),
+    linear-gradient(180deg, transparent, rgba(0, 0, 0, 0.12) 45%, rgba(0, 0, 0, 0.42));
+}
+
+/* ———— 回声滚筒 ———— */
+.lt-drum .lp-tx {
+  font-weight: 900;
+  line-height: 0.727;
+  letter-spacing: -0.035em;
+  filter: none;
+}
+
+.is-cjk .lt-drum .lp-tx {
+  line-height: 0.92;
+  letter-spacing: 0;
+}
+
+.lt-drum .lp-op,
+.lt-drum .lp-tr.is-drum {
+  opacity: var(--do, 1);
+}
+
+.lp-tr.is-drum {
+  position: absolute;
+  left: 24px;
+  top: calc(100% + 9px);
+  line-height: 1;
+}
+
+.lyric-page .lp-line.lt-drumv .lp-tx {
+  position: relative;
+  writing-mode: horizontal-tb;
+}
+
+.lyric-page .lp-line.lt-drumv .lp-seg {
+  position: absolute;
+  display: block;
+  writing-mode: vertical-rl;
+  white-space: nowrap;
+  line-height: 1;
+  letter-spacing: 0;
+  text-orientation: upright;
+}
+
+.lp-drow {
+  position: absolute;
+  left: 0;
+  top: 0;
+  font-family: Inter, 'Segoe UI', sans-serif;
+  font-weight: 900;
+  line-height: 0.727;
+  letter-spacing: -0.035em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  opacity: var(--do, 1);
+  pointer-events: none;
+}
+
+.is-cjk .lp-drow {
+  font-family: 'Noto Sans SC', 'Noto Sans JP', 'Noto Sans KR', 'Microsoft YaHei', 'Yu Gothic', 'Malgun Gothic', sans-serif;
+  line-height: 0.92;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.lang-zh .lp-drow {
+  font-family: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+}
+
+.lp-drow.is-v {
+  writing-mode: vertical-rl;
+  text-orientation: upright;
+  line-height: 1;
+}
+
+.lp-drow.echo-a {
+  color: var(--lp-press);
+}
+
+.lp-drow.echo-b {
+  color: var(--lp-paper);
+  paint-order: stroke fill;
+  -webkit-text-stroke: 3px color-mix(in srgb, var(--lp-press) 72%, var(--lp-paper));
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .lp-slab {
+    transition: none;
+  }
+}

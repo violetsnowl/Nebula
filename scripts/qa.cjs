@@ -1720,7 +1720,7 @@ async function main() {
   const tplChecks = { en: null, zh: null };
   let lsFlyCheck = null;
   let pageLsLeakCheck = null;
-  const TPLS = ['held', 'spine', 'justify', 'foot', 'bleed', 'diag', 'field', 'groove', 'grid', 'corner'];
+  const TPLS = ['held', 'spine', 'justify', 'foot', 'bleed', 'diag', 'field', 'groove', 'grid', 'corner', 'fault', 'drum'];
   /** 逐套强制版式：跳到用了这套的第一页的第一句唱到一半，量 bounds（out = 跑出画幅的字数，clash = 不同句子的字互相压住多少像素）。 */
   const checkTemplates = async (tag) => {
     const out = {};
@@ -1753,7 +1753,8 @@ async function main() {
       C: [['We are paper lanterns', '我们是纸灯笼'], ['Rising over the river tonight', '今夜升起在河面上'], ['If the wind will not carry us home', '如果风不肯带我们回家'], ['We will burn our own way to the light', '我们就自己烧出一条路到光那里']],
       V2: [['The city folds its map along the water', '城市沿着河水折起它的地图'], ['The radio keeps reading out our names', '收音机一遍遍念着我们的名字'], ['I counted every bridge from here to morning', '我数过从这里到清晨的每一座桥'], ['None of them were ever quite the same', '没有哪一座完全相同']],
       B: [['Hold the flame a little longer', '再护住火光久一点'], ['Let it shake but never fall', '让它摇晃 但别落下'], ['Even ashes learn to fly', '灰烬也会学会飞']],
-      O: [['Paper lanterns', '纸灯笼'], ['Over the river', '在河面上']],
+      // 尾声把副歌里的短句再唱两遍：回声滚筒（样张 O）要「本页至少两遍、全曲四遍以上」
+      O: [['Paper lanterns', '纸灯笼'], ['Over the river', '在河面上'], ['Paper lanterns', '纸灯笼']],
     };
     const plan = [['V1'], ['P'], ['C'], ['V2'], ['P'], ['C'], ['gap'], ['B'], ['C'], ['C'], ['O']];
     const lines = [];

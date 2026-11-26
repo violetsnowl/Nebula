@@ -2,6 +2,7 @@ import type { SectionKind } from '../../lib/listen/sections';
 import { foot, held, justify, spine } from './bold-a';
 import { bleed, diag, field } from './bold-b';
 import { corner, groove, grid } from './bold-c';
+import { drum, fault } from './bold-d';
 import { CLASSIC_FALLBACK_H, CLASSIC_H, CLASSIC_V } from './classic';
 import { glyphs, norm } from './kit';
 import type { TCtx, Tpl } from './types';
@@ -12,7 +13,7 @@ import type { TCtx, Tpl } from './types';
  * 色场只给全曲最后一个副歌页。所有语言共用这一套轮换，横排还是竖排由页面方向决定（中文竖排、其余横排）。
  */
 
-const BOLD: Record<string, Tpl> = { held, spine, justify, foot, bleed, diag, field, groove, grid, corner };
+const BOLD: Record<string, Tpl> = { held, spine, justify, foot, bleed, diag, field, groove, grid, corner, fault, drum };
 
 /** 后面几批版式在各自的模块里登记进来。 */
 export function registerBold(...ts: Tpl[]): void {
@@ -22,10 +23,21 @@ export function registerBold(...ts: Tpl[]): void {
 const PLAN: Record<SectionKind, string[]> = {
   verse: ['held', 'c', 'foot', 'grid', 'c', 'c'],
   pre: ['spine', 'c', 'c'],
-  chorus: ['justify', 'bleed', 'corner', 'c', 'c'],
-  bridge: ['diag', 'c'],
-  outro: ['groove', 'c'],
+  chorus: ['justify', 'bleed', 'corner', 'drum', 'c', 'c'],
+  bridge: ['diag', 'fault', 'c'],
+  outro: ['drum', 'groove', 'c'],
 };
+
+/** 大动作的版式：新四套（样张 O）不和它们排在相邻两页，反过来它们也不紧跟新四套。 */
+const LOUD = new Set(['justify', 'bleed', 'field', 'fault', 'drum']);
+const NEW_O = new Set(['fault', 'drum']);
+
+/** 按歌轮流：一首歌只有一段桥时，一半的歌用断层、一半用斜线（同一首歌每次一样）。 */
+function flip(c: TCtx): boolean {
+  let h = 0;
+  for (const l of c.song) for (const ch of l.text) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return (h >>> 7) % 2 === 1;
+}
 
 export interface PickState {
   seen: Partial<Record<SectionKind, number>>;
@@ -65,12 +77,13 @@ export function pickTpl(c: TCtx, st: PickState): Tpl {
     return done(t);
   };
   if (c.lastChorus && BOLD.field && !st.used.has('field') && (!BOLD.field.fits || BOLD.field.fits(c))) return done(BOLD.field);
-  const plan = PLAN[kind];
+  const plan = kind === 'bridge' && flip(c) ? ['fault', 'diag', 'c'] : PLAN[kind];
   for (let j = 0; j < plan.length; j++) {
     const id = plan[(nth + j) % plan.length]!;
     if (id === 'c') return classic();
     const t = BOLD[id];
     if (!t || st.used.has(id) || id === st.prev) continue;
+    if ((NEW_O.has(id) && LOUD.has(st.prev)) || (NEW_O.has(st.prev) && LOUD.has(id))) continue;
     if (t.fits && !t.fits(c)) continue;
     return done(t);
   }
