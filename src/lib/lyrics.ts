@@ -155,9 +155,22 @@ export function mergeWordLyrics(lines: LyricLineUI[], rawYrc: string): LyricLine
     return latin ? words.map((w) => w.text).join(' ') : words.map((w) => w.text).join('');
   };
   const out: LyricLineUI[] = [];
+  const matchOf = (wl: (typeof wordLines)[number]) => {
+    const wtext = norm(joinWords(wl.words));
+    return lines.find((l) => l.text && Math.abs(l.timeMs - wl.timeMs) <= 250 && norm(l.text) === wtext);
+  };
+  // 一句正文只认一份逐字（#285）：跨源补逐字偶尔把同一句的两份逐字（本平台 + 补充来源，开始时间只差几十毫秒）都留在 yrc 里，
+  // 两份都配上同一句正文就会显示两遍。留时间离正文最近的那份。
+  const best = new Map<LyricLineUI, (typeof wordLines)[number]>();
   for (const wl of wordLines) {
-    const wtext=norm(joinWords(wl.words));
-    const match=lines.find(l=>l.text && Math.abs(l.timeMs-wl.timeMs)<=250 && norm(l.text)===wtext);
+    const m = matchOf(wl);
+    if (!m) continue;
+    const cur = best.get(m);
+    if (!cur || Math.abs(wl.timeMs - m.timeMs) < Math.abs(cur.timeMs - m.timeMs)) best.set(m, wl);
+  }
+  for (const wl of wordLines) {
+    const match = matchOf(wl);
+    if (match && best.get(match) !== wl) continue;
     // 已有正文时不接纳文本不符或时间偏离的逐字；无正文才直接使用供应方的逐字正文。
     if(lines.some(l=>l.text.trim()) && !match)continue;
     out.push({
@@ -266,7 +279,8 @@ export function attachRoman(lines: LyricLineUI[], raw: string): LyricLineUI[] {
  */
 export function alignWordsToText(lines: LyricLineUI[]): LyricLineUI[] {
   return lines.map(line=>{
-    if(!line.words?.length || line.words.map(w=>w.text.replace(/\s/g,'')).join('')!==line.text.replace(/\s/g,''))return line;
+    if(!line.words?.length)return line;
+    if(line.words.map(w=>w.text.replace(/\s/g,'')).join('')!==line.text.replace(/\s/g,''))return alignLoose(line);
     let cursor=0;
     const words=line.words.map(word=>{
       let text='',count=0;const length=word.text.replace(/\s/g,'').length;
@@ -276,6 +290,48 @@ export function alignWordsToText(lines: LyricLineUI[]): LyricLineUI[] {
     });
     return {...line,words};
   });
+}
+
+const CORE = /[\p{L}\p{N}]/u;
+const coreOf = (s: string) => [...s].filter((c) => CORE.test(c)).join('').toLowerCase();
+
+/**
+ * 逐字和正文只差标点时也照正文还原空格和标点（#285）：网易云部分逐字把「souls, but」的逗号连同空格一起丢了，
+ * 逐字拼起来是「soulsbut」，和正文对不上就整句放弃，显示成粘在一起。比对时只看字母和数字；对上了就按正文切：
+ * 每个词取到它的字数为止，紧跟的标点归这个词（下一个词自己以标点开头时除外），后面有空白记 space。
+ * 只有标点的逐字（如「, 」）：正文这里正好是标点就吃掉它，否则保持原样。字母数字都对不上时不动。
+ */
+function alignLoose(line: LyricLineUI): LyricLineUI {
+  const words = line.words!;
+  if (!/[A-Za-z]/.test(line.text) || words.map((w) => coreOf(w.text)).join('') !== coreOf(line.text)) return line;
+  const t = line.text;
+  let cursor = 0;
+  const isPunct = (c: string) => !/\s/.test(c) && !CORE.test(c);
+  const out = words.map((word, i) => {
+    const need = coreOf(word.text).length;
+    let text = '';
+    if (!need) {
+      while (cursor < t.length && /\s/.test(t[cursor]!)) cursor++;
+      while (cursor < t.length && isPunct(t[cursor]!)) text += t[cursor++]!;
+    } else {
+      let count = 0;
+      while (cursor < t.length && count < need) {
+        const c = t[cursor++]!;
+        if (/\s/.test(c) && !text) continue;
+        text += c;
+        if (CORE.test(c)) count++;
+      }
+      const next = words[i + 1]?.text.trim() ?? '';
+      if (!next || !isPunct(next[0]!)) while (cursor < t.length && isPunct(t[cursor]!)) text += t[cursor++]!;
+    }
+    let space = false;
+    while (cursor < t.length && /\s/.test(t[cursor]!)) {
+      cursor++;
+      space = true;
+    }
+    return { ...word, text: text.trim() || word.text.trim(), space };
+  });
+  return { ...line, words: out };
 }
 
 /** 中/日文歌词“配料表”行（作词/作曲/编曲/演唱/词:/曲:/歌詞/訳詞…）。 */

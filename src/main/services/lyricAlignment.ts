@@ -316,7 +316,10 @@ export function mergeWordsByLine(base:Lyric,other:Lyric):{lyric:Lyric;pairs:numb
   // 直接配上的之外，再按「对方拆两行 / 本平台拆两句 / 局部偏移大」补配（#214）
   const pairs=[...direct,...extraPairs(rows,otherWords,direct)];
   const own=timedLines(base.yrc || '');
-  const hasOwn=(r:LyricLine)=>own.some(w=>Math.abs(w.timeMs-r.timeMs)<=250 && identityText(w.text)===identityText(r.text));
+  // 本行是否已有本平台的逐字：按顺序配对、窗口同 PAIR_WINDOW_MS（#285）。以前只认 250ms 内的，
+  // 本平台普通行比自己的逐字早 1 秒多时（网易云常见）会误判成没有，再补一份对方的，yrc 里同一句两份、界面显示两遍。
+  const ownPaired=new Set(pairRowsToWords(rows,own).map(([r])=>r));
+  const hasOwn=(r:LyricLine)=>ownPaired.has(r);
   const otherRows=textRows(other),otherRoman=parseLrc(other.romalrc || other.romanRaw || ''),baseRoman=parseLrc(base.romalrc || base.romanRaw || '');
   const target=new Map<LyricLine,{timeMs:number;translation?:string}>(),moved=new Map<number,number>(),addWords:TimedLine[]=[],addRoman:LyricLine[]=[];
   for(const [row,w] of pairs){

@@ -410,5 +410,31 @@ await test('2026-11-25 QQ 译文里的版权声明去掉（行本身保留），
   const r = ui.normalizeLyricLines({lines});
   assert.deepEqual(r.map((l)=>[l.text,l.translation]), [['编的第一句',undefined],['编的第二句','译文二'],['编的第三句','版权所有']]);
 });
+await test('#285 同一句两份逐字（本平台 + 补充来源）只显示一遍，留时间最近的那份',()=>{
+  const lines=[{timeMs:50320,text:"There's love at my front door"},{timeMs:54270,text:'She not like the same girls'}];
+  const yrc=['[50280,3990](50280,810,0)There\'s (51090,510,0)love (51600,90,0)at (51690,180,0)my (51870,450,0)front (52320,570,0)door',
+    '[50320,3959](50320,793,0)There\'s (51113,309,0)love (51422,200,0)at (51622,187,0)my (51809,505,0)front (52314,791,0)door',
+    '[54270,3300](54270,240,0)She (54510,240,0)not (54750,180,0)like (54930,120,0)the (55050,450,0)same (55500,660,0)girls'].join(String.fromCharCode(10));
+  const r=ui.mergeWordLyrics(lines,yrc);
+  assert.equal(r.length,2,'不重复');
+  assert.equal(r[0].words[0].startMs ?? r[0].words[0].timeMs ?? r[0].timeMs,50320,'留离正文最近的那份');
+});
+await test('#285 逐字丢了逗号：照正文还原「souls, but」，不粘成 soulsbut',()=>{
+  const r=ui.normalizeLyricLines({lines:[{timeMs:43920,text:"We're just two lost souls, but we're fine"}],yrc:"[43920,5580](43920,360,0)We're (44280,450,0)just (44730,720,0)two (45450,720,0)lost (46170,750,0)souls(46920,210,0)but (47130,330,0)we're (47460,660,0)fine"});
+  const shown=r[0].words.map(w=>w.text+(w.space?' ':'')).join('').trim();
+  assert.equal(shown,"We're just two lost souls, but we're fine");
+  // 只有标点的逐字（网易云常见的「, 」）照样对得上，不多出空词
+  const r2=ui.normalizeLyricLines({lines:[{timeMs:0,text:'Girls, I noticed it'}],yrc:'[0,3000](0,500,0)Girls(500,100,0), (600,400,0)I (1000,900,0)noticed(1900,100,0)it'});
+  assert.equal(r2[0].words.map(w=>w.text+(w.space?' ':'')).join('').trim(),'Girls, I noticed it');
+  assert.ok(r2[0].words.every(w=>w.text),'没有空词');
+});
+await test('#285 后端：本平台已有逐字（普通行早 1 秒多）时不再补对方的第二份',()=>{
+  const rows=[[3000,'编的甲句'],[8000,'编的乙句'],[13000,'编的丙句'],[18000,'编的丁句']].map(([timeMs,text])=>({timeMs,text}));
+  const ownY=rows.map(r=>`[${r.timeMs+1100},900](${r.timeMs+1100},900,0)${r.text}`).join(String.fromCharCode(10));
+  const supY=rows.map(r=>`[${r.timeMs+1150},900](${r.timeMs+1150},900,0)${r.text}`).join(String.fromCharCode(10));
+  const r=b.mergeWordsByLine({raw:'',lines:rows,yrc:ownY},{raw:'',lines:[],yrc:supY});
+  const n=r?b.timedLines(r.lyric.yrc).length:b.timedLines(ownY).length;
+  assert.equal(n,4,'yrc 里每句一份');
+});
 console.log(`歌词回归 ${count}/${count}`);
 }finally{fs.rmSync(temp,{recursive:true,force:true})}
