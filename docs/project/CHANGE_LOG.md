@@ -6,6 +6,12 @@
 
 ---
 
+## #286 — 2026-11-26 — 结窗口交接：#284 / #285 验收通过，快照与踩坑
+
+**改动点**（只改文档）：`CONTEXT_SNAPSHOT.md` 记 #284（版面轮换与切分）、#285（歌词重复 / 粘词）用户验收通过，写明已知限制和下一步（穿行）；`NOTES.md` 补两条歌词合并的坑（yrc 里两份逐字、只差标点的对齐）。
+
+**验证**：文档改动；代码同 #285（build、qa、qa:backend 全绿）。
+
 ## #285 — 2026-11-26 — 修复歌词同一句显示两遍、英文逐字丢逗号后粘词
 
 **背景**：用户验收 #284 时在 Hide（Seezyn / Juice WRLD，网易云 + AMLL 补全）发现版面和听音空间里「There's love at my front door」「When it gets dark outside」各显示两遍，「souls, but」「demons, I」显示成「soulsbut」「demonsI」。与 #284 无关，源头在歌词数据合并。
