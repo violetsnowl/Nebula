@@ -1720,7 +1720,7 @@ async function main() {
   const tplChecks = { en: null, zh: null };
   let lsFlyCheck = null;
   let pageLsLeakCheck = null;
-  const TPLS = ['held', 'spine', 'justify', 'foot', 'bleed', 'diag', 'field', 'groove', 'grid', 'corner', 'fault', 'drum'];
+  const TPLS = ['held', 'spine', 'justify', 'foot', 'bleed', 'diag', 'field', 'groove', 'grid', 'corner', 'fault', 'drum', 'register', 'cut'];
   /** 逐套强制版式：跳到用了这套的第一页的第一句唱到一半，量 bounds（out = 跑出画幅的字数，clash = 不同句子的字互相压住多少像素）。 */
   const checkTemplates = async (tag) => {
     const out = {};
@@ -1775,7 +1775,8 @@ async function main() {
         const ws = text.split(' ');
         const d = 330;
         lines.push({ timeMs: t, text, translation: tr });
-        yrc += `[${t},${ws.length * d + 700}]` + ws.map((w, j) => `(${t + j * d},${j === ws.length - 1 ? d + 700 : d},0)${w}${j < ws.length - 1 ? ' ' : ''}`).join('') + '\n';
+        // 每句最后一个词唱 1.23s（负形镂空要末句收在 1.2s 以上的长音上）；句距不变
+        yrc += `[${t},${ws.length * d + 900}]` + ws.map((w, j) => `(${t + j * d},${j === ws.length - 1 ? d + 900 : d},0)${w}${j < ws.length - 1 ? ' ' : ''}`).join('') + '\n';
         t += ws.length * d + 700 + 450;
       }
       t += 800;
@@ -1878,7 +1879,7 @@ async function main() {
           const cs = [...text];
           const d = 300;
           zlines.push({ timeMs: zt, text });
-          zyrc += `[${zt},${cs.length * d + 700}]` + cs.map((c, j) => `(${zt + j * d},${j === cs.length - 1 ? d + 700 : d},0)${c}`).join('') + '\n';
+          zyrc += `[${zt},${cs.length * d + 900}]` + cs.map((c, j) => `(${zt + j * d},${j === cs.length - 1 ? d + 900 : d},0)${c}`).join('') + '\n';
           zt += cs.length * d + 700 + 450;
         }
         zt += 800;

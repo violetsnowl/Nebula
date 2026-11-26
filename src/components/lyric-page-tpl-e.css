@@ -1,0 +1,291 @@
+/* 版面的新四套第二批（样张 O，2026-11-25 用户认可）：错版套印、负形镂空。逻辑在 components/lyric-page/bold-e.ts。
+   颜色只从封面算：印色 A = 强调色压到六成亮，印色 B 由脚本按规格算（墨色减 A、掺副色）；镂空的纸、纸厚、墨都从 --acc 推。 */
+
+.tpl-register .lp-no,
+.tpl-cut .lp-no {
+  display: none;
+}
+
+/* 版式定死、不浮起的字（两块版要对得上；裁下来的大字）：真字和替身都不加波浪 / 长音放大 */
+.lyric-page .u.lp-still,
+.lyric-page .u.lp-still .ch,
+.lpm-ctx .u.lp-still,
+.lpm-ctx .u.lp-still .ch {
+  transform: none !important;
+}
+
+/* 用印色唱的字：唱到 / 唱过都是印色（替身里也一样，--lp-pc 随排版环境带过去） */
+.lyric-page .u.lp-pc,
+.lyric-page .u.lp-pc .ch,
+.lpm-ctx .u.lp-pc,
+.lpm-ctx .u.lp-pc .ch {
+  --sung: var(--lp-pc) !important;
+  --edge: color-mix(in srgb, var(--lp-pc) 55%, #fff) !important;
+}
+
+.lyric-page .lp-line.is-past .u.lp-pc,
+.lyric-page .lp-line.is-past .u.lp-pc .ch {
+  color: var(--lp-pc);
+}
+
+/* ———— 错版套印 ———— */
+.lt-reg .lp-tx {
+  font-family: Newsreader, Georgia, serif;
+  font-weight: 600;
+  line-height: 1.16;
+  filter: none;
+}
+
+.is-cjk .lt-reg .lp-tx {
+  font-family: 'Noto Serif SC', 'Noto Serif JP', 'Noto Serif KR', 'Songti SC', 'Yu Mincho', serif;
+}
+
+.lyric-page .lp-line.is-vert.lt-reg .lp-tx {
+  letter-spacing: 0.1em;
+  line-height: 1;
+}
+
+.lp-reg-seg {
+  position: absolute;
+  display: block;
+  white-space: nowrap;
+}
+
+/* 短语：Inter 900 小写，字距 −.042em，行高 .775（量字时整句先用这套字体） */
+.lt-reg-big .lp-tx,
+.lp-reg-w {
+  font-family: Inter, 'Segoe UI', sans-serif;
+  font-weight: 900;
+  letter-spacing: -0.042em;
+  line-height: 0.78;
+  text-transform: lowercase;
+}
+
+.is-cjk .lt-reg-big .lp-tx,
+.is-cjk .lp-reg-w {
+  font-family: 'Noto Sans JP', 'Noto Sans KR', 'Noto Sans SC', 'Yu Gothic', 'Malgun Gothic', sans-serif;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: none;
+}
+
+.lang-zh .lt-reg-big .lp-tx,
+.lang-zh .lp-reg-w {
+  font-family: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+}
+
+.lyric-page .lp-line.is-vert .lp-reg-w {
+  letter-spacing: 0;
+}
+
+/* 短语前面的小词（So）：斜体衬线，坐在第一个词的高低差里 */
+.lp-reg-pre {
+  font-family: Newsreader, Georgia, serif;
+  font-style: italic;
+  font-size: 74px;
+  line-height: 1;
+}
+
+.is-cjk .lp-reg-pre {
+  font-family: var(--lc-font);
+  font-style: normal;
+  font-size: 56px;
+}
+
+/* 不透明的纸：加色混合要有底色（不能让轮廓那一层的黑填充露出黑底） */
+.lp-reg-paper {
+  position: absolute;
+  inset: -1600px;
+  z-index: -1;
+  background: var(--lp-paper);
+}
+
+.lp-reg-paper::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: var(--lp-grain);
+  background-size: 256px 256px;
+  opacity: 0.05;
+}
+
+/* 两块版：直接叠在纸上做加色混合，外层不加 isolation */
+.lp-plate {
+  position: absolute;
+  left: 0;
+  top: 0;
+  mix-blend-mode: plus-lighter;
+}
+
+/* 版 A 没唱到 = 印色 15%；版 B 没唱到看不见（只有那一圈轮廓） */
+.lyric-page .lp-plate .u,
+.lyric-page .lp-plate .u .ch,
+.lpm-ctx .u.lp-pc.lp-still,
+.lpm-ctx .u.lp-pc.lp-still .ch {
+  --un: color-mix(in srgb, var(--lp-pc) 15%, transparent) !important;
+}
+
+.lyric-page .lp-plate .u {
+  color: color-mix(in srgb, var(--lp-pc) 15%, transparent);
+}
+
+.lyric-page .lp-plate .u.lp-pb,
+.lyric-page .lp-plate .u.lp-pb .ch,
+.lpm-ctx .u.lp-pb,
+.lpm-ctx .u.lp-pb .ch {
+  --un: transparent !important;
+}
+
+.lyric-page .lp-plate .u.lp-pb {
+  color: transparent;
+}
+
+.lyric-page .lp-line.is-past .lp-plate .u {
+  color: var(--lp-pc);
+}
+
+.lyric-page .lp-plate .u.glow,
+.lyric-page .lp-plate .u .ch.glow {
+  filter: none;
+}
+
+/* 版 B 的轮廓：黑填充 + 3px 描边（先描边后填，否则可变字体露出笔画交叠的内线） */
+.lyric-page .lp-plate.is-o .u,
+.lyric-page .lp-plate.is-o .u .ch {
+  color: #000 !important;
+  background: none !important;
+  -webkit-text-stroke: 3px var(--lp-pc);
+  paint-order: stroke fill;
+}
+
+.lp-reg-marks {
+  position: absolute;
+  inset: 0;
+  mix-blend-mode: plus-lighter;
+  pointer-events: none;
+}
+
+.lp-reg-marks i {
+  position: absolute;
+  width: 40px;
+  height: 40px;
+}
+
+.lp-reg-marks svg {
+  display: block;
+  overflow: visible;
+}
+
+.lp-reg-marks svg * {
+  fill: none;
+  stroke: var(--lp-pc);
+  stroke-width: 1.5;
+}
+
+/* ———— 负形镂空 ———— */
+.lp-page.tpl-cut {
+  /* 纸 = 强调色同相、亮度约 .6（真实封面再亮也压在这一档，深墨对比 ≥ 4.5）；纸厚亮一档；墨极深 */
+  --cut-field: oklch(from var(--lp-acc) 0.6 min(c, 0.13) h);
+  --cut-lit: oklch(from var(--lp-acc) 0.74 min(c, 0.12) h);
+  --cut-ink: oklch(from var(--lp-acc) 0.17 min(c, 0.04) h);
+  --cut-die: color-mix(in srgb, var(--cut-ink) 62%, var(--cut-field));
+  --cut-glow: color-mix(in srgb, var(--cut-lit) 38%, transparent);
+  --lc-rest: color-mix(in srgb, var(--cut-ink) 42%, transparent);
+  --lp-ink: var(--cut-ink);
+  --lp-tr: color-mix(in srgb, var(--cut-ink) 50%, transparent);
+  --lp-tr-on: color-mix(in srgb, var(--cut-ink) 78%, transparent);
+}
+
+.lp-cut-sheet {
+  position: absolute;
+  inset: -1600px;
+  z-index: -1;
+  background: var(--cut-field);
+}
+
+.lp-cut-grain {
+  position: absolute;
+  inset: -1600px;
+  z-index: 5;
+  background-image: var(--lp-grain);
+  background-size: 256px 256px;
+  opacity: 0.085;
+  pointer-events: none;
+}
+
+.lp-cut-probe {
+  position: absolute;
+  width: 0;
+  height: 0;
+  overflow: hidden;
+}
+
+.lt-cut .lp-tx {
+  font-family: Newsreader, Georgia, serif;
+  font-weight: 600;
+  line-height: 1.1;
+  letter-spacing: -0.01em;
+  filter: none;
+}
+
+.lyric-page .lp-line.is-vert.lt-cut .lp-tx {
+  font-family: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  line-height: 1;
+}
+
+.lp-cut-seg {
+  position: absolute;
+  display: block;
+  white-space: nowrap;
+}
+
+.lp-cut-big {
+  font-family: Inter, 'Segoe UI', sans-serif;
+  font-weight: 900;
+  letter-spacing: -0.05em;
+  line-height: 1;
+  text-transform: lowercase;
+}
+
+.lyric-page .lp-line.is-vert .lp-cut-big {
+  font-family: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+  letter-spacing: 0;
+}
+
+/* 纸上的字用深墨（替身里也一样：--lp-ink 随排版环境带过去） */
+.lyric-page .u.lp-onp,
+.lyric-page .u.lp-onp .ch,
+.lpm-ctx .u.lp-onp,
+.lpm-ctx .u.lp-onp .ch {
+  --sung: var(--lp-ink) !important;
+  --edge: color-mix(in srgb, var(--lp-ink) 70%, transparent) !important;
+  --un: var(--lc-rest) !important;
+}
+
+.lyric-page .u.lp-onp.glow,
+.lyric-page .u.lp-onp .ch.glow {
+  filter: none;
+}
+
+/* 被裁下来的那个词：真字只当转场的落点，看见的是画布 */
+.lyric-page .u.lp-cutsrc {
+  opacity: 0;
+}
+
+.lp-cut-cv {
+  position: absolute;
+  pointer-events: none;
+}
+
+.lp-cut-cv.is-wall,
+.lp-cut-cv.is-win {
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(var(--m, -20px) - 0.6px), transparent calc(var(--m, -20px) + 0.6px));
+  mask-image: linear-gradient(90deg, #000 calc(var(--m, -20px) - 0.6px), transparent calc(var(--m, -20px) + 0.6px));
+}
+
+.lp-cut-cv.is-v {
+  -webkit-mask-image: linear-gradient(180deg, #000 calc(var(--m, -20px) - 0.6px), transparent calc(var(--m, -20px) + 0.6px));
+  mask-image: linear-gradient(180deg, #000 calc(var(--m, -20px) - 0.6px), transparent calc(var(--m, -20px) + 0.6px));
+}

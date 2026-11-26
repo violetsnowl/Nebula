@@ -15,13 +15,13 @@ const easeIO = (x: number) => {
 const allTimed = (c: TCtx) => c.lines.every((l) => l.units.length > 0 && l.eu?.length === l.units.length);
 
 /** 一个字本身的范围（页内逻辑像素，扣掉上色留白）。 */
-interface Box {
+export interface Box {
   x: number;
   y: number;
   w: number;
   h: number;
 }
-function unitBox(c: TCtx, u: HTMLElement): Box {
+export function unitBox(c: TCtx, u: HTMLElement): Box {
   const pr = c.page.getBoundingClientRect();
   const S = pr.width / PW || 1;
   const r = u.getBoundingClientRect();

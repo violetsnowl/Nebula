@@ -31,6 +31,7 @@ import './lyric-page-tpl.css';
 import './lyric-page-tpl-b.css';
 import './lyric-page-tpl-c.css';
 import './lyric-page-tpl-d.css';
+import './lyric-page-tpl-e.css';
 
 /**
  * 版面（样张 M，2026-11-22，fe/next；规格 NEBULA_UI_SYSTEM §7.1b）：聆听时的另一种主舞台。完全不飞，靠排版：
@@ -144,7 +145,7 @@ function resetPage(pg: PPage): void {
       .join(' ');
     delete l.el.dataset.hb;
     l.tx.style.cssText = '';
-    for (const u of l.units) u.classList.remove('lp-big', 'lp-still', 'lp-pc', 'lp-pb', 'lp-cutsrc');
+    for (const u of l.units) u.classList.remove('lp-big', 'lp-still', 'lp-pc', 'lp-pb', 'lp-cutsrc', 'lp-onp');
     if (l.tr) {
       if (l.tr.parentElement !== l.el) l.el.appendChild(l.tr);
       l.tr.style.cssText = '';
@@ -751,7 +752,7 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
         return pages
           .filter((p) => p.on)
           .map((p) => {
-            // 滚到筒边上的行（data-edge）压得很扁、本来就该出画，不算
+            // 滚到筒边上的行（data-edge）压得很扁、本来就该出画；错版套印的第二块版本来就印在第一块上：都不算
             // 量字本身（扣掉四周的上色留白）：撑满版面宽度的大字，留白本来就伸出画幅
             const inner = (u: HTMLElement) => {
               const r = u.getBoundingClientRect();
@@ -760,7 +761,7 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
               const n = (v: string) => (parseFloat(v) || 0) * k;
               return new DOMRect(r.left + n(cs.paddingLeft), r.top + n(cs.paddingTop), r.width - n(cs.paddingLeft) - n(cs.paddingRight), r.height - n(cs.paddingTop) - n(cs.paddingBottom));
             };
-            const rs = p.lines.map((l) => l.units.filter((u) => !u.closest('.lp-deco, [data-edge]')).map(inner));
+            const rs = p.lines.map((l) => l.units.filter((u) => !u.closest('.lp-deco, [data-edge], .lp-plate.is-b')).map(inner));
             let out = 0;
             let clash = 0;
             rs.flat().forEach((r) => {

@@ -3,6 +3,7 @@ import { foot, held, justify, spine } from './bold-a';
 import { bleed, diag, field } from './bold-b';
 import { corner, groove, grid } from './bold-c';
 import { drum, fault } from './bold-d';
+import { cut, register } from './bold-e';
 import { CLASSIC_FALLBACK_H, CLASSIC_H, CLASSIC_V } from './classic';
 import { glyphs, norm } from './kit';
 import type { TCtx, Tpl } from './types';
@@ -13,7 +14,7 @@ import type { TCtx, Tpl } from './types';
  * 色场只给全曲最后一个副歌页。所有语言共用这一套轮换，横排还是竖排由页面方向决定（中文竖排、其余横排）。
  */
 
-const BOLD: Record<string, Tpl> = { held, spine, justify, foot, bleed, diag, field, groove, grid, corner, fault, drum };
+const BOLD: Record<string, Tpl> = { held, spine, justify, foot, bleed, diag, field, groove, grid, corner, fault, drum, register, cut };
 
 /** 后面几批版式在各自的模块里登记进来。 */
 export function registerBold(...ts: Tpl[]): void {
@@ -23,14 +24,14 @@ export function registerBold(...ts: Tpl[]): void {
 const PLAN: Record<SectionKind, string[]> = {
   verse: ['held', 'c', 'foot', 'grid', 'c', 'c'],
   pre: ['spine', 'c', 'c'],
-  chorus: ['justify', 'bleed', 'corner', 'drum', 'c', 'c'],
+  chorus: ['justify', 'register', 'bleed', 'corner', 'drum', 'c', 'c'],
   bridge: ['diag', 'fault', 'c'],
-  outro: ['drum', 'groove', 'c'],
+  outro: ['drum', 'groove', 'cut', 'c'],
 };
 
 /** 大动作的版式：新四套（样张 O）不和它们排在相邻两页，反过来它们也不紧跟新四套。 */
-const LOUD = new Set(['justify', 'bleed', 'field', 'fault', 'drum']);
-const NEW_O = new Set(['fault', 'drum']);
+const LOUD = new Set(['justify', 'bleed', 'field', 'fault', 'drum', 'register', 'cut']);
+const NEW_O = new Set(['fault', 'drum', 'register', 'cut']);
 
 /** 按歌轮流：一首歌只有一段桥时，一半的歌用断层、一半用斜线（同一首歌每次一样）。 */
 function flip(c: TCtx): boolean {
@@ -76,7 +77,11 @@ export function pickTpl(c: TCtx, st: PickState): Tpl {
     st.classic[kind] = j;
     return done(t);
   };
-  if (c.lastChorus && BOLD.field && !st.used.has('field') && (!BOLD.field.fits || BOLD.field.fits(c))) return done(BOLD.field);
+  // 全曲最后一个副歌页：末句收在长音上用负形镂空，否则色场（二选一）
+  if (c.lastChorus) for (const id of ['cut', 'field']) {
+    const t = BOLD[id];
+    if (t && !st.used.has('cut') && !st.used.has('field') && (!t.fits || t.fits(c))) return done(t);
+  }
   const plan = kind === 'bridge' && flip(c) ? ['fault', 'diag', 'c'] : PLAN[kind];
   for (let j = 0; j < plan.length; j++) {
     const id = plan[(nth + j) % plan.length]!;
