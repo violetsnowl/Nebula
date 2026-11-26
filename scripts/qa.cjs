@@ -1713,6 +1713,58 @@ async function main() {
     !pageOff.root && pageOff.mode === null;
   log('版面（聆听中取代漫游歌词）', JSON.stringify({ pageOn, pageOff }));
 
+  // 穿行（初版，travel-opus5.5）：实验室选「穿行」→ 聆听中穿行出现、星云与漫游歌词退开；画了封面、歌词在画面内、帧耗时低；
+  // 打开听音空间时穿行淡出、漫游歌词不抢着做一镜到底；切回漫游歌词后穿行卸掉
+  await page.keyboard.press('Control+Shift+M');
+  await page.waitForTimeout(300);
+  await pickStage('穿行');
+  await page.keyboard.press('Control+Shift+M');
+  await page.mouse.move(640, 300);
+  await page.mouse.move(672, 330);
+  await page.waitForFunction(() => !document.querySelector('.app[data-lk]'), null, { timeout: 3000 }).catch(() => {});
+  await page.waitForFunction(() => !!document.querySelector('.app[data-lk-full]'), null, { timeout: 9000 }).catch(() => {});
+  await page.waitForTimeout(1600);
+  const travelOn = await page.evaluate(() => {
+    const p = window.__nebulaTravel ? window.__nebulaTravel.probe() : null;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const seen = p ? p.lines.filter((l) => l.op > 0.3) : [];
+    return {
+      listening: !!document.querySelector('.app[data-listen]'),
+      mode: document.documentElement.dataset.stageMode ?? null,
+      op: p ? p.op : -1,
+      covers: p ? p.covers : 0,
+      slots: p ? p.slots : 0,
+      seen: seen.length,
+      cur: seen.some((l) => l.state === 'cur' || l.state === 'past'),
+      // 唱完的那句会迎面放大着飞出画面（有意），只量还没唱完的
+      out: seen.filter((l) => !l.done).filter((l) => l.x < -2 || l.y < -2 || l.x + l.w > vw + 2 || l.y + l.h > vh + 2).length,
+      frame: p ? p.frameMs : null,
+      stageHidden: getComputedStyle(document.querySelector('.stage-3d')).visibility === 'hidden',
+      roamHidden: getComputedStyle(document.querySelector('.lyrics-layer')).visibility === 'hidden',
+    };
+  });
+  await page.evaluate(() => document.querySelector('.bp-cover[data-np-cover]')?.click());
+  await page.waitForTimeout(700);
+  const travelLs = await page.evaluate(() => ({
+    ls: !!document.querySelector('.ls-root'),
+    op: window.__nebulaTravel ? window.__nebulaTravel.probe().op : -1,
+    roamFly: window.__nebulaRoamFly ? window.__nebulaRoamFly.probe() !== null : false,
+  }));
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(500);
+  await page.keyboard.press('Control+Shift+M');
+  await page.waitForTimeout(300);
+  await pickStage('漫游歌词');
+  await page.keyboard.press('Control+Shift+M');
+  await page.waitForTimeout(300);
+  const travelOff = await page.evaluate(() => ({ root: !!document.querySelector('.travel-stage'), mode: document.documentElement.dataset.stageMode ?? null }));
+  const travelOk =
+    travelOn.listening && travelOn.mode === 'travel' && travelOn.op > 0.9 && travelOn.covers > 0 && travelOn.seen >= 1 && travelOn.cur && travelOn.out === 0 &&
+    !!travelOn.frame && travelOn.frame.n > 30 && travelOn.frame.p95 < 6 && travelOn.stageHidden && travelOn.roamHidden &&
+    travelLs.ls && travelLs.op < 0.05 && !travelLs.roamFly && !travelOff.root && travelOff.mode === null;
+  log('穿行（初版：聆听中取代星云与漫游歌词）', JSON.stringify({ travelOn, travelLs, travelOff }));
+
   // 版面·英文占位歌（样张 M 的原创歌词，带中文翻译，有主歌 / 预副歌 / 副歌 / 间奏 / 桥段）：
   // 判定间奏三点（跳到间奏中段，三点出现且在亮、这时没有页）；设了 NEBULA_QA_SHOT 时另外跳到各段拍一张给开发目测
   let gapDots = null;
@@ -2314,6 +2366,7 @@ async function main() {
     !z1Ok ||
     !shapeOk ||
     !pageOk ||
+    !travelOk ||
     !gapOk ||
     !morphPass ||
     !tplOk ||
@@ -2379,6 +2432,7 @@ async function main() {
     z1Words: !z1Ok,
     lyricShape: !shapeOk,
     lyricPage: !pageOk,
+    travelStage: !travelOk,
     pageGapDots: !gapOk,
     pageMorph: !morphPass,
     pageTemplates: !tplOk,

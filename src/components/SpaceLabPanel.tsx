@@ -93,6 +93,7 @@ export const SpaceLabPanel = memo(function SpaceLabPanel({ songCount }: { songCo
             [
               ['roam', '漫游歌词'],
               ['page', '版面'],
+              ['travel', '穿行'],
             ] as const
           ).map(([v, label]) => (
             <button key={v} type="button" aria-pressed={lab.stageMode === v} onClick={() => setSpaceLab({ stageMode: v })}>

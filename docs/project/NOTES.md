@@ -34,6 +34,8 @@
 - 后端统一入口是 `dist-main/index.cjs`（由 `src/main/index.ts` 经 esbuild 打包）；改 `src/main` 后必须 `pnpm build:main` 才能让 Electron 和冒烟测试生效。
 - `pnpm build` 会清空并重建 `../nebula-outputs/`（README 等内容需在构建后重写，见构建脚本说明）。
 - **构建产物在仓库外**：`pnpm build` 输出到同级目录 `../nebula-outputs/index.html`（本机 `E:\CUFE\vibecoding\nebula-outputs`）；而 `pnpm qa` 正是读取这个文件，所以**必须先 build 再 qa**。
+- **新开工作树时 Electron 本体不会自动装上**（2026-11-26，`travel-opus5.5`）：本机 pnpm 11 在工作树里 `pnpm install` 不跑 electron 的安装脚本，`node_modules/.pnpm/electron@*/node_modules/electron/` 下缺 `dist/` 和 `path.txt`，`pnpm desktop` 起不来。从主目录同一路径把这两样复制过去即可（本地复制，不用联网下载）。工作树要放在多一层的目录里（如 `E:\CUFE\vibecoding\travel-opus5.5\nebula`），否则 `../nebula-outputs` 和主目录是同一个，两边的 build / qa 会互相覆盖。
+- **穿行的镜头别用「停—推」或「目标 + 指数追赶」**（2026-11-26，#287，两份初版录屏比较）：停—推（唱句时静止、换句正弦缓入缓出）速度每句归零再起步，看着像「一脚油门一脚刹车」，问题不在最快速度高低而在速度反复归零；目标瞬跳 + 指数追赶起步最猛（首尾相接的句子换句瞬间每秒 4500 单位），像快速穿梭。现行做法：折线目标轨迹 + 整条轨迹高斯平滑（`travel/route.ts`）。再调参先在真实时间轴上量顿挫（最大加加速度）、一句周期内最低速 / 最高速、最快速度、开唱 / 唱完时句子大小（调参脚本思路见 `TRAVEL_HANDOFF.md` §8），三者此消彼长：句间距越大越深，但换句越快、或唱句时靠近越多。
 - **两个目录不要同时跑 `pnpm qa`**（2026-11-22，前端工作树 `fe\nebula` 与主目录并行时踩到）：两个无头浏览器同时播放，播放时间会卡住，「空域歌词逐字层」「进度填充逐帧推进」两项报红（表现是 `flights:0`、`moved:0`）。产物没变却突然红这两项，先用任务管理器 / `Get-CimInstance Win32_Process` 看有没有另一个 `node scripts/qa.cjs`，等它跑完再跑。
 - **用 node 脚本改源码时，模板字符串里的反斜杠会被吃掉**（2026-11-22，fe/next 踩了两次）：在 `node -e` / heredoc 里用反引号模板把 `/\s+/g` 写进 TS 文件，落盘变成 `/s+/g`（这一条第一次写进本文件时也被吃掉了）——不再去空白，反而把字母 s 删了（稿纸按格计数、一镜到底按文字对齐都因此全错）。改含正则的源码用编辑工具；用脚本时写完 grep 一下实际落盘的内容。
 - **替身 / 克隆每帧同步原元素的行内样式时，别用行内样式藏原元素**（2026-11-22，版面 ↔ 听音空间一镜到底）：原元素设了 `visibility:hidden`，同步过去替身也全程不可见，用户看到的只是两幕之间一段黑。藏原元素用属性（`data-flyhide` + 样式表规则），同步只拷行内样式和类名。

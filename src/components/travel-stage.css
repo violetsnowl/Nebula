@@ -1,0 +1,113 @@
+/* 穿行（初版，components/TravelStage.tsx）：聆听时的第三种主舞台。与版面同层（z-index 11），透明度由 TravelStage 按交接进度逐帧写。
+   逐字层的 .u / .ch / 扫光 / 长音白光来自 listen/lyric-words.css（根上带 .lw）；这里只管歌词三种状态的颜色、字体和退让规则。 */
+
+.travel-stage {
+  position: absolute;
+  inset: 0;
+  z-index: 11;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0;
+  will-change: opacity;
+  /* 远处的下一句、下下句要读得到：比版面的「先印好」（24%）亮一点 */
+  --lc-rest: rgba(255, 255, 255, 0.34);
+  --tv-ink: var(--lc-a);
+}
+
+.travel-stage[data-scheme='mono'] {
+  --lc-rest: color-mix(in srgb, color-mix(in srgb, var(--lc-a) 58%, #fff) 34%, transparent);
+  --tv-ink: color-mix(in srgb, var(--lc-a) 8%, #fff);
+}
+
+.tv-canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.tv-lines {
+  position: absolute;
+  inset: 0;
+}
+
+/* 按透视投影逐帧定位：transform = 投影点 · 缩放 · 自身居中 */
+.tv-line {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  white-space: nowrap;
+  text-align: center;
+}
+
+.tv-tx {
+  font-family: var(--lc-font, 'Noto Serif SC', serif);
+  font-weight: var(--lyric-weight, 600);
+  letter-spacing: var(--lc-ls, 0.02em);
+  font-size: 72px;
+  line-height: 1.2;
+  /* 中性外羽化：压在亮封面上时把字托出来（同漫游歌词、版面） */
+  filter: drop-shadow(0 1px 2.4px rgba(4, 6, 12, 0.55)) drop-shadow(0 0 5px rgba(4, 6, 12, 0.3));
+}
+
+.tv-line.is-past .u,
+.tv-line.is-past .u .ch {
+  color: var(--tv-ink);
+}
+
+.tv-whole {
+  display: inline-block;
+  color: var(--lc-rest);
+  transition: color 0.38s ease;
+}
+
+.tv-whole.is-on {
+  color: var(--tv-ink);
+}
+
+.tv-tr {
+  margin-top: 0.4em;
+  font-family: Inter, 'Segoe UI', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  font-size: 26px;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  color: rgba(255, 255, 255, 0.36);
+  transition: color 0.5s ease;
+}
+
+/* 候场的句子只露原文（远处的小字不再带一行更小的译文，当前句附近不挤），开唱时译文跟着亮起 */
+.tv-tr {
+  opacity: 0;
+  transition: opacity 0.45s ease, color 0.5s ease;
+}
+.tv-line.is-cur .tv-tr,
+.tv-line.is-past .tv-tr {
+  opacity: 1;
+  color: rgba(255, 255, 255, 0.62);
+}
+
+/* 退让：聆听中星云、漫游歌词与前奏歌名随交接进度淡出，完全进入后不再绘制（穿行自己画背景与封面） */
+:root[data-stage-mode='travel'] .app[data-listen-style][data-lk] .stage-3d {
+  opacity: calc(1 - var(--lk));
+}
+:root[data-stage-mode='travel'] .app[data-listen-style][data-lk-full] .stage-3d {
+  visibility: hidden;
+}
+:root[data-stage-mode='travel'] .app[data-lk] .lyrics-layer {
+  opacity: calc(1 - var(--lk));
+}
+:root[data-stage-mode='travel'] .app[data-lk-full] .lyrics-layer {
+  visibility: hidden;
+}
+:root[data-stage-mode='travel'] .app[data-lk] .lyrics-intro {
+  opacity: calc(0.92 * (1 - var(--lk)));
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .tv-line .u,
+  .tv-line .u .ch {
+    transform: none;
+  }
+}

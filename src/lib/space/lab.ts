@@ -8,8 +8,8 @@ import { useSyncExternalStore } from 'react';
  * 设置在「设置 › 外观 › 星云怎么排」；开发者面板「舞台实验室」（Ctrl+Shift+M）另外能调透镜强度和镜头倾角。
  */
 export type StageLayout = 'cluster' | 'chroma' | 'random';
-export type StageMode = 'roam' | 'page';
-const STAGE_MODES: StageMode[] = ['roam', 'page'];
+export type StageMode = 'roam' | 'page' | 'travel';
+const STAGE_MODES: StageMode[] = ['roam', 'page', 'travel'];
 
 export interface SpaceLab {
   /** 用户设置的排法 */
@@ -24,7 +24,7 @@ export interface SpaceLab {
   tint: boolean;
   /** 漫游歌词升级（样张 M，2026-11-22）：段落开合、间奏让位、字照亮空间、大小对比、同段同向。关掉 = 旧样子，用来对比。 */
   lyricShape: boolean;
-  /** 聆听时的舞台（样张 M）：漫游歌词（默认）/ 版面。先挂在实验室里，验收后再进设置。 */
+  /** 聆听时的舞台（样张 M）：漫游歌词（默认）/ 版面 / 穿行（初版，待验证）。先挂在实验室里，验收后再进设置。 */
   stageMode: StageMode;
   /** 开发者面板是否打开（不持久化）。 */
   open: boolean;

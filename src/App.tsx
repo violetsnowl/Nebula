@@ -6,6 +6,7 @@ import { BackgroundLayer } from './components/BackgroundLayer';
 import { SearchBar } from './components/SearchBar';
 import { LyricsLayer } from './components/LyricsLayer';
 import { LyricPage } from './components/LyricPage';
+import { TravelStage } from './components/TravelStage';
 import { StageCanvas } from './components/StageCanvas';
 import { TopBar } from './components/TopBar';
 import { AccountDock } from './components/AccountDock';
@@ -549,6 +550,16 @@ export default function App() {
           songKey={playerState.song ? `${playerState.song.source}:${playerState.song.sourceId ?? playerState.song.id}` : 'none'}
           lsOpen={nowPlayingOpen}
           title={playerState.song?.title ?? ''}
+        />
+      )}
+      {/* 穿行（初版）：舞台实验室选「穿行」时，聆听中取代星云与漫游歌词 */}
+      {!uiHideLyrics && (
+        <TravelStage
+          lines={lyricLines}
+          songKey={playerState.song ? `${playerState.song.source}:${playerState.song.sourceId ?? playerState.song.id}` : 'none'}
+          lsOpen={nowPlayingOpen}
+          song={playerState.song ?? null}
+          cards={effectiveCards}
         />
       )}
 

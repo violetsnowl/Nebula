@@ -717,6 +717,8 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist, l
       const labNow = getSpaceLab();
       up = labNow.lyricShape;
       pageMode = labNow.stageMode === 'page';
+      // 穿行（初版）在聆听中接管舞台：漫游歌词不再请星云刷新、不做和听音空间的一镜到底（漫游态照旧）
+      const travelOwns = labNow.stageMode === 'travel' && listenBus.enabled && listenBus.k > 0.5;
       if (up || pageMode) {
         const sd = shapeRef.current;
         const st = stageAt(sd.shape, sd.sl, tSec);
@@ -964,7 +966,7 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist, l
             glow.style.transform = `translate3d(${stageShapeBus.lx.toFixed(1)}px, ${stageShapeBus.ly.toFixed(1)}px, 0)`;
             glow.style.opacity = Math.min(1, stageShapeBus.lk * (enabled ? k : 1) * 1.6).toFixed(3);
           }
-          if (!pageMode && (playingNow || relayoutNow)) pokeListenFrame();
+          if (!pageMode && !travelOwns && (playingNow || relayoutNow)) pokeListenFrame();
         }
       } else if (lightRef.current && lightRef.current.style.opacity !== '0') lightRef.current.style.opacity = '0';
       // 先同步本帧底部字幕（保证打开/收起听音空间的那一帧 captionDom 与 --cap-o 已是最新当前句）
@@ -979,7 +981,7 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist, l
       captionFrame(cur, tSec, rawCapShow * capFadeIn);
 
       // 在本帧 .flow-lyric 与底部字幕都更新完毕后调度听音空间双向一镜到底
-      const pageOwns = isPageStageActive(pageMode, enabled, listenBus.k);
+      const pageOwns = isPageStageActive(pageMode, enabled, listenBus.k) || travelOwns;
       if (pageOwns && roamFly) {
         roamFly.end();
         roamFly = null;
