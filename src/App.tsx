@@ -548,6 +548,7 @@ export default function App() {
           loading={lyricLoading}
           songKey={playerState.song ? `${playerState.song.source}:${playerState.song.sourceId ?? playerState.song.id}` : 'none'}
           lsOpen={nowPlayingOpen}
+          title={playerState.song?.title ?? ''}
         />
       )}
 

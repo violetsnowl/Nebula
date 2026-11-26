@@ -18,6 +18,23 @@
   display: block;
 }
 
+/* 书脊 / 满版齐行断成两行（列）时：每行按自己的内容量宽（块级的行默认撑到最宽那行），字距按本行字号算，量出来才和最终排出来的一致 */
+.lp-seg.lp-fit {
+  inline-size: max-content;
+}
+
+.lt-heavy .lp-seg.lp-fit {
+  letter-spacing: -0.02em;
+}
+
+.is-cjk .lt-heavy .lp-seg.lp-fit {
+  letter-spacing: 0;
+}
+
+.lyric-page .lp-line.is-vert.lt-heavy .lp-seg.lp-fit {
+  letter-spacing: 0.14em;
+}
+
 /* ———— 一词放大：小号宽字距大写无衬线 + 唱得最久的词换大号斜体衬线 ———— */
 .lt-held .lp-tx {
   font-family: Inter, 'Segoe UI', sans-serif;
@@ -70,7 +87,7 @@
   font-family: 'Noto Serif SC', 'Noto Serif JP', 'Noto Serif KR', 'Songti SC', 'Yu Mincho', serif;
   font-weight: 900;
   line-height: 1;
-  letter-spacing: 0.02em;
+  letter-spacing: 0.04em;
 }
 
 /* ———— 粗大写（书脊、满版齐行） ———— */
@@ -92,6 +109,11 @@
 
 .lang-zh .lt-heavy .lp-tx {
   font-family: 'Noto Serif SC', 'Songti SC', 'SimSun', serif;
+}
+
+/* 竖排书脊（2026-11-25）：贴左边的整高粗字，字距收紧（竖排默认 .14em 太松，撑不出书脊的分量） */
+.lyric-page .lp-line.is-vert.lt-spine-v .lp-tx {
+  letter-spacing: 0.04em;
 }
 
 /* 斜体衬线（书脊旁边那几句）；中日韩没有斜体，用歌词字体 */

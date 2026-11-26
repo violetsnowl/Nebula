@@ -48,6 +48,8 @@ interface LyricPageProps {
   songKey?: string;
   /** 听音空间开着（版面 ↔ 听音空间一镜到底用）。 */
   lsOpen?: boolean;
+  /** 歌名：出血大字的钩子词优先取歌名里的词（2026-11-25 真实数据审查）。 */
+  title?: string;
 }
 
 const usable = (l: LyricLineUI | undefined) => !!l && (!!l.text?.trim() || !!l.words?.length);
@@ -201,7 +203,9 @@ function measureLine(l: PLine, S: number): void {
 
 
 
-export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: LyricPageProps) {
+export function LyricPage({ lines, loading = false, songKey, lsOpen = false, title = '' }: LyricPageProps) {
+  const titleRef = useRef(title);
+  titleRef.current = title;
   const lab = useSpaceLab();
   const active = lab.stageMode === 'page';
   const listen = useListenSettings();
@@ -285,7 +289,7 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
     const lang: TCtx['lang'] = model.script === 'zh' ? 'zh' : model.script === 'ja' ? 'ja' : model.script === 'ko' ? 'ko' : 'en';
     const cjk = lang !== 'en';
     const chorusUnits = els.filter((_, k) => shape.sections[shape.lineSection[k] ?? -1]?.kind === 'chorus').map((e) => (cjk ? [e.units ? e.units.map((u) => u.t + (u.sp ? ' ' : '')).join('') : e.text] : (e.units ?? []).map((u) => u.t)));
-    const hook = songHook(chorusUnits, cjk);
+    const hook = songHook(chorusUnits, cjk, titleRef.current);
     let lastChorusSec = -1;
     shape.sections.forEach((s, i) => {
       if (s.kind === 'chorus') lastChorusSec = i;

@@ -1,6 +1,7 @@
 import { hslToRgb, rgbToHsl } from '../../lib/coverColors';
+import { oklabToRgb, rgbToOklab } from '../../lib/space/tone';
 import { unitBox } from './bold-d';
-import { deco, glyphs, norm, px, segment, unitP } from './kit';
+import { deco, flatten, glyphs, norm, px, segment, unitP } from './kit';
 import { PW, type PageHooks, type TCtx, type TLine, type Tpl } from './types';
 
 /**
@@ -59,6 +60,17 @@ function wrap(c: TCtx, l: TLine, from: number, to: number, width: number): numbe
   return starts;
 }
 
+/** 竖排的几列同一字号 f，起点在 top：最高的那列要收在 790 以内（播放条从 808 起；竖排字距把列拉长，只能量出来）。返回收完的字号。 */
+function fitCol(c: TCtx, els: HTMLElement[], f: number, top: number): number {
+  for (let k = 0; k < 4; k++) {
+    for (const e of els) e.style.fontSize = px(f);
+    const h = Math.max(0, ...els.map((e) => c.size(e).h));
+    if (h <= 0 || top + h <= 790) break;
+    f = Math.floor(f * ((790 - top) / h) * 100) / 100;
+  }
+  return f;
+}
+
 // ———— 错版套印（副歌）————
 interface Reg {
   /** 两遍各在哪一句、从第几个字起；m = 短语几个字（单位）。 */
@@ -103,6 +115,32 @@ function findReg(c: TCtx): Reg | null {
   return null;
 }
 
+/**
+ * 印色 B 的下限（OKLCH 明度 ≥ .62、彩度 ≥ .09，色相保留；彩度原定 .06，黑白封面上仍偏橄榄发闷，主对话 2026-11-25 提到 .09）：深色封面上 (墨 − A) × .62 + 副色 × .42 会算成发灰的脏紫 / 卡其。
+ * 近乎无彩时（色相是噪声）取 A 的补色；A、B 两块版靠 OKLab 距离兜底，太近就把 B 的明度往远离 A 的一侧推。
+ */
+function floorOklch(B: [number, number, number], A: [number, number, number]): [number, number, number] {
+  const hue = (t: [number, number, number]) => Math.atan2(t[2], t[1]);
+  const lb = rgbToOklab(...B);
+  const la = rgbToOklab(...A);
+  // 近乎无彩时色相是噪声：（墨 − A）本来就是 A 的补色方向，就取 A 的补色
+  const h = Math.hypot(lb[1], lb[2]) < 0.02 ? hue(la) + Math.PI : hue(lb);
+  const make = (L: number, C: number) => oklabToRgb(L, C * Math.cos(h), C * Math.sin(h));
+  let L = Math.max(lb[0], 0.62);
+  const C = Math.max(Math.hypot(lb[1], lb[2]), 0.09);
+  let out = make(L, C);
+  const dist = (x: [number, number, number]) => {
+    const p = rgbToOklab(...x);
+    return Math.hypot(p[0] - la[0], p[1] - la[1], p[2] - la[2]);
+  };
+  if (dist(out) < 0.12) {
+    // 太像 A：往远离 A 的明度方向推，推不动（顶到 .62 的下限）就往另一侧
+    L = la[0] > 0.7 ? Math.max(0.62, la[0] - 0.14) : Math.min(0.95, la[0] + 0.14);
+    out = make(L, C);
+  }
+  return out;
+}
+
 /** 印色 B：墨色减去 A，再掺一半封面副色、略提亮（规格：(墨 − A) × .62 + 副色 × .42 + 20）。两版叠在一起接近墨色。 */
 function plateColors(): { a: string; b: string } {
   const st = document.documentElement.style;
@@ -115,7 +153,8 @@ function plateColors(): { a: string; b: string } {
   const [h, s] = rgbToHsl(...acc);
   const A = hslToRgb(h, s, 0.6);
   const ink = A.map((v) => v + (255 - v) * 0.72);
-  const B = A.map((v, i) => Math.round(clamp((ink[i]! - v) * 0.62 + c2[i]! * 0.42 + 20, 0, 255)));
+  const B0 = A.map((v, i) => Math.round(clamp((ink[i]! - v) * 0.62 + c2[i]! * 0.42 + 20, 0, 255)));
+  const B = floorOklch(B0 as [number, number, number], A);
   return { a: `rgb(${A.join(' ')})`, b: `rgb(${B.join(' ')})` };
 }
 
@@ -177,170 +216,218 @@ export const register: Tpl = {
     else fs = Math.min(432, (100 * 1050) / Math.max(1, w100), 690 / (rowsN * (c.cjk ? 1 : 0.775)));
     L1.el.classList.remove('lt-reg-big');
     const LH = vert ? 1 : c.cjk ? 1 : 0.775;
-    // —— 两遍所在的句子：按「前文 / 短语每行 / 后文（再按栏宽断行）」切段，段都绝对定位在页上 ——
-    const COL_FS = 34;
-    const restRows = new Map<TLine, number[]>();
-    for (const l of [L1, L2]) {
-      if (restRows.has(l)) continue;
-      l.tx.style.fontSize = px(COL_FS);
-      const occ = l === L1 && l === L2 ? [r.a1, r.a2] : [l === L1 ? r.a1 : r.a2];
-      const cuts = new Set<number>();
-      for (const a of occ) {
-        for (const s of rowStarts) cuts.add(a + s);
-        cuts.add(a + r.m);
-      }
-      const end = Math.max(...occ) + r.m;
-      if (end < l.units.length) for (const s of wrap(c, l, end, l.units.length - 1, vert ? 700 : 250)) cuts.add(s);
-      const list = [...cuts].filter((k) => k > 0 && k < l.units.length).sort((x, y) => x - y);
-      restRows.set(l, list);
-    }
-    const segsOf = new Map<TLine, HTMLElement[]>();
-    for (const [l, cuts] of restRows) {
-      segsOf.set(l, segment(l, cuts, () => 'lp-reg-seg'));
-      l.el.style.left = '0px';
-      l.el.style.top = '0px';
-    }
-    const segStart = (l: TLine, seg: HTMLElement) => l.units.indexOf(seg.querySelector<HTMLElement>('.u')!);
-    // —— 短语的位置 ——
-    const rows: { x: number; y: number }[] = [];
-    let x0: number;
-    let y0: number;
-    let x1: number;
-    let y1: number;
-    if (vert) {
-      const xr = 1432;
-      for (let i = 0; i < rowsN; i++) rows.push({ x: xr - (i + 1) * fs, y: 66 });
-      x0 = xr - rowsN * fs;
-      x1 = xr;
-      y0 = 66;
-      y1 = 66 + Math.min(per, r.m) * fs;
-    } else {
-      // 横排：短语前面的小词坐在第一个词的高低差里；坐不下就整块往下让出一行
-      const pre = L1.units.slice(0, r.a1);
-      let top = 104;
-      if (pre.length && !c.cjk) {
-        const font = `900 ${fs}px Inter`;
-        const preW = textW('italic 600 74px Newsreader', 0, pre.map((u) => u.textContent ?? '').join(' ')) + 24;
-        if (xSlot(L1.units[r.a1]!.textContent ?? '', font, -0.042 * fs, preW) < 0) top += 96;
-      } else if (pre.length) top += 96;
-      for (let i = 0; i < rowsN; i++) rows.push({ x: 104, y: top + i * fs * LH });
-      x0 = 104;
-      y0 = top;
-      x1 = 104 + (w100 * fs) / 100;
-      y1 = top + rowsN * fs * LH;
-    }
-    // 把两遍的短语段放到同一位置，前文 / 后文段放到各自的地方
-    const colItems: { l: TLine; segs: HTMLElement[]; tone: 'a' | 'b' | null }[] = [];
-    for (const [l, segs] of segsOf) {
-      const occ = l === L1 && l === L2 ? [r.a1, r.a2] : [l === L1 ? r.a1 : r.a2];
-      const rest: HTMLElement[] = [];
-      for (const seg of segs) {
-        const k = segStart(l, seg);
-        const o = occ.findIndex((a) => k >= a && k < a + r.m);
-        if (o >= 0) {
-          const ri = Math.floor((k - occ[o]!) / per);
-          seg.classList.add('lp-reg-w', o === 0 && l === L1 ? 'is-a' : 'is-b');
-          seg.style.fontSize = px(fs);
-          seg.style.left = px(rows[ri]!.x);
-          seg.style.top = px(rows[ri]!.y);
-        } else if (k < occ[0]!) {
-          seg.classList.add('lp-reg-pre');
-        } else rest.push(seg);
-      }
-      if (rest.length) colItems.push({ l, segs: rest, tone: l === L1 && l !== L2 ? 'a' : 'b' });
-    }
-    // 前文（「So」）：坐进第一个词的空当（xSlot），坐不下就放在块的左上方
-    const preSeg = segsOf.get(L1)!.find((s) => s.classList.contains('lp-reg-pre')) ?? null;
-    if (preSeg && !vert) {
-      const font = `900 ${fs}px Inter`;
-      const preW = c.size(preSeg).w;
-      const sx = c.cjk ? -1 : xSlot(L1.units[r.a1]!.textContent ?? '', font, -0.042 * fs, preW + 24);
-      preSeg.style.left = px(sx >= 0 ? 104 + sx + 10 : 104 + fs * 0.04);
-      preSeg.style.top = px(sx >= 0 ? y0 + fs * 0.2 - 92 : y0 - 96);
-      if (L1.tr) {
-        c.page.appendChild(L1.tr);
-        L1.tr.className = 'lp-tr is-free';
-        L1.tr.style.left = px(parseFloat(preSeg.style.left) + preW + 34);
-        L1.tr.style.top = px(parseFloat(preSeg.style.top) + 40);
-      }
-    } else if (L1.tr && !vert) {
-      c.page.appendChild(L1.tr);
-      L1.tr.className = 'lp-tr is-free';
-      L1.tr.style.left = px(x0 + 4);
-      L1.tr.style.top = px(y0 - 34);
-    }
-    // —— 其余句子：横排在右下一栏（宽 250，底边对齐 710）；竖排在块的左边一列列往左排 ——
-    const others = c.lines.filter((l) => l !== L1 && l !== L2);
-    if (vert) {
-      let x = x0 - 80;
-      for (const it of colItems) {
-        for (const seg of it.segs) {
-          const n = glyphs(seg.textContent ?? '');
-          const f = Math.min(60, 700 / Math.max(1, n));
-          x -= f;
-          seg.style.fontSize = px(f);
-          seg.style.left = px(x);
-          seg.style.top = px(it.tone === 'a' ? 96 : 236);
-          seg.classList.add('lp-reg-tone', it.tone === 'a' ? 'is-a' : 'is-b');
-          x -= 38;
+    // 栏里的字从 34 起排；右栏排不下（整栏高过 660，底边会沉进播放条）就逐步收小字号重排（每次重新切段）
+    const arrange = (COL_FS: number): number => {
+      // 重排前先撤掉上一遍的分段：量字（wrap）要在整句平排的样子上量
+      for (const l of c.lines) flatten(l);
+      // —— 两遍所在的句子：按「前文 / 短语每行 / 后文（再按栏宽断行）」切段，段都绝对定位在页上 ——
+      const restRows = new Map<TLine, number[]>();
+      for (const l of [L1, L2]) {
+        if (restRows.has(l)) continue;
+        l.tx.style.fontSize = px(COL_FS);
+        const occ = l === L1 && l === L2 ? [r.a1, r.a2] : [l === L1 ? r.a1 : r.a2];
+        const cuts = new Set<number>();
+        for (const a of occ) {
+          for (const s of rowStarts) cuts.add(a + s);
+          cuts.add(a + r.m);
         }
+        const end = Math.max(...occ) + r.m;
+        if (end < l.units.length) for (const s of wrap(c, l, end, l.units.length - 1, vert ? 700 : 250)) cuts.add(s);
+        const list = [...cuts].filter((k) => k > 0 && k < l.units.length).sort((x, y) => x - y);
+        restRows.set(l, list);
       }
-      x -= 24;
+      const segsOf = new Map<TLine, HTMLElement[]>();
+      for (const [l, cuts] of restRows) {
+        segsOf.set(l, segment(l, cuts, () => 'lp-reg-seg'));
+        l.el.style.left = '0px';
+        l.el.style.top = '0px';
+      }
+      const segStart = (l: TLine, seg: HTMLElement) => l.units.indexOf(seg.querySelector<HTMLElement>('.u')!);
+      // —— 短语的位置 ——
+      const rows: { x: number; y: number }[] = [];
+      let x0: number;
+      let y0: number;
+      let x1: number;
+      let y1: number;
+      if (vert) {
+        const xr = 1432;
+        for (let i = 0; i < rowsN; i++) rows.push({ x: xr - (i + 1) * fs, y: 66 });
+        x0 = xr - rowsN * fs;
+        x1 = xr;
+        y0 = 66;
+        y1 = 66 + Math.min(per, r.m) * fs;
+      } else {
+        // 横排：短语前面的小词坐在第一个词的高低差里；坐不下就整块往下让出一行
+        const pre = L1.units.slice(0, r.a1);
+        let top = 104;
+        if (pre.length && !c.cjk) {
+          const font = `900 ${fs}px Inter`;
+          const preW = textW('italic 600 74px Newsreader', 0, pre.map((u) => u.textContent ?? '').join(' ')) + 24;
+          if (xSlot(L1.units[r.a1]!.textContent ?? '', font, -0.042 * fs, preW) < 0) top += 96;
+        } else if (pre.length) top += 96;
+        for (let i = 0; i < rowsN; i++) rows.push({ x: 104, y: top + i * fs * LH });
+        x0 = 104;
+        y0 = top;
+        x1 = 104 + (w100 * fs) / 100;
+        y1 = top + rowsN * fs * LH;
+      }
+      // 把两遍的短语段放到同一位置，前文 / 后文段放到各自的地方
+      const colItems: { l: TLine; segs: HTMLElement[]; tone: 'a' | 'b' | null }[] = [];
+      for (const [l, segs] of segsOf) {
+        const occ = l === L1 && l === L2 ? [r.a1, r.a2] : [l === L1 ? r.a1 : r.a2];
+        const rest: HTMLElement[] = [];
+        for (const seg of segs) {
+          const k = segStart(l, seg);
+          const o = occ.findIndex((a) => k >= a && k < a + r.m);
+          if (o >= 0) {
+            const ri = Math.floor((k - occ[o]!) / per);
+            seg.classList.add('lp-reg-w', o === 0 && l === L1 ? 'is-a' : 'is-b');
+            seg.style.fontSize = px(fs);
+            seg.style.left = px(rows[ri]!.x);
+            seg.style.top = px(rows[ri]!.y);
+          } else if (k < occ[0]!) {
+            seg.classList.add('lp-reg-pre');
+          } else rest.push(seg);
+        }
+        // 没有后文的句子，译文也要进栏（不让它孤零零挂在页角）
+        if (rest.length || l.tr) colItems.push({ l, segs: rest, tone: l === L1 && l !== L2 ? 'a' : 'b' });
+      }
+      // 前文（「So」）：坐进第一个词的空当（xSlot），坐不下就放在块的左上方
+      const preSeg = segsOf.get(L1)!.find((s) => s.classList.contains('lp-reg-pre')) ?? null;
+      if (preSeg && !vert) {
+        const font = `900 ${fs}px Inter`;
+        const preW = c.size(preSeg).w;
+        const sx = c.cjk ? -1 : xSlot(L1.units[r.a1]!.textContent ?? '', font, -0.042 * fs, preW + 24);
+        preSeg.style.left = px(sx >= 0 ? 104 + sx + 10 : 104 + fs * 0.04);
+        preSeg.style.top = px(sx >= 0 ? y0 + fs * 0.2 - 92 : y0 - 96);
+      }
+      // —— 其余句子：横排在右下一栏（宽 250，底边对齐 710）；竖排在块的左边一列列往左排 ——
+      const others = c.lines.filter((l) => l !== L1 && l !== L2);
+      if (vert) {
+        // 左边的列：句子（竖排各列）、译文（一列竖排小字，紧贴在所属句子那一列的左边）从右往左排进块左边的空间；
+        // 列太多放不下（会挤出左边、列叠在一起）就把句子的字号和间距按比例收小，译文列宽度不变
+        interface Col {
+          /** 列宽（译文列含它和左邻列之间的 12px）与排完之后到下一列的间距。 */
+          w: number;
+          gap: number;
+          fixed?: boolean;
+          /** xr = 这一列的右边缘；k = 句子列的缩放。 */
+          place: (xr: number, k: number) => void;
+        }
+        const cols: Col[] = [];
+        // 版面竖排页目前不排译文（LyricPage 只给横排页建 .lp-tr），这里拿不到 tr 时直接跳过；留着是为以后竖排开译文
+        const trCol = (l: TLine, top: number, gap: number) => {
+          const tr = l.tr;
+          if (!tr) return;
+          c.page.appendChild(tr);
+          tr.className = 'lp-tr is-free is-reg-v';
+          tr.style.top = px(top);
+          tr.style.maxHeight = px(Math.max(160, 750 - top));
+          const tw = c.size(tr).w;
+          cols.push({ w: 12 + tw, gap, fixed: true, place: (xr) => (tr.style.left = px(xr - 12 - tw)) });
+        };
+        for (const it of colItems) {
+          const top = it.tone === 'a' ? 96 : 236;
+          it.segs.forEach((seg, i) => {
+            const n = glyphs(seg.textContent ?? '');
+            const f = fitCol(c, [seg], Math.min(60, 700 / Math.max(1, n)), top);
+            seg.classList.add('lp-reg-tone', it.tone === 'a' ? 'is-a' : 'is-b');
+            cols.push({
+              w: f,
+              gap: i < it.segs.length - 1 || !it.l.tr ? 38 : 0,
+              place: (xr, k) => {
+                seg.style.fontSize = px(f * k);
+                seg.style.left = px(xr - f * k);
+                seg.style.top = px(top);
+              },
+            });
+          });
+          trCol(it.l, top, 38);
+        }
+        const nSeg = cols.length;
+        for (const l of others) {
+          const n = glyphs(l.text);
+          const f = fitCol(c, [l.tx], Math.min(38, 420 / Math.max(1, n)), 372);
+          l.el.classList.add('lt-reg-col');
+          l.el.style.top = '372px';
+          cols.push({
+            w: f,
+            gap: l.tr ? 0 : 34,
+            place: (xr, k) => {
+              l.tx.style.fontSize = px(f * k);
+              l.el.style.left = px(xr - f * k);
+            },
+          });
+          trCol(l, 372, 34);
+        }
+        const xStart = x0 - 80;
+        const extra = others.length ? 24 : 0;
+        const fixedW = cols.reduce((a, q) => a + (q.fixed ? q.w + q.gap : 0), 0);
+        const softW = cols.reduce((a, q) => a + (q.fixed ? 0 : q.w + q.gap), 0);
+        const k = softW > 0 ? clamp((xStart - 40 - fixedW - extra) / softW, 0.5, 1) : 1;
+        let x = xStart;
+        cols.forEach((q, i) => {
+          if (i === nSeg) x -= extra;
+          q.place(x, k);
+          x -= q.fixed ? q.w + q.gap : (q.w + q.gap) * k;
+        });
+        regGeo.set(c.page, { reg: r, rows, fs, x0, y0, x1, y1 });
+        return 0;
+      }
+      // 横排的右栏：每块一段 34px 衬线（宽 250 断行），块间 26，整栏底边对齐 710
+      const COL_X = Math.max(1278, x1 + 90);
+      const blocks: { h: number; place: (y: number) => void }[] = [];
+      for (const it of colItems) {
+        const lh = COL_FS * 1.16;
+        // 译文和栏里的句子同一栏、同一宽（250 断行）：跟在它那句（后文）下面；没有后文就只有译文一条
+        const tr = it.l.tr;
+        let th = 0;
+        if (tr) {
+          c.page.appendChild(tr);
+          tr.className = 'lp-tr is-free is-reg-col';
+          th = c.size(tr).h;
+        }
+        blocks.push({
+          h: it.segs.length * lh + (tr ? th + (it.segs.length ? 6 : 0) : 0),
+          place: (y) => {
+            it.segs.forEach((seg, i) => {
+              seg.classList.add('lp-reg-tone', it.tone === 'a' ? 'is-a' : 'is-b');
+              seg.style.left = px(COL_X);
+              seg.style.top = px(y + i * lh);
+            });
+            if (tr) {
+              tr.style.left = px(COL_X);
+              tr.style.top = px(y + it.segs.length * lh + (it.segs.length ? 6 : 0));
+            }
+          },
+        });
+      }
       for (const l of others) {
-        const n = glyphs(l.text);
-        const f = Math.min(38, 420 / Math.max(1, n));
-        x -= f;
         l.el.classList.add('lt-reg-col');
-        l.el.style.left = px(Math.max(40, x));
-        l.el.style.top = '372px';
-        l.tx.style.fontSize = px(f);
-        x -= 34;
+        l.tx.style.fontSize = px(COL_FS);
+        const starts = wrap(c, l, 0, l.units.length - 1, 250);
+        const rowsL = segment(l, starts.filter((k) => k > 0), () => 'lp-row');
+        if (l.tr) l.tr.className = 'lp-tr is-under is-reg-col';
+        blocks.push({
+          h: rowsL.length * COL_FS * 1.16 + (l.tr ? c.size(l.tr).h + 4 : 0),
+          place: (y) => {
+            l.el.style.left = px(COL_X);
+            l.el.style.top = px(y);
+          },
+        });
+      }
+      const total = blocks.reduce((a, b) => a + b.h, 0) + 26 * Math.max(0, blocks.length - 1);
+      let y = Math.max(120, 710 - total);
+      for (const b of blocks) {
+        b.place(y);
+        y += b.h + 26;
       }
       regGeo.set(c.page, { reg: r, rows, fs, x0, y0, x1, y1 });
-      return;
-    }
-    // 横排的右栏：每块一段 34px 衬线（宽 250 断行），块间 26，整栏底边对齐 710
-    const COL_X = Math.max(1278, x1 + 90);
-    const blocks: { h: number; place: (y: number) => void }[] = [];
-    for (const it of colItems) {
-      const lh = COL_FS * 1.16;
-      blocks.push({
-        h: it.segs.length * lh + (it.l.tr && it.l !== L1 ? 34 : 0),
-        place: (y) => {
-          it.segs.forEach((seg, i) => {
-            seg.classList.add('lp-reg-tone', it.tone === 'a' ? 'is-a' : 'is-b');
-            seg.style.left = px(COL_X);
-            seg.style.top = px(y + i * lh);
-          });
-          if (it.l.tr && it.l !== L1) {
-            c.page.appendChild(it.l.tr);
-            it.l.tr.className = 'lp-tr is-free';
-            it.l.tr.style.left = px(COL_X);
-            it.l.tr.style.top = px(y + it.segs.length * lh + 6);
-          }
-        },
-      });
-    }
-    for (const l of others) {
-      l.el.classList.add('lt-reg-col');
-      l.tx.style.fontSize = px(COL_FS);
-      const starts = wrap(c, l, 0, l.units.length - 1, 250);
-      const rowsL = segment(l, starts.filter((k) => k > 0), () => 'lp-row');
-      blocks.push({
-        h: rowsL.length * COL_FS * 1.16 + (l.tr ? 34 : 0),
-        place: (y) => {
-          l.el.style.left = px(COL_X);
-          l.el.style.top = px(y);
-        },
-      });
-    }
-    const total = blocks.reduce((a, b) => a + b.h, 0) + 26 * Math.max(0, blocks.length - 1);
-    let y = Math.max(120, 710 - total);
-    for (const b of blocks) {
-      b.place(y);
-      y += b.h + 26;
-    }
-    regGeo.set(c.page, { reg: r, rows, fs, x0, y0, x1, y1 });
+      return total;
+    };
+    let colFs = 34;
+    let total = arrange(colFs);
+    while (total > 660 && colFs > 20) total = arrange((colFs -= 2));
   },
   finish: (c) => {
     const g = regGeo.get(c.page);
@@ -510,8 +597,8 @@ export const cut: Tpl = {
       const colW = (n: number, f: number) => f + (n > 0 ? 32 : 0);
       const preN = pre.reduce((a, s) => a + glyphs(s.textContent ?? ''), 0);
       const postN = post.reduce((a, s) => a + glyphs(s.textContent ?? ''), 0);
-      const preF = preN ? Math.min(84, 700 / preN) : 0;
-      const postF = postN ? Math.min(64, 700 / postN) : 0;
+      const preF = preN ? fitCol(c, pre, Math.min(84, 700 / preN), 92) : 0;
+      const postF = postN ? fitCol(c, post, Math.min(64, 700 / postN), 92) : 0;
       const right = before.length * 72 + (preN ? colW(1, preF) : 0);
       const left = (postN ? colW(1, postF) + 40 : 0) + after.length * 72;
       const fs = clamp(1440 - right - left - 80, 380, 800);
@@ -520,7 +607,7 @@ export const cut: Tpl = {
         x -= 40;
         l.el.style.left = px(x);
         l.el.style.top = '92px';
-        l.tx.style.fontSize = px(Math.min(40, 700 / Math.max(1, glyphs(l.text))));
+        fitCol(c, [l.tx], Math.min(40, 700 / Math.max(1, glyphs(l.text))), 92);
         x -= 32;
       }
       if (preN) {
@@ -551,7 +638,7 @@ export const cut: Tpl = {
         x -= 40;
         l.el.style.left = px(Math.max(40, x));
         l.el.style.top = '92px';
-        l.tx.style.fontSize = px(Math.min(40, 700 / Math.max(1, glyphs(l.text))));
+        fitCol(c, [l.tx], Math.min(40, 700 / Math.max(1, glyphs(l.text))), 92);
         x -= 32;
       }
       cutGeo.set(c.page, { li: pk.li, ui: pk.ui, fs, x: bx, y: by, text: word });
@@ -568,9 +655,21 @@ export const cut: Tpl = {
       l.el.style.left = '112px';
       l.el.style.top = px(84 + i * 104);
       l.tx.style.fontSize = '56px';
+      // 一句太长就收小字号，别伸出画幅右边（左 112，右边留 112）
+      const w56 = c.size(l.tx).w;
+      if (w56 > 1376) l.tx.style.fontSize = px((56 * 1376) / w56);
       stack = 84 + i * 104 + 56 * 1.2 + (l.tr ? 30 : 0);
     });
-    const preW = pre.length ? (pre[0]!.style.fontSize = '76px', c.size(pre[0]!).w) : 0;
+    let preW = 0;
+    if (pre.length) {
+      pre[0]!.style.fontSize = '76px';
+      preW = c.size(pre[0]!).w;
+      // 前文太长（一整句）就收小字号，别伸出画幅右边
+      if (preW > 1376) {
+        pre[0]!.style.fontSize = px((76 * 1376) / preW);
+        preW = c.size(pre[0]!).w;
+      }
+    }
     let slot = -1;
     // 字母伸出 x 高的部分（.76em）不能碰到上面那几句；前文要坐得进空当，否则改成单独一行、大字再缩一点
     for (let k = 0; k < 30; k++) {

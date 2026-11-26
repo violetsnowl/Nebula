@@ -40,7 +40,17 @@ export const bleed: Tpl = {
       l.tx.style.fontSize = '44px';
       f = Math.min(f, 1250 / Math.max(1, c.size(l.el).w));
     }
-    const fs = 44 * Math.max(0.55, f);
+    let fs = 44 * Math.max(0.55, f);
+    // 整栏（含句下翻译）从 164 往下排，最低不过 780：高了整体缩小
+    const stackH = () => {
+      for (const l of c.lines) l.tx.style.fontSize = px(fs);
+      return c.lines.reduce((a, l) => a + c.size(l.el).h, 0) + 20 * (c.lines.length - 1);
+    };
+    const total = stackH();
+    if (total > 616) {
+      fs *= Math.max(0.4, 616 / total);
+      stackH();
+    }
     let y = 164;
     for (const l of c.lines) {
       put(l, 150, y, fs);
@@ -156,9 +166,10 @@ export const diag: Tpl = {
       const dx = Math.max(...sz.map((s) => s.w)) + 44;
       const rs: Rc[] = sz.map((s, i) => ({ x: -i * dx - s.w, y: i * 66, w: s.w, h: s.h }));
       const b = spunBox(rs);
-      const f = clamp(Math.min(1, 1360 / (b.x1 - b.x0), 720 / (b.y1 - b.y0)), 0.3, 1);
+      // 整组转完之后高 ≤ 640，居中在安全区（y 125–765）：底端不进播放条，顶端不压页码
+      const f = clamp(Math.min(1, 1360 / (b.x1 - b.x0), 640 / (b.y1 - b.y0)), 0.3, 1);
       const ox = 800 - ((b.x0 + b.x1) / 2) * f;
-      const oy = 450 - ((b.y0 + b.y1) / 2) * f;
+      const oy = 445 - ((b.y0 + b.y1) / 2) * f;
       c.lines.forEach((l, i) => put(l, ox + rs[i]!.x * f, oy + rs[i]!.y * f, BASE * f));
       spins.set(c.page, { ox, oy, vert: true });
       return;
@@ -170,12 +181,12 @@ export const diag: Tpl = {
     for (const l of c.lines) l.tx.style.fontSize = px(BASE);
     const rs: Rc[] = c.lines.map((l, i) => ({ ...c.size(l.el), x: i * 132, y: i * 138 }));
     const b = spunBox(rs);
-    // 句数多或长时只缩字号（连同错开的步长一起等比缩），保证转完不出画幅（x 120–1480、y 90–810）
+    // 句数多或长时只缩字号（连同错开的步长一起等比缩），保证转完不出画幅、不进播放条、不压页码（x 120–1480、y 125–780）
     let f = 1;
     if (b.x1 > 0) f = Math.min(f, (1480 - OX) / b.x1);
     if (b.x0 < 0) f = Math.min(f, (120 - OX) / b.x0);
-    if (b.y1 > 0) f = Math.min(f, (810 - OY) / b.y1);
-    if (b.y0 < 0) f = Math.min(f, (90 - OY) / b.y0);
+    if (b.y1 > 0) f = Math.min(f, (780 - OY) / b.y1);
+    if (b.y0 < 0) f = Math.min(f, (125 - OY) / b.y0);
     f = clamp(f, 0.3, 1);
     c.lines.forEach((l, i) => put(l, OX + i * 132 * f, OY + i * 138 * f, BASE * f));
     spins.set(c.page, { ox: OX, oy: OY, vert: false });
@@ -206,28 +217,21 @@ export const diag: Tpl = {
 };
 
 // ———— 色场（全曲最后一个副歌页）：一整块封面色，句子写进去之后变深色，像印在色纸上 ————
-/** 竖排：色块从这条线往下铺到底；横排：色块从这条线往右铺到边。 */
 /**
- * 色块的分割线跟着这一页的句子走（2026-11-22 用户：句子都短时，固定在右侧的分割线一句也碰不到）：
- * 横排 = 最长那句写进色块约四成（左缘 150 + 最长宽 × .6），竖排 = 最长那列写进色块约四成；再夹在一个不太偏的范围里。
+ * 色块的分割线跟着这一页的句子走（2026-11-22 用户：句子都短时，固定在右侧的分割线一句也碰不到；2026-11-25 用户：
+ * 只保证最长那句时，常常只有一句写进去、半页是平涂色块）：至少 60% 的句子（向上取整）写进色块 ≥ 90px
+ * （竖排 ≥ 70px）——取每句右端（竖排：每列底端）的第 k 大（k = ceil(0.6n)）减去 90（70），再夹在一个不太偏的范围里。
+ * 横排色块从这条线往右铺到边，竖排色块从这条线往下铺到底。
  */
 function fieldEdge(c: TCtx): number {
+  const k = Math.max(1, Math.ceil(c.lines.length * 0.6));
+  const kth = (v: number[]) => v.sort((a, b) => b - a)[Math.min(k, v.length) - 1]!;
   if (c.vert) {
-    let top = 0;
-    let h = 0;
-    for (const l of c.lines) {
-      const s = c.size(l.tx);
-      if (s.h > h) {
-        h = s.h;
-        top = parseFloat(l.el.style.top) || 0;
-      }
-    }
-    // 最长那列至少有 70px 写进色块
-    return clamp(Math.min(top + h * 0.6, top + h - 70), 260, 640);
+    const bottoms = c.lines.map((l) => (parseFloat(l.el.style.top) || 0) + c.size(l.tx).h);
+    return clamp(kth(bottoms) - 70, 260, 640);
   }
-  const w = Math.max(...c.lines.map((l) => c.size(l.tx).w));
-  // 最长那句至少有 90px 写进色块
-  return clamp(Math.min(150 + w * 0.6, 150 + w - 90), 330, 1120);
+  const ends = c.lines.map((l) => (parseFloat(l.el.style.left) || 0) + c.size(l.tx).w);
+  return clamp(kth(ends) - 90, 330, 1120);
 }
 
 export const field: Tpl = {
@@ -235,42 +239,40 @@ export const field: Tpl = {
   bold: true,
   fits: (c) => c.lines.length >= 2 && c.lines.length <= 6 && maxGlyphs(c) <= (c.vert ? 13 : c.cjk ? 24 : 48),
   layout: (c) => {
+    const kRank = Math.max(1, Math.ceil(c.lines.length * 0.6));
+    const kthOf = (v: number[]) => [...v].sort((a, b) => b - a)[Math.min(kRank, v.length) - 1]!;
     for (const l of c.lines) {
       l.el.classList.add('lt-field');
       if (l.tr) l.tr.className = 'lp-tr is-under';
     }
     if (c.vert) {
-      // 竖排：竖列从右往左、逐列错开；长句从暗处一直写进下面的色块（整列最低不过 830，最高不过 90）。
-      // 句子都短时字号放大到 1.4 倍（最长那列撑到约 560px），让句子够得着色块
-      let f = 1.4;
-      let hm = 0;
-      for (const l of c.lines) {
+      // 竖排：竖列从右往左、逐列错开；长句从暗处一直写进下面的色块。整列最低不过 790（播放条上方）、最高不过 130（页码下面），
+      // 不够就缩字号；句子都短时字号放大到 1.4 倍（第 k 长的那列撑到约 520px），让至少六成的句子够得着色块
+      const hs = c.lines.map((l) => {
         l.tx.style.fontSize = '60px';
-        const h = c.size(l.tx).h;
-        hm = Math.max(hm, h);
-        f = Math.min(f, 740 / Math.max(1, h));
-      }
-      f = Math.min(f, Math.max(1, 560 / Math.max(1, hm)));
-      const fs = 60 * Math.max(0.5, f);
+        return c.size(l.tx).h;
+      });
+      let f = 1.4;
+      for (const h of hs) f = Math.min(f, 660 / Math.max(1, h));
+      f = Math.min(f, Math.max(1, 520 / Math.max(1, kthOf(hs))));
+      const fs = 60 * Math.max(0.4, f);
       const STAG = [118, 170, 262, 214, 296, 248];
       c.lines.forEach((l, i) => {
         l.tx.style.fontSize = px(fs);
         const h = c.size(l.tx).h;
-        put(l, 1240 - i * 130, clamp(Math.min(STAG[i]!, 830 - h), 90, 830), fs);
+        put(l, 1240 - i * 130, clamp(Math.min(STAG[i]!, 790 - h), 130, 790 - h), fs);
       });
       return;
     }
     // 横排：句子左对齐从 x 150 起，纵向居中成一组；长句越过色块的边线写进去。
-    // 句子都短时字号放大（最多 1.5 倍，最长那句撑到约 900px），让句子够得着色块
+    // 句子都短时字号放大（最多 1.5 倍，第 k 长的那句撑到约 800px），让至少六成的句子够得着色块
     let f = 1.5;
-    let wm = 0;
-    for (const l of c.lines) {
+    const ws = c.lines.map((l) => {
       l.tx.style.fontSize = '72px';
-      const w = c.size(l.el).w;
-      wm = Math.max(wm, w);
-      f = Math.min(f, 1300 / Math.max(1, w));
-    }
-    f = Math.min(f, Math.max(1, 900 / Math.max(1, wm)));
+      return c.size(l.el).w;
+    });
+    for (const w of ws) f = Math.min(f, 1300 / Math.max(1, w));
+    f = Math.min(f, Math.max(1, 800 / Math.max(1, kthOf(ws))));
     let fs = 72 * Math.max(0.55, f);
     const GAP = 26;
     const stack = () => {
@@ -278,11 +280,11 @@ export const field: Tpl = {
       return c.lines.reduce((a, l) => a + c.size(l.el).h, 0) + GAP * (c.lines.length - 1);
     };
     let total = stack();
-    if (total > 720) {
-      fs *= 720 / total;
+    if (total > 640) {
+      fs *= 640 / total;
       total = stack();
     }
-    let y = (PH - total) / 2;
+    let y = 445 - total / 2;
     for (const l of c.lines) {
       put(l, 150, y, fs);
       y += c.size(l.el).h + GAP;

@@ -34,8 +34,18 @@ function measureGlyph(el: HTMLElement, S: number): Gm {
 
 // ———— 唱片纹（尾声）：沿同心圆弧排，背后一圈圈沟槽，底部露出唱片标签 ————
 const CX = 800;
-const CY = 1262;
+/** 圆心上移（2026-11-25 用户）：标签顶（CY − 430）要露在播放条（y ≈ 810 起）上方 */
+const CY = 1140;
 const RING = [1010, 905, 800, 695];
+/** 沟槽画到页面最远的角（离圆心 ≈ 1393）之外 */
+const GROOVE_MAX = 1420;
+/** 轨道线：换圈滑动 0.65s、两句之间降到 DIM 用 0.4s、淡入淡出同曲线；三次缓入缓出 */
+const TRACK_MOVE = 650;
+const TRACK_FADE = 400;
+const TRACK_DIM = 0.35;
+const easeIO = (p: number) => (p < 0.5 ? 4 * p * p * p : 1 - (-2 * p + 2) ** 3 / 2);
+/** 轨道线离句子那一圈往里多远 */
+const TRACK_IN = 58;
 
 /** 把一个外壳摆到半径 R 的圆弧上：s = 字形中心沿弧的位置（距句子正中），壳的底边中点落在弧上、朝外转 θ。 */
 function onArc(el: HTMLElement, g: Gm, s: number, R: number): number {
@@ -57,7 +67,7 @@ export const groove: Tpl = {
   id: 'groove',
   bold: true,
   dir: 'h',
-  fits: (c) => c.lines.length >= 1 && c.lines.length <= 4 && allTimed(c) && c.lines.every((l) => glyphs(l.text) <= (c.cjk ? 16 : 36)),
+  fits: (c) => c.lines.length >= 2 && c.lines.length <= 4 && allTimed(c) && c.lines.every((l) => glyphs(l.text) <= (c.cjk ? 16 : 36)),
   layout: (c) => {
     // 平排：每句一行、字号 40px，都放在页的左上角（finish 里量完再沿弧摆）；译文先挪到页上，平排量它
     for (const l of c.lines) {
@@ -126,7 +136,7 @@ export const groove: Tpl = {
     });
     // —— 背后的沟槽：一张静态 SVG（装饰，放在最底下） ——
     let svg = `<svg width="${PW}" height="${PH}" viewBox="0 0 ${PW} ${PH}" aria-hidden="true">`;
-    for (let r = 470, k = 0; r <= 1220; r += 11, k++) svg += `<circle cx="${CX}" cy="${CY}" r="${r}" fill="none" stroke="rgba(255,255,255,${k % 2 ? 0.068 : 0.035})" stroke-width="1"/>`;
+    for (let r = 470, k = 0; r <= GROOVE_MAX; r += 11, k++) svg += `<circle cx="${CX}" cy="${CY}" r="${r}" fill="none" stroke="rgba(255,255,255,${k % 2 ? 0.068 : 0.035})" stroke-width="1"/>`;
     svg += `<circle class="lp-g-track" cx="${CX}" cy="${CY}" r="0"/>`;
     svg += `<circle class="lp-g-label" cx="${CX}" cy="${CY}" r="430"/><circle class="lp-g-ring" cx="${CX}" cy="${CY}" r="412"/>`;
     svg += '</svg>';
@@ -134,25 +144,73 @@ export const groove: Tpl = {
     d.innerHTML = svg;
     c.page.insertBefore(d, c.page.firstChild);
     const track = d.querySelector<SVGCircleElement>('.lp-g-track')!;
-    track.style.display = 'none';
+    // 当前轨道：沟槽里一圈封面色细线，跟着正在唱的那句（它的圈往里 58px）。
+    // 换句时半径从当前值缓动到新圈；两句之间停在原圈、透明度降到 TRACK_DIM；下一句开唱时一边滑向新圈一边回到不透明；
+    // 第一次出现从透明淡入。时间用 performance.now()，在 frame 里推进；只在数值变化时写 r / opacity，不读布局
+    track.style.opacity = '0';
     let last = -1;
+    let seen = false;
+    // 半径：from → to，起点时刻 r0；透明度：aFrom → aTo，起点时刻 a0
+    let from = 0;
+    let to = 0;
+    let r0 = 0;
+    let aFrom = 0;
+    let aTo = 0;
+    let a0 = 0;
+    let wr = Number.NaN;
+    let wo = Number.NaN;
+    const rAt = (now: number) => from + (to - from) * easeIO(clamp((now - r0) / TRACK_MOVE, 0, 1));
+    const oAt = (now: number) => aFrom + (aTo - aFrom) * easeIO(clamp((now - a0) / TRACK_FADE, 0, 1));
     const hooks: PageHooks = {
-      // 当前轨道：沟槽里一圈封面色细线，跟着正在唱的那句（它的圈往里 58px）
       frame: (t) => {
+        const now = performance.now();
         let k = -1;
         c.lines.forEach((l, i) => {
           if (stateAt(l, t) === 'cur') k = i;
         });
-        if (k === last) return;
-        last = k;
-        if (k < 0) track.style.display = 'none';
-        else {
-          track.style.display = '';
-          track.setAttribute('r', String(RING[k]! - 58));
+        if (k !== last) {
+          last = k;
+          const o = oAt(now);
+          if (k >= 0) {
+            const target = RING[k]! - TRACK_IN;
+            if (!seen) {
+              // 第一次出现：直接落在这一圈，从透明淡入
+              seen = true;
+              from = to = target;
+            } else if (target !== to) {
+              from = rAt(now);
+              to = target;
+              r0 = now;
+            }
+            aFrom = o;
+            aTo = 1;
+          } else if (seen) {
+            // 两句之间：停在原圈，透明度降下去
+            aFrom = o;
+            aTo = TRACK_DIM;
+          }
+          a0 = now;
+        }
+        if (!seen) return;
+        const r = Math.round(rAt(now) * 10) / 10;
+        if (r !== wr) {
+          wr = r;
+          track.setAttribute('r', String(r));
+        }
+        const o = Math.round(oAt(now) * 100) / 100;
+        if (o !== wo) {
+          wo = o;
+          track.style.opacity = String(o);
         }
       },
       undo: () => {
         for (const u of undos) u();
+        // 复位：下次重建后又是「第一次出现」
+        seen = false;
+        last = -1;
+        wr = wo = Number.NaN;
+        track.setAttribute('r', '0');
+        track.style.opacity = '0';
       },
     };
     return hooks;
@@ -173,9 +231,12 @@ interface Geo {
   cell: (j: number, k: number) => { x: number; y: number };
   /** 一句最长几个字。 */
   mx: number;
-  /** 画格子用的参数。 */
+  /** 画格子用的参数：竖排 X0 = 第一列（最右）的右缘，横排 X0 = 整块的左缘；Y0 = 整块的上缘。 */
   X0: number;
   Y0: number;
+  /** 画几列 / 几行格子：竖排 = 句数 + 2 列（最后两列空着渐隐）；横排 = 最长句 + 3 列、句数 + 1 行（最后一行空着渐隐）。 */
+  cols: number;
+  rows: number;
 }
 
 /** 方块字（汉字、假名、谚文）一字一格。 */
@@ -193,29 +254,36 @@ function gridGeo(c: TCtx): Geo {
   const n = c.lines.length;
   const mx = Math.max(...c.lines.map((l) => charsOf(l).reduce((a, b) => a + b, 0)));
   if (c.vert) {
-    // 竖排：格子 60px，列间空 20px，每列上面空一格；整块在画面里垂直居中（11 格时 Y0 = 130，同样张）
-    const C = 60;
+    // 竖排（2026-11-25 用户）：句数 + 2 列，最后两列空着渐隐；整块在画面里水平居中（不再钉在右边）。
+    // 每列上面空一格，格子 60px、列间空 20px；整块在播放条安全区（高 810）里垂直居中，
+    // 最长句太长时格距按 750 ÷ 行数缩小（字距恒 20，字号跟着缩），免得末格压进播放条
+    const rows = mx + 1;
+    const cols = n + 2;
+    const C = Math.min(60, Math.floor(750 / rows));
     const G = 20;
-    const fs = 40;
-    const ls = C - fs;
-    const X0 = 1440;
-    const Y0 = Math.round((PH - (mx + 1) * C) / 2) + 10;
+    const ls = 20;
+    const fs = C - ls;
+    const X0 = Math.round((PW + cols * (C + G) - G) / 2);
+    const Y0 = Math.round((810 - rows * C) / 2) + 10;
     return {
-      vert: true, C, G, fs, ls, mx, X0, Y0,
+      vert: true, C, G, fs, ls, mx, X0, Y0, cols, rows,
       // 字距加在字的下方：整句下挪半个字距，字形才落在格子正中
       at: (j) => ({ left: X0 - j * (C + G) - C, top: Y0 + C + ls / 2 }),
       cell: (j, k) => ({ x: X0 - j * (C + G) - C, y: Y0 + (k + 1) * C }),
     };
   }
-  // 横排：格子 52px，行间空 18px（有译文时 34px，译文排在行下面的空里），第一格空着，从 x = 200 起
+  // 横排：格子 52px，行间空 18px（有译文时 34px，译文排在行下面的空里），第一格空着；
+  // 句数 + 1 行（最后一行空着渐隐）、最长句 + 3 列（右侧渐隐），整块在画面里水平居中
   const C = 52;
   const G = c.hasTr ? 34 : 18;
   const fs = 36;
   const ls = C - fs;
-  const X0 = 200;
+  const cols = mx + 3;
+  const rows = n + 1;
+  const X0 = Math.round((PW - cols * C) / 2);
   const Y0 = Math.round((PH - (n * (C + G) - G)) / 2) - 20;
   return {
-    vert: false, C, G, fs, ls, mx, X0, Y0,
+    vert: false, C, G, fs, ls, mx, X0, Y0, cols, rows,
     // 字形在行高里本来就偏上，再加上逐字浮起会显得顶出格子：整行下移 5px（2026-11-22 用户反馈）
     at: (j) => ({ left: X0 + C + ls / 2, top: Y0 + j * (C + G) + 5 }),
     cell: (j, k) => ({ x: X0 + (k + 1) * C, y: Y0 + j * (C + G) }),
@@ -260,7 +328,7 @@ export const grid: Tpl = {
   },
   finish: (c) => {
     const g = gridGeo(c);
-    const { C, G, X0, Y0, mx } = g;
+    const { C, G, X0, Y0, mx, cols, rows } = g;
     const n = c.lines.length;
     // —— 格子：一张静态 SVG，没写的格子用遮罩渐隐 ——
     let svg = `<svg width="${PW}" height="${PH}" viewBox="0 0 ${PW} ${PH}" aria-hidden="true"><g class="lp-cellg">`;
@@ -269,31 +337,30 @@ export const grid: Tpl = {
     const root = deco(c, 'lp-grid');
     let inner = root;
     if (g.vert) {
-      const N = 15;
-      const rows = mx + 1;
-      for (let j = 0; j < N; j++) {
+      // 句数 + 2 列；最后两列（第 n、n + 1 列，最靠左）没有字，用遮罩渐隐：
+      // 第 n − 1 列（最后一句）的左缘起不透明，到第 n + 1 列的左缘全透明
+      for (let j = 0; j < cols; j++) {
         const x = X0 - j * (C + G) - C;
         svg += box(x, Y0, C, rows * C, 0.34, 1.2);
         for (let k = 1; k < rows; k++) svg += line(x, Y0 + k * C, x + C, Y0 + k * C);
       }
-      svg += box(X0 - N * (C + G) + G - 14, Y0 - 14, N * (C + G) - G + 28, rows * C + 28, 0.3, 2);
-      // 样张：渐变从 x = 1440 到 300 透明（不透明段到 42% 处）
-      maskOf(root, 'linear-gradient(90deg, transparent 300px, #000 961px)');
+      svg += box(X0 - cols * (C + G) + G - 14, Y0 - 14, cols * (C + G) - G + 28, rows * C + 28, 0.3, 2);
+      const xo = X0 - (n - 1) * (C + G) - C;
+      const xt = X0 - (n + 1) * (C + G) - C;
+      maskOf(root, `linear-gradient(90deg, transparent ${xt}px, #000 ${xo}px)`);
     } else {
-      const cols = mx + 3;
-      const rows = n + 3;
       for (let j = 0; j < rows; j++) {
         const y = Y0 + j * (C + G);
         svg += box(X0, y, cols * C, C, 0.34, 1.2);
         for (let k = 1; k < cols; k++) svg += line(X0 + k * C, y, X0 + k * C, y + C);
       }
       svg += box(X0 - 14, Y0 - 14, cols * C + 28, rows * (C + G) - G + 28, 0.3, 2);
-      // 右边（最长那句之后的两格）和下面（最后一句之后的三行）渐隐
+      // 右边（最长那句之后的两格）和下面（最后一句之后的一行）渐隐；有译文时，最后一句的译文排在它下面的空里，别淡掉
       const xe = X0 + (mx + 1) * C;
-      const ye = Y0 + n * (C + G) - G + 8;
+      const ye = Y0 + n * (C + G) - G + (c.hasTr ? 20 : 8);
       maskOf(root, `linear-gradient(90deg, #000 ${xe}px, transparent ${xe + 2 * C}px)`);
       inner = deco(c, 'lp-grid-in', undefined, root);
-      maskOf(inner, `linear-gradient(180deg, #000 ${ye}px, transparent ${ye + 3 * (C + G)}px)`);
+      maskOf(inner, `linear-gradient(180deg, #000 ${ye}px, transparent ${Y0 + n * (C + G) + C + 8}px)`);
     }
     svg += '</g></svg>';
     inner.innerHTML = svg;

@@ -112,8 +112,10 @@ export const fault: Tpl = {
       put(l, 112, y, fs);
       y += (two ? 2 : 1) * P;
     });
-    const per = n > 3 ? 2 : 3;
-    c.lines.forEach((l, i) => lift(c, l, 116 + Math.floor(i / per) * 300, Math.min(y, 742) + 4 + (i % per) * 27));
+    // 译文排在左下，最底一条的底边守住 800（播放条从 808 起，译文是不换行的长条会伸到播放条上方）：放不下三行就改两栏 / 更多栏
+    const t0 = Math.min(y, 742) + 4;
+    const per = Math.max(1, Math.min(n > 3 ? 2 : 3, Math.floor((800 - 24 - t0) / 27) + 1));
+    c.lines.forEach((l, i) => lift(c, l, 116 + Math.floor(i / per) * 300, t0 + (i % per) * 27));
   },
   finish: (c) => {
     const vert = c.vert;
@@ -214,6 +216,8 @@ export const fault: Tpl = {
 
 // ———— 回声滚筒（尾声、重复副歌）：反复唱的短句一行行裹在滚筒上，换句转一格 ————
 const H_LEN = 1556;
+/** 滚筒上不在唱的歌词行再乘的亮度（看得出正在唱哪一句）。 */
+const DIM = 0.55;
 const V_LEN = 772;
 
 type U = { t: string; sp: boolean };
@@ -286,6 +290,8 @@ interface Item {
   echo: 'a' | 'b' | null;
   /** 开唱（秒）。 */
   ts: number;
+  /** 带不带译文（译文挂在行的下面，滚到筒边时一起被压扁）。 */
+  tr: boolean;
   /** 这一格沿筒面的长度、字号、中心。 */
   h: number;
   cap: number;
@@ -359,7 +365,7 @@ export const drum: Tpl = {
     const items: Item[] = [];
     const add = (el: HTMLElement, fs: number, echo: Item['echo'], ts: number, tr: boolean) => {
       const cap = vert ? fs * 0.96 : fs * CAP;
-      items.push({ el, echo, ts, h: cap + GAP + (tr ? 22 : 0), cap, s: 0 });
+      items.push({ el, echo, ts, tr, h: cap + GAP + (tr ? 22 : 0), cap, s: 0 });
     };
     const echoEl = (x: Cell, k: 'a' | 'b') => {
       const d = deco(c, `lp-drow lp-rot echo-${k}${vert ? ' is-v' : ''}`);
@@ -410,11 +416,18 @@ export const drum: Tpl = {
         const ph = (it.s - pos) / R;
         const vis = Math.abs(ph) < 1.5;
         it.el.style.visibility = vis ? '' : 'hidden';
-        it.el.toggleAttribute('data-edge', Math.abs(ph) > 1.2);
         const cs = Math.cos(ph);
+        // 压在筒边的行（有意沉到播放条玻璃后面）：|φ| > 1.2，或者压扁后的盒子（含译文）已经碰到播放条 / 画幅边
+        const mid = vert ? CX - R * Math.sin(ph) : CY + R * Math.sin(ph);
+        const half = (it.cap / (vert ? 0.96 : 1) / 2) * cs;
+        const lo = mid - half;
+        const hi = mid + half + (vert || !it.tr ? 0 : 33 * cs);
+        it.el.toggleAttribute('data-edge', Math.abs(ph) > 1.2 || (vert ? lo < 2 || hi > PW - 2 : lo < 2 || hi > 806));
         cosOf.set(it, Math.max(0.02, cs));
         if (!vis) continue;
-        it.el.style.setProperty('--do', (it.echo ? 0.34 + 0.6 * cs : 0.36 + 0.64 * cs).toFixed(3));
+        // 歌词行：筒面透明度再乘「离当前行有多近」：当前行满亮，其余约 0.55（换句转一格时两行交叉过渡）；回声行不变
+        const near = it.echo ? 1 : DIM + (1 - DIM) * clamp(1 - Math.abs(it.s - pos) / it.h, 0, 1);
+        it.el.style.setProperty('--do', ((it.echo ? 0.34 + 0.6 * cs : 0.36 + 0.64 * cs) * near).toFixed(3));
         it.el.style.transform = vert
           ? `translate(${px(CX - R * Math.sin(ph) - it.cap / 1.92)}, 0) scaleX(${cs.toFixed(4)})`
           : `translate(0, ${px(CY + R * Math.sin(ph) - it.cap / 2)}) scaleY(${cs.toFixed(4)})`;

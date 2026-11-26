@@ -118,19 +118,29 @@ export function wordBounds(l: TLine): Set<number> {
   return out;
 }
 
-/** 唱得最久的那个词（中日韩扩到所在的词，最多 3 个字）：返回 .u 的下标区间 [a, b]。 */
+/** 虚词 / 语气词 / 纯标点：不当「唱得最久的词」放大（拉丁看 STOP + VOCABLES，中日韩看 STOP_CJK 和常见虚字双字词）。 */
+export function isFunctionWord(text: string, cjk: boolean): boolean {
+  const k = norm(text);
+  if (!k) return true;
+  if (!cjk) return STOP.has(k) || VOCABLES.has(k);
+  return STOP_CJK_PAIR.has(k) || [...k].every((ch) => STOP_CJK.has(ch));
+}
+
+/** 唱得最久的那个词（只在非虚词里挑；中日韩扩到所在的词，最多 3 个字）：返回 .u 的下标区间 [a, b]；这一句没有合格的词 = null。 */
 export function heldRange(l: TLine, cjk: boolean): [number, number] | null {
   const eu = l.eu;
   if (!eu?.length || eu.length !== l.units.length) return null;
-  let k = 0;
+  let k = -1;
   let best = -1;
   eu.forEach((u, i) => {
+    if (isFunctionWord(l.units[i]!.textContent ?? '', cjk)) return;
     const d = u.e - u.s + glyphs(u.t) * 0.001;
     if (d > best) {
       best = d;
       k = i;
     }
   });
+  if (k < 0) return null;
   if (!cjk) return [k, k];
   const b = wordBounds(l);
   let a = k;
@@ -159,6 +169,27 @@ export function lift(c: TCtx, l: TLine, left: number, top: number, cls = ''): HT
   l.tr.style.top = px(top);
   return l.tr;
 }
+
+/** 常见虚词 / 代词 / 助动词 / 缩写 / 语气词（拉丁）：不单独当出血大字的钩子词。 */
+export const STOP = new Set(
+  (
+    'the and you your yours for but not are was were with that this these those from have has had all can its our ours out ' +
+    'who whom whose what when where why how which she her hers him his they them their theirs then than there here ' +
+    'just like into over under only been will would could should shall might must about ' +
+    'i me my mine we us he it a an or if so as at by in on of to up down off again once any both each few more most other some such no nor own same very ' +
+    "i'm i'll i've i'd you're you'll you've you'd we're we'll we've they're they'll they've he's she's it's that's what's who's there's here's " +
+    "don't can't won't didn't doesn't isn't aren't wasn't weren't haven't hasn't hadn't couldn't shouldn't wouldn't " +
+    'yeah yep nah ooh ohh ooo woah whoa baby gonna wanna gotta lemme gimme ayy ah ay hey mm mmm uh hmm la na da'
+  ).split(/\s+/),
+);
+export const VOCABLES = new Set('yeah yep nah ooh ohh ooo woah whoa ayy ah ay hey mm mmm uh hmm la na da oh'.split(/\s+/));
+export const STOP_CJK = new Set([...'的了我你他她它们是在不有就都也这那个一着过吗呢吧啊哦呀和与而之以为于把被让给对从向到得地又还啦嘛哟喔咯哎唉嘿哈嗯呃']);
+export const PARTICLE_CJK = new Set([...'的了着过吗呢吧啊哦呀啦嘛哟喔咯哎唉嘿哈嗯呃']);
+export const STOP_CJK_PAIR = new Set(
+  '我们 你们 他们 她们 它们 自己 什么 怎么 那么 这么 哪里 那里 这里 没有 不是 不要 不会 不能 可以 应该 因为 所以 如果 只是 还是 就是 已经 一直 一起 一样 一个 一下 一点 那些 这些 可是 但是 或者 而且 虽然 然后 于是 终于'.split(
+    /\s+/,
+  ),
+);
 
 /** 词的规范写法：小写、去掉标点（比较重复词用）。 */
 export const norm = (s: string) => s.toLowerCase().replace(/[^\p{L}\p{N}']/gu, '');

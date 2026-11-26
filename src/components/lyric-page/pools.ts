@@ -5,7 +5,7 @@ import { corner, groove, grid } from './bold-c';
 import { drum, fault } from './bold-d';
 import { cut, register } from './bold-e';
 import { CLASSIC_FALLBACK_H, CLASSIC_H, CLASSIC_V } from './classic';
-import { glyphs, norm } from './kit';
+import { glyphs, norm, PARTICLE_CJK, STOP, STOP_CJK, STOP_CJK_PAIR, VOCABLES } from './kit';
 import type { TCtx, Tpl } from './types';
 
 /**
@@ -98,26 +98,6 @@ export function pickTpl(c: TCtx, st: PickState): Tpl {
 /** 强制横排的大胆版式（唱片纹）在中文歌里退回时用的经典版式。 */
 export const FALLBACK_H = CLASSIC_FALLBACK_H;
 
-/** 常见虚词 / 代词 / 助动词 / 缩写 / 语气词（拉丁）：不单独当出血大字的钩子词。 */
-const STOP = new Set(
-  (
-    'the and you your yours for but not are was were with that this these those from have has had all can its our ours out ' +
-    'who whom whose what when where why how which she her hers him his they them their theirs then than there here ' +
-    'just like into over under only been will would could should shall might must about ' +
-    'i me my mine we us he it a an or if so as at by in on of to up down off again once any both each few more most other some such no nor own same very ' +
-    "i'm i'll i've i'd you're you'll you've you'd we're we'll we've they're they'll they've he's she's it's that's what's who's there's here's " +
-    "don't can't won't didn't doesn't isn't aren't wasn't weren't haven't hasn't hadn't couldn't shouldn't wouldn't " +
-    'yeah yep nah ooh ohh ooo woah whoa baby gonna wanna gotta lemme gimme ayy ah ay hey mm mmm uh hmm la na da'
-  ).split(/\s+/),
-);
-const VOCABLES = new Set('yeah yep nah ooh ohh ooo woah whoa ayy ah ay hey mm mmm uh hmm la na da oh'.split(/\s+/));
-const STOP_CJK = new Set([...'的了我你他她它们是在不有就都也这那个一着过吗呢吧啊哦呀和与而之以为于把被让给对从向到得地又还啦嘛哟喔咯哎唉嘿哈嗯呃']);
-const PARTICLE_CJK = new Set([...'的了着过吗呢吧啊哦呀啦嘛哟喔咯哎唉嘿哈嗯呃']);
-const STOP_CJK_PAIR = new Set(
-  '我们 你们 他们 她们 它们 自己 什么 怎么 那么 这么 哪里 那里 这里 没有 不是 不要 不会 不能 可以 应该 因为 所以 如果 只是 还是 就是 已经 一直 一起 一样 一个 一下 一点 那些 这些 可是 但是 或者 而且 虽然 然后 于是 终于'.split(
-    /\s+/,
-  ),
-);
 const HAN_CH = /[\u3400-\u9fff\uf900-\ufaff]/;
 
 interface HookTok {
@@ -190,7 +170,7 @@ function pickBest(map: Map<string, HookCand>, minNeed: (c: HookCand) => number):
  * 分级选择：强词达标（拉丁 ≥3 次，中日韩双字 ≥3 次，中文实义单字 ≥4 次）→ 相邻两词短语（≥3 次）→ null（无重复钩子则不用出血版式）。
  * units：拉丁 = 每句的词；中日韩 = 每句整句原文（一个元素，保留空格，分词要看停顿）。
  */
-export function songHook(units: string[][], cjk: boolean): string | null {
+export function songHook(units: string[][], cjk: boolean, title?: string): string | null {
   const strong = new Map<string, HookCand>();
   const phrases = new Map<string, HookCand>();
   const bump = (map: Map<string, HookCand>, key: string, text: string, len: number, end: boolean) => {
@@ -258,8 +238,66 @@ export function songHook(units: string[][], cjk: boolean): string | null {
       addLine(lineToks);
     }
   }
+  // 歌名优先（2026-11-25 真实数据审查，用户确认）：旧规则在 840 首真实歌里常挑出「却 / 每 / 会 / know / never」这类
+  // 没有画面感的词。歌名里的词（Sunflower、Psycho、旅行的意义）才是这首歌真正的钩子：副歌里唱到两次以上就用它。
+  const fromTitle = titleHook(title, units, cjk);
+  if (fromTitle) return fromTitle;
+  // 中文单字只认歌名里出现的字：单字钩子大多是虚字、动词（会 / 里 / 去 / 没 / 却），放到 660px 撑不起版面
+  const inTitle = (k: string) => !!title && norm(title).includes(k);
+  for (const [k, c] of strong) if (c.len === 1 && !/[a-zA-Z]/.test(k) && !inTitle(k)) strong.delete(k);
   return (
     pickBest(strong, (c) => (/[a-zA-Z]/.test(c.key) ? 3 : c.len >= 2 ? 3 : 4)) ??
     pickBest(phrases, () => 3)
   );
+}
+
+/** 歌名的主体：去掉括号里的版本说明（Jazz Version / feat. / Live）和「 - 」之后的副标题。 */
+function titleCore(title: string): string {
+  return title
+    .replace(/\s*[(（[【][^)）\]】]*[)）\]】]\s*/g, ' ')
+    .replace(/\s+[-–—]\s+.*$/, '')
+    .trim();
+}
+
+/**
+ * 歌名里在副歌中唱到至少两次的词（按歌名自己的文字判断，不按歌词语种：中文歌也常有英文歌名）：
+ *   - 拉丁：整个歌名（≤ 2 个词）或其中唱得最多的实词（≥ 3 个字母、不是虚词），按整词计数；
+ *   - 中日韩：整个歌名（2–4 个字），否则用分词切出歌名里的词（2–4 个字、不是虚词），取副歌里出现最多的。
+ *     不按两字硬切：「所以你睡了没」会切出跨词的「以你」。
+ * 返回显示用的词面；没有则 null。
+ */
+function titleHook(title: string | undefined, units: string[][], cjk: boolean): string | null {
+  if (!title) return null;
+  const core = titleCore(title);
+  if (!core) return null;
+  const all = units.map((us) => (cjk ? us.join('') : us.join(' '))).join('\n');
+  if (!/[぀-ヿ가-힯㐀-鿿]/.test(core)) {
+    const words = core.split(/\s+/).map((w) => cleanSurface(w, true)).filter(Boolean);
+    const hay = ` ${all.toLowerCase().replace(/[^a-z0-9'\s]/g, ' ').replace(/\s+/g, ' ')} `;
+    const count = (s: string) => hay.split(` ${s} `).length - 1;
+    if (words.length === 2 && words.every((w) => latinLetters(w) >= 2) && count(words.join(' ')) >= 2) return words.join(' ');
+    const cands = words.filter((w) => latinLetters(w) >= 3 && !STOP.has(norm(w)) && count(w) >= 2).sort((a, b) => count(b) - count(a) || b.length - a.length);
+    return cands[0] ?? null;
+  }
+  const flat = norm(all);
+  const count = (s: string) => (s ? flat.split(s).length - 1 : 0);
+  const t = norm(core);
+  const n = [...t].length;
+  if (n >= 2 && n <= 4 && count(t) >= 2) return cleanSurface(core, false);
+  const Seg = (Intl as unknown as { Segmenter?: new (l?: string, o?: { granularity: string }) => { segment: (s: string) => Iterable<{ segment: string; isWordLike?: boolean }> } }).Segmenter;
+  if (!Seg) return null;
+  let best: string | null = null;
+  let bestN = 1;
+  for (const w of new Seg('zh', { granularity: 'word' }).segment(core)) {
+    if (w.isWordLike === false) continue;
+    const k = norm(w.segment);
+    const len = [...k].length;
+    if (len < 2 || len > 4 || STOP_CJK_PAIR.has(k) || [...k].some((ch) => STOP_CJK.has(ch))) continue;
+    const m = count(k);
+    if (m > bestN) {
+      bestN = m;
+      best = cleanSurface(w.segment, false);
+    }
+  }
+  return best;
 }

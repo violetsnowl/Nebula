@@ -78,6 +78,21 @@
   letter-spacing: 0;
 }
 
+/* 翻译进栏：和右栏的句子同一栏、宽 250 断行；竖排是一列竖排小字，排在所属句子那一列的左边 */
+.lp-tr.is-reg-col {
+  font-size: 15px;
+  white-space: normal;
+  width: 250px;
+}
+
+.lp-tr.is-reg-v {
+  writing-mode: vertical-rl;
+  font-size: 15px;
+  line-height: 1.4;
+  letter-spacing: 0.08em;
+  white-space: nowrap;
+}
+
 /* 短语前面的小词（So）：斜体衬线，坐在第一个词的高低差里 */
 .lp-reg-pre {
   font-family: Newsreader, Georgia, serif;

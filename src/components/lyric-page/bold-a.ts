@@ -1,5 +1,5 @@
-import { deco, fitTo, glyphs, heldRange, lift, put, px, segment, splitAt, wordBounds } from './kit';
-import { PH, type TCtx, type TLine, type Tpl } from './types';
+import { deco, fitTo, glyphs, heldRange, isFunctionWord, lift, put, px, segment, splitAt, wordBounds } from './kit';
+import type { TCtx, TLine, Tpl } from './types';
 
 /**
  * 样张 N 第一批（2026-11-22 用户定稿）：一词放大、书脊、满版齐行、脚注。
@@ -8,9 +8,6 @@ import { PH, type TCtx, type TLine, type Tpl } from './types';
 
 const allTimed = (c: TCtx) => c.lines.every((l) => l.units.length > 0);
 const maxGlyphs = (c: TCtx) => Math.max(...c.lines.map((l) => glyphs(l.text)));
-
-/** 中文虚词：不参与竖排「一词放大」的主角词选择。 */
-const STOP_HOLD_ZH = new Set([...'的了我你是在不有就都也和他她它们这那个一着过吗呢吧啊哦呀与而之把被让给对从向到得地又还啦嘛哟']);
 
 /** 整页挑一个唱得最久的非虚词（中文竖排用）：按分词候选遍历，避免某句最长字碰巧是「的」就漏掉同句实词。 */
 function heldPickZh(c: TCtx): { l: TLine; from: number; to: number; dur: number } | null {
@@ -21,7 +18,7 @@ function heldPickZh(c: TCtx): { l: TLine; from: number; to: number; dur: number 
       .map((u) => u.textContent ?? '')
       .join('')
       .replace(/[^\p{L}\p{N}]/gu, '');
-    if (!raw || [...raw].every((ch) => STOP_HOLD_ZH.has(ch))) return;
+    if (!raw || isFunctionWord(raw, true)) return;
     const dur = l.eu!.slice(a, b + 1).reduce((s, u) => s + (u.e - u.s), 0) + glyphs(raw) * 0.001;
     if (!best || dur > best.dur) best = { l, from: a, to: b, dur };
   };
@@ -45,7 +42,13 @@ function heldPickZh(c: TCtx): { l: TLine; from: number; to: number; dur: number 
 export const held: Tpl = {
   id: 'held',
   bold: true,
-  fits: (c) => c.lines.length >= 2 && c.lines.length <= 5 && allTimed(c) && maxGlyphs(c) <= (c.cjk ? 18 : 48),
+  fits: (c) =>
+    c.lines.length >= 2 &&
+    c.lines.length <= 5 &&
+    allTimed(c) &&
+    maxGlyphs(c) <= (c.cjk ? 18 : 48) &&
+    // 整页一个合格的词都挑不出来（全是 it / me / you 这类虚词）就不用这套
+    (c.cjk && c.vert ? heldPickZh(c) !== null : c.lines.some((l) => heldRange(l, c.cjk) !== null)),
   layout: (c) => {
     const n = c.lines.length;
     for (const l of c.lines) {
@@ -91,6 +94,8 @@ export const held: Tpl = {
       pick.l.el.classList.add('lt-held-host');
       put(pick.l, 0, 0);
       const segs = segment(pick.l, cuts, (k) => (k === bigIdx ? 'lt-held-big' : 'lt-held-sub'));
+      // 大字列里的空格（歌词里词与词之间的空格）在竖排里是一个整字宽的空隙：去掉，大字之间只留字距
+      for (const nd of [...(segs[bigIdx]?.childNodes ?? [])]) if (nd.nodeType === 3) nd.remove();
 
       interface Col {
         el: HTMLElement;
@@ -145,7 +150,8 @@ export const held: Tpl = {
       let right = 800 + totalW / 2;
       for (const col of cols) {
         const left = right - col.w;
-        const top = 136 + (col.lineIdx % 2) * 32;
+        // 大字列在安全区（y 120–790）里整列居中，其余小字列顶部错开
+        const top = col.isBig ? 455 - c.size(col.el).h / 2 : 136 + (col.lineIdx % 2) * 32;
         if (col.isSeg) {
           col.el.style.left = px(left);
           col.el.style.top = px(top);
@@ -162,11 +168,24 @@ export const held: Tpl = {
       l.tx.style.fontSize = '23px';
       f = Math.min(f, (1450 - X[i]!) / Math.max(1, c.size(l.tx).w));
     });
-    const fs = 23 * f;
-    const big = fs * (c.cjk ? 4.2 : 5.9);
-    const step = big * 1.25 + (c.hasTr ? 18 : 0);
-    const top0 = (PH - (n - 1) * step - big) / 2 - 10;
-    c.lines.forEach((l, i) => put(l, X[i]!, top0 + i * step, fs));
+    let fs = 23 * f;
+    const K = c.cjk ? 4.2 : 5.9;
+    const gapOf = (v: number) => v * K * 0.25 + (c.hasTr ? 18 : 0);
+    // 整组高度（含大字行的真实行高）不超过 640，居中在安全区（y 125–765）；超了就整体缩小
+    const stackH = () => {
+      for (const l of c.lines) l.tx.style.fontSize = px(fs);
+      return c.lines.reduce((a, l) => a + c.size(l.el).h, 0) + gapOf(fs) * (n - 1);
+    };
+    let total = stackH();
+    for (let it = 0; it < 3 && total > 640; it++) {
+      fs *= Math.max(0.4, 640 / total);
+      total = stackH();
+    }
+    let y = 445 - total / 2;
+    c.lines.forEach((l, i) => {
+      put(l, X[i]!, y, fs);
+      y += c.size(l.el).h + gapOf(fs);
+    });
   },
 };
 
@@ -189,6 +208,8 @@ function spineOf(c: TCtx): number {
   return best;
 }
 const LEN = 700;
+/** 竖排书脊：细线从书脊右边缘连到其余竖列的左边缘（layout 量好，finish 画）。 */
+const spineV = new WeakMap<HTMLElement, { x0: number; x1: number }>();
 export const spine: Tpl = {
   id: 'spine',
   bold: true,
@@ -203,18 +224,28 @@ export const spine: Tpl = {
     const rest = c.lines.filter((_, i) => i !== k);
     sp.el.classList.add('lt-heavy');
     if (c.vert) {
-      // 竖排：那句本来就竖着，直接放大成贴右边的一整列
-      const fs = fitTo(c, sp.tx, 760, true, 150);
+      // 竖排（2026-11-25 用户定稿）：和横排书脊一个意思——书脊那句贴左边、整高一列粗字（x 从 140 起，y 140–790，字号自适应、最大 150），
+      // 一条封面色细线连到其余句子；其余句子是斜体 / 衬线竖列，从右边（x ≈ 1400）往左排，顶约 200、底不过 790。
+      sp.el.classList.add('lt-spine-v');
+      fitTo(c, sp.tx, 650, true, 150);
       const h = c.size(sp.tx).h;
-      put(sp, 1450 - fs, 70 + (760 - h) / 2);
-      rest.forEach((l, j) => {
+      const wSp = c.size(sp.tx).w;
+      put(sp, 140, 140 + (650 - h) / 2);
+      let f = 1;
+      for (const l of rest) {
         l.el.classList.add('lt-ital');
-        put(l, 1450 - fs - 120 - j * 104, 230, 52);
-      });
+        l.tx.style.fontSize = '52px';
+        f = Math.min(f, 590 / Math.max(1, c.size(l.tx).h));
+      }
+      const rfs = 52 * f;
+      const col = rest.length ? Math.max(...rest.map((l) => c.size(l.tx).w)) : 0;
+      const step = col + 56 * f;
+      rest.forEach((l, j) => put(l, 1400 - col - j * step, 200, rfs));
+      spineV.set(c.page, { x0: 140 + wSp + 30, x1: 1400 - rest.length * step + 56 * f - 20 });
       return;
     }
     const cut = splitAt(sp, c.cjk, c.cjk ? 7 : 14);
-    const rows = cut > 0 ? segment(sp, [cut], () => 'lp-row') : [sp.tx];
+    const rows = cut > 0 ? segment(sp, [cut], () => 'lp-row lp-fit') : [sp.tx];
     let hb = 0;
     for (const r of rows) hb += fitTo(c, r, LEN, false, 150) * (c.cjk ? 1 : 0.86);
     if (rows[0] !== sp.tx) sp.tx.style.fontSize = rows[0]!.style.fontSize;
@@ -231,10 +262,15 @@ export const spine: Tpl = {
       const f = Math.min(1, (1450 - x2) / Math.max(1, c.size(l.tx).w));
       put(l, x2, 392 + (j - (m - 1) / 2) * (c.hasTr ? 140 : 112), 66 * f);
     });
-    lift(c, sp, 122, 800);
+    lift(c, sp, 122, 776);
   },
   finish: (c) => {
-    if (c.vert) return;
+    if (c.vert) {
+      const v = spineV.get(c.page);
+      // 细线贴着书脊右侧竖下来（像书脊的边）；原来一条横线横穿中间的空白，看着随意（主对话 2026-11-25 审截图后改）
+      if (v) deco(c, 'lp-hair', { left: px(v.x0), top: '150px', width: '1px', height: '630px' });
+      return;
+    }
     const sp = c.lines.find((l) => l.rot === -90);
     if (!sp) return;
     sp.el.classList.add('lp-rot');
@@ -258,7 +294,8 @@ function rowsOf(c: TCtx): Row[] {
   for (const l of c.lines) {
     l.el.classList.add('lt-heavy');
     const cut = splitAt(l, c.cjk, c.vert ? 10 : c.cjk ? 9 : 14);
-    const segs = cut > 0 ? segment(l, [cut], () => 'lp-row') : [l.tx];
+    // lp-fit：每一行 / 列按自己的字数量宽（不然块级的行会撑到最长那行的宽度，短行量出来和长行一样长），字距也按本行字号算
+    const segs = cut > 0 ? segment(l, [cut], () => 'lp-row lp-fit') : [l.tx];
     segs.forEach((el, i) => {
       el.style.fontSize = '100px';
       out.push({ el, line: l, first: i === 0, n: 0 });
@@ -277,12 +314,13 @@ export const justify: Tpl = {
     const LH = c.cjk ? 1 : 0.86;
     if (c.vert) {
       // 满栏：每列撑满同一高度，从右往左排；整组宽过画面时整体等比缩
-      const H0 = 700;
+      // 高 ≤ 640，居中在安全区（y 125–765）：底端在播放条上方留足，顶端不碰页码
+      const H0 = 640;
       const GAP = 30;
       const W = (H: number) => rows.reduce((a, r, i) => a + ((100 * H) / r.n) * LH + (i && r.first ? (GAP * H) / H0 : 0), 0);
       const H = Math.min(H0, (H0 * 1250) / W(H0));
       let x = 800 + W(H) / 2;
-      const top = (PH - H) / 2;
+      const top = 445 - H / 2;
       for (const [i, r] of rows.entries()) {
         if (i && r.first) x -= (GAP * H) / H0;
         const fs = (100 * H) / r.n;
@@ -301,8 +339,9 @@ export const justify: Tpl = {
     const W0 = 1000;
     const GAP = 26;
     const Ht = (W: number) => rows.reduce((a, r, i) => a + ((100 * W) / r.n) * LH + (i && r.first ? (GAP * W) / W0 : 0), 0);
-    const W = Math.min(W0, (W0 * 700) / Ht(W0));
-    const top0 = (PH - Ht(W)) / 2;
+    // 整块高 ≤ 630，居中在安全区（y 130–760）：大写字形比行盒高出约 .17em，最后一行底端仍在播放条上方 ≥ 10px，译文也不碰页码
+    const W = Math.min(W0, (W0 * 630) / Ht(W0));
+    const top0 = 445 - Ht(W) / 2;
     let y = top0;
     const x = 150;
     for (const [i, r] of rows.entries()) {
@@ -342,9 +381,10 @@ export const foot: Tpl = {
       sup.textContent = String(i + 1);
       l.tx.appendChild(sup);
     });
-    const footY = Math.max(640, top0 + n * step + 70);
+    // 句数 ≤ 3：译文排一栏（一条一行）；4–5 句两栏。页脚最底一行（24px 高）不过 y 780
+    const rows = n <= 3 ? n : Math.ceil(n / 2);
+    const footY = Math.min(Math.max(640, top0 + n * step + 70), 780 - 24 - (rows - 1) * 32);
     deco(c, 'lp-hair', { left: '232px', top: px(footY - 28), width: '140px', height: '1px' });
-    const rows = Math.ceil(n / 2);
     c.lines.forEach((l, i) => {
       const t = lift(c, l, 232 + Math.floor(i / rows) * 520, footY + (i % rows) * 32, 'is-fn');
       if (t) t.dataset.n = String(i + 1);

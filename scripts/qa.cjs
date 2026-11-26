@@ -2230,7 +2230,7 @@ async function main() {
     !!tplChecks.en &&
     !!tplChecks.zh &&
     TPLS.every((id) => [tplChecks.en[id], tplChecks.zh[id]].some((r) => r && typeof r === 'object')) &&
-    TPLS.every((id) => [tplChecks.en[id], tplChecks.zh[id]].every((r) => r === 'n/a' || (r && typeof r === 'object' && r.units > 0 && r.out === 0 && r.clash <= 2)));
+    TPLS.every((id) => [tplChecks.en[id], tplChecks.zh[id]].every((r) => r === 'n/a' || (r && typeof r === 'object' && r.units > 0 && r.out === 0 && r.clash <= 2 && r.bar === 0 && r.no === 0)));
 
   // #220 播放偏好随重开保留：音量、静音、播放顺序写进 localStorage，刷新后读回
   const prefsSet = await page.evaluate(() => {

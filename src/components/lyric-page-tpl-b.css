@@ -84,25 +84,42 @@
   font-weight: 700;
 }
 
-/* 色块：不透明，盖住它下面的原文（色块里的字由 .lp-field-on 那一份重新印上去） */
+/* 色块：不透明，盖住它下面的原文（色块里的字由 .lp-field-on 那一份重新印上去）。
+   颜色（2026-11-25 用户：鲜艳封面被压成土色、黑白封面成了一块死灰）：OKLCH 相对颜色，保留封面强调色的色相和彩度，明度定在 .6，
+   鲜艳封面照样鲜艳；强调色接近无彩（彩度 < .04）时改用暖白纸色 oklch(.86 .018 80)，配深色墨，像印在纸上。
+   黄 / 橙一带（色相 95° 附近）在明度 .6 下发橄榄色：按 cos³(色相 − 95°) 最多补 .08 明度，红、蓝几乎不受影响（主对话 2026-11-25）。
+   --fk = 有没有颜色（0 = 无彩、1 = 有彩，彩度 .035–.045 之间过渡）；纸色与封面色按它切换。 */
+.tpl-field {
+  --lp-field-block: oklch(
+    from var(--lp-acc)
+      calc(0.86 - 0.26 * clamp(0, (c - 0.035) / 0.01, 1) + 0.08 * clamp(0, (c - 0.035) / 0.01, 1) * pow(max(0, cos((h - 95) * 1deg)), 3))
+      calc(0.018 + (c - 0.018) * clamp(0, (c - 0.035) / 0.01, 1))
+      calc(80 + (h - 80) * clamp(0, (c - 0.035) / 0.01, 1))
+  );
+  --lp-field-ink: color-mix(in srgb, var(--lp-acc) 9%, rgb(4 5 6));
+}
+
 .lp-field {
   position: absolute;
   z-index: 1;
-  background: color-mix(in srgb, var(--lp-acc) 58%, rgb(10 11 14));
+  background: var(--lp-field-block);
   pointer-events: none;
 }
 
-/* 页码压在色块上也要看得见 */
+/* 页码压在色块上也要看得见（横排色块在右，页码落在色块里：改用墨色） */
 .tpl-field .lp-no {
   z-index: 3;
+}
+
+.tpl-field:not(.is-vert) .lp-no {
+  color: color-mix(in srgb, var(--lp-field-ink) 72%, transparent);
 }
 
 /* 色块里那一份：整层按色块的区域裁剪（clip-path 行内写），字换成深色——
    没唱到 = 深色 34% 透明、唱过 / 正在唱 = 深色。逐字层的颜色变量由引擎每帧写在 .u 的行内 style 上，
    所以这里用 !important 把 --sung / --edge / --un 压住；唱过的句子走 --lp-ink、没唱到的走 --lc-rest，在这一层上直接改写。 */
 .lp-field-on {
-  --lp-field-ink: color-mix(in srgb, var(--lp-acc) 9%, rgb(4 5 6));
-  --lc-rest: color-mix(in srgb, var(--lp-field-ink) 45%, transparent);
+  --lc-rest: color-mix(in srgb, var(--lp-field-ink) 58%, transparent);
   --lp-ink: var(--lp-field-ink);
   --lp-tr: color-mix(in srgb, var(--lp-field-ink) 50%, transparent);
   --lp-tr-on: color-mix(in srgb, var(--lp-field-ink) 82%, transparent);
