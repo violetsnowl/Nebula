@@ -284,7 +284,7 @@ const CREDIT_CN =
 /** 英文/拼音歌词“配料表”行（Lyrics by / Composed by / OP: / SP:…）。 */
 const CREDIT_EN =
   /^(lyrics?|composed|composer|produced|producer|written|writer|mixed|mastered|recorded|arranged|engineered|programmed|published|performed|vocals?|backing vocals?|executive producer|additional|guitar|bass|drums?|keyboards?|strings?|piano|chorus|background vocals?)\b(\s*by|\s*[:：])/i;
-const CREDIT_OP_SP = /^(op|sp)\s*[:：]/i;
+const CREDIT_OP_SP = /^(op|sp)(\s*[/&]\s*(op|sp))?\s*[:：]/i;
 /**
  * 正文开始前没有冒号的署名行（QQ 部分韩语 / 日语歌词：「词정준일」「编曲정준일/권영찬」，#166）。
  * 只认后面紧跟韩文、假名或字母的，免得把「曲终人散」这类正文第一句当成署名。
@@ -305,14 +305,64 @@ const CREDIT_SPACED = new RegExp(String.raw`^${CREDIT_SPACED_LABEL}\s*[:：·・
 const ROMAN_NOTE = /^以下.{0,6}(音译|罗马音|注音|翻译).{0,8}(生产|生成|提供|制作)/;
 /**
  * 通用的英文制作人员行：「标签：名字」，且标签里有制作类关键词（2026-11-16，真实数据里漏掉了
- * 「Programming：Cirkut」「Recording Engineers：…」这类写法）。标签限 40 个字符内、只含字母 / 空格 / & / -，
+ * 「Programming：Cirkut」「Recording Engineers：…」这类写法）。标签限 40 个字符内、只含字母 / 数字 / 空格 / & / - 等，
  * 避免误伤正文里带冒号的句子。
+ * 2026-11-25 真实数据：补乐器（Trumpet / Violin / Cello…）与 tracking / coordinator / design 等词；
+ * 前缀词（lyric / compos…）按词首匹配，整词词（乐器等）后面加 \b。
  */
-const CREDIT_LABEL = /^([A-Za-z][A-Za-z&\-\s]{1,40})\s*[:：]/;
-const CREDIT_WORDS = /\b(lyric|compos|produc|writ|mix|master|record|arrang|engineer|program|publish|perform|vocal|guitar|bass|drum|keyboard|string|piano|synth|chorus|assist|studio|editor|director|coordinat|supervis|a&r)/i;
+const CREDIT_LABEL = /^([A-Za-z][A-Za-z0-9&\-\s./+']{1,40})\s*[:：]/;
+const CREDIT_WORDS = new RegExp(
+  String.raw`\b(?:lyric|compos|produc|writ|mix|master|record|arrang|engineer|program|publish|perform|vocal|guitar|bass|drum|keyboard|string|piano|synth|chorus|assist|studio|editor|director|coordinat|supervis|a&r|design|artwork|photograph|conduct|orchestra|choir|copyright|management|direction|musician|contractor|midi|[pc]\s*-\s*line|(?:track(?:ing)?|pgm|label|trumpet|violin|cello|viola|sax(?:ophone)?|horns?|trombone|flute|percussion|organ|harp|ukulele|banjo|accordion|clarinet|oboe|harmonica|mandolin|tuba|bgm|harpsichord|pipa|erhu|guzheng|b-?box|brass\s*band|emulator|author|fiddle|loop|solo|rhodes|conductor|original|adapt|admin|released|prod)\b)`,
+  'i',
+);
+/** 日文乐器 / 工种标签（片假名，没有 \b 可用）。 */
+const CREDIT_KANA = /^(?:ギター|ベース|ドラム|ピアノ|コーラス|ストリングス)/;
+/**
+ * 中文制作人员标签（2026-11-25 真实数据）：「弦乐编写」「录音/混音室」「出品公司」「钢琴」「合音」……
+ * 标签里每一段连续汉字都必须**以角色词结尾**且不超过 10 字——「男」「女」「合唱」「汪」「呜米」这类
+ * 声部标记、「你说」「宝贝」这类正文里的称呼都不以角色词结尾，不会被误杀。
+ * 英文部分（「制作人 Producer」「吉他 All guitar」）不参与判定，只看汉字段。
+ */
+const CREDIT_CN_RUN = /[㐀-鿿豈-﫿]+/g;
+const CREDIT_ROLE_END = new RegExp(
+  '(?:' +
+    [
+      '作词|作詞|作曲|编曲|編曲|编写|編寫|编辑|編輯|词|詞|曲|制作人?|製作人?|监制|監製|录音室?|錄音室?|录音棚|錄音棚|影棚|混音师?|混音師|录音师|錄音師|混录|混音|母带|母帶|和声|和聲|和音|合声|合聲|合音',
+      '统筹|統籌|策划|策劃|出品人?|出品方|发行|發行|企划|企劃|营销|營銷|推广|推廣|宣传|宣傳|设计|設計|摄影|攝影|助理|工程师|工程師|工程|乐队|樂隊|队长|隊長',
+      '弦乐团?|弦樂團?|打击乐|打擊樂|乐手|樂手|乐器|樂器|吉他|貝斯|贝斯|贝司|鼓手?|键盘|鍵盤|琴|古筝|古箏|二胡|琵琶|笛子|唢呐|长笛|竹笛|[小圆圓大长長]号|[小圓大長]號|铜管|銅管|管乐|管樂|萨克斯|薩克斯',
+      '人声|人聲|总监|總監|艺人|藝人|版权|版權|公司|项目|項目|联系|聯繫|联络|聯絡|协力|協力|演奏|鸣谢|鳴謝|感谢|感謝|顾问|顧問|指导|指導|导演|導演|监督|監督|提供|配唱|配乐|配樂|音频|音頻|后期|後期|独奏|獨奏|合成|编程|編程|采样|取样|演唱者?|伴唱|原唱|指挥|指揮|尤克里里|箫|法国号|法國號|三弦|重奏|技师|制谱|编成|改编|协办|協辦|管理方?|笛|带师|带棚|客串|监唱|贴唱|承办人?|支持|协助|行政|经纪|平台|合作|来源|作者|乐团|樂團|谱务|譜務|工程室|封面|宣推|[词曲]人|改编自|改編自|[录混]音[室棚]|工作室|演播室|带处理|后期处理|[小中大低]提|录制|混缩|缩混|剪辑|剪輯|执行|執行|监棚|编配|編配|发行人|[发行出]方|运营方|单位|團隊|团队|商务|商務|宣发|拍摄|海报|画师|画|邮箱|微博|声明|音乐人',
+      '调音师|調音師|设计师|設計師|摄影师|攝影師|化妆师|化妝師|造型师|造型師|剪辑师|剪輯師',
+    ].join('|') +
+    ')$',
+);
+/** 只有标签、没有内容的行（「男：」「Hook：」「汪苏泷：」，整行占一列没用，2026-11-25 真实数据）。 */
+const LABEL_ONLY = /^([^:：]{1,24})[:：]\s*$/;
+/** 标签里带「说 / 问 / 想……」或虚词的，是正文里引出下一句的话（「他轻轻地说：」「I said:」），保留。 */
+const LABEL_ONLY_SPEECH = /[说說道问問答喊叫想讲講念笑哭写寫，。！？；…,.!?;]|\b(?:said|say|says|asked?|tells?|told|sings?|sang|whispered|shouted|cried|i|you|he|she|we|they|it|the|my|me|is|are|was|like|that|this|to|of|in|on|for|with|what|when|and|but|so|if)\b/i;
+/** 「Recorded at …」「Mixed at …」行首的录音信息（后面跟大写 / 数字开头的地名，2026-11-25 真实数据）。 */
+const CREDIT_RECORDED_AT = /^(?:recorded|mixed|mastered)\s+(?:(?:and\s+)?(?:recorded|mixed|mastered)\s+)?(?:at|in)\s+[A-Z0-9]/i;
+/** 全曲最后一句正文之后的「… recorded / mixed / mastered / produced by …」尾部署名；只在末尾判定，避免误杀正文里的 by。 */
+const CREDIT_TAIL_BY = /\b(?:recorded|mixed|mastered|produced|engineered|arranged|programmed)\b[^.!?]{0,80}?\bby\b/i;
+/** QQ 译文里的版权声明（「TME享有本翻译作品的著作权」，2026-11-25 真实数据）。 */
+const isTranslationCopyright = (s: string): boolean => s.includes('翻译作品') && /著作权|版权/.test(s);
 function isEnglishCreditLabel(text: string): boolean {
   const m = text.match(CREDIT_LABEL);
   return !!m && CREDIT_WORDS.test(m[1]!);
+}
+/** 「标签：内容」型署名（中文 / 中英双语 / 英文乐器标签；只看第一个冒号前的标签，2026-11-25 真实数据）。 */
+function isLabelCredit(text: string): boolean {
+  const i = text.search(/[:：]/);
+  if (i <= 0) return false;
+  // 去掉括号注释、汉字之间的排版空格（「编  曲」「制作人（中国）」）
+  const label = text
+    .slice(0, i)
+    .replace(/[（(][^）)]*[）)]/g, '')
+    .replace(/(?<=[㐀-鿿])\s+(?=[㐀-鿿])/g, '')
+    .trim();
+  if (!label || label.length > 40 || /[，。！？；…,!?;"“”]/.test(label)) return false;
+  const runs = label.match(CREDIT_CN_RUN);
+  if (runs) return runs.every((r) => r.length <= 10 && CREDIT_ROLE_END.test(r));
+  return CREDIT_KANA.test(label) || (/^[A-Za-z0-9][A-Za-z0-9&\-\s./+']*$/.test(label) && CREDIT_WORDS.test(label));
 }
 /** 标题行比较用：去掉空白和各种括号，小写。 */
 const compactHead = (s: string): string => s.replace(/[\s()（）[\]【】]/g, '').toLowerCase();
@@ -330,7 +380,9 @@ export function filterCreditLines(lines: LyricLineUI[], title?: string, artist?:
   const out: LyricLineUI[] = [];
   let droppedHeader = 0;
   let sawText = false;
-  for (const l of lines) {
+  for (const raw of lines) {
+    // QQ 译文里的版权声明（「TME享有本翻译作品的著作权」）：去掉译文，行本身保留
+    const l = raw.translation && isTranslationCopyright(raw.translation) ? { ...raw, translation: undefined } : raw;
     const text = (l.text ?? '').replace(NOTE_CHARS, '').trim();
     if (!text) {
       // 翻译独行（原文为空、仅有翻译）保留，供主歌词下方展示；开头的先丢弃
@@ -339,6 +391,10 @@ export function filterCreditLines(lines: LyricLineUI[], title?: string, artist?:
     }
     if (NOTE_ONLY.test(text)) continue;
     if (CREDIT_CN.test(text) || CREDIT_EN.test(text) || CREDIT_OP_SP.test(text) || isEnglishCreditLabel(text)) continue;
+    // 2026-11-25 真实数据：带冒号的各式标签（中文 / 中英双语 / 乐器）、Recorded at …、只有声部标记的行、QQ 翻译版权声明
+    if (isLabelCredit(text) || CREDIT_RECORDED_AT.test(text) || isTranslationCopyright(text)) continue;
+    const only = text.match(LABEL_ONLY);
+    if (only && !LABEL_ONLY_SPEECH.test(only[1]!)) continue;
     // 「标签 + 空格 + 名字」型署名（#233）：只看行首标签 + 整行很短，正片正文首句不会被误杀
     if (CREDIT_SPACED.test(text)) continue;
     if (!sawText && (ROMAN_NOTE.test(text) || (CREDIT_BARE.test(text) && text.length <= 40))) continue;
@@ -357,6 +413,8 @@ export function filterCreditLines(lines: LyricLineUI[], title?: string, artist?:
     sawText = true;
     out.push(text === l.text ? l : { ...l, text });
   }
+  // 全曲最后一句正文之后的「… recorded by … at …」尾部署名：只从末尾往前剥，正文中间的 by 不受影响
+  while (out.length && out[out.length - 1]!.text.length <= 140 && CREDIT_TAIL_BY.test(out[out.length - 1]!.text)) out.pop();
   return out;
 }
 

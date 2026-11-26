@@ -375,5 +375,40 @@ await test('#233 正文首句不会被误杀（标签字开头的正常歌词）
     assert.equal(kept.length, 1, `「${text}」是正文，不能当署名行丢掉`);
   }
 });
+await test('2026-11-25 真实数据：中文 / 中英双语 / 乐器 / 录音信息等漏网署名行全部丢掉',()=>{
+  const credits = [
+    '弦乐编写: 李荣浩/陈迪','录音/混音室: 一样音乐工作室','混音师: 曹飞','音乐监制: 乐视音乐','出品人: 李宏杰',
+    '出品公司: WR/OC Records（北京惟又双文化传播有限公司）','和声编写: 余昭源','配唱制作人：任寒冰','混音/母带: 周天澈','音乐总监: 刘卓@维伴音乐',
+    '混音工程师: 林世龙','录音棚: 福建莆田艺术学校录音棚','艺人统筹: 郑立南','音频编辑：樊俊@光合声动','音响总监: 何飚','和音: 小手鹅','打击乐: 刘效松@维伴音乐',
+    '母带工程师: Chris Gehringer','人声编辑: 刘涛','总策划: 黄俊/乃可','大提琴: 叶欲新','乐队统筹: 张伊然@维伴音乐','封面设计：太空难民','制作公司: 匠心音乐',
+    '营销推广：噼里啪啦Studio','音乐混音: 林梦洋','项目统筹: 葛语谦','制作协力: 周信廷','合音: 石行@维伴音乐','小提琴: 阿滚(动静音乐)','业务联系：jf399@vip.163.com',
+    '制作统筹: 杨晨','钢琴: 林俊杰','首席小提琴: 董智敏','弦乐制作: 朱金泰','弦乐录音: 杨杰/郑昊杰','女声和声: 孙亮亮','制作助理: 哈斯瑚必来','编  曲：关天天',
+    '制作人 Producer：钟成虎 Tiger','吉他 All guitar：钟成虎','和声＋和声编写 All chorus：陈绮贞 Cheer','母带后期处理协办 Mastering Coordinator：杨大纬',
+    '弦乐 String：北京国家交响乐团CCNT & 北京爱乐交响乐团','All Vocals Tracking录音：钟成虎 Tiger @ Room 19','编曲 Arrangement : 李雨寰 Yuhuan',
+    '助理母带工程师 Assistant Mastering Engineer: Donghee Cho @Motherbird Studio','1st Violin: 室屋　光一郎　Koichiro Muroya',
+    'Trumpet : Philip Beaudreau','Pipa：袁端端','Recorded at Record Plant (Los Angeles, California), 2015','Mixed at Henson Recording Studios',
+    'OP/SP：长沙小狗文化传媒有限公司',
+  ];
+  const lines = [...credits.map((text)=>({timeMs:0,text})),{timeMs:1000,text:'第一句歌词'},{timeMs:5000,text:'第二句歌词'}];
+  const kept = ui.filterCreditLines(lines, '某某', '某某');
+  assert.deepEqual(kept.map((l)=>l.text), ['第一句歌词','第二句歌词'], '漏网署名全部丢掉：'+kept.map((l)=>l.text).join(' | '));
+});
+await test('2026-11-25 全曲最后一句正文之后的「… recorded by … at …」才当署名，正文中间的 by 保留',()=>{
+  const body = [{timeMs:1000,text:'这是编的第一句'},{timeMs:5000,text:'I was mixed up by your love'},{timeMs:9000,text:'这是编的第三句'}];
+  const tail = {timeMs:20000,text:'Acoustic Guitar & Drum recorded by Hyperbolic Productions (Patrick Weyer-Brown) at YUM music'};
+  assert.deepEqual(ui.filterCreditLines([...body,tail],'某','某').map((l)=>l.text), body.map((l)=>l.text));
+  assert.equal(ui.filterCreditLines([{...tail,timeMs:100},...body],'某','某').length, 4, '不在末尾的不判');
+});
+await test('2026-11-25 声部标记 + 歌词、正文带冒号的句子必须保留；只有声部标记的行丢掉',()=>{
+  const keep = ['男：我在这里等你','女：你说要回来','合：啦啦啦','合唱：一起唱吧','(男) 我爱你','呜米：今日はいい天気','咩栗：そうだね','汪：是你让我想要每天为你写一首情歌','A：Hello there','你说：我会回来','宝贝：别走','Q：为什么这么晚','鱼：都结束吧 一切在冬季结尾','(那分手的夜)  女：那缠绵的地点','女孩（冷静低落）：“...师傅，徒儿不会让你失望的。”','他轻轻地说：','I said:'];
+  const drop = ['男：','女:','合：','男 :','汪苏泷：','Hook：','Verse 1：','Intro：'];
+  const lines = [...drop.map((text)=>({timeMs:0,text})),...keep.map((text,i)=>({timeMs:1000+i*1000,text}))];
+  assert.deepEqual(ui.filterCreditLines(lines,'某','某').map((l)=>l.text), keep);
+});
+await test('2026-11-25 QQ 译文里的版权声明去掉（行本身保留），声明独占一行也丢',()=>{
+  const lines = [{timeMs:1000,text:'编的第一句',translation:'TME享有本翻译作品的著作权'},{timeMs:2000,text:'编的第二句',translation:'译文二'},{timeMs:3000,text:'QQ音乐享有本翻译作品的著作权'},{timeMs:4000,text:'',translation:'腾讯享有本翻译作品的著作权'},{timeMs:5000,text:'编的第三句',translation:'版权所有'}];
+  const r = ui.normalizeLyricLines({lines});
+  assert.deepEqual(r.map((l)=>[l.text,l.translation]), [['编的第一句',undefined],['编的第二句','译文二'],['编的第三句','版权所有']]);
+});
 console.log(`歌词回归 ${count}/${count}`);
 }finally{fs.rmSync(temp,{recursive:true,force:true})}

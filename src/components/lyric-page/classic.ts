@@ -51,7 +51,8 @@ const H: Record<string, Tpl> = {
   },
   // 右下斜体（预副歌）
   corner: {
-    id: 'corner',
+    // 与大胆版式「转角」（bold-c.ts 的 corner）区分：同名时「相邻两页不重复」会把下一页的转角误跳过（2026-11-25 真实数据审查发现）
+    id: 'cornerR',
     italic: true,
     place: (i, n, f) => ({ right: 190, top: Math.min(470, PH - 130 - n * 96 * f) + i * 96 * f, fs: 44 * f, tr: 'under' }),
     room: () => 1260,

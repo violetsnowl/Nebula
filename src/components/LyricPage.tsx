@@ -703,7 +703,7 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
         overlap: () => number;
         pages: () => { tpl: string; s: number; vert: boolean }[];
         force: (id: string | null) => void;
-        bounds: () => { tpl: string; units: number; out: number; clash: number }[];
+        bounds: () => { tpl: string; units: number; out: number; clash: number; bar: number; no: number }[];
         lsProbe: () => { n: number; err: number[][]; off: number } | null;
         lsLog: string[];
       };
@@ -776,7 +776,24 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false }: L
               const h = Math.min(A.b, B.b) - Math.max(A.t, B.t);
               if (w > 0 && h > 0) clash = Math.max(clash, Math.min(w, h));
             }
-            return { tpl: p.tpl.id, units: rs.flat().length, out, clash: Math.round(clash * 10) / 10 };
+            // 播放条与页码（2026-11-25 真实数据审查：QA 只量 1600 × 900 画幅，压进播放条、压住页码的字量不出来）：
+            // bar = 被播放条盖住的字 / 译文数；no = 压住本页页码的字 / 译文数。
+            // 出血大字（lp-deco）、套印的两块版、镂空大字是有意沉到播放条玻璃后面的大字（用户 2026-11-25 定：像水面倒影），不算
+            const hit = (a: DOMRect, b: DOMRect, pad = 2) => a.right > b.left + pad && a.left < b.right - pad && a.bottom > b.top + pad && a.top < b.bottom - pad;
+            const barR = document.querySelector('.bp-shell')?.getBoundingClientRect() ?? null;
+            const noEl = p.el.querySelector<HTMLElement>('.lp-no');
+            const noR = noEl && getComputedStyle(noEl).display !== 'none' && getComputedStyle(noEl).visibility !== 'hidden' && Number(getComputedStyle(noEl).opacity) > 0.05 ? noEl.getBoundingClientRect() : null;
+            const texts: Array<{ r: DOMRect; big: boolean }> = [];
+            p.lines.forEach((l) => {
+              l.units.forEach((u) => {
+                if (u.closest('.lp-deco, [data-edge], .lp-plate.is-b')) return;
+                texts.push({ r: inner(u), big: !!u.closest('.lp-plate, .lp-cut-big') });
+              });
+              if (l.tr && l.tr.offsetParent && Number(getComputedStyle(l.tr).opacity) > 0.05) texts.push({ r: l.tr.getBoundingClientRect(), big: false });
+            });
+            const bar = barR && barR.height > 0 ? texts.filter((t) => !t.big && hit(t.r, barR)).length : 0;
+            const no = noR && noR.width > 0 ? texts.filter((t) => hit(t.r, noR, 0)).length : 0;
+            return { tpl: p.tpl.id, units: rs.flat().length, out, clash: Math.round(clash * 10) / 10, bar, no };
           });
       },
       overlap: () => {

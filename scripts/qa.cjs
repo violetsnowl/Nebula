@@ -1738,7 +1738,7 @@ async function main() {
       await page.waitForFunction(() => !!document.querySelector('.app[data-listen]'), null, { timeout: 8000 }).catch(() => {});
       await page.waitForTimeout(1300);
       const b = await page.evaluate((x) => (window.__nebulaLyricPage.bounds() || []).find((q) => q.tpl === x) || null, id);
-      out[id] = b ? { units: b.units, out: b.out, clash: b.clash } : 'hidden';
+      out[id] = b ? { units: b.units, out: b.out, clash: b.clash, bar: b.bar, no: b.no } : 'hidden';
       if (process.env.NEBULA_QA_SHOT) await page.screenshot({ path: path.join(process.env.NEBULA_QA_SHOT, `tpl-${tag}-${id}.png`) });
     }
     await page.evaluate(() => window.__nebulaLyricPage && window.__nebulaLyricPage.force(null));
