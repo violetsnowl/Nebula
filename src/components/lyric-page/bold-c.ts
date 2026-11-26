@@ -44,8 +44,11 @@ const TRACK_MOVE = 650;
 const TRACK_FADE = 400;
 const TRACK_DIM = 0.35;
 const easeIO = (p: number) => (p < 0.5 ? 4 * p * p * p : 1 - (-2 * p + 2) ** 3 / 2);
-/** 轨道线离句子那一圈往里多远 */
-const TRACK_IN = 58;
+/**
+ * 轨道线放在当前句和下一句（里面一圈）之间的正中（2026-11-26 用户：原来固定往里 58px，正好搭在下一句的字顶上）：
+ * 当前句的下沿 = 它那一圈（有译文时是译文那一圈 R − 36），下一句的上沿 = 下一圈 + 字高 × .9；最后一句往里 30。
+ */
+const TRACK_LAST = 30;
 
 /** 把一个外壳摆到半径 R 的圆弧上：s = 字形中心沿弧的位置（距句子正中），壳的底边中点落在弧上、朝外转 θ。 */
 function onArc(el: HTMLElement, g: Gm, s: number, R: number): number {
@@ -79,10 +82,15 @@ export const groove: Tpl = {
   finish: (c) => {
     const S = c.page.getBoundingClientRect().width / PW || 1;
     const undos: Array<() => void> = [];
+    /** 每句的字高、下沿（算轨道线位置用）。 */
+    const chs: number[] = [];
+    const inner: number[] = [];
     c.lines.forEach((l, i) => {
       const R = RING[i]!;
+      inner[i] = R;
       // —— 原文：每个 .u 包一层外壳（.lp-arcw），外壳按弧线定位并旋转；.u 自己的波浪 transform 在外壳里变成沿半径向外 ——
       const ms = l.units.map((u) => measureGlyph(u, S));
+      chs[i] = Math.max(...ms.map((g) => g.ch));
       const a = ms[0]!;
       const z = ms[ms.length - 1]!;
       const mid = (a.x + z.x + z.w) / 2;
@@ -118,6 +126,7 @@ export const groove: Tpl = {
         pieces.push(p);
       }
       if (pieces.length) {
+        inner[i] = R - 36;
         const pm = pieces.map((p) => measureGlyph(p, S));
         const pa = pm[0]!;
         const pz = pm[pm.length - 1]!;
@@ -134,6 +143,9 @@ export const groove: Tpl = {
         tr.textContent = text;
       });
     });
+    const trackR = c.lines.map((_, i) =>
+      i + 1 < c.lines.length ? (inner[i]! + RING[i + 1]! + chs[i + 1]! * 0.9) / 2 : inner[i]! - TRACK_LAST,
+    );
     // —— 背后的沟槽：一张静态 SVG（装饰，放在最底下） ——
     let svg = `<svg width="${PW}" height="${PH}" viewBox="0 0 ${PW} ${PH}" aria-hidden="true">`;
     for (let r = 470, k = 0; r <= GROOVE_MAX; r += 11, k++) svg += `<circle cx="${CX}" cy="${CY}" r="${r}" fill="none" stroke="rgba(255,255,255,${k % 2 ? 0.068 : 0.035})" stroke-width="1"/>`;
@@ -172,7 +184,7 @@ export const groove: Tpl = {
           last = k;
           const o = oAt(now);
           if (k >= 0) {
-            const target = RING[k]! - TRACK_IN;
+            const target = trackR[k]!;
             if (!seen) {
               // 第一次出现：直接落在这一圈，从透明淡入
               seen = true;

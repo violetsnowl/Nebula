@@ -182,8 +182,7 @@ export function wholeLift(s: number, e: number, D: number, t: number): number {
 /**
  * 着色（§7.2 视觉模式）。sung = 唱过的字，edge = 正在唱的那道光，un = 还没唱到的字；tint = 刚唱完的余光（0–1）。
  * 两种模式互为反色：封面色 = 唱过的染色；同色系 = 没唱的染色。
- * 尾韵都是往「更亮」走再褪回：封面色模式唱完的字先偏白再回到封面色；同色系唱过的本来就近白，
- * 尾韵是再亮到纯白、褪回 8% 淡染。不能往主色走——那是没唱的颜色，扫白的字会先变回主色再二次变白（2026-11-21 修）。
+ * 颜色尾韵只给同色系：唱过的本来就近白，尾韵是再亮到纯白、褪回 8% 淡染；封面色模式唱完直接停在封面色（2026-11-26 去掉了偏白再回）。不能往主色走——那是没唱的颜色，扫白的字会先变回主色再二次变白（2026-11-21 修）。
  */
 export function wordColors(scheme: ListenSettings['scheme'], tint: number): { sung: string; edge: string; un: string } {
   const T = tint > 0.01;
@@ -194,8 +193,10 @@ export function wordColors(scheme: ListenSettings['scheme'], tint: number): { su
       un: 'color-mix(in srgb, color-mix(in srgb, var(--lc-a) 58%, #fff) 52%, transparent)',
     };
   }
+  // 封面色模式不做颜色尾韵（2026-11-26 用户：唱完的字「先封面色、再短暂变白、又回封面色」看着就是 bug）：
+  // 唱完直接停在封面色；刚唱完的余光只留给 tailGlow 的发光，不改字的颜色
   return {
-    sung: T ? `color-mix(in srgb, #fff ${Math.round(tint * 55)}%, var(--lc-a))` : 'var(--lc-a)',
+    sung: 'var(--lc-a)',
     edge: 'color-mix(in srgb, var(--lc-a) 30%, #fff)',
     un: 'rgba(255,255,255,.42)',
   };

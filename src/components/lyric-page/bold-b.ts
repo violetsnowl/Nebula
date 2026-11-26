@@ -219,19 +219,31 @@ export const diag: Tpl = {
 // ———— 色场（全曲最后一个副歌页）：一整块封面色，句子写进去之后变深色，像印在色纸上 ————
 /**
  * 色块的分割线跟着这一页的句子走（2026-11-22 用户：句子都短时，固定在右侧的分割线一句也碰不到；2026-11-25 用户：
- * 只保证最长那句时，常常只有一句写进去、半页是平涂色块）：至少 60% 的句子（向上取整）写进色块 ≥ 90px
- * （竖排 ≥ 70px）——取每句右端（竖排：每列底端）的第 k 大（k = ceil(0.6n)）减去 90（70），再夹在一个不太偏的范围里。
- * 横排色块从这条线往右铺到边，竖排色块从这条线往下铺到底。
+ * 只保证最长那句时，常常只有一句写进去、半页是平涂色块；2026-11-26 改成按墨量，见下）。
+ * 横排色块从这条线往右铺，竖排色块从这条线往下铺，都铺到窗口外。
  */
+// 2026-11-26 用户：按「第 k 长那句写进 90px」定线，长短句分布一变，写进色块的量就忽多忽少（五句长句只进去一点、
+// 两句时一大半进去）。改按墨量：所有句子的字（横排按宽、竖排按高）加起来，让约 FIELD_INK（42%，低于一半）落进色块，
+// 二分找这条线，再夹在一个不太偏的范围里。
+const FIELD_INK = 0.42;
 function fieldEdge(c: TCtx): number {
-  const k = Math.max(1, Math.ceil(c.lines.length * 0.6));
-  const kth = (v: number[]) => v.sort((a, b) => b - a)[Math.min(k, v.length) - 1]!;
-  if (c.vert) {
-    const bottoms = c.lines.map((l) => (parseFloat(l.el.style.top) || 0) + c.size(l.tx).h);
-    return clamp(kth(bottoms) - 70, 260, 640);
+  const spans = c.lines.map((l) => {
+    const s = c.size(l.tx);
+    const a = c.vert ? parseFloat(l.el.style.top) || 0 : parseFloat(l.el.style.left) || 0;
+    return { a, b: a + (c.vert ? s.h : s.w) };
+  });
+  const total = spans.reduce((m, p) => m + (p.b - p.a), 0) || 1;
+  const inside = (e: number) => spans.reduce((m, p) => m + Math.max(0, p.b - Math.max(e, p.a)), 0) / total;
+  const [lo0, hi0] = c.vert ? [260, 640] : [330, 1120];
+  let lo = lo0;
+  let hi = hi0;
+  // inside(e) 随 e 增大而减小：找 inside(e) = FIELD_INK 的那条线
+  for (let i = 0; i < 24; i++) {
+    const mid = (lo + hi) / 2;
+    if (inside(mid) > FIELD_INK) lo = mid;
+    else hi = mid;
   }
-  const ends = c.lines.map((l) => (parseFloat(l.el.style.left) || 0) + c.size(l.tx).w);
-  return clamp(kth(ends) - 90, 330, 1120);
+  return clamp(Math.round((lo + hi) / 2), lo0, hi0);
 }
 
 export const field: Tpl = {
@@ -293,7 +305,8 @@ export const field: Tpl = {
   finish: (c) => {
     // 色块（压在原文上面，不透明）
     const edge = fieldEdge(c);
-    const block = deco(c, 'lp-field', c.vert ? { left: '0', right: '0', top: px(edge), bottom: '0' } : { left: px(edge), right: '0', top: '0', bottom: '0' });
+    // 色块铺到窗口外：窗口不是 16:9 时版面四周有留边，原来上下（竖排是左右）会露出一条黑边（2026-11-26 用户）；分割线那一侧不动
+    const block = deco(c, 'lp-field', c.vert ? { left: '-1600px', right: '-1600px', top: px(edge), bottom: '-1600px' } : { left: px(edge), right: '-1600px', top: '-1600px', bottom: '-1600px' });
     // 色块里的那一份：本页所有句子深拷贝一份，整层裁成色块那块区域，颜色在 CSS 里压成深色（见 lyric-page-tpl-b.css）
     const layer = deco(c, 'lp-field-on', { clipPath: c.vert ? `inset(${edge}px 0 0 0)` : `inset(0 0 0 ${edge}px)` });
     layer.setAttribute('aria-hidden', 'true');
