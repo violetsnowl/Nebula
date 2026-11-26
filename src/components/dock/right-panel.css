@@ -1072,6 +1072,172 @@
   filter: saturate(0.5);
   pointer-events: none;
 }
+.sd-panel .dimmable.is-off .dimmable.is-off {
+  opacity: 1;
+  filter: none;
+}
+.sd-panel .g-title .g-sub {
+  color: var(--fg-3);
+  font-weight: 400;
+}
+
+/* 聆听时的舞台小场景：漫游歌词 / 版面 / 穿行（4.2s 循环，选中或悬停时动画） */
+.sd-panel .st-mini {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+.sd-panel .st-roam .sc {
+  position: absolute;
+  width: 15px;
+  height: 15px;
+  border-radius: 4px;
+  opacity: 0.34;
+  box-shadow: 0 2px 5px rgba(0, 0, 0, 0.4);
+}
+.sd-panel .st-roam .c1 { left: 10%; top: 14%; background: #c9a24a; }
+.sd-panel .st-roam .c2 { left: 72%; top: 14%; background: #4ac99a; }
+.sd-panel .st-roam .c3 { left: 14%; top: 64%; background: #c94a6d; }
+.sd-panel .st-roam .c4 { left: 70%; top: 62%; background: #e8e6e1; }
+.sd-panel .st-roam .sl {
+  position: absolute;
+  height: 4px;
+  border-radius: 2px;
+  transform-origin: 50% 50%;
+}
+.sd-panel .st-roam .sl-3 {
+  left: 34%;
+  top: 22%;
+  width: 34%;
+  background: rgba(255, 255, 255, 0.24);
+  transform: rotate(7deg);
+}
+.sd-panel .st-roam .sl-2 {
+  left: 22%;
+  top: 39%;
+  width: 46%;
+  background: rgba(255, 255, 255, 0.42);
+  transform: rotate(-5deg);
+}
+.sd-panel .st-roam .sl-1 {
+  left: 24%;
+  top: 60%;
+  width: 54%;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.88);
+  transform: rotate(-1.5deg);
+}
+.sd-panel .rp-tile[data-stage-tile='roam']:is([aria-pressed='true'], :hover) .st-roam .sl-1 {
+  animation: st-roam-cur 4.2s var(--ease-std) infinite;
+}
+.sd-panel .rp-tile[data-stage-tile='roam']:is([aria-pressed='true'], :hover) .st-roam .sl-2 {
+  animation: st-roam-next 4.2s var(--ease-std) infinite;
+}
+@keyframes st-roam-cur {
+  0%, 100% { transform: rotate(-1.5deg) translateY(0); }
+  50% { transform: rotate(1deg) translateY(-2px); }
+}
+@keyframes st-roam-next {
+  0%, 100% { transform: rotate(-5deg) translateX(0); }
+  50% { transform: rotate(-3deg) translateX(4px); }
+}
+
+.sd-panel .st-page .pg-paper {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--ebase, rgb(12 13 18)) 42%, rgb(6 7 10));
+  opacity: 0.9;
+}
+.sd-panel .st-page .pg-no {
+  position: absolute;
+  right: 9px;
+  top: 9px;
+  width: 14px;
+  height: 2px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.3);
+}
+.sd-panel .st-page .pg-blk {
+  position: absolute;
+  left: 12%;
+  top: 22%;
+  width: 48%;
+  height: 11px;
+  border-radius: 3px;
+  background: color-mix(in srgb, var(--acc, #e8e6e1) 78%, #fff);
+  opacity: 0.86;
+}
+.sd-panel .st-page .pg-l1,
+.sd-panel .st-page .pg-l2 {
+  position: absolute;
+  left: 12%;
+  height: 3px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.34);
+}
+.sd-panel .st-page .pg-l1 {
+  top: 48%;
+  width: 66%;
+}
+.sd-panel .st-page .pg-l2 {
+  top: 63%;
+  width: 52%;
+}
+.sd-panel .rp-tile[data-stage-tile='page']:is([aria-pressed='true'], :hover) .st-page .pg-blk,
+.sd-panel .rp-tile[data-stage-tile='page']:is([aria-pressed='true'], :hover) .st-page .pg-l1,
+.sd-panel .rp-tile[data-stage-tile='page']:is([aria-pressed='true'], :hover) .st-page .pg-l2 {
+  animation: st-page-turn 4.2s var(--ease-std) infinite;
+}
+@keyframes st-page-turn {
+  0%, 15%, 85%, 100% { opacity: 0.86; transform: translateY(0); }
+  45%, 60% { opacity: 0.32; transform: translateY(-3px); }
+}
+
+.sd-panel .st-travel .tv-c {
+  position: absolute;
+  border-radius: 3px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+  transform-origin: 50% 50%;
+}
+.sd-panel .st-travel .t1 { left: 26%; top: 24%; width: 9px; height: 9px; opacity: 0.32; background: #c9a24a; }
+.sd-panel .st-travel .t2 { left: 66%; top: 26%; width: 9px; height: 9px; opacity: 0.32; background: #4ac99a; }
+.sd-panel .st-travel .t3 { left: 11%; top: 15%; width: 15px; height: 15px; opacity: 0.62; background: #e8e6e1; }
+.sd-panel .st-travel .t4 { left: 74%; top: 14%; width: 16px; height: 16px; opacity: 0.64; background: #c94a6d; }
+.sd-panel .st-travel .t5 { left: 8%; top: 56%; width: 18px; height: 18px; opacity: 0.72; background: #f0d6a8; }
+.sd-panel .st-travel .t6 { left: 73%; top: 58%; width: 18px; height: 18px; opacity: 0.72; background: color-mix(in srgb, var(--e1, #b8a390) 80%, #fff); }
+.sd-panel .st-travel .tv-far,
+.sd-panel .st-travel .tv-near {
+  position: absolute;
+  left: 50%;
+  translate: -50% 0;
+  border-radius: 3px;
+}
+.sd-panel .st-travel .tv-far {
+  top: 34%;
+  width: 30%;
+  height: 3px;
+  background: rgba(255, 255, 255, 0.42);
+}
+.sd-panel .st-travel .tv-near {
+  top: 56%;
+  width: 52%;
+  height: 5px;
+  background: rgba(255, 255, 255, 0.9);
+}
+.sd-panel .rp-tile[data-stage-tile='travel']:is([aria-pressed='true'], :hover) .st-travel .tv-c {
+  animation: st-travel-fly 4.2s var(--ease-std) infinite;
+}
+.sd-panel .rp-tile[data-stage-tile='travel']:is([aria-pressed='true'], :hover) .st-travel .tv-near {
+  animation: st-travel-line 4.2s var(--ease-std) infinite;
+}
+@keyframes st-travel-fly {
+  0%, 100% { transform: scale(1); }
+  50% { transform: scale(1.16); }
+}
+@keyframes st-travel-line {
+  0%, 100% { transform: scale(1); opacity: 0.9; }
+  50% { transform: scale(1.1); opacity: 1; }
+}
 
 /* 三种让开方式的小场景：六张卡片 + 一句歌词，选中或悬停时 4.2 秒一个来回（漫游 → 聆听 → 漫游） */
 .sd-panel .mini {
@@ -1239,6 +1405,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .sd-panel .mini *,
+  .sd-panel .st-mini *,
   .sd-panel .pv-box,
   .sd-panel .pv-head .pv-ul,
   .sd-panel .pick-body,

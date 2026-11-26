@@ -1475,9 +1475,28 @@ async function main() {
   await page.locator('.sd-panel.sd-right .seg.wide button', { hasText: '聆听' }).click();
   await page.waitForTimeout(300);
   const listenPage = await page.evaluate(() => ({
+    stageTiles: document.querySelectorAll('.sd-panel.sd-right [data-stage-tile]').length,
     tiles: document.querySelectorAll('.sd-panel.sd-right [data-listen-tile]').length,
     intro: !!document.querySelector('.sd-panel.sd-right .intro'),
   }));
+  await page.locator('.sd-panel.sd-right [data-stage-tile="travel"]').click();
+  await page.waitForTimeout(120);
+  const awayTravel = await page.evaluate(() => {
+    const el = document.querySelector('.sd-panel.sd-right [data-listen-away]');
+    return { off: !!el?.classList.contains('is-off'), dis: el?.getAttribute('aria-disabled') };
+  });
+  await page.locator('.sd-panel.sd-right [data-stage-tile="page"]').click();
+  await page.waitForTimeout(120);
+  const awayPage = await page.evaluate(() => {
+    const el = document.querySelector('.sd-panel.sd-right [data-listen-away]');
+    return { off: !!el?.classList.contains('is-off'), dis: el?.getAttribute('aria-disabled') };
+  });
+  await page.locator('.sd-panel.sd-right [data-stage-tile="roam"]').click();
+  await page.waitForTimeout(120);
+  const awayRoam = await page.evaluate(() => {
+    const el = document.querySelector('.sd-panel.sd-right [data-listen-away]');
+    return { off: !!el?.classList.contains('is-off'), dis: el?.getAttribute('aria-disabled') };
+  });
   await page.locator('.sd-panel.sd-right button', { hasText: '3 秒' }).first().click();
   // 常驻聆听（2026-11-22）：打开「进入后常驻」，静止进入聆听后动鼠标不退出、光标照常、左上角收起键可点，点了回到漫游
   let pinCheck = null;
@@ -1551,9 +1570,13 @@ async function main() {
     };
   });
   const setOk =
-    listenPage.tiles === 3 && listenPage.intro && lyricPage.head === 2 && lyricPage.previews === 1 && !lyricPage.oldListenPreview &&
+    listenPage.stageTiles === 3 && listenPage.tiles === 3 && listenPage.intro &&
+    awayTravel.off && awayTravel.dis === 'true' &&
+    awayPage.off && awayPage.dis === 'true' &&
+    !awayRoam.off && awayRoam.dis === 'false' &&
+    lyricPage.head === 2 && lyricPage.previews === 1 && !lyricPage.oldListenPreview &&
     lyricPage.segs >= 3 && lyricPage.aligned && !lyricPage.moreOpen && !lyricPage.nativeColor;
-  log('设置面板重排', JSON.stringify({ listenPage, lyricPage }));
+  log('设置面板重排', JSON.stringify({ listenPage, awayTravel, awayPage, awayRoam, lyricPage }));
   log('常驻聆听（动鼠标不退出、背景不拖星云、收起键离开）', JSON.stringify(pinCheck));
   const pinOk =
     !!pinCheck && !!pinCheck.inPin && pinCheck.inPin.listen && pinCheck.inPin.pin &&

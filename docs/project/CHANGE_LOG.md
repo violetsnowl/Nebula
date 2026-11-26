@@ -6,6 +6,21 @@
 
 ---
 
+## #289 — 2026-11-26 — 清理 travel-4neon 工作树与分支，「聆听时的舞台」正式搬入设置 › 聆听
+
+**背景**：用户验收后正式确定保留穿行（#287），批准清理遗留的 Gemini 短命工作树 `E:\CUFE\vibecoding\travel-4neon\nebula` 与分支 `travel-4neon`，并将「聆听时的舞台（漫游歌词 / 版面 / 穿行）」正式搬进「设置 › 聆听」，作为进入穿行补全与优化阶段前的收口准备。
+
+**改动点**
+- 工作区与分支清理：核对 `travel-4neon` 无未提交改动后移除工作树、临时目录及本地分支 `travel-4neon`，`git worktree list` 恢复单一目录单主线 `main`。
+- `src/components/AccountDock.tsx` & `src/components/dock/right-panel.css`：在「设置 › 聆听」最上方（在「星云怎么让开」之前）新增「聆听时的舞台」三张动态预览块（`StageScene`：漫游歌词 / 版面 / 穿行，选中或悬停 4.2s 循环示范，`data-stage-tile`）；将「星云怎么让开」包入联动 `dimmable` 容器（`data-listen-away`），选版面或穿行时自动变淡不可点且标题旁提示 `· 仅漫游歌词`。
+- `src/lib/space/lab.ts` & `src/components/SpaceLabPanel.tsx`：舞台实验室保留「聆听时的舞台」快捷切换，更新注释与底栏说明为「排法和聆听舞台也可以在「设置」里换」。
+- `scripts/qa.cjs`：设置面板检查新增 `[data-stage-tile]` 数量验证及切换穿行 / 版面 / 漫游歌词时 `[data-listen-away]` 联动与还原断言。
+- 文档同步：`NEBULA_UI_SYSTEM.md` §7.1b 与 §9.5、`CONTEXT_SNAPSHOT.md`、`TRAVEL_HANDOFF.md` 同步更新入口与单主线状态。
+
+**验证**：`$env:pnpm_config_verify_deps_before_run='false'; pnpm build; pnpm qa` 全绿（`tsc`、`vite build`、`check-arch`、`ui-playback-regression`、`sections-regression`、`qa.cjs` 含新增设置联动检查，0 控制台错误）。
+
+**遗留与风险**：穿行本身的进出转场、与听音空间双向一镜到底、间奏/加载三点、缩放重排与小曲库/观感微调将在与用户进一步讨论后进入后续步骤实现。
+
 ## #288 — 2026-11-26 — 结窗口交接：穿行整合版待验收、快照与索引
 
 **改动点**（只改文档）：`CONTEXT_SNAPSHOT.md` 当前状态改写——穿行（#287）单列一节（来历、用户拍板、验收要看什么、过关 / 不过关各自的下一步、看录屏的方法），待拍板加穿行验收与 Gemini 的 `travel-4neon` 工作树去留，更正 #287 里「两个工作树已清理」的错误（Gemini 那个还在），代码地图补穿行，留意项记 #287 合入后一次未定位的 QA 偶发红；`docs/README.md` 更新 TRAVEL_HANDOFF 的说明。

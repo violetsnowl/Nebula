@@ -16,7 +16,7 @@ import { DOCK_PLATFORM_ORDER, LOGIN_HOW, platformMeta } from './platforms';
 import { IconCheck, IconChevronLeft, IconChevronRight, IconExternal, IconImage, IconRefresh } from './icons';
 import { setListenSettings as setListenSpaceSettings, useListenSettings as useListenSpaceSettings } from '../lib/listen/settings';
 import { ListenPreview } from './listen/ListenPreview';
-import { setSpaceLab, useSpaceLab, type StageLayout } from '../lib/space/lab';
+import { setSpaceLab, useSpaceLab, type StageLayout, type StageMode } from '../lib/space/lab';
 import { detectScript, songPace, toEngineLine, type EngineLine } from '../lib/listen/model';
 import { TYPO, measureUnits, renderUnits, unitFrame, waveOf, wholeLift, type UnitRt } from '../lib/listen/words';
 import './listen/lyric-words.css';
@@ -1645,6 +1645,47 @@ function MiniScene() {
   );
 }
 
+/* ---------- 设置：聆听时的舞台小场景（漫游歌词 / 版面 / 穿行） ---------- */
+
+function StageScene({ kind }: { kind: StageMode }) {
+  if (kind === 'roam') {
+    return (
+      <span className="st-mini st-roam" aria-hidden="true">
+        <i className="sc c1" />
+        <i className="sc c2" />
+        <i className="sc c3" />
+        <i className="sc c4" />
+        <i className="sl sl-3" />
+        <i className="sl sl-2" />
+        <i className="sl sl-1" />
+      </span>
+    );
+  }
+  if (kind === 'page') {
+    return (
+      <span className="st-mini st-page" aria-hidden="true">
+        <i className="pg-paper" />
+        <i className="pg-no" />
+        <i className="pg-blk" />
+        <i className="pg-l1" />
+        <i className="pg-l2" />
+      </span>
+    );
+  }
+  return (
+    <span className="st-mini st-travel" aria-hidden="true">
+      <i className="tv-c t1" />
+      <i className="tv-c t2" />
+      <i className="tv-c t3" />
+      <i className="tv-c t4" />
+      <i className="tv-c t5" />
+      <i className="tv-c t6" />
+      <i className="tv-far" />
+      <i className="tv-near" />
+    </span>
+  );
+}
+
 /** Wallpaper Engine 方案卡：选了壁纸显示那张的预览图（壁纸库的 preview，取不到退回媒体本身），没选显示官方标志图。 */
 function WallpaperArt({ url, isImage }: { url: string | null; isImage: boolean }) {
   const preview = url ? url.replace('wallpaper://media/', 'wallpaper://preview/') : '';
@@ -2081,13 +2122,13 @@ export const AccountDock = memo(function AccountDock({
         </p>
       </div>
       <div className={`dimmable${lyricSettings.listenHandoff ? '' : ' is-off'}`} aria-disabled={!lyricSettings.listenHandoff}>
-        <div className="g-title">星云怎么让开</div>
+        <div className="g-title">聆听时的舞台</div>
         <div className="rp-tiles tiles-3">
           {(
             [
-              ['sink', '沉降', '暗下去'],
-              ['part', '散开', '让出中间'],
-              ['ebb', '退潮', '淡成薄雾'],
+              ['roam', '漫游歌词', '歌词在星云里'],
+              ['page', '版面', '一页一排版'],
+              ['travel', '穿行', '穿过纵深星云'],
             ] as const
           ).map(([v, n, d]) => (
             <Tile
@@ -2098,14 +2139,48 @@ export const AccountDock = memo(function AccountDock({
                   <small>{d}</small>
                 </>
               }
-              selected={lyricSettings.listenStyle === v}
-              data={{ 'data-v': v, 'data-listen-tile': v }}
-              onClick={() => onListenSettings({ listenStyle: v })}
+              selected={stageLab.stageMode === v}
+              data={{ 'data-stage-tile': v }}
+              onClick={() => setSpaceLab({ stageMode: v })}
             >
               <span className="rp-envbg" />
-              <MiniScene />
+              <StageScene kind={v} />
             </Tile>
           ))}
+        </div>
+        <div
+          className={`dimmable${stageLab.stageMode === 'roam' ? '' : ' is-off'}`}
+          data-listen-away=""
+          aria-disabled={!lyricSettings.listenHandoff || stageLab.stageMode !== 'roam'}
+        >
+          <div className="g-title">
+            星云怎么让开{stageLab.stageMode !== 'roam' ? <span className="g-sub"> · 仅漫游歌词</span> : null}
+          </div>
+          <div className="rp-tiles tiles-3">
+            {(
+              [
+                ['sink', '沉降', '暗下去'],
+                ['part', '散开', '让出中间'],
+                ['ebb', '退潮', '淡成薄雾'],
+              ] as const
+            ).map(([v, n, d]) => (
+              <Tile
+                key={v}
+                name={
+                  <>
+                    {n}
+                    <small>{d}</small>
+                  </>
+                }
+                selected={lyricSettings.listenStyle === v}
+                data={{ 'data-v': v, 'data-listen-tile': v }}
+                onClick={() => onListenSettings({ listenStyle: v })}
+              >
+                <span className="rp-envbg" />
+                <MiniScene />
+              </Tile>
+            ))}
+          </div>
         </div>
         <div className="g-title">细节</div>
         <div className="group">

@@ -111,7 +111,7 @@ export const SpaceLabPanel = memo(function SpaceLabPanel({ songCount }: { songCo
       <footer className="sl-foot">
         {sampling
           ? `正在给封面取色 ${tones.done} / ${tones.total}（第一次要等一会儿，取完 A 会重新排一次）`
-          : `${songCount} 首 · 最远缩到封面还认得出 · 排法也可以在「设置 › 外观」里换`}
+          : `${songCount} 首 · 最远缩到封面还认得出 · 排法和聆听舞台也可以在「设置」里换`}
       </footer>
     </section>
   );
