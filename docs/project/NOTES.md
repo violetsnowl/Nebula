@@ -7,7 +7,9 @@
 - **歌词署名行写法远比白名单多**（2026-11-25，#278）：真实 840 首里 265 首漏网（「弦乐编写 / 混音师 / 出品人 / 制作人 Producer：」「Recorded at …」），版面首页、尾声常整页是名单。规则改成「标签以角色词结尾」；以后再补先在真实缓存上跑新旧差异清单、逐条人工过目。
 - **部分源码 / 文档是 CRLF**（`bold-b.ts`、`NEBULA_UI_SYSTEM.md`、`CONTEXT_SNAPSHOT.md` 等）：用 node 脚本按 `
 ` 匹配替换会匹配失败甚至拼坏文件，先归一化换行再写回原换行，或直接用编辑工具。
-- **真实数据批量审查的做法**（2026-11-25）：歌词缓存 + Local Storage 副本 → esbuild 打包前端纯函数批量切分 → 无头 Chrome 驱动构建产物读 `__nebulaLyricPage.pages / bounds` → 按封面色系定向截图。脚本暂存 `docs/project/page-rotation-kit/`（随版面第 2 步结束删除，届时如需长期保留再挪进 `scripts/`）。
+- **真实数据批量审查的做法**（2026-11-25）：歌词缓存 + Local Storage 副本 → esbuild 打包前端纯函数批量切分 → 无头 Chrome 驱动构建产物读 `__nebulaLyricPage.pages / bounds` → 按封面色系定向截图。脚本曾暂存 `docs/project/page-rotation-kit/`，版面第 2 步（#284）结束后已删除，要用时从 #283 的提交取回（`git show 490d45a:docs/project/page-rotation-kit/harness.cjs`）。第 2 步补充的两条经验（2026-11-26）：
+  - **Local Storage 的 LevelDB 现在是 Snappy 压缩**：kit 的 `extract-tracks.cjs` 直接正则抠 `.ldb` 会一首都抠不到，要先解压 `.ldb` 块、按键序号取每个键的最新值再抠（第 2 步临时写了解码脚本，没进仓库）。
+  - **调轮换不用每次整页渲染**：用 esbuild 把 `pools.ts` / `sections.ts` / `words.ts` 的 `renderUnits` 打成浏览器脚本，在空白页里只建每页的 DOM、调各版式的 `fits` 和分配函数，1495 首几秒跑完；它和真实渲染逐页比对过（现行 23006 页、新规则 25880 页都 100% 一致）。改方案先在这上面量，再落代码，落完用整页渲染复核一次。
 
 - **URL缓存期限不等于音频失效期限（#B11）**：解析缓存两分钟仅决定是否重用解析结果，不得用 min(cacheTTL, upstreamExpiry) 给播放器写 expiresAt。播放器按每首每个URL记取源时间，不能沿用上一首的全局 loadedAt。无上游期限时的平台默认值只是客户端保守策略，不是实测CDN承诺；真实125秒对照可用 `qa:valid-source` 复测。
 - **QQ网页授权、音乐登录、会员和单曲授权是不同证据（#B13）**：有uin或公开昵称不能证明音乐票据有效；p_skey/skey及OAuth token不能替代authst。统一使用qqCredential取身份/播放票据，会员查询只解析当前账号块；空purl本身不能证明过期或无会员。明确AUTH_EXPIRED停止兜底/自动跳歌；未知保持unknown。诊断用 `qa:qq-session --profile=仓库外副本 --out=仓库外结果`，不要在命令行粘贴真实Cookie。

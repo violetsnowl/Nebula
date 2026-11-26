@@ -129,6 +129,41 @@ try {
     assert.equal(S.stageAt(sh, lines, ch.s + 2).section, sh.lineSection[ch.from]);
   });
 
+  test('版面切分：副歌 / 桥段每页 ≤ 4 句，主歌仍 ≤ 6 句；不传选项时与原来一致', () => {
+    const CH6 = [...CHORUS, 'see the morning rise', 'we will never fall'];
+    const lines = song([verse('a', 6), CH6, verse('b', 6), CH6, verse('c', 5), CH6]);
+    const def = S.analyzeSong(lines);
+    const pg = S.analyzeSong(lines, undefined, S.PAGE_SPLIT);
+    const size = (st) => st.to - st.from + 1;
+    for (const st of pg.stanzas) {
+      const k = pg.sections[st.section].kind;
+      assert.ok(size(st) <= (k === 'chorus' || k === 'bridge' || k === 'pre' ? 4 : 6), `${k} 句组 ${size(st)} 句`);
+    }
+    assert.ok(def.stanzas.some((st) => def.sections[st.section].kind === 'chorus' && size(st) > 4), '默认切分不受影响');
+    assert.deepEqual(seq(S.analyzeSong(lines, undefined, {})), seq(def));
+  });
+
+  test('版面切分：副歌后面紧跟的单句并进副歌', () => {
+    const tailLine = 'guide me closer to you';
+    // 只在第一次副歌后面唱、后面隔着间奏：默认切分里它是一句孤立的主歌
+    const lines = song([verse('a'), CHORUS, [tailLine], 6, verse('b'), CHORUS, 6, verse('c'), CHORUS]);
+    const def = S.analyzeSong(lines);
+    const pg = S.analyzeSong(lines, undefined, S.PAGE_SPLIT);
+    const k = (sh) => lines.map((_, i) => sh.sections[sh.lineSection[i]].kind);
+    const ti = lines.findIndex((l) => l.text === tailLine);
+    assert.notEqual(k(def)[ti], 'chorus', '默认切分里尾句不是副歌（前提）');
+    assert.equal(k(pg)[ti], 'chorus');
+  });
+
+  test('版面切分：句间没空档时按句末标点切', () => {
+    // 8 句主歌、句间 0 秒；只有第 3 句以句号结尾：不按正中（4 + 4）而在第 3 句后切成 3 + 5
+    const lines = Array.from({ length: 8 }, (_, i) => ({ s: i * 3, e: i * 3 + 3, text: Array.from({ length: 4 }, word).join(' ') + (i === 2 ? '。' : '') }));
+    const pg = S.analyzeSong(lines, undefined, S.PAGE_SPLIT);
+    assert.deepEqual(pg.stanzas.map((st) => st.to - st.from + 1), [3, 5]);
+    // 对照：原来按空档切，全是 0 时切在开头（2 + 6），漫游歌词等默认切分保持这个行为
+    assert.deepEqual(S.analyzeSong(lines, undefined, { max: S.PAGE_SPLIT.max }).stanzas.map((st) => st.to - st.from + 1), [2, 6]);
+  });
+
   test('空歌词不报错', () => {
     const sh = S.analyzeSong([]);
     assert.equal(sh.sections.length, 0);

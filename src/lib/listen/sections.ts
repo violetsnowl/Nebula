@@ -165,8 +165,23 @@ const median = (xs: number[]) => {
   return s[s.length >> 1]!;
 };
 
+/**
+ * 版面专用的切分选项（2026-11-26 版面第 2 步，样张 P；漫游歌词、主舞台开合不传，行为不变）：
+ *   - max：每种段落一页最多几句（副歌 / 桥段 / 预副歌 4 句，大胆版式多要 2–5 句）；
+ *   - tail：副歌后面紧跟、自己单独成一句的句子（或在别的副歌后面也紧跟的同一句）并进副歌；
+ *   - punct：句与句之间几乎没空档（无逐字时间）时，超长句组按「靠中间 + 句末标点」切，不机械按空档。
+ */
+export interface SplitOpt {
+  max?: Partial<Record<SectionKind, number>>;
+  tail?: boolean;
+  punct?: boolean;
+}
+
+/** 版面用的切分（NEBULA_UI_SYSTEM §7.1b「轮换与切分」）。 */
+export const PAGE_SPLIT: SplitOpt = { max: { chorus: 4, bridge: 4, pre: 4, verse: 6, outro: 6 }, tail: true, punct: true };
+
 /** 推断一首歌的段落、句组与间奏。lines 需按时间排好；duration（秒）用来算尾奏，可省略。 */
-export function analyzeSong(lines: ShapeLine[], duration?: number): SongShape {
+export function analyzeSong(lines: ShapeLine[], duration?: number, opt: SplitOpt = {}): SongShape {
   const n = lines.length;
   const empty: SongShape = { sections: [], stanzas: [], gaps: [], lineSection: [], lineStanza: [], confident: false };
   if (!n) return empty;
@@ -299,6 +314,21 @@ export function analyzeSong(lines: ShapeLine[], duration?: number): SongShape {
     else kind[i] = 'verse';
   }
 
+  // 副歌尾句（版面用）：副歌块后面紧跟（2.5s 内）、自己单独成一句的句子，或在别的副歌后面也紧跟的同一句，并进副歌
+  if (opt.tail && chorusGroup) {
+    const ends: number[] = [];
+    for (let i = 0; i < n; i++) if (kind[i] === 'chorus' && kind[i + 1] !== 'chorus') ends.push(i);
+    const follow = new Map<number, number>();
+    for (const e of ends) if (e + 1 < n) follow.set(cls[e + 1]!, (follow.get(cls[e + 1]!) ?? 0) + 1);
+    for (const e of ends) {
+      const j = e + 1;
+      if (j >= n || kind[j] === 'chorus' || kind[j] === 'pre') continue;
+      if (lines[j]!.s - lines[e]!.e >= 2.5) continue;
+      const alone = j + 1 >= n || kind[j + 1] !== kind[j] || lines[j + 1]!.s - lines[j]!.e >= SHAPE_GAP_MIN;
+      if (alone || (follow.get(cls[j]!) ?? 0) >= 2) kind[j] = 'chorus';
+    }
+  }
+
   // —— 段落：同标签连续的句子，副歌在每个起点切开；间奏也切开 ——
   const sections: LyricSection[] = [];
   const lineSection = new Array<number>(n).fill(0);
@@ -339,16 +369,26 @@ export function analyzeSong(lines: ShapeLine[], duration?: number): SongShape {
   const innerGaps: number[] = [];
   for (let i = 0; i + 1 < n; i++) innerGaps.push(Math.max(0, lines[i + 1]!.s - lines[i]!.e));
   const breakGap = Math.max(1.6, median(innerGaps) * 2.5);
+  const capOf = (section: number) => opt.max?.[sections[section]!.kind] ?? MAX_STANZA;
+  const punctEnd = /[,，、;；.。!！?？…~～]$/;
   const pushStanza = (from: number, to: number, section: number) => {
-    // 超过 MAX_STANZA 句：在内部最大的空档处切开（不切出单句）
-    if (to - from + 1 > MAX_STANZA) {
+    // 超过上限（默认 MAX_STANZA）句：在内部最大的空档处切开（不切出单句）
+    const cap = capOf(section);
+    // 句间几乎没空档（无逐字时间）：空档不可靠，改按靠中间 + 句末标点切
+    let flat = false;
+    if (opt.punct) {
+      let mx = 0;
+      for (let i = from; i < to; i++) mx = Math.max(mx, lines[i + 1]!.s - lines[i]!.e);
+      flat = mx < 0.35;
+    }
+    if (to - from + 1 > cap) {
       let cut = -1;
       let widest = -1;
       for (let i = from + 1; i <= to - 2; i++) {
         const g = lines[i + 1]!.s - lines[i]!.e;
         // 偏向中间：两端的空档打折
         const centered = 1 - Math.abs((i - from + 1) / (to - from + 1) - 0.5);
-        const w = g * (0.6 + 0.4 * centered);
+        const w = flat ? centered + (punctEnd.test(lines[i]!.text.trim()) ? 0.3 : 0) : g * (0.6 + 0.4 * centered);
         if (w > widest) {
           widest = w;
           cut = i;
@@ -384,8 +424,8 @@ export function analyzeSong(lines: ShapeLine[], duration?: number): SongShape {
       const right = k + 1 < parts.length ? parts[k + 1]! : null;
       const gl = left ? lines[a]!.s - lines[left[1]]!.e : Infinity;
       const gr = right ? lines[right[0]]!.s - lines[a]!.e : Infinity;
-      const okL = left && left[1] - left[0] + 2 <= MAX_STANZA;
-      const okR = right && right[1] - right[0] + 2 <= MAX_STANZA;
+      const okL = left && left[1] - left[0] + 2 <= capOf(si);
+      const okR = right && right[1] - right[0] + 2 <= capOf(si);
       if (okL && (!okR || gl <= gr)) {
         left![1] = a;
         parts.splice(k, 1);

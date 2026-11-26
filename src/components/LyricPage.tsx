@@ -5,13 +5,13 @@ import { useInterfaceSettingsContext } from '../hooks/interfaceSettings/Interfac
 import type { LyricLineUI } from '../lib/lyrics';
 import { listenBus } from '../lib/listenMode';
 import { detectScript, songPace, toEngineLine, type EngineLine } from '../lib/listen/model';
-import { analyzeSong, type SectionKind } from '../lib/listen/sections';
+import { analyzeSong, PAGE_SPLIT, type SectionKind } from '../lib/listen/sections';
 import { useListenSettings } from '../lib/listen/settings';
 import { pageBus } from '../lib/listen/stageBus';
 import { TYPO, measureUnits, renderUnits, restUnit, unitFrame, waveOf, type UnitRt } from '../lib/listen/words';
 import { useSpaceLab } from '../lib/space/lab';
 import { flatten } from './lyric-page/kit';
-import { FALLBACK_H, newPickState, pickTpl, songHook } from './lyric-page/pools';
+import { FALLBACK_H, pageRoles, planTpls, songHash, songHook } from './lyric-page/pools';
 import {
   LsFly,
   columnSideOf,
@@ -234,7 +234,8 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false, tit
     const src = lines.filter(usable);
     const pace = songPace(src);
     const els = src.map((l, i) => toEngineLine(l, src[i + 1] ? src[i + 1]!.timeMs / 1000 : undefined, pace)).sort((a, b) => a.s - b.s);
-    const shape = analyzeSong(els.map((e) => ({ s: e.s, e: e.e, text: e.text })));
+    // 版面专用切分（副歌 / 桥段 / 预副歌每页 ≤ 4 句、副歌尾句、无空档按标点切）；漫游歌词与主舞台开合仍用默认切分
+    const shape = analyzeSong(els.map((e) => ({ s: e.s, e: e.e, text: e.text })), undefined, PAGE_SPLIT);
     return { els, shape, script: detectScript(lines) };
   }, [lines]);
   const vert = model.script === 'zh';
@@ -285,7 +286,7 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false, tit
     frame.textContent = '';
     const { els, shape } = model;
     const total = shape.stanzas.length;
-    // —— 建页：版式按段落轮换（lyric-page/pools.ts：稳和险交替，大胆版式一首歌最多一次，相邻两页不重复）——
+    // —— 建页：先把每页建好，再整首统筹分配版式（lyric-page/pools.ts 的 planTpls：按第几次副歌递进、冷门与内容契合优先）——
     const lang: TCtx['lang'] = model.script === 'zh' ? 'zh' : model.script === 'ja' ? 'ja' : model.script === 'ko' ? 'ko' : 'en';
     const cjk = lang !== 'en';
     const chorusUnits = els.filter((_, k) => shape.sections[shape.lineSection[k] ?? -1]?.kind === 'chorus').map((e) => (cjk ? [e.units ? e.units.map((u) => u.t + (u.sp ? ' ' : '')).join('') : e.text] : (e.units ?? []).map((u) => u.t)));
@@ -301,8 +302,7 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false, tit
       const b = el.getBoundingClientRect();
       return { w: b.width / S0, h: b.height / S0 };
     };
-    const pick = newPickState();
-    const pages: PPage[] = shape.stanzas.map((stz, j) => {
+    const built = shape.stanzas.map((stz, j) => {
       const sec = shape.sections[stz.section]!;
       const el = document.createElement('div');
       el.className = 'lp-page';
@@ -344,7 +344,16 @@ export function LyricPage({ lines, loading = false, songKey, lsOpen = false, tit
       }
       frame.appendChild(el);
       const ctx: TCtx = { page: el, lines: pl, kind: sec.kind, vert, cjk, lang, hasTr: pl.some((l) => l.tr), hook, lastChorus: j === lastChorusStz, song: els, first: stz.from, size };
-      let tpl = pickTpl(ctx, pick);
+      return { el, pl, sec, si: stz.section, ctx, stz };
+    });
+    const roles = pageRoles(
+      built.map((b) => ({ kind: b.sec.kind, sec: b.si, occ: b.sec.occ, of: b.sec.of, s: b.sec.s })),
+      shape.confident,
+      els.length ? els[els.length - 1]!.e : 0,
+    );
+    const tpls = planTpls(built.map((b, j) => ({ c: b.ctx, role: roles[j]!, sec: b.si })), songHash(els));
+    const pages: PPage[] = built.map(({ el, pl, sec, ctx, stz }, j) => {
+      let tpl = tpls[j]!;
       if (tpl.dir) ctx.vert = tpl.dir === 'v';
       // 强制横排的经典版式不存在（经典竖排只给中文）：中文歌里这种页面若退到经典版式，用横排左栏
       if (!tpl.layout && ctx.vert !== vert) tpl = FALLBACK_H;
