@@ -276,6 +276,7 @@ export const PlaylistDock = memo(function PlaylistDock({
   const [mergeDraftName, setMergeDraftName] = useState('');
   const [mergePicked, setMergePicked] = useState<MergeSourceRef[]>([]);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
+  const [sourcesOpen, setSourcesOpen] = useState(false);
 
   useEffect(
     () => () => {
@@ -310,6 +311,7 @@ export const PlaylistDock = memo(function PlaylistDock({
   const openPlaylist = (pl: SelectedPlaylist) => {
     onClearMergeFeedback?.();
     setConfirmDeleteId(null);
+    setSourcesOpen(false);
     // 不是当前歌单：先载入星云（与以前点歌单的行为一致），再推入详情
     if (!isCurrent(pl.platform, pl.id)) onImportPlaylist(pl.platform, pl.id);
     setSel(pl);
@@ -319,6 +321,7 @@ export const PlaylistDock = memo(function PlaylistDock({
   const openMergedPlaylist = (m: MergedPlaylistSummary) => {
     onClearMergeFeedback?.();
     setConfirmDeleteId(null);
+    setSourcesOpen(false);
     if (!isCurrent('merged', m.id)) onImportMerged?.(m.id);
     setSel({
       platform: 'merged',
@@ -336,6 +339,7 @@ export const PlaylistDock = memo(function PlaylistDock({
   const openMergeBuilder = (initial?: MergeSourceRef[]) => {
     onClearMergeFeedback?.();
     setConfirmDeleteId(null);
+    setSourcesOpen(false);
     setMergeDraftName('');
     setMergePicked(initial ?? []);
     go('merge');
@@ -372,12 +376,26 @@ export const PlaylistDock = memo(function PlaylistDock({
     for (const p of loggedIn) {
       const list = accounts[p]?.playlists ?? [];
       const hit =
-        list.find((pl) => /^(?:.*我喜欢.*|.*喜欢的音乐.*|liked\s*songs|favorite\s*songs|赞过的音乐)$/i.test(pl.name)) ||
-        list.find((pl) => /喜欢|liked|favorite/i.test(pl.name));
+        list.find((pl) => /^(?:.*我喜欢.*|.*喜欢的音乐.*|喜爱歌曲|liked\s*songs|favorite\s*songs|赞过的音乐)$/i.test(pl.name)) ||
+        list.find((pl) => /喜欢|喜爱|liked|favorite/i.test(pl.name));
       if (hit) out.push({ platform: p, id: hit.id, name: hit.name, cover: hit.cover });
     }
     return out;
   }, [accounts, loggedIn]);
+  const likedKeySet = useMemo(() => new Set(likedPicks.map((x) => `${x.platform}:${x.id}`)), [likedPicks]);
+  const allLikedPicked =
+    likedPicks.length >= 2 &&
+    likedPicks.every((lp) => mergePicked.some((m) => m.platform === lp.platform && m.id === lp.id));
+  const toggleAllLiked = () => {
+    setMergePicked((prev) => {
+      if (allLikedPicked) {
+        return prev.filter((x) => !likedKeySet.has(`${x.platform}:${x.id}`));
+      }
+      const existing = new Set(prev.map((x) => `${x.platform}:${x.id}`));
+      const toAdd = likedPicks.filter((lp) => !existing.has(`${lp.platform}:${lp.id}`));
+      return [...prev, ...toAdd];
+    });
+  };
   // 筛选的平台退出登录后自动回到「全部」
   const curFilter = loggedIn.some((p) => p === filter) ? filter : 'all';
   const shownPfs = loggedIn.filter((p) => curFilter === 'all' || p === curFilter);
@@ -392,11 +410,6 @@ export const PlaylistDock = memo(function PlaylistDock({
           <span className="sub">
             {totalPlaylists} 个歌单 · {loggedIn.length} 个平台
           </span>
-          {canMerge && (
-            <button type="button" className="btn text" onClick={() => openMergeBuilder()}>
-              整合
-            </button>
-          )}
           <button type="button" className="btn text" onClick={onRefreshAll}>
             刷新
           </button>
@@ -424,6 +437,32 @@ export const PlaylistDock = memo(function PlaylistDock({
               </button>
             );
           })}
+        </div>
+      )}
+
+      {canMerge && (
+        <div className="group merge-entry-group">
+          <div
+            className="row btn-row merge-entry"
+            role="button"
+            tabIndex={0}
+            onClick={() => openMergeBuilder()}
+            onKeyDown={(e) => activateOnKey(e, () => openMergeBuilder())}
+          >
+            <span className="merge-entry-ic" aria-hidden="true">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={1.7} strokeLinecap="round" strokeLinejoin="round">
+                <rect x="4" y="4" width="6.5" height="6.5" rx="1.5" />
+                <rect x="13.5" y="4" width="6.5" height="6.5" rx="1.5" />
+                <rect x="4" y="13.5" width="6.5" height="6.5" rx="1.5" />
+                <path d="M13.5 16.75h6.5M16.75 13.5v6.5" />
+              </svg>
+            </span>
+            <span className="lbl">
+              <span className="merge-entry-title">整合多歌单</span>
+              <small>跨平台或同平台合并去重，生成独立空间</small>
+            </span>
+            <span className="chev"><IconChevronRight size={14} /></span>
+          </div>
         </div>
       )}
 
@@ -593,6 +632,7 @@ export const PlaylistDock = memo(function PlaylistDock({
     const res = await onCreateMerged(mergePicked, mergeDraftName);
     if (!res.ok || !res.response) return;
     const rec = res.response.record;
+    setSourcesOpen(false);
     setSel({
       platform: 'merged',
       id: rec.id,
@@ -699,11 +739,6 @@ export const PlaylistDock = memo(function PlaylistDock({
               </div>
             </div>
           </div>
-          {isMergedSel && detailSources && detailSources.length > 0 && (
-            <p className="pl-merge-sources">
-              来自：{detailSources.map((s) => `${platformMeta(s.platform).name}「${s.name}」`).join(' + ')}
-            </p>
-          )}
           <div className="pl-actions" ref={actionsRef}>
             <button
               type="button"
@@ -736,6 +771,51 @@ export const PlaylistDock = memo(function PlaylistDock({
           </div>
           {isMergedSel && mergeError && <p className="hint-line is-error">{mergeError}</p>}
           {isMergedSel && !mergeError && mergeNotice && <p className="hint-line">{mergeNotice}</p>}
+          {isMergedSel && detailSources && detailSources.length > 0 && (() => {
+            const uniquePlatforms = [...new Set(detailSources.map((s) => s.platform))];
+            const toggleSources = () => setSourcesOpen((v) => !v);
+            return (
+              <div className="group merge-sources-card">
+                <div
+                  className="row btn-row merge-sources-head"
+                  role="button"
+                  tabIndex={0}
+                  aria-expanded={sourcesOpen}
+                  onClick={toggleSources}
+                  onKeyDown={(e) => activateOnKey(e, toggleSources)}
+                >
+                  <span className="merge-src-logos" aria-hidden="true">
+                    {uniquePlatforms.slice(0, 5).map((p) => {
+                      const pm = platformMeta(p);
+                      return pm.logo ? <img key={p} alt="" src={pm.logo} /> : null;
+                    })}
+                  </span>
+                  <span className="lbl">
+                    来源歌单 · {detailSources.length} 个歌单
+                    {uniquePlatforms.length >= 2 ? ` · ${uniquePlatforms.length} 个平台` : ''}
+                  </span>
+                  <span className="val">{sourcesOpen ? '收起' : '展开'}</span>
+                  <span className={`chev${sourcesOpen ? ' is-open' : ''}`}>
+                    <IconChevronRight size={14} />
+                  </span>
+                </div>
+                {sourcesOpen && (
+                  <div className="merge-sources-list">
+                    {detailSources.map((s, idx) => {
+                      const pm = platformMeta(s.platform);
+                      return (
+                        <div key={`${s.platform}:${s.id}:${idx}`} className="merge-source-item">
+                          {pm.logo ? <img alt="" src={pm.logo} /> : <span className="merge-source-dot" />}
+                          <span className="merge-source-nm" title={s.name}>{s.name}</span>
+                          <span className="merge-source-pf">{pm.name}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
+            );
+          })()}
           {!isMergedSel && ready && songs.length > 0 && songs.length < 80 && canMerge && (
             <div className="hint-inline">
               <span>曲库偏小，可整合多个歌单丰富星云与穿行</span>
@@ -783,17 +863,17 @@ export const PlaylistDock = memo(function PlaylistDock({
       </button>
       <div className="win-head">
         <h2>整合歌单</h2>
-        <span className="sub">按勾选顺序 · 自动去重</span>
+        <span className="sub">勾选下方歌单 · 自动去重</span>
       </div>
 
-      <div className="g-title">名称（可选）</div>
+      <div className="g-title">为新整合歌单命名（选填）</div>
       <div className="group">
         <div className="merge-name-box">
           <input
             type="text"
             className="merge-name-input"
-            placeholder="留空自动命名，如 A + B"
-            aria-label="整合歌单名称"
+            placeholder="输入整合后的新歌单名（留空将自动按来源命名）"
+            aria-label="为新整合歌单命名"
             value={mergeDraftName}
             onChange={(e) => setMergeDraftName(e.target.value)}
             maxLength={60}
@@ -802,15 +882,37 @@ export const PlaylistDock = memo(function PlaylistDock({
       </div>
 
       {likedPicks.length >= 2 && (
-        <div className="merge-quick">
-          <span className="val">快速选择</span>
-          <button
-            type="button"
-            className="btn text"
-            onClick={() => setMergePicked(likedPicks)}
+        <div className="group merge-quick-group">
+          <div
+            className="row btn-row"
+            role="button"
+            tabIndex={0}
+            aria-pressed={allLikedPicked}
+            onClick={toggleAllLiked}
+            onKeyDown={(e) => activateOnKey(e, toggleAllLiked)}
           >
-            一键勾选各平台「我喜欢」（{likedPicks.length}）
-          </button>
+            <span className="lbl">
+              勾选各平台「我喜欢」
+              <small className={allLikedPicked ? 'is-active-sub' : undefined}>
+                {allLikedPicked
+                  ? `已生效 · 已选 ${likedPicks.length} 个平台红心歌单，再次点击取消`
+                  : `一键勾选 ${likedPicks.length} 个已登录平台的红心歌单`}
+              </small>
+            </span>
+            <button
+              type="button"
+              className="tg"
+              role="switch"
+              aria-checked={allLikedPicked}
+              aria-label="一键勾选各平台我喜欢"
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleAllLiked();
+              }}
+            >
+              <i />
+            </button>
+          </div>
         </div>
       )}
 
