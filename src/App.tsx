@@ -600,6 +600,7 @@ export default function App() {
       {!uiHideLyrics && (
         <TravelStage
           lines={lyricLines}
+          loading={lyricLoading}
           songKey={playerState.song ? `${playerState.song.source}:${playerState.song.sourceId ?? playerState.song.id}` : 'none'}
           lsOpen={nowPlayingOpen}
           song={playerState.song ?? null}

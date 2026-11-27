@@ -38,6 +38,7 @@ import './travel-stage.css';
 
 interface Props {
   lines: LyricLineUI[];
+  loading?: boolean;
   songKey: string;
   lsOpen: boolean;
   song: Track | null;
@@ -134,7 +135,7 @@ interface Geo {
 
 type ProbeLine = { i: number; text: string; x: number; y: number; w: number; h: number; op: number; state: string; done: boolean; kind: string; move: string };
 
-export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Props) {
+export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, cards, onFail }: Props) {
   const lab = useSpaceLab();
   const active = lab.stageMode === 'travel';
   const listen = useListenSettings();
@@ -144,6 +145,8 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
   playingRef.current = playState.playing;
   const lsOpenRef = useRef(lsOpen);
   lsOpenRef.current = lsOpen;
+  const loadingRef = useRef(loading);
+  loadingRef.current = loading;
   const schemeRef = useRef(listen.scheme);
   schemeRef.current = listen.scheme;
   const failRef = useRef(onFail);
@@ -277,6 +280,11 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
     const plan = planShapes(els, shape, hashStr(songKey));
     /** 每句的招式（穿针 / 环 / 卷起 / 立起 / 星座，§9.4–9.5）：同一首歌每次一样 */
     const choreo = planChoreo(els, shape).moves;
+    /** 间奏三点窗口（≥ 4s 间奏，上一句掠过完到下一句临近开唱，§9.10 第 2 项） */
+    const gapWindows = (shape?.gaps ?? [])
+      .filter((g) => g.kind === 'interlude')
+      .map((g) => ({ s: g.s + 1.0, e: g.e - 1.4 }))
+      .filter((g) => g.e - g.s >= 1.2);
     const { rMin, rMax } = slotRadius(small);
     const basis = tunnelBasis(slots, rMin, rMax);
 
@@ -1154,6 +1162,32 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
     let probeLines: ProbeLine[] = [];
     /** 光点这一帧在做什么（自检用）：唱 / 飞 / 在句首等 / 无 */
     let lightMode: 'sing' | 'fly' | 'wait' | 'off' = 'off';
+    /** 取词加载三点淡入淡出进度（0–1），以及三点探针状态 */
+    let loadVis = 0;
+    let dotsProbe: { mode: 'interlude' | 'loading' | 'none'; op: number; levels: number[] } = { mode: 'none', op: 0, levels: [0, 0, 0] };
+    /** 在隧道前方路线上画三颗柔光点（间奏逐个亮起 / 取词循环波浪呼吸，均走 KIND_LIGHT） */
+    const emitDots = (op0: number, levels: [number, number, number], scales: [number, number, number], yOffs: [number, number, number]) => {
+      const zDot = camZ + DREST;
+      const cx3 = pathX(zDot);
+      const cy3 = pathY(zDot);
+      const col = pal.glow;
+      const rCol = col[0]! + (1 - col[0]!) * 0.35;
+      const gCol = col[1]! + (1 - col[1]!) * 0.35;
+      const bCol = col[2]! + (1 - col[2]!) * 0.35;
+      const dz = DREST - 1;
+      for (let idx = 0; idx < 3; idx++) {
+        const lv = levels[idx]!;
+        const sc = scales[idx]!;
+        const x = cx3 + (idx - 1) * 44;
+        const y = cy3 + yOffs[idx]!;
+        const rCore = (16 + 6 * lv) * sc;
+        const iCore = op0 * (0.24 + 0.76 * lv) * 0.82;
+        const rHalo = rCore * 2.5;
+        const iHalo = op0 * (0.14 + 0.38 * lv) * 0.22;
+        put(dz + 0.2, x, y, zDot, rHalo, 0, 0, 0, rHalo, 0, 0, 0, 1, 1, KIND_LIGHT, 0, 1, col[0]! * iHalo, col[1]! * iHalo, col[2]! * iHalo, 0, 0, 0, 0, 0);
+        put(dz, x, y, zDot, rCore, 0, 0, 0, rCore, 0, 0, 0, 1, 1, KIND_LIGHT, 0, 1, rCol * iCore, gCol * iCore, bCol * iCore, 0, 0, 0, 0, 0);
+      }
+    };
 
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick);
@@ -1570,6 +1604,41 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
         put(lightPt[2] - camZ - 0.02, lightPt[0], lightPt[1], lightPt[2], r, 0, 0, 0, r, 0, 0, 0, 1, 1, KIND_LIGHT, 0, 1, pal.sung[0]! * I, pal.sung[1]! * I, pal.sung[2]! * I, 0, 0, 0, 0, 0);
       }
 
+      // —— 3D 柔光三点：间奏（≥ 4s，逐个亮起） / 切歌慢取词（循环波浪呼吸） ——
+      const wantLoad = loadingRef.current && els.length === 0 ? 1 : 0;
+      loadVis += (wantLoad - loadVis) * (1 - Math.exp(-dt * (wantLoad ? 8 : 12)));
+      const gapNow = gapWindows.find((g) => t >= g.s && t <= g.e) ?? null;
+      if (gapNow) {
+        const env = smooth((t - gapNow.s) / 0.5) * (1 - smooth((t - (gapNow.e - 0.45)) / 0.45));
+        if (env > 0.004) {
+          const p = clamp((t - gapNow.s) / Math.max(0.1, gapNow.e - gapNow.s), 0, 1);
+          const breathe = 1 + 0.08 * Math.sin(t * Math.PI * 1.25);
+          const lvs: [number, number, number] = [clamp(p * 3.1, 0, 1), clamp(p * 3.1 - 1, 0, 1), clamp(p * 3.1 - 2, 0, 1)];
+          const scs: [number, number, number] = [
+            (0.78 + 0.22 * lvs[0]) * breathe * (0.45 + 0.55 * env),
+            (0.78 + 0.22 * lvs[1]) * breathe * (0.45 + 0.55 * env),
+            (0.78 + 0.22 * lvs[2]) * breathe * (0.45 + 0.55 * env),
+          ];
+          emitDots(env, lvs, scs, [0, 0, 0]);
+          dotsProbe = { mode: 'interlude', op: env, levels: lvs };
+        } else {
+          dotsProbe = { mode: 'none', op: 0, levels: [0, 0, 0] };
+        }
+      } else if (loadVis > 0.005) {
+        const sec = now / 1000;
+        const omega = (2 * Math.PI) / 1.4;
+        const w0 = 0.5 - 0.5 * Math.cos(sec * omega);
+        const w1 = 0.5 - 0.5 * Math.cos((sec - 0.18) * omega);
+        const w2 = 0.5 - 0.5 * Math.cos((sec - 0.36) * omega);
+        const lvs: [number, number, number] = [0.22 + 0.78 * w0, 0.22 + 0.78 * w1, 0.22 + 0.78 * w2];
+        const envSc = 0.65 + 0.35 * loadVis;
+        const scs: [number, number, number] = [(0.82 + 0.24 * w0) * envSc, (0.82 + 0.24 * w1) * envSc, (0.82 + 0.24 * w2) * envSc];
+        emitDots(loadVis, lvs, scs, [-w0 * 10, -w1 * 10, -w2 * 10]);
+        dotsProbe = { mode: 'loading', op: loadVis, levels: lvs };
+      } else {
+        dotsProbe = { mode: 'none', op: 0, levels: [0, 0, 0] };
+      }
+
       // —— 从远到近排序（手写原地快排 + 直接拷贝，避开 TypedArray.sort 的 JS 回调与每帧数百次 subarray 分配） ——
       for (let q = 0; q < n; q++) order[q] = q;
       const sortDesc = (lo0: number, hi0: number) => {
@@ -1662,6 +1731,7 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
           cache: covers.stats(),
           quads: n,
           light: lightMode,
+          dots: dotsProbe,
           moves: choreo.map((m, i) => ({ i, m: m.move, s: els[i]!.s, e: els[i]!.e })).filter((x) => x.m !== 'none'),
           buildMax,
           atlasTiming: atlas.timing.slice(-12),

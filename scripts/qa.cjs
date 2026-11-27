@@ -2078,12 +2078,54 @@ async function main() {
         flyLayer: !!document.querySelector('.lp-lsfly'),
         flyHide: document.querySelectorAll('.lyric-page [data-flyhide]').length,
       }));
+      // 4) 穿行第二版 3D 间奏三点与切歌取词三点回归（仍在常驻聆听下，省去重等静止）
+      await page.evaluate(() => {
+        document.querySelector('.sd-panel.sd-right [data-stage-tile="travel"]')?.click();
+        window.__nebula.travelGL(true);
+      });
+      await page.evaluate(
+        ({ data, audio }) => {
+          window.nebulaAPI.fetchLyric = async () => ({ ok: true, data });
+          const n = window.__nebula;
+          const s1 = { ...n.songsData()[3], source: 'netease', sourceId: 'qa-travel-gap-dots', title: 'Travel Gap', audio };
+          n.player.playSong(s1, [s1]);
+        },
+        { data: song1Data, audio: leakAudio },
+      );
+      await page.waitForTimeout(350);
+      await page.evaluate(() => window.__nebula.player.seek(8.2));
+      await page.waitForTimeout(450);
+      const travelGapDots = await page.evaluate(() => window.__nebulaTravel?.probe?.()?.dots ?? null);
+      await page.evaluate(
+        ({ audio }) => {
+          window.nebulaAPI.fetchLyric = () => new Promise(() => {});
+          const n = window.__nebula;
+          const s3 = { ...n.songsData()[5], source: 'netease', sourceId: 'qa-travel-loading-dots', title: 'Travel Loading', audio };
+          n.player.playSong(s3, [s3]);
+        },
+        { audio: leakAudio },
+      );
+      await page.waitForTimeout(550);
+      const travelLoadDots = await page.evaluate(() => window.__nebulaTravel?.probe?.()?.dots ?? null);
+      // 还原为 song2Data 与默认状态，免影响后续 stageFlyExtra
+      await page.evaluate(
+        ({ data, audio }) => {
+          window.nebulaAPI.fetchLyric = async () => ({ ok: true, data });
+          window.__nebula.travelGL(false);
+          document.querySelector('.sd-panel.sd-right [data-stage-tile="page"]')?.click();
+          const n = window.__nebula;
+          const s2 = { ...n.songsData()[4], source: 'netease', sourceId: 'qa-page-ls-switch-back', title: 'Switch Back', audio };
+          n.player.playSong(s2, [s2]);
+        },
+        { data: song2Data, audio: leakAudio },
+      );
+      await page.waitForTimeout(300);
       await page.evaluate(() => document.querySelector('.listen-exit')?.click());
       await page.waitForTimeout(250);
       await pinTg();
       await tab('歌词');
       await page.waitForTimeout(250);
-      return { beforeGap, gapOpen, switchInLs, afterClose };
+      return { beforeGap, gapOpen, switchInLs, afterClose, travelGapDots, travelLoadDots };
     })();
     await page.keyboard.press('Control+Shift+M');
     await page.waitForTimeout(300);
@@ -2326,7 +2368,12 @@ async function main() {
     pageLsLeakCheck.afterClose.pin &&
     pageLsLeakCheck.afterClose.pageOp >= 0.99 &&
     !pageLsLeakCheck.afterClose.flyLayer &&
-    pageLsLeakCheck.afterClose.flyHide === 0;
+    pageLsLeakCheck.afterClose.flyHide === 0 &&
+    pageLsLeakCheck.travelGapDots?.mode === 'interlude' &&
+    pageLsLeakCheck.travelGapDots.op > 0.4 &&
+    pageLsLeakCheck.travelGapDots.levels?.[0] > 0.2 &&
+    pageLsLeakCheck.travelLoadDots?.mode === 'loading' &&
+    pageLsLeakCheck.travelLoadDots.op > 0.3;
   // 每套至少在一首歌里用上；用上的页：没有字跑出画幅、不同句子的字最多压住 2px
   const tplOk =
     !!tplChecks.en &&

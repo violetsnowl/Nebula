@@ -6,6 +6,22 @@
 
 ---
 
+## #307 — 2026-11-27 — 穿行第二版第四步（二）：3D 柔光三点（长间奏逐个亮起 + 切歌取词波浪呼吸）
+
+**目标**：`TRAVEL_HANDOFF.md` §9.10 第四步第 2 项（用户选定方案 3A），补齐穿行第二版在 ≥ 4 秒长间奏与切歌慢取词时的视觉提示，全部融进 WebGL2 3D 隧道空间。
+
+**改动点**
+- `src/App.tsx` & `src/components/TravelStage.tsx`：向 `TravelStage` / `TravelSpace` 透传 `loading={lyricLoading}`（`useLyrics` 已有 250ms 防闪烁延迟）。
+- `src/components/TravelSpace.tsx`：
+  - 基于 `shape.gaps` 中 `kind === 'interlude'`（≥ 4s）生成间奏窗口 `[g.s + 1.0, g.e - 1.4]`（空白 ≥ 1.2s），在隧道前方中轴 `camZ + DREST` 处用 `KIND_LIGHT` 绘制三颗柔光点（内核 + 柔和外晕，取色 `pal.glow`），随间奏进度逐个亮起、整体轻呼吸、进出平滑淡入淡出；
+  - 切歌慢取词（`loading && els.length === 0`）时在隧道前方中轴画出三颗 1.4s 周期、0.18s 相位错开的循环波浪呼吸光点，歌词到达后平滑收拢淡出；
+  - `window.__nebulaTravel.probe()` 新增 `dots` 字段（`mode` / `op` / `levels`）。
+- `scripts/qa.cjs`：新增穿行第二版长间奏三点（`mode === 'interlude'`）与慢取词三点（`mode === 'loading'`）两项自动化回归断言。
+
+**验证**：`$env:pnpm_config_verify_deps_before_run='false'; pnpm build; pnpm qa` 全绿（0 控制台错误；穿行第二版 `avg 0.21ms / p95 0.4ms`；`travelGapDots` `mode=interlude, op=1`、`travelLoadDots` `mode=loading, op=0.92`）。
+
+**遗留与风险**：默认体验不变（仍在实验开关后）。接下来做第四步第 3 项：改窗口大小时重排路线与封面槽位。
+
 ## #306 — 2026-11-27 — 穿行第二版第四步（一）：性能收回（曲线缓存、外接框粗判、气流丝复用与零分配排序）
 
 **目标**：`TRAVEL_HANDOFF.md` §9.10 第四步第 1 项，在后续补齐三点、重排与一镜到底前先把真实数据帧耗时从 #298 的 p95 2.0–2.8ms 收回至 ≤ 1.5ms。

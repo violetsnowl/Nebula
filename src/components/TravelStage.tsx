@@ -33,6 +33,7 @@ import './travel-stage.css';
 
 interface TravelStageProps {
   lines: LyricLineUI[];
+  loading?: boolean;
   songKey: string;
   lsOpen: boolean;
   song: Track | null;
