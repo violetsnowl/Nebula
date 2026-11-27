@@ -48,10 +48,11 @@ export function useOverlays() {
     if (!nowPlayingOpen) setListenPane(null);
   }, [nowPlayingOpen]);
   const [modeToast, setModeToast] = useState('');
-  // Toast 停留 2.4s 后自动消失（NEBULA_UI_SYSTEM §9.6）；文字变了就重新计时。以前只有播放模式提示会消失，「未找到歌手」等提示会一直留着
+  // Toast 自动消失（NEBULA_UI_SYSTEM §9.6）：短提示 2.4s，较长的说明提示 4.2s 方便看完；文字变了就重新计时
   useEffect(() => {
     if (!modeToast) return;
-    const t = window.setTimeout(() => setModeToast(''), 2400);
+    const ms = modeToast.length > 16 ? 4200 : 2400;
+    const t = window.setTimeout(() => setModeToast(''), ms);
     return () => window.clearTimeout(t);
   }, [modeToast]);
 

@@ -605,6 +605,7 @@ export default function App() {
           lsOpen={nowPlayingOpen}
           song={playerState.song ?? null}
           cards={effectiveCards}
+          onNotice={overlays.setModeToast}
         />
       )}
 

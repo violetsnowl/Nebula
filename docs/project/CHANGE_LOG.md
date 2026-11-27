@@ -6,6 +6,22 @@
 
 ---
 
+## #309 — 2026-11-27 — 穿行第二版第四步（四）：小曲库实测与进入穿行轻量提示（不强行退出）
+
+**目标**：`TRAVEL_HANDOFF.md` §9.10 第四步第 4 项（用户拍板：小曲库保留放大靠近 + 按段重复的补偿、不强行退回其他舞台，改为进入穿行时弹轻量提示，把选择权留给用户）。
+
+**改动点**
+- `src/components/travel/route.ts`：新增 `SMALL_LIBRARY_WARN = 40`、`SMALL_LIBRARY_NOTICE` 与会话级去重函数 `notifySmallLibraryOnce`（同一小曲库仅在首次进入穿行时提醒一次，避免切歌或进出反复打扰）。
+- `src/hooks/overlays/useOverlays.ts` & `src/styles.css`：较长说明型 Toast（> 16 字）停留时间延长至 4.2s（短提示保持 2.4s），`.mode-toast` 补齐最大宽度与居中行高。
+- `src/App.tsx`、`src/components/TravelStage.tsx`、`src/components/TravelSpace.tsx`：由 `App` 接入 `onNotice={overlays.setModeToast}`，穿行（画布版与 WebGL2 版共用去重）在唯一封面 < 40 且真正进入聆听（`k > 0.35`）时弹出轻量 G3 胶囊提示，穿行画面照常运行不打断。
+- `scripts/qa.cjs`：穿行检查新增 `smallNotice` 断言（16 首演示歌单进入穿行时弹出轻量提示且保持在穿行中）。
+
+**验证**
+- 真实小曲库副本（15 首、《Way Back Home (Japanese Ver.)》、无头 Chrome D3D11 硬件渲染）：视野 13 张封面（`small = 1`），曲线歌词、气流丝与隧道壁均可正常撑住，帧耗时 `p95` 中位 `0.3ms`，画面比大曲库明显稀疏，与轻量提示定位吻合。
+- `$env:pnpm_config_verify_deps_before_run='false'; pnpm build; pnpm qa` 全绿（0 控制台错误；`travelOn.smallNotice = true` 且 `op = 1`）。
+
+**遗留与风险**：默认体验不变。接下来做第四步第 5 项：漫游 ↔ 穿行轻纵深推入，以及穿行 ↔ 听音空间当前句飞字一镜到底。
+
 ## #308 — 2026-11-27 — 穿行第二版第四步（三）：改窗口大小超 15% 原地重建路线与走廊适配
 
 **目标**：`TRAVEL_HANDOFF.md` §9.10 第四步第 3 项，窗口宽高大幅变化时重新生成路线、封面槽位与隧道壁朝向，避免纵深与走廊宽失配，且不重建封面纹理数组与字形贴图。

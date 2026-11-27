@@ -373,6 +373,24 @@ export function buildSlots(r: Route, tracks: Track[], baseHue: number, seed: num
   return { slots, small };
 }
 
+/** 低于该唯一封面数视为小曲库（已达补偿上限，封面会反复重现）：进入穿行时弹轻量提示，不强行退出。 */
+export const SMALL_LIBRARY_WARN = 40;
+export const SMALL_LIBRARY_NOTICE = '当前歌单曲目较少，穿行画面可能偏稀疏，可整合歌单或换用其他舞台';
+
+const warnedSmallLibs = new Set<string>();
+
+/** 小曲库进入穿行时同一歌单每会话仅提示一次，选择权留给用户。 */
+export function notifySmallLibraryOnce(tracks: Track[], onNotice?: (msg: string) => void): boolean {
+  if (!onNotice || tracks.length === 0 || tracks.length >= SMALL_LIBRARY_WARN) return false;
+  const first = tracks[0];
+  const last = tracks[tracks.length - 1];
+  const sig = `${tracks.length}:${first?.source ?? ''}:${first?.sourceId ?? first?.id ?? ''}:${last?.sourceId ?? last?.id ?? ''}`;
+  if (warnedSmallLibs.has(sig)) return false;
+  warnedSmallLibs.add(sig);
+  onNotice(SMALL_LIBRARY_NOTICE);
+  return true;
+}
+
 /** 第一个 z ≥ v 的下标（slots 已按 z 排好）。 */
 export function lowerBound(slots: Slot[], v: number): number {
   let lo = 0;

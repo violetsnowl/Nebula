@@ -16,7 +16,7 @@ import { cssRgba } from './travel/glCore';
 import { CoverTextures } from './travel/coverTex';
 import { ATLAS_H, GlyphAtlas, PAD, R_MAIN, TR_K, type FontSpec, type GLine, type GUnit } from './travel/glyphAtlas';
 import { INST, KIND_CHIP, KIND_COVER, KIND_GLYPH, KIND_LIGHT, KIND_STROKE, Renderer, type Palette } from './travel/renderer';
-import { DREST, F, FAR, buildRoute, buildSlots, camAt, hashStr, hueOffsetAt, lowerBound, pathX, pathY, slotRadius, slotYAspect, songHue } from './travel/route';
+import { DREST, F, FAR, buildRoute, buildSlots, camAt, hashStr, hueOffsetAt, lowerBound, notifySmallLibraryOnce, pathX, pathY, slotRadius, slotYAspect, songHue } from './travel/route';
 import { BEATS, buildSegs, headOf, locate, placeSegs, placeSegsWithHead, planShapes, segAt, segAtOut, splitAt, type Seg, type V3 } from './travel/pathText';
 import { tunnelBasis } from './travel/tunnel';
 import { planChoreo } from './travel/choreo';
@@ -43,6 +43,7 @@ interface Props {
   lsOpen: boolean;
   song: Track | null;
   cards: CardSpec[];
+  onNotice?: (msg: string) => void;
   onFail: () => void;
 }
 
@@ -135,7 +136,7 @@ interface Geo {
 
 type ProbeLine = { i: number; text: string; x: number; y: number; w: number; h: number; op: number; state: string; done: boolean; kind: string; move: string };
 
-export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, cards, onFail }: Props) {
+export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, cards, onNotice, onFail }: Props) {
   const lab = useSpaceLab();
   const active = lab.stageMode === 'travel';
   const listen = useListenSettings();
@@ -149,6 +150,8 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
   loadingRef.current = loading;
   const schemeRef = useRef(listen.scheme);
   schemeRef.current = listen.scheme;
+  const noticeRef = useRef(onNotice);
+  noticeRef.current = onNotice;
   const failRef = useRef(onFail);
   failRef.current = onFail;
   const rootRef = useRef<HTMLDivElement>(null);
@@ -1241,6 +1244,7 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
         rootOp = opS;
       }
       if (op < 0.002) return;
+      if (k > 0.35 && !lsOpenRef.current) notifySmallLibraryOnce(tracks, noticeRef.current);
       const t0 = performance.now();
       frameNo++;
       if (!vw) fit();

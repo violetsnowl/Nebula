@@ -16,7 +16,7 @@ import { useSpaceLab } from '../lib/space/lab';
 import { thumbOf } from '../lib/space/thumbs';
 import { oklabToRgb, toneOf } from '../lib/space/tone';
 import { bigCover, bigCoverStats } from './travel/covers';
-import { DREST, F, FAR, NEAREST, buildRoute, buildSlots, camAt, hashStr, hueOffsetAt, lowerBound, pathX, pathY, songHue } from './travel/route';
+import { DREST, F, FAR, NEAREST, buildRoute, buildSlots, camAt, hashStr, hueOffsetAt, lowerBound, notifySmallLibraryOnce, pathX, pathY, songHue } from './travel/route';
 import './listen/lyric-words.css';
 import './travel-stage.css';
 
@@ -38,6 +38,7 @@ interface TravelStageProps {
   lsOpen: boolean;
   song: Track | null;
   cards: CardSpec[];
+  onNotice?: (msg: string) => void;
 }
 
 const usable = (l: LyricLineUI | undefined) => !!l && (!!l.text?.trim() || !!l.words?.length);
@@ -105,7 +106,7 @@ export function TravelStage(props: TravelStageProps) {
   return <TravelStageFlat {...props} />;
 }
 
-function TravelStageFlat({ lines, songKey, lsOpen, song, cards }: TravelStageProps) {
+function TravelStageFlat({ lines, songKey, lsOpen, song, cards, onNotice }: TravelStageProps) {
   const lab = useSpaceLab();
   const active = lab.stageMode === 'travel';
   const listen = useListenSettings();
@@ -117,6 +118,8 @@ function TravelStageFlat({ lines, songKey, lsOpen, song, cards }: TravelStagePro
   lsOpenRef.current = lsOpen;
   const schemeRef = useRef(listen.scheme);
   schemeRef.current = listen.scheme;
+  const noticeRef = useRef(onNotice);
+  noticeRef.current = onNotice;
   const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const linesRef = useRef<HTMLDivElement>(null);
@@ -311,6 +314,7 @@ function TravelStageFlat({ lines, songKey, lsOpen, song, cards }: TravelStagePro
         rootOp = opS;
       }
       if (op < 0.002) return;
+      if (k > 0.35 && !lsOpenRef.current) notifySmallLibraryOnce(tracks, noticeRef.current);
       const t0 = performance.now();
       frameNo++;
       if (!vw) fit();

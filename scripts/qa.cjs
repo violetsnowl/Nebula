@@ -1765,6 +1765,7 @@ async function main() {
       frame: p ? p.frameMs : null,
       stageHidden: getComputedStyle(document.querySelector('.stage-3d')).visibility === 'hidden',
       roamHidden: getComputedStyle(document.querySelector('.lyrics-layer')).visibility === 'hidden',
+      smallNotice: (document.querySelector('.mode-toast')?.textContent || '').includes('曲目较少'),
     };
   });
   // 穿行第二版「空间歌词」（实验开关，TRAVEL_HANDOFF §9）：同一时刻打开开关，WebGL2 画布接管、封面与歌词都画出来、
@@ -1824,6 +1825,7 @@ async function main() {
   const travelOff = await page.evaluate(() => ({ root: !!document.querySelector('.travel-stage'), mode: document.documentElement.dataset.stageMode ?? null }));
   const travelOk =
     travelOn.listening && travelOn.mode === 'travel' && travelOn.op > 0.9 && travelOn.covers > 0 && travelOn.seen >= 1 && travelOn.cur && travelOn.out === 0 &&
+    travelOn.smallNotice &&
     !!travelOn.frame && travelOn.frame.n > 30 && travelOn.frame.p95 < 6 && travelOn.stageHidden && travelOn.roamHidden &&
     travelLs.ls && travelLs.op < 0.05 && !travelLs.roamFly && !travelOff.root && travelOff.mode === null &&
     travelGL.gl && travelGL.canvas && travelGL.op > 0.9 && travelGL.covers > 0 && travelGL.quads > travelGL.covers && travelGL.seen >= 1 && travelGL.out === 0 &&
