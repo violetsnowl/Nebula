@@ -399,7 +399,10 @@
 
 @media (prefers-reduced-motion: reduce) {
   .sd-panel .pl-bar,
-  .sd-panel.fade-top .sd-scroll {
+  .sd-panel.fade-top .sd-scroll,
+  .sd-panel .merge-bar,
+  .sd-panel.fade-bottom .sd-scroll,
+  .sd-panel .merge-entry-ic {
     transition: none;
   }
 }
@@ -778,4 +781,93 @@
 
 .sd-panel .hint-line.is-error {
   color: var(--danger);
+}
+
+/* ---------- 整合页底边常驻操作条（呼应顶部 .pl-bar + .fade-top） ---------- */
+@property --sd-fade-b {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+.sd-panel.fade-bottom .sd-scroll {
+  --sd-fade-b: 0px;
+  -webkit-mask-image: linear-gradient(to top, transparent var(--sd-fade-b), #000 calc(var(--sd-fade-b) * 1.55));
+  mask-image: linear-gradient(to top, transparent var(--sd-fade-b), #000 calc(var(--sd-fade-b) * 1.55));
+  transition: --sd-fade-b 0.26s var(--ease-std);
+}
+
+.sd-panel.fade-bottom.is-mbar-on .sd-scroll {
+  --sd-fade-b: 56px;
+}
+
+.sd-panel .merge-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  padding: 10px 14px 12px;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(8px);
+  pointer-events: none;
+  transition:
+    opacity 0.22s var(--ease-std),
+    transform 0.26s var(--ease-std),
+    visibility 0s linear 0.26s;
+}
+
+.sd-panel .merge-bar.is-on {
+  opacity: 1;
+  visibility: visible;
+  transform: none;
+  pointer-events: auto;
+  transition-delay: 0s;
+}
+
+.sd-panel .merge-bar-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.sd-panel .merge-bar-info {
+  min-width: 0;
+  display: grid;
+  gap: 1px;
+  font-variant-numeric: tabular-nums;
+}
+
+.sd-panel .merge-bar-cnt {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--fg);
+  line-height: 1.3;
+}
+
+.sd-panel .merge-bar-info small {
+  font-size: 11px;
+  color: var(--fg-3s);
+  line-height: 1.3;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sd-panel .merge-bar-btn {
+  height: 34px;
+  padding: 0 14px;
+  font-size: 13px;
+  flex: none;
+}
+
+.sd-panel .merge-bar-err {
+  font-size: 11px;
+  color: var(--danger);
+  margin-bottom: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }

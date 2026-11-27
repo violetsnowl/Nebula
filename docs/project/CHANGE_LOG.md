@@ -6,6 +6,17 @@
 
 ---
 
+## #待定 — 2026-11-27 — 整合页新增未滚到底部时的底边常驻操作条
+
+**背景**：多平台多歌单场景下，整合页底部「生成整合歌单」按钮需滚动到底端才可见，选完歌单后点击不够顺手。
+
+**改动点**
+- `src/components/PlaylistDock.tsx` & `src/components/dock/left-panel.css`：
+  - 沿用歌单详情页 `topBar + fade-top` 的结构，为整合页添加 `mergeFooterRef` 与 `IntersectionObserver`；
+  - 当原位 `.merge-footer` 仍在可视区下方未露面时，在 `SideDock` `overlay` 插槽底部平滑浮出 `.merge-bar`（实时显示已选歌单数、估算首数与「生成整合歌单」主按钮），滚动条对应区域通过 `--sd-fade-b` 渐隐让出空间；滚到底端原位按钮进入视野后 `.merge-bar` 自动滑出收起，不出现重复按钮。
+
+**验证**：工作树内跑 `$env:pnpm_config_verify_deps_before_run='false'; pnpm build; pnpm qa` 验证通过。
+
 ## #待定 — 2026-11-27 — 整合歌单 UI 视觉与交互打磨
 
 **背景**：根据桌面实测视觉反馈调整整合歌单入口表现级别、一键勾选开关状态反馈、命名框文案、详情页来源歌单排版及 2×2 拼贴封面网格权重问题。

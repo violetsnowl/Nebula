@@ -273,6 +273,8 @@ export const PlaylistDock = memo(function PlaylistDock({
   // 歌单详情：大页头（含「播放全部」）滚出顶部后，顶部浮出一条紧凑栏（返回 · 封面 · 歌单名 · 播放 · 回到顶部）
   const actionsRef = useRef<HTMLDivElement>(null);
   const [stuck, setStuck] = useState(false);
+  const mergeFooterRef = useRef<HTMLDivElement>(null);
+  const [mergeBarOn, setMergeBarOn] = useState(false);
   const [mergeDraftName, setMergeDraftName] = useState('');
   const [mergePicked, setMergePicked] = useState<MergeSourceRef[]>([]);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
@@ -671,6 +673,32 @@ export const PlaylistDock = memo(function PlaylistDock({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [inDetail, sel?.platform, sel?.id]);
 
+  // 整合页面：当底部原位「生成整合歌单」按钮在视口下方未露面时，面板底边浮出常驻紧凑条
+  const MERGE_BAR_H = 56;
+  const inMerge = shown === 'playlists' && nav.view === 'merge';
+  useEffect(() => {
+    const target = mergeFooterRef.current;
+    const root = scroller();
+    if (!inMerge || !target || !root) {
+      setMergeBarOn(false);
+      return;
+    }
+    const io = new IntersectionObserver(
+      ([e]) => {
+        if (!e) return;
+        const bottom = e.rootBounds?.bottom ?? root.getBoundingClientRect().bottom - MERGE_BAR_H;
+        setMergeBarOn(!e.isIntersecting && e.boundingClientRect.top > bottom - 8);
+      },
+      { root, rootMargin: `0px 0px -${MERGE_BAR_H}px 0px`, threshold: 0 },
+    );
+    io.observe(target);
+    return () => {
+      io.disconnect();
+      setMergeBarOn(false);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [inMerge, totalPlaylists]);
+
   const toTop = () => scroller()?.scrollTo({ top: 0, behavior: 'smooth' });
 
   // 紧凑栏放在滚动区外面（SideDock 的 overlay 插槽）：栏下面的列表用遮罩淡出，栏直接落在面板玻璃上
@@ -716,6 +744,35 @@ export const PlaylistDock = memo(function PlaylistDock({
         </button>
       </div>
     ) : null;
+
+  const mergeBar = inMerge ? (
+    <div className={`merge-bar${mergeBarOn ? ' is-on' : ''}`} aria-hidden={!mergeBarOn}>
+      {mergeError && <div className="merge-bar-err">{mergeError}</div>}
+      <div className="merge-bar-row">
+        <div className="merge-bar-info">
+          <span className="merge-bar-cnt">
+            {mergePicked.length === 0 ? '至少选 2 个歌单' : `已选 ${mergePicked.length} 个歌单`}
+          </span>
+          <small>
+            {mergePicked.length === 1
+              ? '再选 1 个即可整合'
+              : estMergeCount > 0
+                ? `原始约 ${estMergeCount.toLocaleString('en-US')} 首`
+                : '按勾选顺序去重'}
+          </small>
+        </div>
+        <button
+          type="button"
+          className="btn primary merge-bar-btn"
+          tabIndex={mergeBarOn ? 0 : -1}
+          disabled={mergePicked.length < 2 || mergeBusy}
+          onClick={() => void handleCreateMerged()}
+        >
+          {mergeBusy ? '整合中…' : '生成整合歌单'}
+        </button>
+      </div>
+    </div>
+  ) : null;
 
   const detailView = (
     <div key="detail" className={`view${viewClass('detail', nav)}`}>
@@ -956,7 +1013,7 @@ export const PlaylistDock = memo(function PlaylistDock({
         );
       })}
 
-      <div className="merge-footer">
+      <div className="merge-footer" ref={mergeFooterRef}>
         {mergeError && <p className="hint-line is-error">{mergeError}</p>}
         <div className="merge-summary">
           已选 {mergePicked.length} 个歌单
@@ -1035,8 +1092,14 @@ export const PlaylistDock = memo(function PlaylistDock({
   return (
     <SideDock
       side="left"
-      overlay={topBar}
-      panelClass={inDetail ? `fade-top${stuck ? ' is-bar-on' : ''}` : undefined}
+      overlay={inDetail ? topBar : inMerge ? mergeBar : null}
+      panelClass={
+        inDetail
+          ? `fade-top${stuck ? ' is-bar-on' : ''}`
+          : inMerge
+            ? `fade-bottom${mergeBarOn ? ' is-mbar-on' : ''}`
+            : undefined
+      }
       visible={visible}
       near={near}
       active={active}
