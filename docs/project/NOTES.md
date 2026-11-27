@@ -58,6 +58,12 @@
 - **整句歌词 `.ly-main.ly-whole` 须 `width: fit-content` 且替身显式同步实测宽度**（2026-11-25，#270）：无逐字时间轴的整句若撑满 `760px` 栏宽，会让 `placeOf()` 把短词错算成 `2×–4×` 巨字然后落地闪回；且绝对定位 `0px` 宽的 `.lpm-ctx` 内若只写 `maxWidth` 会将自动折行长句压成单字竖排，必须给 `fitWholeCloneBox()` 显式写入 `Math.ceil(src.offsetWidth) + 1` 的 `width`，并让 `.lp-whole` 保持 `display: inline-block` 对齐盒高。
 - **版面模式 `roam ↔ page` 切勿逐帧改 `.stage-3d` 模糊半径或在 `stepMorph` 内读写交错**（2026-11-25，#270）：2K 屏逐帧变动 `blur()` 半径会触发重度 GPU 栅格化，应仅在稳态 `data-lk-full`（`k ≥ 0.98`）挂静态 `blur(2.4px)`；过渡期间停止后台 140 卡与星层刷新，`startMorph` / `stepMorph` 严格先全读后全写，且不要给整屏 `.lp-morph` 挂全屏 `drop-shadow`。
 - **慢取词到达的入场动画与 `LyricColumn` 落位必须在 `useLayoutEffect` 中同步完成**（2026-11-25，#272）：若写在 `useEffect`，新歌词到达首帧会先以满亮度或第 0 句起位画出 1 帧再突然拉回 `opacity: 0` 或跳句造成明显闪跳；改为在 `useLayoutEffect` 中同步挂 `.is-arrive`（配 `animation-fill-mode: backwards` 与 `onAnimationEnd` 清理）并在 `setLyrics()` 后立即同步调用一次 `eng.frame(...)`。
+- **穿行转场与 3D 飞字性能/视觉避坑**（2026-11-27，#311–#315）：
+  - `listenMode.ts` 穿行直写通道必须以 `!!this.tw` 判定过渡态（不可用 `0.001 < k < 0.999`），否则 `easeInOut` 首尾几帧会落回根 `.app` 改 `--lk / --lo / --ls` 与 `data-listen`，连发 7 次 1,500+ 节点 `UpdateLayoutTree` 风暴；
+  - 穿行 → 漫游退场首帧须立刻移除 `data-lk-full` 并给 `.stage-3d` 设 `0.001` 不可见透明度，同时 `travel-stage.css` 稳态保留 `will-change: opacity`（不可在 `[data-lk-full]` 切回 `will-change: auto`），让 140 卡星云在 `easeInOut` 起步静止期完成 GPU 唤醒，杜绝飞行中段 48–54ms 长卡；并设 `.lyrics-layer { transform: none }` 消除 `--ls: 1.04` 尾帧 4% 缩跳；
+  - `LyricsLayer` 仅在非穿行且聆听态写 `:root` `--sdep / --sopen`，穿行模式下固定漫游态排版（`lk = 0`）避免逐帧改 `blur()` 重绘与 16% 缩放漂移，且跳过 `el.offsetHeight` 强制重排；
+  - `LsFly` 构造与 `attachBatch` 严格读写分离；穿行与漫游两端均经 `FlySide.place` 走零重排坐标（穿行读 3D 投影、漫游纯 JS 追踪 `srcHost.style.transform` 增量），`syncUnitClone` 用 `__tvRev` 脏戳 O(1) 跳过，穿行 → 漫游解弯直接改起点侧 `--cv` 避免每帧拷贝 40+ `.ch` `cssText`；
+  - 3D 飞字切勿在旋转词上用屏幕轴非等比 `scale(sx, sy)`（会斜切），应拆 `.ch` 写 `--cx / --cy / --cr` 沿曲线贴齐，测量宿主 `.tv-fly-slot` 设 `--cv: 0` 免干扰探针；连续气流光带须用共享顶点三角形带（`emitRibbon`）而非逐段独立矩形（避免重叠火柴棍感），3D 三点须用抗锯齿实心圆点（`KIND_DOT`）而非纯高斯大光斑。
 - 项目已接入 git；远程为 `github.com/violetsnowl/Nebula`（2026-11-14 改名；旧地址 `violetsnowl/nebula`、`a161858970-ux/nebula` 自动重定向，本地 origin 已更新）；文档随提交维护（docs/）。
 
 ### 歌词署名行过滤（2026-11-21，#233）
