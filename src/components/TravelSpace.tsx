@@ -6,7 +6,7 @@ import type { LyricLineUI } from '../lib/lyrics';
 import type { Track } from '../lib/catalog';
 import type { CardSpec } from '../lib/layout';
 import { listenBus } from '../lib/listenMode';
-import { detectScript, songPace, toEngineLine } from '../lib/listen/model';
+import { detectScript, songPace, toEngineLine, type EngineLine } from '../lib/listen/model';
 import { analyzeSong, stageAt } from '../lib/listen/sections';
 import { useListenSettings } from '../lib/listen/settings';
 import { TYPO, restUnit, unitFrame, waveOf } from '../lib/listen/words';
@@ -15,8 +15,9 @@ import { oklabToRgb, toneOf } from '../lib/space/tone';
 import { cssRgba } from './travel/glCore';
 import { CoverTextures } from './travel/coverTex';
 import { ATLAS_H, GlyphAtlas, PAD, R_MAIN, TR_K, type FontSpec, type GLine, type GUnit } from './travel/glyphAtlas';
-import { INST, KIND_CHIP, KIND_COVER, KIND_GLYPH, KIND_LIGHT, Renderer, type Palette } from './travel/renderer';
-import { DREST, F, FAR, NEAREST, buildRoute, buildSlots, camAt, hashStr, hueOffsetAt, lowerBound, pathX, pathY, slotRadius, songHue } from './travel/route';
+import { INST, KIND_CHIP, KIND_COVER, KIND_GLYPH, KIND_LIGHT, KIND_STROKE, Renderer, type Palette } from './travel/renderer';
+import { DREST, F, FAR, buildRoute, buildSlots, camAt, hashStr, hueOffsetAt, lowerBound, pathX, pathY, slotRadius, songHue } from './travel/route';
+import { BEATS, buildSegs, lerpPose, locate, poseFar, poseSing, segAt, splitAt, type Seg, type V3 } from './travel/pathText';
 import { tunnelBasis } from './travel/tunnel';
 import { wordRt, type WordRt } from './travel/wordState';
 import './listen/lyric-words.css';
@@ -54,19 +55,46 @@ const AHEAD = 2;
 /** 近平面 / 远平面（世界单位，离镜头） */
 const NEAR = 40;
 const FARZ = FAR + 2000;
-/** 一句歌词的块高（主字号 em）：主文行高 1.2；带译文时再加间距与译文一行（同 #287 的 DOM 排版） */
-const BLOCK = 1.2;
-const BLOCK_TR = 1.777;
+/** 开唱后镜头离句子大约这么远（#287 的镜头：开唱 1250 → 唱完 1000），字号按这时的画面宽度算 */
+const DSING = 1000;
+/** 世界字号上限 / 拆两段的门槛 / 下限（§9.2「字是主角」：比 #287 的 30–60 大一档） */
+const FS_MAX = 84;
+const FS_SPLIT = 62;
+const FS_MIN = 30;
+/** 开唱前多少秒开始转正 */
+const TURN = 0.75;
+/** 唱完往外侧推开 / 往下沉多少（世界单位，1.2 秒内） */
+const PASS_X = 260;
+const PASS_Y = 70;
 
 interface LS {
   i: number;
   g: GLine;
   /** 世界字号 */
   fs: number;
+  /** 拆成两段时第二段的第一个单位（0 = 不拆） */
+  split: number;
   w: WordRt | null;
   state: 'future' | 'cur' | 'past';
   active: boolean;
   done: boolean;
+}
+
+interface Bound {
+  x0: number;
+  x1: number;
+  y0: number;
+  y1: number;
+}
+
+/** 一句这一帧的曲线与画面外接框 */
+interface Geo {
+  d: LS;
+  segs: Seg[];
+  op: number;
+  dz: number;
+  state: LS['state'];
+  bd: Bound;
 }
 
 type ProbeLine = { i: number; text: string; x: number; y: number; w: number; h: number; op: number; state: string; done: boolean };
@@ -166,10 +194,24 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
     let vh = 0;
     let dpr = 1;
     const doms = new Map<number, LS>();
-    const fitFont = (g: GLine): number => {
-      // 唱这句时最近离镜头约 NEAREST：那时屏幕宽度不超过窗口的 70%（同 #287）
-      const w = Math.max(g.width, g.tr && showTr ? g.trWidth : 0) || 1;
-      return clamp((0.7 * Math.max(320, vw) * NEAREST) / (w * F), 30, 60);
+    /**
+     * 字号与拆句（§9.2「字是主角」）：开唱后镜头离句子约 DSING，那时整句不超过窗口宽 58%，世界字号最大 FS_MAX；
+     * 放不下（字号会小于 FS_SPLIT）的长句在停顿处拆成两段（§9.3），每段不超过窗口宽 50%。
+     */
+    const sizeLine = (e: EngineLine, g: GLine): { fs: number; split: number } => {
+      const vwp = Math.max(320, vw || window.innerWidth);
+      const fitW = (wEm: number, frac: number) => (frac * vwp * DSING) / (Math.max(0.5, wEm) * F);
+      const trW = g.tr && showTr ? g.trWidth : 0;
+      const fs = fitW(Math.max(g.width, trW), 0.58);
+      if (fs >= FS_SPLIT) return { fs: Math.min(FS_MAX, fs), split: 0 };
+      const k = splitAt(e, g);
+      if (k > 0) {
+        const a = g.units[k - 1]!;
+        const wA = a.left + a.w;
+        const wB = g.width - g.units[k]!.left;
+        return { fs: clamp(fitW(Math.max(wA, wB, trW * 0.85), 0.56), FS_MIN, FS_MAX), split: k };
+      }
+      return { fs: clamp(fs, FS_MIN, FS_MAX), split: 0 };
     };
     const fit = () => {
       const b = root.getBoundingClientRect();
@@ -180,7 +222,7 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
       dpr = r;
       canvas.width = Math.max(1, Math.round(vw * dpr));
       canvas.height = Math.max(1, Math.round(vh * dpr));
-      for (const d of doms.values()) d.fs = fitFont(d.g);
+      for (const d of doms.values()) Object.assign(d, sizeLine(els[d.i]!, d.g));
     };
     const ro = new ResizeObserver(fit);
     ro.observe(root);
@@ -192,11 +234,21 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
     const { rMin, rMax } = slotRadius(small);
     const basis = tunnelBasis(slots, rMin, rMax);
 
+    /** 第 i 句的锚点（世界 x / y）：路线中心 + 四拍错开（按当前窗口大小，改窗口后自然重排） */
+    const KREST = DREST / F;
+    const beatAt = (i: number): [number, number] => {
+      const z = route.lines[i]!.z;
+      const [fx, fy] = BEATS[i % BEATS.length]!;
+      return [pathX(z) + fx * (vw || window.innerWidth) * KREST, pathY(z) + fy * (vh || window.innerHeight) * KREST];
+    };
+    let buildMax = 0;
     const makeLine = (i: number): LS | null => {
+      const tb = performance.now();
       const e = els[i]!;
       const g = atlas.build(e, font, showTr && e.tr ? e.tr : null);
+      buildMax = Math.max(buildMax, performance.now() - tb);
       if (!g) return null;
-      return { i, g, fs: fitFont(g), w: wordRt(e, g), state: 'future', active: false, done: false };
+      return { i, g, ...sizeLine(e, g), w: wordRt(e, g), state: 'future', active: false, done: false };
     };
     const dropLine = (d: LS) => {
       atlas.release(d.g);
@@ -237,14 +289,14 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
         pal.sung = [...mix(lc, W1, 0.92), 1];
         pal.edge = [...mix(lc, W1, 0.65), 1];
         pal.un = [...mix(lc, W1, 0.42), 0.34];
-        pal.rest = pal.un;
+        pal.rest = [...mix(lc, W1, 0.42), 0.46];
         pal.ink = pal.sung;
       } else {
         // 封面色：唱过的是主色，波前主色 30%，没唱的白 34%（穿行把 --un 换成 GHOST）
         pal.sung = [lc[0]!, lc[1]!, lc[2]!, 1];
         pal.edge = [...mix(lc, W1, 0.7), 1];
         pal.un = [1, 1, 1, 0.34];
-        pal.rest = [1, 1, 1, 0.34];
+        pal.rest = [1, 1, 1, 0.46];
         pal.ink = pal.sung;
       }
       pal.glow = mix(lc, W1, 0.72);
@@ -292,19 +344,39 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
       n++;
     };
 
+    // —— 世界坐标 → 画面坐标（与着色器同一套投影；每帧开头更新镜头） ——
+    let pcx = 0;
+    let pcy = 0;
+    let pX = 0;
+    let pY = 0;
+    let pZ = 0;
+    const proj = (x: number, y: number, z: number): [number, number] | null => {
+      const dz = z - pZ;
+      if (dz < NEAR) return null;
+      const s = F / dz;
+      return [pcx + (x - pX) * s, pcy + (y - pY) * s];
+    };
+
     /**
-     * 一句的字：每个字母一块平面（第一步仍是正对镜头的平面句子）。
-     * mode：0 候场（--lc-rest）、1 扫光、2 唱完（--tv-ink）；trK 是译文亮起程度。
+     * 一句的字沿曲线逐个出平面（路径文字，§9.3）。mode：0 候场（--lc-rest）、1 扫光、2 唱完（--tv-ink）；
+     * trK 是译文亮起程度。顺带量出画面上的外接框（给封面让开、压暗和探针用）。
      */
-    const emitLine = (d: LS, lx: number, ly: number, lz: number, dz: number, op: number, mode: number, blur: number, trK: number) => {
+    const emitLine = (d: LS, segs: Seg[], op: number, mode: number, blur: number, trK: number, bd: Bound) => {
       const { g, fs } = d;
-      const hasTr = !!g.tr && showTr;
-      const yb = ly + (hasTr ? 0.11 : 0.4) * fs;
-      const emitUnits = (units: GUnit[], width: number, base: number, k: number, isTr: boolean) => {
-        const x0 = lx - (width * fs) / 2;
+      const aw = atlas.atlasW;
+      const corner = (x: number, y: number, z: number) => {
+        const q = proj(x, y, z);
+        if (!q) return;
+        if (q[0] < bd.x0) bd.x0 = q[0];
+        if (q[0] > bd.x1) bd.x1 = q[0];
+        if (q[1] < bd.y0) bd.y0 = q[1];
+        if (q[1] > bd.y1) bd.y1 = q[1];
+      };
+      const emitUnits = (units: GUnit[], segFor: (ui: number) => Seg, k: number, isTr: boolean) => {
         const padEm = PAD * k;
         for (let ui = 0; ui < units.length; ui++) {
           const gu = units[ui]!;
+          const sg = segFor(ui);
           const rec = !isTr ? d.w?.recs[ui] : undefined;
           const chs = !isTr ? d.w?.chs[ui] : null;
           const nL = gu.edges.length - 1;
@@ -353,26 +425,110 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
             }
             yt -= lift;
             yB -= lift;
+            // 字母中点在曲线上的位置与方向：字沿切向摆、沿「向下」方向竖着
+            const sMid = ((xl + xr) / 2 - sg.e0 - sg.w / 2) * fs;
+            const { p, t: tg, d: dn } = segAt(sg, sMid);
             const hx = ((xr - xl) / 2) * fs;
             const hy = ((yB - yt) / 2) * fs;
-            const wx = x0 + ((xl + xr) / 2) * fs;
-            const wy = base + ((yt + yB) / 2) * fs;
-            const aw = atlas.atlasW;
+            const cy0 = ((yt + yB) / 2) * fs;
+            const wx = p[0] + dn[0] * cy0;
+            const wy = p[1] + dn[1] * cy0;
+            const wz = p[2] + dn[2] * cy0;
             put(
-              dz - 0.01,
-              wx, wy, lz,
-              hx, 0, 0,
-              0, hy, 0,
+              wz - pZ - 0.01,
+              wx, wy, wz,
+              tg[0] * hx, tg[1] * hx, tg[2] * hx,
+              dn[0] * hy, dn[1] * hy, dn[2] * hy,
               (gu.ax + le * gu.px) / aw, gu.ay / ATLAS_H, (gu.ax + re * gu.px) / aw, (gu.ay + gu.bandEm * gu.px) / ATLAS_H,
               KIND_GLYPH, 0, isTr ? op * trK : op,
               P, f, g0, g1,
               isTr ? 3 : mode, isTr ? 0 : glow * 0.9, blur, isTr ? 0.6 : 1,
             );
+            if (!isTr || trK > 0.3) {
+              // 外接框只量字形本体（不含暗晕的留白）
+              const ix = hx * 0.8;
+              const iy = hy * 0.62;
+              corner(wx - tg[0] * ix - dn[0] * iy, wy - tg[1] * ix - dn[1] * iy, wz - tg[2] * ix - dn[2] * iy);
+              corner(wx + tg[0] * ix - dn[0] * iy, wy + tg[1] * ix - dn[1] * iy, wz + tg[2] * ix - dn[2] * iy);
+              corner(wx - tg[0] * ix + dn[0] * iy, wy - tg[1] * ix + dn[1] * iy, wz - tg[2] * ix + dn[2] * iy);
+              corner(wx + tg[0] * ix + dn[0] * iy, wy + tg[1] * ix + dn[1] * iy, wz + tg[2] * ix + dn[2] * iy);
+            }
           }
         }
       };
-      emitUnits(g.units, g.width, yb, 1, false);
-      if (hasTr && g.tr && trK > 0.004) emitUnits(g.tr, g.trWidth, yb + 0.73 * fs, TR_K, true);
+      emitUnits(g.units, (ui) => segs.find((s) => ui >= s.from && ui < s.to) ?? segs[0]!, 1, false);
+      if (g.tr && showTr && trK > 0.004) {
+        // 译文：跟在最后一段下方、沿同一条曲线（§9.3）
+        const ref = segs[segs.length - 1]!;
+        const c = segAt(ref, 0);
+        const off = 0.73 * fs;
+        const trSeg: Seg = { ...ref, C: [ref.C[0] + c.d[0] * off, ref.C[1] + c.d[1] * off, ref.C[2] + c.d[2] * off], e0: 0, w: g.trWidth };
+        emitUnits(g.tr, () => trSeg, TR_K, true);
+      }
+    };
+
+    /** 一句在整句排版坐标 e（em）处、字母中线（基线往上约 0.36em）的世界位置与切向 */
+    const lineAt = (segs: Seg[], fs: number, e: number): { p: V3; t: V3 } => {
+      const { sg, s } = locate(segs, e, fs);
+      const r = segAt(sg, s);
+      return { p: [r.p[0] - r.d[0] * 0.36 * fs, r.p[1] - r.d[1] * 0.36 * fs, r.p[2] - r.d[2] * 0.36 * fs], t: r.t };
+    };
+
+    /** 光丝（§9.3）：当前句句尾 → 下一句句首，三次贝塞尔，切向接着两句的走向 */
+    const threadCurve = (a: Geo, b: Geo): ((u: number) => V3) => {
+      const A = lineAt(a.segs, a.d.fs, a.d.g.width + 0.25);
+      const B = lineAt(b.segs, b.d.fs, -0.25);
+      const L = Math.hypot(B.p[0] - A.p[0], B.p[1] - A.p[1], B.p[2] - A.p[2]);
+      const c1: V3 = [A.p[0] + A.t[0] * L * 0.42, A.p[1] + A.t[1] * L * 0.42, A.p[2] + A.t[2] * L * 0.42];
+      const c2: V3 = [B.p[0] - B.t[0] * L * 0.42, B.p[1] - B.t[1] * L * 0.42, B.p[2] - B.t[2] * L * 0.42];
+      return (u: number) => {
+        const v = 1 - u;
+        const k0 = v * v * v;
+        const k1 = 3 * v * v * u;
+        const k2 = 3 * v * u * u;
+        const k3 = u * u * u;
+        return [
+          k0 * A.p[0] + k1 * c1[0] + k2 * c2[0] + k3 * B.p[0],
+          k0 * A.p[1] + k1 * c1[1] + k2 * c2[1] + k3 * B.p[1],
+          k0 * A.p[2] + k1 * c1[2] + k2 * c2[2] + k3 * B.p[2],
+        ];
+      };
+    };
+    const THREAD_N = 32;
+    const emitThread = (curve: (u: number) => V3, alpha: number) => {
+      const col = pal.glow;
+      let a = curve(0);
+      for (let q = 1; q <= THREAD_N; q++) {
+        const b = curve(q / THREAD_N);
+        const mx = (a[0] + b[0]) / 2;
+        const my = (a[1] + b[1]) / 2;
+        const mz = (a[2] + b[2]) / 2;
+        const dz = mz - pZ;
+        if (dz > NEAR + 40) {
+          // 宽度按画面上约 1.6px：世界宽 = 像素 × 距离 / F；方向垂直于这一小段和视线
+          const dx = b[0] - a[0];
+          const dy = b[1] - a[1];
+          const dzz = b[2] - a[2];
+          const vx = mx - pX;
+          const vy = my - pY;
+          const vz = dz;
+          let wx = dy * vz - dzz * vy;
+          let wy = dzz * vx - dx * vz;
+          let wz = dx * vy - dy * vx;
+          const wl = Math.hypot(wx, wy, wz) || 1;
+          const hw = (1.6 * dz) / F;
+          wx = (wx / wl) * hw;
+          wy = (wy / wl) * hw;
+          wz = (wz / wl) * hw;
+          // 两端淡入淡出：不在字上压一截线头
+          const u = (q - 0.5) / THREAD_N;
+          const ends = smooth(u / 0.18) * smooth((1 - u) / 0.18);
+          const fade = smooth((dz - 300) / 500);
+          const A = alpha * ends * fade;
+          if (A > 0.003) put(dz, mx, my, mz, dx / 2, dy / 2, dzz / 2, wx, wy, wz, 0, 0, 1, 1, KIND_STROKE, 0, A, col[0]!, col[1]!, col[2]!, 0, 0, 0, 0, 0);
+        }
+        a = b;
+      }
     };
 
     // —— 帧循环 ——
@@ -426,6 +582,11 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
       camZ = camAt(route, t);
       const camX = pathX(camZ);
       const camY = pathY(camZ);
+      pcx = cx;
+      pcy = cy;
+      pX = camX;
+      pY = camY;
+      pZ = camZ;
       const st = shape ? stageAt(shape, shapeLines, t) : { lift: 0.3, gap: 0, section: -1, stanza: -1 };
 
       // 当前句（光源）：最后一句已开唱的
@@ -442,11 +603,13 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
         }
       }
       const curL = cur >= 0 ? route.lines[cur]! : null;
-      const lightOn = curL && t <= curL.e + 0.6 ? 1 : 0;
+      const nextL = cur + 1 < route.lines.length ? route.lines[cur + 1]! : null;
+      // 光在句间空档里沿光丝走向下一句，所以空档里也亮着（空档太长才熄）
+      const inGap = !!curL && !!nextL && t > curL.e && t < nextL.s && nextL.s - curL.e < 6;
+      const lightOn = curL && (t <= curL.e + 0.6 || inGap) ? 1 : 0;
       lightK += (lightOn - lightK) * (1 - Math.exp(-dt * 3));
       if (curL) {
-        lx = curL.x;
-        ly = curL.y;
+        [lx, ly] = beatAt(cur);
         lz = curL.z;
       }
 
@@ -475,36 +638,110 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
       atlas.flush();
 
       n = 0;
-      // —— 歌词落位（同 #287）：先算位置与透明度、文字框（给字后面的封面压暗） ——
-      const boxes: Array<{ x0: number; x1: number; y0: number; y1: number; k: number; front: number; dz: number }> = [];
-      const places: Array<{ d: LS; dz: number; op: number; s: number }> = [];
-      for (const i of want) {
+      // —— 歌词：逐字层算状态 → 姿态（远处侧着、开唱前转正、唱完往外侧掠过）→ 沿曲线出字 ——
+      const geos: Geo[] = [];
+      probeLines = [];
+      let lightPt: V3 | null = null;
+      for (const i of [...want].sort((a, b) => a - b)) {
         const d = doms.get(i);
         if (!d) continue;
         const L = route.lines[i]!;
         const e = els[i]!;
         const dz = L.z - camZ;
-        const s = F / dz;
         const done = t > e.e + 0.1;
         d.done = done;
         const near = done ? 0.88 * smooth((dz - 380) / 420) : smooth((dz - 160) / 380);
         const far = smooth((LINE_FAR - dz) / 900);
         const state: LS['state'] = t > e.e + 0.9 ? 'past' : t >= e.s - 0.05 ? 'cur' : 'future';
         const dist = i - Math.max(cur, -1);
-        const dim = state === 'future' ? (dist <= 1 ? 0.58 : 0.32) * (1 - 0.6 * st.gap) : 1;
+        // 下一句要提前读得到（§9.2）：侧着、变小之后比 #287 的平放更难读，亮度提一档（.72 / .36，候场色也从白 34% 提到 46%）
+        const dim = state === 'future' ? (dist <= 1 ? 0.72 : 0.36) * (1 - 0.6 * st.gap) : 1;
         const o = near * far * dim;
-        places.push({ d, dz, op: o, s });
-        if (o > 0.05) {
-          const hasTr = !!d.g.tr && showTr;
-          const hw = (Math.max(d.g.width, hasTr ? d.g.trWidth : 0) * d.fs * s) / 2 + 18;
-          const hh = ((hasTr ? BLOCK_TR : BLOCK) * d.fs * s) / 2 + 10;
-          const px = cx + (L.x - camX) * s;
-          const py = cy + (L.y - camY) * s;
-          boxes.push({ x0: px - hw, x1: px + hw, y0: py - hh, y1: py + hh, k: o * (state === 'future' ? 0.6 : 1), front: done ? 0 : state === 'future' ? 0.7 * o : 1, dz });
+        if (state !== d.state) {
+          d.state = state;
+          if (state !== 'cur' && d.w && d.active) {
+            d.w.rts.forEach(restUnit);
+            d.active = false;
+          }
+        }
+        let S = -1;
+        if (state === 'cur' && d.w?.rts.length) {
+          const singing = t <= e.e + 0.3;
+          const raw = singing ? waveOf(d.w.rts, e.dens, t) : null;
+          const waveK = smooth((t - (e.s - 0.05)) / 0.15);
+          const wave = raw ? (c: number) => raw(c) * waveK : null;
+          for (const rt of d.w.rts) unitFrame(rt, t, scheme, singing, wave, e.dens);
+          if (!singing && d.active) d.w.rts.forEach(restUnit);
+          d.active = singing;
+          if (singing && i === cur) {
+            const us = d.w.rts;
+            for (let q = 0; q < us.length; q++) {
+              const r = us[q]!;
+              if (t < r.u.s) {
+                if (q > 0) {
+                  const pv = us[q - 1]!;
+                  const k2 = clamp((t - pv.u.e) / Math.max(0.01, r.u.s - pv.u.e), 0, 1);
+                  S = pv.left + pv.w + (r.left - pv.left - pv.w) * smooth(k2);
+                }
+                break;
+              }
+              if (t < r.u.e) {
+                S = r.left + r.w * clamp((t - r.u.s) / Math.max(0.001, r.u.e - r.u.s), 0, 1);
+                break;
+              }
+            }
+          }
+        }
+        // 姿态：远处 → 开唱前 0.75 秒内转正；唱完往离路线远的一侧推开、略往下（从镜头侧边掠过，不糊在画面正中）
+        const turnK = smooth((t - (e.s - TURN)) / TURN);
+        const pose = lerpPose(poseFar(i), poseSing(i), turnK);
+        const passK = smooth((t - e.e - 0.05) / 1.2);
+        const [bx, by] = beatAt(i);
+        const side = bx >= 0 ? 1 : -1;
+        const hasTr = !!d.g.tr && showTr;
+        const anchor: V3 = [bx + side * passK * PASS_X, by + (hasTr ? 0.11 : 0.4) * d.fs + passK * PASS_Y, L.z];
+        const segs = buildSegs(d.g, d.split, i, anchor, d.fs, pose, turnK);
+        const mode = d.w ? (state === 'cur' ? 1 : state === 'past' ? 2 : 0) : t >= e.s ? 2 : 0;
+        const blur = done ? smooth((820 - dz) / 440) : 0;
+        const trK = smooth((t - e.s + 0.05) / 0.45);
+        const bd: Bound = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity };
+        if (o > 0.004) emitLine(d, segs, o, mode, blur, trK, bd);
+        geos.push({ d, segs, op: o, dz, state, bd });
+        if (S >= 0) lightPt = lineAt(segs, d.fs, S).p;
+        if (bd.x1 > bd.x0) probeLines.push({ i, text: e.text, x: bd.x0, y: bd.y0, w: bd.x1 - bd.x0, h: bd.y1 - bd.y0, op: o, state: d.state, done });
+      }
+
+      // —— 光丝：当前句 → 下一句；句间空档里光点沿它走过去 ——
+      const ga = geos.find((g) => g.d.i === cur);
+      const gb = geos.find((g) => g.d.i === cur + 1);
+      if (ga && gb && ga.op > 0.02 && gb.op > 0.02) {
+        const curve = threadCurve(ga, gb);
+        const eCur = els[cur]!;
+        const passCur = smooth((t - eCur.e - 0.05) / 1.2);
+        emitThread(curve, 0.14 * smooth(gb.op / 0.3) * (1 - 0.85 * passCur));
+        if (inGap && nextL && curL) {
+          const u = smooth((t - curL.e) / Math.max(0.05, nextL.s - curL.e));
+          lightPt = curve(u);
         }
       }
 
-      // —— 封面：隧道壁，从远到近（排序在最后统一做） ——
+      // —— 封面：隧道壁；字后面的压暗、挡在字前面的让开（按画面上的字框） ——
+      const boxes = geos
+        .filter((g) => g.op > 0.05 && g.bd.x1 > g.bd.x0)
+        .map((g) => ({
+          x0: g.bd.x0 - 18,
+          x1: g.bd.x1 + 18,
+          y0: g.bd.y0 - 10,
+          y1: g.bd.y1 + 10,
+          k: g.op * (g.state === 'future' ? 0.6 : 1),
+          front: g.d.done ? 0 : g.state === 'future' ? 0.7 * g.op : 1,
+          dz: g.dz,
+        }));
+      if (lightPt) {
+        lx = lightPt[0];
+        ly = lightPt[1];
+        lz = lightPt[2];
+      }
       drawn = 0;
       const halfDiag = Math.hypot(cx, vh - cy) || 1;
       const lo = lowerBound(slots, camZ + 200);
@@ -559,78 +796,13 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
       }
       covers.pump(frameNo);
 
-      // —— 歌词：逐字层算状态，再按字母出平面 ——
-      probeLines = [];
-      let lightPt: [number, number, number, number] | null = null;
-      for (const { d, dz, op: o, s } of places) {
-        const e = els[d.i]!;
-        const L = route.lines[d.i]!;
-        const state: LS['state'] = t > e.e + 0.9 ? 'past' : t >= e.s - 0.05 ? 'cur' : 'future';
-        if (state !== d.state) {
-          d.state = state;
-          if (state !== 'cur' && d.w && d.active) {
-            d.w.rts.forEach(restUnit);
-            d.active = false;
-          }
-        }
-        if (state === 'cur' && d.w?.rts.length) {
-          const singing = t <= e.e + 0.3;
-          const raw = singing ? waveOf(d.w.rts, e.dens, t) : null;
-          const waveK = smooth((t - (e.s - 0.05)) / 0.15);
-          const wave = raw ? (c: number) => raw(c) * waveK : null;
-          for (const rt of d.w.rts) unitFrame(rt, t, scheme, singing, wave, e.dens);
-          if (!singing && d.active) d.w.rts.forEach(restUnit);
-          d.active = singing;
-          // 光点：正在唱的位置
-          if (singing && d.i === cur) {
-            let S = -1;
-            const us = d.w.rts;
-            for (let q = 0; q < us.length; q++) {
-              const r = us[q]!;
-              if (t < r.u.s) {
-                if (q > 0) {
-                  const pv = us[q - 1]!;
-                  const k2 = clamp((t - pv.u.e) / Math.max(0.01, r.u.s - pv.u.e), 0, 1);
-                  S = pv.left + pv.w + (r.left - pv.left - pv.w) * smooth(k2);
-                }
-                break;
-              }
-              if (t < r.u.e) {
-                S = r.left + r.w * clamp((t - r.u.s) / Math.max(0.001, r.u.e - r.u.s), 0, 1);
-                break;
-              }
-            }
-            if (S >= 0) {
-              const hasTr = !!d.g.tr && showTr;
-              lightPt = [L.x - (d.g.width * d.fs) / 2 + S * d.fs, L.y + ((hasTr ? 0.11 : 0.4) - 0.36) * d.fs, L.z - 2, d.fs];
-            }
-          }
-        }
-        const mode = d.w ? (state === 'cur' ? 1 : state === 'past' ? 2 : 0) : t >= e.s ? 2 : 0;
-        const blur = d.done ? smooth((820 - dz) / 440) : 0;
-        const trK = smooth((t - e.s + 0.05) / 0.45);
-        if (o > 0.004) emitLine(d, L.x, L.y, L.z, dz, o, mode, blur, trK);
-        // 探针：画面上的文字框
-        const hasTr = !!d.g.tr && showTr;
-        const w = Math.max(d.g.width, hasTr ? d.g.trWidth : 0) * d.fs * s;
-        const h = (hasTr ? BLOCK_TR : BLOCK) * d.fs * s;
-        probeLines.push({
-          i: d.i,
-          text: e.text,
-          x: cx + (L.x - camX) * s - w / 2,
-          y: cy + (L.y - camY) * s - h / 2,
-          w,
-          h,
-          op: o,
-          state: d.state,
-          done: d.done,
-        });
-      }
+      // —— 光点：正在唱的位置（或空档里沿光丝走向下一句） ——
       if (lightPt && lightK > 0.02) {
-        const [px, py, pz, fs] = lightPt;
+        const curD = doms.get(cur);
+        const fs = curD?.fs ?? 50;
         const r = fs * 1.15;
         const I = 0.2 * lightK;
-        put(pz - camZ - 0.02, px, py, pz, r, 0, 0, 0, r, 0, 0, 0, 1, 1, KIND_LIGHT, 0, 1, pal.sung[0]! * I, pal.sung[1]! * I, pal.sung[2]! * I, 0, 0, 0, 0, 0);
+        put(lightPt[2] - camZ - 0.02, lightPt[0], lightPt[1], lightPt[2], r, 0, 0, 0, r, 0, 0, 0, 1, 1, KIND_LIGHT, 0, 1, pal.sung[0]! * I, pal.sung[1]! * I, pal.sung[2]! * I, 0, 0, 0, 0, 0);
       }
 
       // —— 从远到近排序 ——
@@ -690,6 +862,8 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
           },
           cache: covers.stats(),
           quads: n,
+          buildMax,
+          atlasTiming: atlas.timing.slice(-12),
         };
       },
     };

@@ -16,6 +16,8 @@ export const KIND_COVER = 0;
 export const KIND_GLYPH = 1;
 export const KIND_LIGHT = 2;
 export const KIND_CHIP = 3;
+/** 光丝的一小段（句与句之间的那段路） */
+export const KIND_STROKE = 4;
 
 const BG_VS = `#version 300 es
 precision highp float;
@@ -172,6 +174,11 @@ void main() {
     // 长音白光、唱完余光：加在字周围
     rgb += u_glow * soft * v_B.y;
     o = vec4(rgb, oa) * alpha;
+  } else if (kind == 4) {
+    // 光丝：横向高斯，叠加（不遮东西）
+    float y = v_local.y * 2.0 - 1.0;
+    float g = exp(-y * y * 3.0);
+    o = vec4(v_A.rgb * g * alpha, 0.0);
   } else {
     // 光点：柔的高斯圆，叠加（不遮东西）
     vec2 q = v_local * 2.0 - 1.0;

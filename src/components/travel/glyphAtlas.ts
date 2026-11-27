@@ -11,14 +11,14 @@ import type { EngineLine, EngineUnit } from '../../lib/listen/model';
  * 坐标：排版量都以「主字号的 em」为单位（与世界字号相乘就是世界坐标），贴图位置是纹素。
  */
 
-/** 主字号的光栅尺寸（纹素 / em）：开唱时屏幕上最大约 63px，乘 1.5 倍屏约 95px。 */
-export const R_MAIN = 96;
+/** 主字号的光栅尺寸（纹素 / em）：第二步起当前句开唱时屏幕上最大约 76px，乘 1.5 倍屏约 114px。 */
+export const R_MAIN = 120;
 /** 译文的光栅尺寸；显示时是主字号的 26/72（沿用 #287 的译文比例） */
-const R_TR = 40;
+const R_TR = 50;
 export const TR_K = 26 / 72;
 const ATLAS_W = 4096;
-/** 半条横带的高度（纹素）；主文一行占两条（168 = 1.75em），译文一行占一条（84 = 2.1em） */
-const HALF = 84;
+/** 半条横带的高度（纹素）；主文一行占两条（210 = 1.75em），译文一行占一条（105） */
+const HALF = 105;
 const HALVES = 30;
 export const ATLAS_H = HALF * HALVES;
 const LEVELS = 7;
@@ -104,13 +104,22 @@ export class GlyphAtlas {
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
     for (let i = 0; i < HALVES; i++) gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, i * HALF, ATLAS_W, HALF, gl.RED, gl.UNSIGNED_BYTE, zero);
     gl.generateMipmap(gl.TEXTURE_2D);
-    const c = document.createElement('canvas');
-    c.width = ATLAS_W;
-    c.height = HALF * 2;
-    const ctx = c.getContext('2d', { willReadFrequently: true });
-    if (!ctx) throw new Error('2d context failed');
-    this.ctx = ctx;
+    const mk = (h: number) => {
+      const c = document.createElement('canvas');
+      c.width = ATLAS_W;
+      c.height = h;
+      const ctx = c.getContext('2d');
+      if (!ctx) throw new Error('2d context failed');
+      return ctx;
+    };
+    // 量字用一块小画布；画字用两块与横带同高的画布（显卡加速，画完整块拷进贴图）
+    this.ctx = mk(8);
+    this.rowPair = mk(HALF * 2);
+    this.rowHalf = mk(HALF);
   }
+
+  private rowPair: CanvasRenderingContext2D;
+  private rowHalf: CanvasRenderingContext2D;
 
   get atlasW(): number {
     return ATLAS_W;
@@ -131,7 +140,11 @@ export class GlyphAtlas {
    * 排一句并画进贴图。放不下（同时在看的句子太多）返回 null，调用方这一帧先不画它。
    * font 是主文字体；translation 为空则不排译文。
    */
+  /** 最近几次排字的耗时（毫秒）：排版 / 光栅化 / 上传，探针用 */
+  readonly timing: Array<[number, number, number]> = [];
+
   build(line: EngineLine, font: FontSpec, translation: string | null): GLine | null {
+    const T0 = performance.now();
     const main = this.layout(line.units ? line.units.map((u) => ({ t: u.t, sp: u.sp, u })) : plainUnits(line.text).map((p) => ({ ...p, u: null })), font, R_MAIN, 1);
     const tr = translation ? this.layout(plainUnits(translation).map((p) => ({ ...p, u: null })), TR_FONT, R_TR, TR_K) : null;
     const halves: number[] = [];
@@ -164,8 +177,13 @@ export class GlyphAtlas {
       release();
       return null;
     }
+    const T1 = performance.now();
+    this.rasterMs = 0;
+    this.uploadMs = 0;
     this.raster(main, font, true);
     if (tr) this.raster(tr, TR_FONT, false);
+    this.timing.push([T1 - T0, this.rasterMs, this.uploadMs]);
+    if (this.timing.length > 40) this.timing.shift();
     this.dirty = true;
     return { units: main.cells.map((c) => c.unit), width: main.width, tr: tr ? tr.cells.map((c) => c.unit) : null, trWidth: tr?.width ?? 0, halves };
   }
@@ -187,18 +205,32 @@ export class GlyphAtlas {
     return `${f.weight} ${rs}px ${f.family}`;
   }
 
+  /** 量过的宽度（同一首歌里副歌的字、词反复出现；中文走系统后备字体时每次量约 0.3ms） */
+  private widths = new Map<string, number>();
+
   private layout(items: Array<{ t: string; sp: boolean; u: EngineUnit | null }>, font: FontSpec, rs: number, k: number): Layout {
     const ctx = this.ctx;
-    ctx.font = this.fontCss(font, rs);
+    const css = this.fontCss(font, rs);
+    ctx.font = css;
     ctx.letterSpacing = `${font.ls * rs}px`;
-    const space = ctx.measureText(' ').width / rs;
+    const key = `${css}|${font.ls}|`;
+    const measure = (s: string): number => {
+      let w = this.widths.get(key + s);
+      if (w === undefined) {
+        w = ctx.measureText(s).width;
+        if (this.widths.size > 4000) this.widths.clear();
+        this.widths.set(key + s, w);
+      }
+      return w;
+    };
+    const space = measure(' ') / rs;
     const toEm = k / 1; // 本字号的 em → 主字号的 em
     const cells: Cell[] = [];
     let x = 0;
     for (const it of items) {
       const chars = Array.from(it.t);
       const edges = [0];
-      for (let i = 1; i <= chars.length; i++) edges.push((ctx.measureText(chars.slice(0, i).join('')).width / rs) * toEm);
+      for (let i = 1; i <= chars.length; i++) edges.push((measure(chars.slice(0, i).join('')) / rs) * toEm);
       const w = edges[edges.length - 1]!;
       const unit: GUnit = { u: it.u, left: x, w, edges, ax: 0, ay: 0, px: rs / k, bandEm: ((pairH(k) / rs) * k), baseEm: BASE_Y * k };
       cells.push({ unit, t: it.t, cw: Math.ceil((w / toEm + 2 * PAD) * rs), row: 0 });
@@ -210,30 +242,36 @@ export class GlyphAtlas {
     return { cells, width: Math.max(0, x), rs, rows: [] };
   }
 
+  private rasterMs = 0;
+  private uploadMs = 0;
+
+  /**
+   * 光栅化一行：在显卡上的 2D 画布里黑底白字画好，整块直接拷进贴图的红通道（白字在黑底上，红通道就是字形覆盖率）。
+   * 不再 getImageData 读回内存：那一步每句要 3–10ms，会在新句子出现时掉一帧（2026-11-27 实测）。
+   * 一行占满整条横带宽，横带只属于这一句，所以整条覆盖没问题；主文两条半带、译文一条，各用一块同高的画布。
+   */
   private raster(lay: Layout, font: FontSpec, pair: boolean): void {
     const gl = this.gl;
-    const ctx = this.ctx;
+    const ctx = pair ? this.rowPair : this.rowHalf;
     const h = pair ? HALF * 2 : HALF;
     gl.bindTexture(gl.TEXTURE_2D, this.tex);
     gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
+    gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
     for (let r = 0; r < lay.rows.length; r++) {
       const cells = lay.cells.filter((c) => c.row === r);
       if (!cells.length) continue;
-      ctx.clearRect(0, 0, ATLAS_W, HALF * 2);
+      const ta = performance.now();
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, ATLAS_W, h);
       ctx.font = this.fontCss(font, lay.rs);
       ctx.letterSpacing = `${font.ls * lay.rs}px`;
       ctx.fillStyle = '#fff';
       ctx.textBaseline = 'alphabetic';
-      let wMax = 0;
-      for (const c of cells) {
-        ctx.fillText(c.t, c.unit.ax, BASE_Y * lay.rs);
-        wMax = Math.max(wMax, Math.ceil(c.unit.ax + c.cw));
-      }
-      wMax = Math.min(ATLAS_W, wMax);
-      const img = ctx.getImageData(0, 0, wMax, h).data;
-      const a = new Uint8Array(wMax * h);
-      for (let i = 0, j = 3; i < a.length; i++, j += 4) a[i] = img[j]!;
-      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, cells[0]!.unit.ay, wMax, h, gl.RED, gl.UNSIGNED_BYTE, a);
+      for (const c of cells) ctx.fillText(c.t, c.unit.ax, BASE_Y * lay.rs);
+      const tb = performance.now();
+      this.rasterMs += tb - ta;
+      gl.texSubImage2D(gl.TEXTURE_2D, 0, 0, cells[0]!.unit.ay, gl.RED, gl.UNSIGNED_BYTE, ctx.canvas);
+      this.uploadMs += performance.now() - tb;
     }
   }
 

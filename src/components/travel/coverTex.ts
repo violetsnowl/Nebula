@@ -4,7 +4,11 @@ import { bigUrl } from './covers';
 /**
  * 穿行第二版的封面贴图：一张 256×256 × LAYERS 层的纹理数组，按最近使用分配层。
  * 先用星云已经下好的 72px 缩略图顶上（立刻有图），约 300px 的大图到了再替换。
- * 每帧只上传有限几张（pump 的预算），上传过的那一帧统一重算一次 mipmap（远处的小封面不闪）。
+ *
+ * 不卡帧的做法（2026-11-27 实测：一首歌开头几秒要上几十张封面，同步解码 + 整个数组重算 mipmap 会把帧耗时推到 5ms 以上）：
+ *   - 图片先用 createImageBitmap 在后台裁成正方形、缩到 256（异步，不占这一帧）；
+ *   - 每帧最多上传 2 张，上传 ImageBitmap 很快；
+ *   - mipmap 只给这一层单独生成（逐级 blitFramebuffer 缩一半），不碰其他层。
  * 圆角、柔化（降饱和与亮度）、内侧亮边都在着色器里做，这里只放原图。
  */
 const SIZE = 256;
@@ -17,14 +21,28 @@ interface Entry {
   used: number;
   /** 0 = 还没图，1 = 缩略图，2 = 大图 */
   q: 0 | 1 | 2;
+  /** 缩略图：0 没做，1 做位图中，2 好了 */
+  th: 0 | 1 | 2;
   /** 大图：0 没请求，1 下载中，2 好了，3 失败 */
   big: 0 | 1 | 2 | 3;
 }
 
 interface Upload {
   url: string;
-  src: CanvasImageSource & { width: number; height: number };
+  bmp: ImageBitmap;
   q: 1 | 2;
+}
+
+function squareBitmap(src: CanvasImageSource & { width: number; height: number }): Promise<ImageBitmap> {
+  const w = src.width;
+  const h = src.height;
+  const s = Math.min(w, h);
+  return createImageBitmap(src as ImageBitmapSource, (w - s) / 2, (h - s) / 2, s, s, {
+    resizeWidth: SIZE,
+    resizeHeight: SIZE,
+    resizeQuality: 'high',
+    premultiplyAlpha: 'premultiply',
+  });
 }
 
 export class CoverTextures {
@@ -35,9 +53,12 @@ export class CoverTextures {
   private uploads: Upload[] = [];
   private loading: string[] = [];
   private running = 0;
-  private scratch: HTMLCanvasElement;
-  private sctx: CanvasRenderingContext2D;
   private dead = false;
+  private readFb: WebGLFramebuffer | null;
+  private drawFb: WebGLFramebuffer | null;
+  /** 逐层 blit 生成 mipmap 失败过（个别驱动），退回整组 generateMipmap */
+  private blitOk = true;
+  private blitChecked = false;
 
   constructor(private gl: WebGL2RenderingContext) {
     const tex = gl.createTexture();
@@ -53,26 +74,31 @@ export class CoverTextures {
     const aniso = gl.getExtension('EXT_texture_filter_anisotropic');
     if (aniso) gl.texParameterf(gl.TEXTURE_2D_ARRAY, aniso.TEXTURE_MAX_ANISOTROPY_EXT, Math.min(8, gl.getParameter(aniso.MAX_TEXTURE_MAX_ANISOTROPY_EXT) as number));
     for (let i = LAYERS - 1; i >= 0; i--) this.free.push(i);
-    const c = document.createElement('canvas');
-    c.width = c.height = SIZE;
-    const ctx = c.getContext('2d');
-    if (!ctx) throw new Error('2d context failed');
-    ctx.imageSmoothingQuality = 'high';
-    this.scratch = c;
-    this.sctx = ctx;
+    this.readFb = gl.createFramebuffer();
+    this.drawFb = gl.createFramebuffer();
   }
 
   /** 这张封面在纹理数组里的层；还没有图返回 -1（调用方先画占位色）。frame 用来按最近使用淘汰。 */
   layerOf(url: string, frame: number): number {
     let e = this.map.get(url);
     if (!e) {
-      e = { layer: -1, used: frame, q: 0, big: 0 };
+      e = { layer: -1, used: frame, q: 0, th: 0, big: 0 };
       this.map.set(url, e);
     }
     e.used = frame;
-    if (e.q === 0) {
+    if (e.q === 0 && e.th === 0) {
       const th = thumbOf(url, 72) as (CanvasImageSource & { width: number; height: number }) | null;
-      if (th && !this.uploads.some((u) => u.url === url)) this.uploads.push({ url, src: th, q: 1 });
+      if (th) {
+        e.th = 1;
+        const ent = e;
+        squareBitmap(th)
+          .then((bmp) => {
+            ent.th = 2;
+            if (this.dead || ent.q >= 1) bmp.close();
+            else this.uploads.push({ url, bmp, q: 1 });
+          })
+          .catch(() => (ent.th = 2));
+      }
     }
     if (e.big === 0) {
       e.big = 1;
@@ -92,15 +118,20 @@ export class CoverTextures {
       const img = new Image();
       img.crossOrigin = 'anonymous';
       img.decoding = 'async';
-      const done = (ok: boolean) => {
+      const done = (bmp: ImageBitmap | null) => {
         this.running--;
-        if (this.dead) return;
-        e.big = ok ? 2 : 3;
-        if (ok) this.uploads.push({ url, src: img, q: 2 });
+        if (this.dead) {
+          bmp?.close();
+          return;
+        }
+        e.big = bmp ? 2 : 3;
+        if (bmp) this.uploads.push({ url, bmp, q: 2 });
         this.pumpLoads();
       };
-      img.onload = () => done(true);
-      img.onerror = () => done(false);
+      img.onload = () => {
+        squareBitmap(img).then(done, () => done(null));
+      };
+      img.onerror = () => done(null);
       img.src = bigUrl(url);
     }
   }
@@ -111,11 +142,10 @@ export class CoverTextures {
     // 没空层：淘汰最久没用、且这两帧没画到的
     let best = -1;
     let bestUsed = Infinity;
-    for (const [url, e] of this.map) {
+    for (const e of this.map.values()) {
       if (e.layer >= 0 && e.used < frame - 2 && e.used < bestUsed) {
         best = e.layer;
         bestUsed = e.used;
-        void url;
       }
     }
     if (best < 0) return -1;
@@ -125,46 +155,71 @@ export class CoverTextures {
       if (oe) {
         oe.layer = -1;
         oe.q = 0;
+        oe.th = 0;
+        // 被淘汰的大图下次用到时重新取（浏览器缓存里还有，很快）
+        if (oe.big === 2) oe.big = 0;
       }
     }
     return best;
   }
 
-  /** 每帧调用：上传至多 max 张（大图优先、离镜头近的后请求先上），有上传就重算 mipmap。 */
-  pump(frame: number, max = 3): number {
+  /** 这一层的 mipmap：逐级缩一半（只动这一层） */
+  private mipLayer(layer: number): void {
+    const gl = this.gl;
+    if (!this.blitOk || !this.readFb || !this.drawFb) return;
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.readFb);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.drawFb);
+    for (let l = 0; l + 1 < LEVELS; l++) {
+      const s = SIZE >> l;
+      const s2 = Math.max(1, s >> 1);
+      gl.framebufferTextureLayer(gl.READ_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, this.tex, l, layer);
+      gl.framebufferTextureLayer(gl.DRAW_FRAMEBUFFER, gl.COLOR_ATTACHMENT0, this.tex, l + 1, layer);
+      gl.blitFramebuffer(0, 0, s, s, 0, 0, s2, s2, gl.COLOR_BUFFER_BIT, gl.LINEAR);
+    }
+    gl.bindFramebuffer(gl.READ_FRAMEBUFFER, null);
+    gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, null);
+    // 只在第一次检查（getError 会让 CPU 等显卡）
+    if (!this.blitChecked) {
+      this.blitChecked = true;
+      if (gl.getError() !== gl.NO_ERROR) this.blitOk = false;
+    }
+  }
+
+  /** 每帧调用：上传至多 max 张（大图优先），并生成这些层的 mipmap。 */
+  pump(frame: number, max = 2): number {
     if (!this.uploads.length) return 0;
     const gl = this.gl;
     let n = 0;
-    // 大图优先
+    // 大图优先（pop 取末尾）
     this.uploads.sort((a, b) => a.q - b.q);
     while (n < max && this.uploads.length) {
       const up = this.uploads.pop()!;
       const e = this.map.get(up.url);
-      if (!e || e.q >= up.q) continue;
+      if (!e || e.q >= up.q) {
+        up.bmp.close();
+        continue;
+      }
       if (e.layer < 0) {
         e.layer = this.allocLayer(frame);
-        if (e.layer < 0) continue;
+        if (e.layer < 0) {
+          up.bmp.close();
+          continue;
+        }
         this.owner[e.layer] = up.url;
       }
-      const { width: w, height: h } = up.src;
-      if (!w || !h) continue;
-      // 不是正方形的图居中裁成正方形
-      const s = Math.min(w, h);
-      this.sctx.clearRect(0, 0, SIZE, SIZE);
-      this.sctx.drawImage(up.src, (w - s) / 2, (h - s) / 2, s, s, 0, 0, SIZE, SIZE);
       gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.tex);
-      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, true);
       try {
-        gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, e.layer, SIZE, SIZE, 1, gl.RGBA, gl.UNSIGNED_BYTE, this.scratch);
+        gl.texSubImage3D(gl.TEXTURE_2D_ARRAY, 0, 0, 0, e.layer, SIZE, SIZE, 1, gl.RGBA, gl.UNSIGNED_BYTE, up.bmp);
         e.q = up.q;
+        this.mipLayer(e.layer);
         n++;
       } catch {
         // 跨域等原因读不了：放弃这张（占位色顶着）
         e.big = 3;
       }
-      gl.pixelStorei(gl.UNPACK_PREMULTIPLY_ALPHA_WEBGL, false);
+      up.bmp.close();
     }
-    if (n) {
+    if (n && !this.blitOk) {
       gl.bindTexture(gl.TEXTURE_2D_ARRAY, this.tex);
       gl.generateMipmap(gl.TEXTURE_2D_ARRAY);
     }
@@ -179,7 +234,10 @@ export class CoverTextures {
 
   dispose(): void {
     this.dead = true;
+    for (const u of this.uploads) u.bmp.close();
     this.gl.deleteTexture(this.tex);
+    this.gl.deleteFramebuffer(this.readFb);
+    this.gl.deleteFramebuffer(this.drawFb);
     this.map.clear();
     this.uploads = [];
     this.loading = [];
