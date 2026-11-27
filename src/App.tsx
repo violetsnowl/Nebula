@@ -58,8 +58,8 @@ function hasSavedSession(): boolean {
   try {
     const raw = localStorage.getItem('music-nebula.session');
     if (!raw) return false;
-    const s = JSON.parse(raw) as { tracks?: unknown[] };
-    return Array.isArray(s.tracks) && s.tracks.length > 0;
+    const s = JSON.parse(raw) as { tracks?: unknown[]; mergedId?: unknown };
+    return (Array.isArray(s.tracks) && s.tracks.length > 0) || (typeof s.mergedId === 'string' && s.mergedId.length > 0);
   } catch {
     return false;
   }
@@ -306,31 +306,46 @@ export default function App() {
     audioPlayer.playTransient(track);
   }, []);
 
-  // 会话记忆：导入歌单 + 当前播放歌曲（退出后重开自动恢复）
+  // 会话记忆：导入歌单 + 当前播放歌曲（退出后重开自动恢复；超大整合歌单写入失败时降级仅存 mergedId）
   useEffect(() => {
+    if (!songs.length || songs[0]?.source === 'demo') return;
+    const song = playerState.song;
+    // 当前歌是否就是歌单里的那一首（曲目 id = 曲库下标；插播歌 / 换歌单后留下的那首不在歌单里）
+    const listed =
+      !!song &&
+      song.id >= 0 &&
+      songs[song.id]?.source === song.source &&
+      songs[song.id]?.sourceId === song.sourceId;
+    const sessionMeta = {
+      currentId: listed ? song!.id : undefined,
+      // 不在歌单里的当前歌：存下这首歌本身，以及播完后歌单从哪首接着放（重开后按插播还原）
+      currentTrack: song && !listed ? toBackendTrack(song) : undefined,
+      resumeAfter: song && !listed ? (audioPlayer.getResumeIndex() ?? -1) : undefined,
+      // 歌单身份随会话保存：刷新后列表里才能标出「当前」，点它不会重新导入、打断恢复出来的当前歌
+      playlist: playlist.currentPlaylist,
+    };
     try {
-      if (!songs.length || songs[0]?.source === 'demo') return;
-      const song = playerState.song;
-      // 当前歌是否就是歌单里的那一首（曲目 id = 曲库下标；插播歌 / 换歌单后留下的那首不在歌单里）
-      const listed =
-        !!song &&
-        song.id >= 0 &&
-        songs[song.id]?.source === song.source &&
-        songs[song.id]?.sourceId === song.sourceId;
       localStorage.setItem(
         'music-nebula.session',
         JSON.stringify({
           tracks: songs.map((s) => toBackendTrack(s)),
-          currentId: listed ? song!.id : undefined,
-          // 不在歌单里的当前歌：存下这首歌本身，以及播完后歌单从哪首接着放（重开后按插播还原）
-          currentTrack: song && !listed ? toBackendTrack(song) : undefined,
-          resumeAfter: song && !listed ? (audioPlayer.getResumeIndex() ?? -1) : undefined,
-          // 歌单身份随会话保存：刷新后列表里才能标出「当前」，点它不会重新导入、打断恢复出来的当前歌
-          playlist: playlist.currentPlaylist,
+          ...sessionMeta,
         }),
       );
     } catch {
-      /* ignore */
+      if (playlist.currentPlaylist?.platform === 'merged' && playlist.currentPlaylist.id) {
+        try {
+          localStorage.setItem(
+            'music-nebula.session',
+            JSON.stringify({
+              mergedId: playlist.currentPlaylist.id,
+              ...sessionMeta,
+            }),
+          );
+        } catch {
+          /* ignore */
+        }
+      }
     }
   }, [songs, playerState.song?.id, playerState.song?.sourceId, playlist.currentPlaylist]);
 

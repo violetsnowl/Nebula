@@ -371,7 +371,19 @@ export function viaOf(r: DesktopResolveResult): Track['via'] {
 export function streamTrack(t: Track): DesktopTrack {
   const b = toBackendTrack(t);
   if (!t.via) return { ...b, originalUrl: '' };
-  return { ...b, id: `${t.via.platform}:${t.via.sourceId}`, platform: t.via.platform, sourceId: t.via.sourceId, originalUrl: '', extra: undefined };
+  const viaAlt = b.altSources?.find(
+    (a) => a.platform === t.via!.platform && a.sourceId === t.via!.sourceId,
+  );
+  const viaExtra = viaAlt?.extra ?? (viaAlt?.albumId ? { albumId: viaAlt.albumId } : undefined);
+  return {
+    ...b,
+    id: `${t.via.platform}:${t.via.sourceId}`,
+    platform: t.via.platform,
+    sourceId: t.via.sourceId,
+    originalUrl: '',
+    extra: viaExtra,
+    altSources: undefined,
+  };
 }
 
 /** 前端 Track → 后端标准 Track（IPC 用）。 */

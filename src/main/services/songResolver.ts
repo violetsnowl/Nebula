@@ -55,9 +55,23 @@ export class SongResolver {
   private key(track: Track, quality?: string): string {
     return JSON.stringify([track.platform,track.sourceId,quality || '',track.title,track.artist,track.duration]);
   }
+  private hasLiveAltSource(track: Track): boolean {
+    return (
+      Array.isArray(track.altSources) &&
+      track.altSources.some(
+        (a) =>
+          !!a?.sourceId &&
+          a.platform !== track.platform &&
+          PLAYABLE.includes(a.platform) &&
+          !!this.adapters[a.platform]?.fetchSongUrl &&
+          this.adapters[a.platform]?.getAuthStatus?.() !== 'expired',
+      )
+    );
+  }
   resolve(track: Track, quality?: string, options: ResolveOptions = {}): Promise<ResolveResult> {
     if (options.signal?.aborted) return Promise.resolve(failure(track, 'CANCELLED'));
-    if(this.adapters[track.platform]?.getAuthStatus?.()==='expired'){
+    const primaryExpired = this.adapters[track.platform]?.getAuthStatus?.() === 'expired';
+    if (primaryExpired && !this.hasLiveAltSource(track)) {
       const result={...failure(track,'AUTH_EXPIRED'),traceId:`play-${++sequence}`,timings:[{stage:'auth',platform:track.platform,ms:0,outcome:'AUTH_EXPIRED'}]};
       this.report(result,Date.now());return Promise.resolve(result);
     }
@@ -74,7 +88,7 @@ export class SongResolver {
       const epoch = this.epoch;
       const traceId=`play-${++sequence}`,timings:Timings=[],start=Date.now();
       const created: Job = { control: new AbortController(), users: 0, done: false, promise: Promise.resolve(failure(track)) };
-      created.promise = withRequestScope(this.policy.totalMs, () => this.run(track, quality,false,traceId,timings), {
+      created.promise = withRequestScope(this.policy.totalMs, () => this.run(track, quality, primaryExpired, traceId, timings), {
         signal: created.control.signal, forceRefresh: options.forceRefresh, detached: true,
       }).catch(e => ({...failure(track,codeOf(e)),traceId,timings:[...timings,{stage:'budget',platform:track.platform,ms:Date.now()-start,outcome:codeOf(e)}]})).then(result => {
         this.report(result,start);
@@ -142,7 +156,7 @@ export class SongResolver {
       if (!fallbackOnly && PRIMARY.includes(track.platform)) {
         try { direct=await this.stage(timings,'primary',track.platform,this.policy.primaryMs,()=>this.source(track,track.platform,quality,false,timings)); } catch { throwIfCancelled(); }
       }
-      result = direct?.code==='AUTH_EXPIRED' || direct?.url && !direct.trial ? direct : await this.fallback(track,quality,timings) || direct || failure(track);
+      result = (direct?.code==='AUTH_EXPIRED' && !this.hasLiveAltSource(track)) || (direct?.url && !direct.trial) ? direct : await this.fallback(track,quality,timings) || direct || failure(track);
     } catch(e) { result=direct?.url ? direct : failure(track,codeOf(e)); }
     if(!result.url && result.code==='NO_SOURCE'){
       const cause=timings.find(t=>t.stage==='availability'&&t.platform===track.platform)?.outcome;
@@ -164,38 +178,80 @@ export class SongResolver {
     order.forEach((t, i) => orderRank.set(t.platform, i));
 
     let trial: ResolveResult | null = null;
+    const seenAlt = new Set<string>();
     const altList = Array.isArray(track.altSources)
       ? track.altSources
-          .filter(
-            (a) =>
-              !!a?.sourceId &&
-              a.platform !== track.platform &&
-              PLAYABLE.includes(a.platform) &&
-              !!this.adapters[a.platform]?.fetchSongUrl,
-          )
+          .filter((a) => {
+            if (
+              !a?.sourceId ||
+              a.platform === track.platform ||
+              !PLAYABLE.includes(a.platform) ||
+              !this.adapters[a.platform]?.fetchSongUrl ||
+              this.adapters[a.platform]?.getAuthStatus?.() === 'expired'
+            ) {
+              return false;
+            }
+            const key = `${a.platform}:${a.sourceId}`;
+            if (seenAlt.has(key)) return false;
+            seenAlt.add(key);
+            return true;
+          })
           .sort((a, b) => (orderRank.get(a.platform) ?? 99) - (orderRank.get(b.platform) ?? 99))
       : [];
 
-    for (const alt of altList) {
+    if (altList.length > 0) {
+      const altBudgetMs = Math.min(this.policy.totalMs, Math.max(this.policy.candidateMs, 2600));
+      const altCancel = new AbortController();
+      let altHit: ResolveResult | null = null;
+      try {
+        altHit = await new Promise<ResolveResult | null>((resolve) => {
+          let remaining = altList.length;
+          let settled = false;
+          const finish = (hit: ResolveResult | null) => {
+            if (settled) return;
+            settled = true;
+            resolve(hit);
+          };
+          for (const alt of altList) {
+            const altTrack: Track = {
+              ...track,
+              platform: alt.platform,
+              sourceId: alt.sourceId,
+              album: alt.album ?? track.album,
+              duration: alt.duration ?? track.duration,
+              extra: alt.extra ?? (alt.albumId ? { albumId: alt.albumId } : undefined),
+            };
+            const started = Date.now();
+            void withRequestScope(
+              altBudgetMs,
+              async () => {
+                const result = await this.source(altTrack, alt.platform, quality, true, timings);
+                timings.push({
+                  stage: 'alt-source',
+                  platform: alt.platform,
+                  ms: Date.now() - started,
+                  outcome: result?.url ? (result.trial ? 'trial' : 'hit') : (result?.code || 'miss'),
+                });
+                return result;
+              },
+              { signal: altCancel.signal },
+            )
+              .catch(() => null)
+              .then((result) => {
+                if (result?.url && !result.trial) {
+                  finish(result);
+                  return;
+                }
+                if (result?.url) trial ??= result;
+                if (--remaining === 0) finish(null);
+              });
+          }
+        });
+      } finally {
+        altCancel.abort(new RequestCancelled('CANCELLED'));
+      }
+      if (altHit) return altHit;
       throwIfCancelled();
-      const altTrack: Track = {
-        ...track,
-        platform: alt.platform,
-        sourceId: alt.sourceId,
-        album: alt.album ?? track.album,
-        duration: alt.duration ?? track.duration,
-        extra: alt.extra ?? (alt.albumId ? { albumId: alt.albumId } : undefined),
-      };
-      const started = Date.now();
-      const result = await this.source(altTrack, alt.platform, quality, true, timings);
-      timings.push({
-        stage: 'alt-source',
-        platform: alt.platform,
-        ms: Date.now() - started,
-        outcome: result?.url ? (result.trial ? 'trial' : 'hit') : 'miss',
-      });
-      if (result?.url && !result.trial) return result;
-      trial ??= result;
     }
 
     const platforms = (order.length ? order.map(t=>t.platform) : PLAYABLE)
@@ -221,7 +277,7 @@ export class SongResolver {
           throwIfCancelled();
           const result=await this.source(c,platform,quality,true,timings);
           if (result?.url && !result.trial) return result;
-          localTrial ??= result;
+          if (result?.url) localTrial ??= result;
         }
         return localTrial;
       },{signal:cancel.signal}).catch(()=>null));
@@ -230,7 +286,7 @@ export class SongResolver {
         let remaining=tasks.length, resolvedTrial: ResolveResult | null=trial;
         for (const task of tasks) void task.then(result=> {
           if (result?.url && !result.trial) { resolve(result); return; }
-          resolvedTrial ??= result;
+          if (result?.url) resolvedTrial ??= result;
           if (--remaining===0) resolve(resolvedTrial);
         });
       });

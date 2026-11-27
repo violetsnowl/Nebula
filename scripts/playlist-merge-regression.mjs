@@ -280,6 +280,245 @@ try {
   const afterDelete = await invoke('nebula:merged:list');
   assert.equal(afterDelete.data.length, 0);
 
+  // 7. 场景 A：过期 altSource（AUTH_EXPIRED）不得污染 trial，也不得阻断后续 kugou 备用源或掩盖 NO_SOURCE
+  const expAltResolver = new api.SongResolver(
+    {
+      ...fakeAdapters,
+      qq: {
+        ...fakeAdapters.qq,
+        fetchSongUrl: async () => ({ url: '', playable: false, code: 'AUTH_EXPIRED' }),
+      },
+      kugou: {
+        ...fakeAdapters.kugou,
+        fetchSongUrl: async () => ({ url: 'https://cdn.example.com/kg-ok.mp3', playable: true, quality: '320' }),
+      },
+    },
+    () => {},
+    async () => true,
+  );
+  let expSearchCalls = 0;
+  expAltResolver.setFallbackTargets(async () => [{ platform: 'qq' }, { platform: 'kugou' }]);
+  const altHitRes = await expAltResolver.resolve(
+    makeTrack({
+      platform: 'netease',
+      sourceId: 'ne-dead-1',
+      altSources: [
+        { platform: 'qq', sourceId: 'qq-exp' },
+        { platform: 'kugou', sourceId: 'kg-live' },
+      ],
+    }),
+  );
+  assert.equal(altHitRes.platform, 'kugou');
+  assert.equal(altHitRes.url, 'https://cdn.example.com/kg-ok.mp3');
+
+  const expNoSourceResolver = new api.SongResolver(
+    {
+      ...fakeAdapters,
+      qq: {
+        platform: 'qq',
+        fetchSongUrl: async () => ({ url: '', playable: false, code: 'AUTH_EXPIRED' }),
+        searchSongs: async () => { expSearchCalls++; return []; },
+      },
+      kugou: {
+        platform: 'kugou',
+        fetchSongUrl: async () => null,
+        searchSongs: async () => [],
+      },
+    },
+    () => {},
+    async () => true,
+  );
+  const altFailRes = await expNoSourceResolver.resolve(
+    makeTrack({
+      platform: 'netease',
+      sourceId: 'ne-dead-2',
+      altSources: [
+        { platform: 'qq', sourceId: 'qq-exp' },
+        { platform: 'kugou', sourceId: 'kg-dead' },
+      ],
+    }),
+  );
+  assert.equal(altFailRes.url, '');
+  assert.equal(altFailRes.code, 'NO_SOURCE', '过期备用源失败对象不得伪装成整首歌 AUTH_EXPIRED');
+  assert.ok(expSearchCalls >= 0);
+
+  // 8. 场景 A/B：主源 QQ 过期时——有活 altSource 应无缝救援；无活 altSource 仍返回 AUTH_EXPIRED；运行时 AUTH_EXPIRED 同理
+  const qqExpiredAdapters = {
+    ...fakeAdapters,
+    qq: {
+      ...fakeAdapters.qq,
+      getAuthStatus: () => 'expired',
+      fetchSongUrl: async () => { throw new Error('should not fetch expired primary when rescued'); },
+    },
+    netease: {
+      ...fakeAdapters.netease,
+      fetchSongUrl: async () => ({ url: 'https://cdn.example.com/ne-rescue.mp3', playable: true, quality: 'exhigh' }),
+    },
+  };
+  const expiredPrimaryResolver = new api.SongResolver(qqExpiredAdapters, () => {}, async () => true);
+  const rescuedRes = await expiredPrimaryResolver.resolve(
+    makeTrack({
+      platform: 'qq',
+      sourceId: 'qq-exp-1',
+      altSources: [{ platform: 'netease', sourceId: 'ne-live' }],
+    }),
+  );
+  assert.equal(rescuedRes.platform, 'netease');
+  assert.equal(rescuedRes.url, 'https://cdn.example.com/ne-rescue.mp3');
+  assert.equal(rescuedRes.fallback, true);
+
+  const authExpiredNoLive = await expiredPrimaryResolver.resolve(
+    makeTrack({
+      platform: 'qq',
+      sourceId: 'qq-exp-only',
+      altSources: [{ platform: 'spotify', sourceId: 'sp-meta' }],
+    }),
+  );
+  assert.equal(authExpiredNoLive.code, 'AUTH_EXPIRED', '无可用可播备用源时仍须返回 AUTH_EXPIRED');
+
+  const runtimeAuthResolver = new api.SongResolver(
+    {
+      ...fakeAdapters,
+      qq: {
+        ...fakeAdapters.qq,
+        fetchSongUrl: async () => ({ url: '', playable: false, code: 'AUTH_EXPIRED' }),
+      },
+      netease: {
+        ...fakeAdapters.netease,
+        fetchSongUrl: async () => ({ url: 'https://cdn.example.com/ne-runtime.mp3', playable: true, quality: 'lossless' }),
+      },
+    },
+    () => {},
+    async () => true,
+  );
+  const runtimeRescued = await runtimeAuthResolver.resolve(
+    makeTrack({
+      platform: 'qq',
+      sourceId: 'qq-rt-1',
+      altSources: [{ platform: 'netease', sourceId: 'ne-rt' }],
+    }),
+  );
+  assert.equal(runtimeRescued.platform, 'netease');
+  assert.equal(runtimeRescued.url, 'https://cdn.example.com/ne-runtime.mp3');
+
+  // 9. 场景 B/C：全不可出声平台合并后跳过主源和不可播 altSources（0 次音频取链调用），直接走全网 searchSongs
+  const unplayableCalls = { spotify: 0, ytmusic: 0, applemusic: 0 };
+  const scenarioC = api.mergeTrackLists([
+    {
+      source: { platform: 'spotify', id: 'sp', name: 'SP' },
+      tracks: [makeTrack({ platform: 'spotify', sourceId: 'sp-1', title: 'Midnight Star', artist: 'Nova', duration: 210 })],
+    },
+    {
+      source: { platform: 'ytmusic', id: 'yt', name: 'YT' },
+      tracks: [makeTrack({ platform: 'ytmusic', sourceId: 'yt-1', title: 'Midnight Star', artist: 'Nova', duration: 210 })],
+    },
+    {
+      source: { platform: 'applemusic', id: 'am', name: 'AM' },
+      tracks: [makeTrack({ platform: 'applemusic', sourceId: 'am-1', title: 'Midnight Star', artist: 'Nova', duration: 210 })],
+    },
+  ]);
+  const unplayableResolver = new api.SongResolver(
+    {
+      ...fakeAdapters,
+      spotify: { platform: 'spotify', fetchSongUrl: async () => { unplayableCalls.spotify++; return null; } },
+      ytmusic: { platform: 'ytmusic', fetchSongUrl: async () => { unplayableCalls.ytmusic++; return null; } },
+      applemusic: { platform: 'applemusic', fetchSongUrl: async () => { unplayableCalls.applemusic++; return null; } },
+      kuwo: {
+        platform: 'kuwo',
+        fetchSongUrl: async () => ({ url: 'https://cdn.example.com/kw-c.mp3', playable: true, quality: '128' }),
+        searchSongs: async () => [makeTrack({ platform: 'kuwo', sourceId: 'kw-1', title: 'Midnight Star', artist: 'Nova', duration: 210 })],
+      },
+    },
+    () => {},
+    async () => true,
+  );
+  const scRes = await unplayableResolver.resolve(scenarioC.tracks[0]);
+  assert.equal(scRes.platform, 'kuwo');
+  assert.equal(scRes.url, 'https://cdn.example.com/kw-c.mp3');
+  assert.deepEqual(unplayableCalls, { spotify: 0, ytmusic: 0, applemusic: 0 }, '不可出声平台不得发生多余 fetchSongUrl 调用');
+
+  // 10. 并发 altSources 竞速：慢源挂起 2000ms 时快源 <500ms 即刻返回
+  const raceResolver = new api.SongResolver(
+    {
+      ...fakeAdapters,
+      qq: {
+        ...fakeAdapters.qq,
+        fetchSongUrl: async () => {
+          await new Promise((r) => setTimeout(r, 2000));
+          return null;
+        },
+      },
+      kugou: {
+        ...fakeAdapters.kugou,
+        fetchSongUrl: async () => {
+          await new Promise((r) => setTimeout(r, 20));
+          return { url: 'https://cdn.example.com/kg-fast.mp3', playable: true, quality: 'flac' };
+        },
+      },
+    },
+    () => {},
+    async () => true,
+  );
+  const raceAt = Date.now();
+  const raceRes = await raceResolver.resolve(
+    makeTrack({
+      platform: 'netease',
+      sourceId: 'ne-slow',
+      altSources: [
+        { platform: 'qq', sourceId: 'qq-hung' },
+        { platform: 'kugou', sourceId: 'kg-fast' },
+      ],
+    }),
+  );
+  const raceMs = Date.now() - raceAt;
+  assert.equal(raceRes.platform, 'kugou');
+  assert.ok(raceMs < 500, `并发 altSources 竞速耗时过久: ${raceMs}ms`);
+
+  // 11. toAltSource extra 白名单裁剪（保留播放必须标量字段，剔除冗杂对象/大字段）
+  const slimMerged = api.mergeTrackLists(
+    [
+      {
+        source: { platform: 'kugou', id: 'kg-list', name: 'KG' },
+        tracks: [
+          makeTrack({
+            platform: 'kugou',
+            sourceId: 'kg-hash-1',
+            title: 'Slim Song',
+            artist: 'Tester',
+            duration: 210,
+            extra: {
+              mediaMid: 'm1',
+              sqHash: 's1',
+              freeSign: 'f1',
+              durationSec: 210,
+              hugeBlob: 'x'.repeat(2000),
+              nestedObj: { raw: true },
+            },
+          }),
+        ],
+      },
+      {
+        source: { platform: 'qq', id: 'qq-list', name: 'QQ' },
+        tracks: [
+          makeTrack({
+            platform: 'qq',
+            sourceId: 'qq-vip-1',
+            title: 'Slim Song',
+            artist: 'Tester',
+            duration: 210,
+          }),
+        ],
+      },
+    ],
+    { qq: { loggedIn: true, isSvip: true }, kugou: { loggedIn: true } },
+  );
+  assert.deepEqual(slimMerged.tracks[0].altSources[0].extra, {
+    mediaMid: 'm1',
+    sqHash: 's1',
+    freeSign: 'f1',
+    durationSec: 210,
+  });
+
   console.log(`✔ playlist-merge-regression passed (2000 tracks merged in ${elapsed}ms)`);
 } finally {
   fs.rmSync(tmpDir, { recursive: true, force: true });

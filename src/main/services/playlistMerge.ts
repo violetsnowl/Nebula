@@ -30,6 +30,32 @@ export interface MergeResult {
 
 const DIRECT_PLAYABLE = new Set<Platform>(['netease', 'qq', 'kugou', 'kuwo', 'bodian']);
 const MAX_ALT_SOURCES = 6;
+const ALT_EXTRA_KEYS = [
+  'mediaMid',
+  'albumId',
+  'resHash',
+  'sqHash',
+  'hqHash',
+  'durationSec',
+  'freeSign',
+  'isrc',
+  'catalogId',
+  'storefront',
+] as const;
+
+function pickAltExtra(raw?: Record<string, unknown>): Record<string, unknown> | undefined {
+  if (!raw) return undefined;
+  const picked: Record<string, unknown> = {};
+  let hasAny = false;
+  for (const key of ALT_EXTRA_KEYS) {
+    const val = raw[key];
+    if (typeof val === 'string' || typeof val === 'number' || typeof val === 'boolean') {
+      picked[key] = val;
+      hasAny = true;
+    }
+  }
+  return hasAny ? picked : undefined;
+}
 
 /**
  * 计算音源作为主条目时的优先级分值：
@@ -57,13 +83,14 @@ export function sourcePriorityScore(platform: Platform, accounts: AccountRightsM
 }
 
 function toAltSource(track: Track): AltSource {
+  const extra = pickAltExtra(track.extra);
   return {
     platform: track.platform,
     sourceId: track.sourceId,
     ...(track.album ? { album: track.album } : {}),
     ...(track.extra?.albumId != null ? { albumId: String(track.extra.albumId) } : {}),
     ...(track.duration > 0 ? { duration: track.duration } : {}),
-    ...(track.extra ? { extra: track.extra } : {}),
+    ...(extra ? { extra } : {}),
   };
 }
 
@@ -86,7 +113,17 @@ function collectAltSources(track: Track): AltSource[] {
   const result: AltSource[] = [];
   if (Array.isArray(track.altSources)) {
     for (const alt of track.altSources) {
-      if (alt?.platform && alt?.sourceId) result.push(alt);
+      if (!alt?.platform || !alt?.sourceId) continue;
+      const clean: AltSource = {
+        platform: alt.platform,
+        sourceId: alt.sourceId,
+        ...(alt.album ? { album: alt.album } : {}),
+        ...(alt.albumId ? { albumId: alt.albumId } : {}),
+        ...(typeof alt.duration === 'number' && alt.duration > 0 ? { duration: alt.duration } : {}),
+      };
+      const extra = pickAltExtra(alt.extra);
+      if (extra) clean.extra = extra;
+      result.push(clean);
     }
   }
   return result;

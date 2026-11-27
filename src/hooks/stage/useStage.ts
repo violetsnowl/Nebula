@@ -708,19 +708,19 @@ export function useStage({
     [controllerRef],
   );
 
-  // 会话记忆恢复：上次导入歌单 + 上次播放歌曲（只跑一次）
+  // 会话记忆恢复：上次导入歌单 + 上次播放歌曲（只跑一次；超大整合歌单回落按 mergedId 从主进程读取）
   useEffect(() => {
-    try {
-      const raw = localStorage.getItem('music-nebula.session');
-      if (!raw) return;
-      const s = JSON.parse(raw) as {
-        tracks?: DesktopTrack[];
-        currentId?: number;
-        currentTrack?: DesktopTrack;
-        resumeAfter?: number;
-      };
-      if (!s.tracks?.length) return;
-      const restored = s.tracks.map((t, i) => toFrontendTrack(t, i));
+    let cancelled = false;
+    interface SavedSession {
+      tracks?: DesktopTrack[];
+      mergedId?: string;
+      currentId?: number;
+      currentTrack?: DesktopTrack;
+      resumeAfter?: number;
+    }
+    const applyRestored = (rawTracks: DesktopTrack[], s: SavedSession) => {
+      if (cancelled || !rawTracks.length) return;
+      const restored = rawTracks.map((t, i) => toFrontendTrack(t, i));
       libraryService.restoreSongs(restored);
       setRevealedCount(restored.length);
       revealedRef.current = restored.length;
@@ -737,9 +737,32 @@ export function useStage({
         const cur = restored.find((t) => t.id === s.currentId) ?? restored[0]!;
         audioPlayer.restore(cur, restored);
       }
+    };
+    try {
+      const raw = localStorage.getItem('music-nebula.session');
+      if (!raw) return;
+      const s = JSON.parse(raw) as SavedSession;
+      if (s.tracks?.length) {
+        applyRestored(s.tracks, s);
+      } else if (s.mergedId && hasDesktopAPI() && window.nebulaAPI?.mergedGet) {
+        void window.nebulaAPI
+          .mergedGet(s.mergedId)
+          .then((res) => {
+            if (cancelled || libraryService.getState().songs.length > 0) return;
+            if (res.ok && res.data?.playlist?.tracks?.length) {
+              applyRestored(res.data.playlist.tracks, s);
+            }
+          })
+          .catch(() => {
+            /* ignore */
+          });
+      }
     } catch {
       /* ignore */
     }
+    return () => {
+      cancelled = true;
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

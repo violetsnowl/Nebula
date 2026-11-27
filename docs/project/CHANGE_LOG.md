@@ -6,7 +6,23 @@
 
 ---
 
-## #待定 — 2026-11-27 — 整合页新增未滚到底部时的底边常驻操作条
+## #305 — 2026-11-27 — 整合歌单播放链路审计修复（备用源并发与过期隔离、streamTrack 元数据保留、大歌单会话溢出降级）
+
+**背景**：合回 `main` 前对「全可出声 / 混合 / 全不可出声」三类整合歌单播放与持久化链路做全面排查，修掉 5 处隐蔽边界隐患。
+
+**改动点**
+- `src/main/services/songResolver.ts`：
+  - 新增 `hasLiveAltSource`：当已合并曲目的 `primary` 登录过期（`AUTH_EXPIRED`）但仍持有有效可播 `altSources` 时，跳过过期主源改走备用源直取救援；单平台/无活备用源时保持返回 `AUTH_EXPIRED`；
+  - `fallback()` 中 `altList` 过滤已过期平台并按 `${platform}:${sourceId}` 去重后改为**并发竞速 + 有界预算**，避免多个慢备用源串行耗光 `totalMs = 6000`；
+  - 加固 `trial` / `localTrial` / `resolvedTrial` 赋值仅接纳 `result?.url` 非空结果，防止 `AUTH_EXPIRED` 失败对象伪装成可用试听或阻断后续搜索。
+- `src/lib/playlist/ipcClient.ts`：`streamTrack` 在切换/读取兜底流音质时，从 `altSources` 提取命中来源的 `extra`（`sqHash`/`hqHash`/`mediaMid`/`freeSign`/`albumId` 等）并剥离 `altSources`，防止音质切换丢哈希或跳源。
+- `src/main/services/playlistMerge.ts`：`toAltSource` 与 `collectAltSources` 对 `extra` 按适配器播放所需 10 个标量白名单键裁剪瘦身。
+- `src/App.tsx` & `src/hooks/stage/useStage.ts`：`localStorage` 满 5MB 配额写失败且当前为整合歌单时，降级存 `{ mergedId, ...meta }` 引用；重开时由 `useStage` 经 `nebulaAPI.mergedGet(mergedId)` 恢复曲库。
+- `scripts/playlist-merge-regression.mjs`：新增三类场景播放、并发竞速、`AUTH_EXPIRED` 防污染及 `extra` 白名单裁剪 5 组回归用例。
+
+**验证**：工作树内跑 `$env:pnpm_config_verify_deps_before_run='false'; pnpm build; pnpm qa:backend; pnpm qa` 验证通过；变基到最新 `main`（`#299`）后完成 `#300–#305` 编号定稿与文档同步并复验全绿合入 `main`。
+
+## #304 — 2026-11-27 — 整合页新增未滚到底部时的底边常驻操作条
 
 **背景**：多平台多歌单场景下，整合页底部「生成整合歌单」按钮需滚动到底端才可见，选完歌单后点击不够顺手。
 
@@ -17,7 +33,7 @@
 
 **验证**：工作树内跑 `$env:pnpm_config_verify_deps_before_run='false'; pnpm build; pnpm qa` 验证通过。
 
-## #待定 — 2026-11-27 — 整合歌单 UI 视觉与交互打磨
+## #303 — 2026-11-27 — 整合歌单 UI 视觉与交互打磨
 
 **背景**：根据桌面实测视觉反馈调整整合歌单入口表现级别、一键勾选开关状态反馈、命名框文案、详情页来源歌单排版及 2×2 拼贴封面网格权重问题。
 
@@ -30,7 +46,7 @@
 
 **验证**：工作树内跑 `$env:pnpm_config_verify_deps_before_run='false'; pnpm build; pnpm qa` 验证通过。
 
-## #待定 — 2026-11-27 — 修复 Apple Music 歌单列表偶发全员不显示曲目数并支持导入后即时同步
+## #302 — 2026-11-27 — 修复 Apple Music 歌单列表偶发全员不显示曲目数并支持导入后即时同步
 
 **问题根因**
 - `electron/appleMusicEngine.cjs` 的 `callMany`（`buildBatchCode`）内部没有单项超时，且外层整批共享 15 秒超时；同时 `applemusicAdapter.ts` 的 `fillTrackCounts` 将整批预算卡在 8 秒（与启动时 `storefront`/`socialProfile`/`subscriptionActive`、歌词检查共用页面串行队列）。任一张歌单卡住或整批排队超 8 秒，都会导致所有歌单回落为 `0` 且页面上全部隐藏不显示数字；另外 `readInPage` 只认 `typeof meta.total === 'number'`，且进入歌单实际导入后未同步更新左侧歌单列表的 `trackCount`。
@@ -43,7 +59,7 @@
 
 **验证**：工作树内跑 `$env:pnpm_config_verify_deps_before_run='false'; pnpm build; pnpm qa:backend; pnpm qa` 验证通过（结果见提交检查）。
 
-## #待定 — 2026-11-27 — 整合歌单前端与文档：多选构建、2×2 拼贴封面、快照刷新删除与小曲库引导
+## #301 — 2026-11-27 — 整合歌单前端与文档：多选构建、2×2 拼贴封面、快照刷新删除与小曲库引导
 
 **背景**：完成「整合歌单」前端链路（Phase 3），将跨平台/同平台去重整合融入左侧「歌单」面板，并与曲库、`altSources` 会话持久化及矩阵文档对齐。
 
@@ -61,7 +77,7 @@
 
 **遗留与风险**：待合回 `main`（需先确认主工作区 `E:\CUFE\vibecoding\nebula` 无 Claude 未提交改动后 rebase、取正式编号再并入）。
 
-## #待定 — 2026-11-27 — 整合歌单后端：多歌单 $O(N)$ 去重整合、本机持久化与备用源直取兜底
+## #300 — 2026-11-27 — 整合歌单后端：多歌单 $O(N)$ 去重整合、本机持久化与备用源直取兜底
 
 **背景**：实现全局新功能「整合歌单」（Phase 2 后端）：支持同平台或跨平台勾选多个歌单，按同录音规则自动去重整合为一个独立本机快照歌单，既丰富星云与穿行曲库，又提供全局多平台红心/歌单聚合能力。
 
