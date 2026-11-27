@@ -276,29 +276,58 @@ function frame(yaw: number, roll: number): { U: V3; V: V3; D: V3 } {
   return { U, V, D: norm3(cross(U, V)) };
 }
 
-/** 段上 s（世界长度，以段中心为 0）处：位置、切向、「向下」方向 */
-export function segAt(sg: Seg, s: number): { p: V3; t: V3; d: V3 } {
+/** 段上 s（世界长度，以段中心为 0）处：零分配写入位置 p、切向 t、「向下」方向 d */
+export function segAtOut(sg: Seg, s: number, p: V3, t: V3, d: V3): void {
   const { C, P, T, V, half } = sg;
-  let p: V3;
-  let t: V3;
+  let tx: number;
+  let ty: number;
+  let tz: number;
   if (s <= -half || s >= half) {
-    const k = s <= -half ? 0 : N;
-    const o = k * 3;
-    t = [T[o]!, T[o + 1]!, T[o + 2]!];
+    const o = (s <= -half ? 0 : N) * 3;
+    tx = T[o]!;
+    ty = T[o + 1]!;
+    tz = T[o + 2]!;
     const ex = s <= -half ? s + half : s - half;
-    p = [C[0] + P[o]! + t[0] * ex, C[1] + P[o + 1]! + t[1] * ex, C[2] + P[o + 2]! + t[2] * ex];
+    p[0] = C[0] + P[o]! + tx * ex;
+    p[1] = C[1] + P[o + 1]! + ty * ex;
+    p[2] = C[2] + P[o + 2]! + tz * ex;
   } else {
     const x = ((s + half) / (2 * half)) * N;
     const k = Math.min(N - 1, Math.floor(x));
     const f = x - k;
     const a = k * 3;
     const b = a + 3;
-    p = [C[0] + lerp(P[a]!, P[b]!, f), C[1] + lerp(P[a + 1]!, P[b + 1]!, f), C[2] + lerp(P[a + 2]!, P[b + 2]!, f)];
-    t = norm3([lerp(T[a]!, T[b]!, f), lerp(T[a + 1]!, T[b + 1]!, f), lerp(T[a + 2]!, T[b + 2]!, f)]);
+    p[0] = C[0] + P[a]! + (P[b]! - P[a]!) * f;
+    p[1] = C[1] + P[a + 1]! + (P[b + 1]! - P[a + 1]!) * f;
+    p[2] = C[2] + P[a + 2]! + (P[b + 2]! - P[a + 2]!) * f;
+    const ux = T[a]! + (T[b]! - T[a]!) * f;
+    const uy = T[a + 1]! + (T[b + 1]! - T[a + 1]!) * f;
+    const uz = T[a + 2]! + (T[b + 2]! - T[a + 2]!) * f;
+    const tl = Math.hypot(ux, uy, uz) || 1;
+    tx = ux / tl;
+    ty = uy / tl;
+    tz = uz / tl;
   }
+  t[0] = tx;
+  t[1] = ty;
+  t[2] = tz;
   // 「向下」= V 去掉切向分量（画面内转弯时跟着转，字始终垂直于走向）
-  const dv = V[0] * t[0] + V[1] * t[1] + V[2] * t[2];
-  const d = norm3([V[0] - t[0] * dv, V[1] - t[1] * dv, V[2] - t[2] * dv]);
+  const dv = V[0] * tx + V[1] * ty + V[2] * tz;
+  const dx = V[0] - tx * dv;
+  const dy = V[1] - ty * dv;
+  const dz = V[2] - tz * dv;
+  const dl = Math.hypot(dx, dy, dz) || 1;
+  d[0] = dx / dl;
+  d[1] = dy / dl;
+  d[2] = dz / dl;
+}
+
+/** 段上 s（世界长度，以段中心为 0）处：位置、切向、「向下」方向 */
+export function segAt(sg: Seg, s: number): { p: V3; t: V3; d: V3 } {
+  const p: V3 = [0, 0, 0];
+  const t: V3 = [0, 0, 0];
+  const d: V3 = [0, 0, 0];
+  segAtOut(sg, s, p, t, d);
   return { p, t, d };
 }
 
@@ -368,7 +397,7 @@ function turnOf(k: number): { roll: number; yaw: number } {
  * 一句的曲线段（世界坐标）。anchor 是锚点；fs 世界字号；split 第二段起点（0 = 不拆）；
  * turnK 0 远处 → 1 开唱。整组按外接框的中心对齐到锚点。
  */
-function buildSegs(g: GLine, split: number, i: number, anchor: V3, fs: number, sh: LineShape, turnK: number): Seg[] {
+export function buildSegs(g: GLine, split: number, i: number, anchor: V3, fs: number, sh: LineShape, turnK: number): Seg[] {
   const us = g.units;
   const ranges = split > 0 ? [[0, split], [split, us.length]] : [[0, us.length]];
   const segs: Seg[] = [];
@@ -431,10 +460,21 @@ function buildSegs(g: GLine, split: number, i: number, anchor: V3, fs: number, s
 }
 
 /** 句首、字母中线（基线往上约 0.36em）：转正的轴，也是光点等开唱时停的地方 */
-function headOf(segs: Seg[], fs: number): V3 {
+export function headOf(segs: Seg[], fs: number): V3 {
   const s0 = segs[0]!;
   const { p, d } = segAt(s0, -s0.half);
   return [p[0] - d[0] * 0.36 * fs, p[1] - d[1] * 0.36 * fs, p[2] - d[2] * 0.36 * fs];
+}
+
+/** 已知开唱姿态的句首 H，只积分一次当前 turnK 的曲线段并把句首对齐到 H（避免每帧双算开唱姿态）。 */
+export function placeSegsWithHead(g: GLine, split: number, i: number, anchor: V3, fs: number, sh: LineShape, turnK: number, singHead: V3): Seg[] {
+  const segs = buildSegs(g, split, i, anchor, fs, sh, turnK);
+  const h = headOf(segs, fs);
+  const dx = singHead[0] - h[0];
+  const dy = singHead[1] - h[1];
+  const dz = singHead[2] - h[2];
+  for (const sg of segs) sg.C = [sg.C[0] + dx, sg.C[1] + dy, sg.C[2] + dz];
+  return segs;
 }
 
 /**
@@ -446,14 +486,7 @@ function headOf(segs: Seg[], fs: number): V3 {
 export function placeSegs(g: GLine, split: number, i: number, anchor: V3, fs: number, sh: LineShape, turnK: number): Seg[] {
   const sing = buildSegs(g, split, i, anchor, fs, sh, 1);
   if (turnK >= 1) return sing;
-  const segs = buildSegs(g, split, i, anchor, fs, sh, turnK);
-  const H = headOf(sing, fs);
-  const h = headOf(segs, fs);
-  const dx = H[0] - h[0];
-  const dy = H[1] - h[1];
-  const dz = H[2] - h[2];
-  for (const sg of segs) sg.C = [sg.C[0] + dx, sg.C[1] + dy, sg.C[2] + dz];
-  return segs;
+  return placeSegsWithHead(g, split, i, anchor, fs, sh, turnK, headOf(sing, fs));
 }
 
 /** 整句排版坐标 e（主字号 em，从句首起）在哪一段、段上 s 是多少（世界长度） */

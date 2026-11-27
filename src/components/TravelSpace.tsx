@@ -17,7 +17,7 @@ import { CoverTextures } from './travel/coverTex';
 import { ATLAS_H, GlyphAtlas, PAD, R_MAIN, TR_K, type FontSpec, type GLine, type GUnit } from './travel/glyphAtlas';
 import { INST, KIND_CHIP, KIND_COVER, KIND_GLYPH, KIND_LIGHT, KIND_STROKE, Renderer, type Palette } from './travel/renderer';
 import { DREST, F, FAR, buildRoute, buildSlots, camAt, hashStr, hueOffsetAt, lowerBound, pathX, pathY, slotRadius, songHue } from './travel/route';
-import { BEATS, locate, placeSegs, planShapes, segAt, splitAt, type Seg, type V3 } from './travel/pathText';
+import { BEATS, buildSegs, headOf, locate, placeSegs, placeSegsWithHead, planShapes, segAt, segAtOut, splitAt, type Seg, type V3 } from './travel/pathText';
 import { tunnelBasis } from './travel/tunnel';
 import { planChoreo } from './travel/choreo';
 import { buildStar, warpRing, warpStar, type Ring, type StarPiece, type Warp } from './travel/moves';
@@ -108,6 +108,11 @@ interface LS {
   /** 星座：各截的落点与成形进度 */
   star: StarPiece[] | null;
   starK: number;
+  /** 曲线缓存：开唱姿态 / 句首 / 远处姿态 / 唱完平移复用段（改窗口时清，避免每帧重复积分） */
+  singSegs: Seg[] | null;
+  singHead: V3 | null;
+  farSegs: Seg[] | null;
+  passSegs: Seg[] | null;
 }
 
 interface Bound {
@@ -255,6 +260,10 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
       for (const d of doms.values()) {
         Object.assign(d, sizeLine(els[d.i]!, d.g));
         d.fix = fixOf(d);
+        d.singSegs = null;
+        d.singHead = null;
+        d.farSegs = null;
+        d.passSegs = null;
       }
     };
     const ro = new ResizeObserver(fit);
@@ -341,9 +350,52 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
       const g = atlas.build(e, font, showTr && e.tr ? e.tr : null);
       buildMax = Math.max(buildMax, performance.now() - tb);
       if (!g) return null;
-      const d: LS = { i, g, ...sizeLine(e, g), fix: [0, 0], w: wordRt(e, g), state: 'future', active: false, done: false, ring: null, rf: 0, warp: null, trWarp: null, star: null, starK: 0 };
+      const d: LS = {
+        i, g, ...sizeLine(e, g), fix: [0, 0], w: wordRt(e, g),
+        state: 'future', active: false, done: false,
+        ring: null, rf: 0, warp: null, trWarp: null, star: null, starK: 0,
+        singSegs: null, singHead: null, farSegs: null, passSegs: null,
+      };
       d.fix = fixOf(d);
       return d;
+    };
+    const ensureSegCache = (d: LS): Seg[] => {
+      if (!d.singSegs) {
+        const sing = buildSegs(d.g, d.split, d.i, anchorOf(d, 0), d.fs, plan[d.i]!, 1);
+        d.singSegs = sing;
+        d.singHead = headOf(sing, d.fs);
+        d.farSegs = null;
+        d.passSegs = sing.map((sg) => ({ ...sg, C: [sg.C[0], sg.C[1], sg.C[2]] as V3 }));
+      }
+      return d.singSegs;
+    };
+    const segsOf = (d: LS, turnK: number, passK: number): Seg[] => {
+      const sing = ensureSegCache(d);
+      if (turnK >= 1) {
+        if (passK <= 0) return sing;
+        const [bx] = beatAt(d.i);
+        const dx = (bx >= 0 ? 1 : -1) * passK * PASS_X;
+        const dy = passK * PASS_Y;
+        const ps = d.passSegs!;
+        for (let r = 0; r < sing.length; r++) {
+          const sC = sing[r]!.C;
+          const pC = ps[r]!.C;
+          pC[0] = sC[0] + dx;
+          pC[1] = sC[1] + dy;
+          pC[2] = sC[2];
+        }
+        return ps;
+      }
+      if (turnK <= 0 && passK <= 0) {
+        if (!d.farSegs) d.farSegs = placeSegsWithHead(d.g, d.split, d.i, anchorOf(d, 0), d.fs, plan[d.i]!, 0, d.singHead!);
+        return d.farSegs;
+      }
+      const baseH = d.singHead!;
+      if (passK <= 0) return placeSegsWithHead(d.g, d.split, d.i, anchorOf(d, 0), d.fs, plan[d.i]!, turnK, baseH);
+      const [bx] = beatAt(d.i);
+      const dx = (bx >= 0 ? 1 : -1) * passK * PASS_X;
+      const dy = passK * PASS_Y;
+      return placeSegsWithHead(d.g, d.split, d.i, anchorOf(d, passK), d.fs, plan[d.i]!, turnK, [baseH[0] + dx, baseH[1] + dy, baseH[2]]);
     };
     const dropLine = (d: LS) => {
       atlas.release(d.g);
@@ -445,33 +497,82 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
     let pX = 0;
     let pY = 0;
     let pZ = 0;
-    const proj = (x: number, y: number, z: number): [number, number] | null => {
-      const dz = z - pZ;
-      if (dz < NEAR) return null;
-      const s = F / dz;
-      return [pcx + (x - pX) * s, pcy + (y - pY) * s];
-    };
 
     /**
      * 一句的字沿曲线逐个出平面（路径文字，§9.3）。mode：0 候场（--lc-rest）、1 扫光、2 唱完（--tv-ink）；
      * trK 是译文亮起程度。顺带量出画面上的外接框（给封面让开、压暗和探针用）。
      */
+    const _gp: V3 = [0, 0, 0];
+    const _gt: V3 = [0, 0, 0];
+    const _gd: V3 = [0, 0, 0];
+    /** 后句让开粗判：先按曲线几个采样点算粗略画面外接框，和 curBox 不相交就整句跳过逐字投影 */
+    const overlapsBox = (d: LS, segs: Seg[], box: Bound): boolean => {
+      let x0 = Infinity;
+      let x1 = -Infinity;
+      let y0 = Infinity;
+      let y1 = -Infinity;
+      let minDz = Infinity;
+      const addPt = (wx: number, wy: number, wz: number) => {
+        const dz = wz - pZ;
+        if (dz < NEAR) return;
+        if (dz < minDz) minDz = dz;
+        const s = F / dz;
+        const sx = pcx + (wx - pX) * s;
+        const sy = pcy + (wy - pY) * s;
+        if (sx < x0) x0 = sx;
+        if (sx > x1) x1 = sx;
+        if (sy < y0) y0 = sy;
+        if (sy > y1) y1 = sy;
+      };
+      if (d.star) {
+        for (const pc of d.star) {
+          const hw = ((pc.e1 - pc.e0) / 2) * d.fs;
+          addPt(pc.C[0] - pc.U[0] * hw, pc.C[1] - pc.U[1] * hw, pc.C[2]);
+          addPt(pc.C[0] + pc.U[0] * hw, pc.C[1] + pc.U[1] * hw, pc.C[2]);
+        }
+      } else if (d.ring) {
+        const r = d.ring;
+        addPt(r.C[0] - r.R, r.C[1] - r.R, r.C[2] - r.R);
+        addPt(r.C[0] + r.R, r.C[1] + r.R, r.C[2] - r.R);
+      } else {
+        for (const sg of segs) {
+          const P = sg.P;
+          const C = sg.C;
+          for (let k = 0; k <= 32; k += 8) {
+            const o = k * 3;
+            addPt(C[0] + P[o]!, C[1] + P[o + 1]!, C[2] + P[o + 2]!);
+          }
+        }
+      }
+      if (x1 < x0) return false;
+      const pad = (minDz < Infinity ? (d.fs * F) / minDz : 80) * 1.6 + 44;
+      return x1 + pad >= box.x0 && x0 - pad <= box.x1 && y1 + pad >= box.y0 && y0 - pad <= box.y1;
+    };
     const emitLine = (d: LS, segs: Seg[], op: number, mode: number, blur: number, trK: number, bd: Bound, yield_: Bound | null) => {
       const { g, fs } = d;
       const aw = atlas.atlasW;
+      const useYield = yield_ && overlapsBox(d, segs, yield_) ? yield_ : null;
       const corner = (x: number, y: number, z: number) => {
-        const q = proj(x, y, z);
-        if (!q) return;
-        if (q[0] < bd.x0) bd.x0 = q[0];
-        if (q[0] > bd.x1) bd.x1 = q[0];
-        if (q[1] < bd.y0) bd.y0 = q[1];
-        if (q[1] > bd.y1) bd.y1 = q[1];
+        const dz = z - pZ;
+        if (dz < NEAR) return;
+        const s = F / dz;
+        const sx = pcx + (x - pX) * s;
+        const sy = pcy + (y - pY) * s;
+        if (sx < bd.x0) bd.x0 = sx;
+        if (sx > bd.x1) bd.x1 = sx;
+        if (sy < bd.y0) bd.y0 = sy;
+        if (sy > bd.y1) bd.y1 = sy;
       };
-      const emitUnits = (units: GUnit[], segFor: (ui: number) => Seg, k: number, isTr: boolean) => {
+      const seg0 = segs[0]!;
+      const seg1 = segs.length > 1 ? segs[1]! : null;
+      const splitAtUi = seg1 ? seg1.from : 1e9;
+      const emitUnits = (units: GUnit[], trSeg: Seg | null, k: number, isTr: boolean) => {
         const padEm = PAD * k;
+        const invW = 1 / Math.max(0.5, isTr ? g.trWidth : g.width);
+        const wf = isTr ? d.trWarp : d.warp;
         for (let ui = 0; ui < units.length; ui++) {
           const gu = units[ui]!;
-          const sg = segFor(ui);
+          const sg = trSeg ?? (ui >= splitAtUi ? seg1! : seg0);
           const rec = !isTr ? d.w?.recs[ui] : undefined;
           const chs = !isTr ? d.w?.chs[ui] : null;
           const nL = gu.edges.length - 1;
@@ -521,13 +622,15 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
             yt -= lift;
             yB -= lift;
             // 字母中点在曲线上的位置与方向：字沿切向摆、沿「向下」方向竖着
-            const sMid = ((xl + xr) / 2 - sg.e0 - sg.w / 2) * fs;
-            let { p, t: tg, d: dn } = segAt(sg, sMid);
+            const em = (xl + xr) / 2;
+            const sMid = (em - sg.e0 - sg.w / 2) * fs;
+            segAtOut(sg, sMid, _gp, _gt, _gd);
+            let p: V3 = _gp;
+            let tg: V3 = _gt;
+            let dn: V3 = _gd;
             let vis = 1;
-            const wf = isTr ? d.trWarp : d.warp;
             if (wf) {
-              const em = (xl + xr) / 2;
-              const w = wf(em, em / Math.max(0.5, isTr ? g.trWidth : g.width), p, tg, dn);
+              const w = wf(em, em * invW, p, tg, dn);
               p = w.p;
               tg = w.t;
               dn = w.d;
@@ -541,12 +644,15 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
             const wy = p[1] + dn[1] * cy0;
             const wz = p[2] + dn[2] * cy0;
             // 后面的句子（远处弯得大的句形）落到当前句的画面范围里时压到很淡：正在唱的字永远不被挡（§9.2）
-            if (yield_) {
-              const q = proj(wx, wy, wz);
-              if (q) {
-                const ex = Math.max(yield_.x0 - q[0], 0, q[0] - yield_.x1);
-                const ey = Math.max(yield_.y0 - q[1], 0, q[1] - yield_.y1);
-                vis *= 0.1 + 0.9 * smooth(Math.hypot(ex, ey) / 36);
+            if (useYield) {
+              const dzY = wz - pZ;
+              if (dzY >= NEAR) {
+                const sY = F / dzY;
+                const qx = pcx + (wx - pX) * sY;
+                const qy = pcy + (wy - pY) * sY;
+                const ex = Math.max(useYield.x0 - qx, 0, qx - useYield.x1);
+                const ey = Math.max(useYield.y0 - qy, 0, qy - useYield.y1);
+                if (ex < 36 && ey < 36) vis *= 0.1 + 0.9 * smooth(Math.hypot(ex, ey) / 36);
               }
             }
             put(
@@ -563,22 +669,24 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
               // 外接框只量字形本体（不含暗晕的留白）
               const ix = hx * 0.8;
               const iy = hy * 0.62;
-              corner(wx - tg[0] * ix - dn[0] * iy, wy - tg[1] * ix - dn[1] * iy, wz - tg[2] * ix - dn[2] * iy);
-              corner(wx + tg[0] * ix - dn[0] * iy, wy + tg[1] * ix - dn[1] * iy, wz + tg[2] * ix - dn[2] * iy);
-              corner(wx - tg[0] * ix + dn[0] * iy, wy - tg[1] * ix + dn[1] * iy, wz - tg[2] * ix + dn[2] * iy);
-              corner(wx + tg[0] * ix + dn[0] * iy, wy + tg[1] * ix + dn[1] * iy, wz + tg[2] * ix + dn[2] * iy);
+              const txI = tg[0] * ix; const tyI = tg[1] * ix; const tzI = tg[2] * ix;
+              const dxI = dn[0] * iy; const dyI = dn[1] * iy; const dzI = dn[2] * iy;
+              corner(wx - txI - dxI, wy - tyI - dyI, wz - tzI - dzI);
+              corner(wx + txI - dxI, wy + tyI - dyI, wz + tzI - dzI);
+              corner(wx - txI + dxI, wy - tyI + dyI, wz - tzI + dzI);
+              corner(wx + txI + dxI, wy + tyI + dyI, wz + tzI + dzI);
             }
           }
         }
       };
-      emitUnits(g.units, (ui) => segs.find((s) => ui >= s.from && ui < s.to) ?? segs[0]!, 1, false);
+      emitUnits(g.units, null, 1, false);
       if (g.tr && showTr && trK > 0.004) {
         // 译文：跟在最后一段下方、沿同一条曲线（§9.3）
         const ref = segs[segs.length - 1]!;
         const c = segAt(ref, 0);
         const off = 0.73 * fs;
         const trSeg: Seg = { ...ref, C: [ref.C[0] + c.d[0] * off, ref.C[1] + c.d[1] * off, ref.C[2] + c.d[2] * off], e0: 0, w: g.trWidth };
-        emitUnits(g.tr, () => trSeg, TR_K, true);
+        emitUnits(g.tr, trSeg, TR_K, true);
       }
     };
 
@@ -777,7 +885,7 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
      * 光的飞行路线（§9.3）：上一句句尾 → 下一句句首，三次贝塞尔，切向接着两句的走向（把手短一点，弧线平缓、不打圈）。
      * 起点固定在「唱完那一刻」的句尾：唱完的句子会往外侧滑走，光点不跟着走，留在路上等，再从那里飞向下一句。
      */
-    const tailRest = (d: LS) => pointOn(d, placeSegs(d.g, d.split, d.i, anchorOf(d, 0), d.fs, plan[d.i]!, 1), d.g.width);
+    const tailRest = (d: LS) => pointOn(d, ensureSegCache(d), d.g.width);
     const threadCurve = (a: Geo, b: Geo): ((u: number) => V3) => {
       const A = tailRest(a.d);
       const B = pointOn(b.d, b.segs, 0);
@@ -866,7 +974,8 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
      * 光有语义（§9.2）：平时都很淡，只有正在唱的位置把它们点亮——丝上滑过一道亮光、那一片雾和尘变亮。
      * 颜色取封面色（pal.glow），全部叠加，不挡字也不挡封面。k = 强度：当前句 1，下一句约 0.35（告诉眼睛下一句在哪），唱完掠过时淡出。
      */
-    const AURA_N = 36;
+    const AURA_N = 28;
+    const AURA_NEXT_N = 16;
     const DUST = 26;
     const STRANDS = [
       // off：离基线多远（字号，负 = 往上）；amp 起伏幅度；ph 相位；w 画面半宽（px，横向高斯，看上去是一股虚的气，不是一根线）；a 亮度
@@ -874,6 +983,11 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
       { off: 0.52, amp: 0.13, ph: 2.1, w: 3, a: 0.9 },
       { off: 0.95, amp: 0.2, ph: 4.2, w: 6, a: 0.55 },
     ];
+    const _ap: V3 = [0, 0, 0];
+    const _at: V3 = [0, 0, 0];
+    const _ad: V3 = [0, 0, 0];
+    const _sPrev: [V3, V3, V3] = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
+    const _sCur: V3 = [0, 0, 0];
     const emitAura = (d: LS, segs: Seg[], kIn: number, S: number, t: number) => {
       const fs = d.fs;
       const col = pal.glow;
@@ -889,21 +1003,25 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
           const al = rg.a + da;
           const sa = Math.sin(al);
           const ca = Math.cos(al);
-          let prev: V3 | null = null;
-          const N2 = 72;
+          let hasPrev = false;
+          const prev: V3 = [0, 0, 0];
+          const N2 = 56;
           for (let q = 0; q <= N2; q++) {
             const th = (q / N2) * 2 * Math.PI;
-            const cur: V3 = [rg.C[0] + R2 * Math.sin(th), rg.C[1] + R2 * Math.cos(th) * sa, rg.C[2] - R2 * Math.cos(th) * ca];
-            if (prev) {
+            _sCur[0] = rg.C[0] + R2 * Math.sin(th);
+            _sCur[1] = rg.C[1] + R2 * Math.cos(th) * sa;
+            _sCur[2] = rg.C[2] - R2 * Math.cos(th) * ca;
+            if (hasPrev) {
               const tm = ((q - 0.5) / N2) * 2 * Math.PI;
               const front = 0.5 + 0.5 * Math.cos(tm);
               const flow = 0.55 + 0.45 * Math.sin(3 * tm - 1.4 * t + mul * 3);
               const wrap = Math.atan2(Math.sin(tm), Math.cos(tm));
               const g = S >= 0 ? Math.exp(-((wrap / 0.32) ** 2)) : 0;
               const A = kIn * rg.k * a0 * (0.05 * flow * (0.35 + 0.65 * front) + 0.2 * g);
-              if (A > 0.002) strokePiece(prev, cur, 2 + 2 * g, A, col, 1.5);
+              if (A > 0.002) strokePiece(prev, _sCur, 2 + 2 * g, A, col, 1.5);
             }
-            prev = cur;
+            prev[0] = _sCur[0]; prev[1] = _sCur[1]; prev[2] = _sCur[2];
+            hasPrev = true;
           }
         }
       }
@@ -912,6 +1030,12 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
       const sing = S >= 0 ? locate(segs, S, fs) : null;
       const last = segs.length - 1;
       const seed = (d.i * 0.6180339) % 1;
+      const nSeg = k > 0.5 ? AURA_N : AURA_NEXT_N;
+      const bases = [
+        STRANDS[0]!.off > 0 ? STRANDS[0]!.off + trOff : STRANDS[0]!.off,
+        STRANDS[1]!.off > 0 ? STRANDS[1]!.off + trOff : STRANDS[1]!.off,
+        STRANDS[2]!.off > 0 ? STRANDS[2]!.off + trOff : STRANDS[2]!.off,
+      ];
       for (let r = 0; r <= last; r++) {
         const sg = segs[r]!;
         const L = sg.half * 2;
@@ -919,29 +1043,34 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
         const s0 = -sg.half - (r === 0 ? 0.16 : 0.06) * L;
         const s1 = sg.half + (r === last ? 0.46 : 0.06) * L;
         const glintAt = sing && sing.sg === sg ? sing.s : null;
-        // —— 气流丝 ——
-        for (const st of STRANDS) {
-          const base = st.off > 0 ? st.off + trOff : st.off;
-          let prev: V3 | null = null;
-          for (let q = 0; q <= AURA_N; q++) {
-            const u = q / AURA_N;
-            const s = s0 + (s1 - s0) * u;
-            const { p, d: dn } = segAt(sg, s);
-            const out = Math.max(0, s - sg.half, -sg.half - s) / L;
-            // 线身缓缓起伏（往阅读方向流），出了句子的那段往外散开
-            const off = (base + st.amp * Math.sin((2 * Math.PI * s) / (1.3 * L) - 1.1 * t + st.ph + seed * 6.28) + Math.sign(base) * out * out * 5) * fs;
-            const cur: V3 = [p[0] + dn[0] * off, p[1] + dn[1] * off, p[2] + dn[2] * off];
-            if (prev) {
-              const um = (q - 0.5) / AURA_N;
-              const sm = s0 + (s1 - s0) * um;
-              const taper = smooth(um / 0.14) * smooth((1 - um) / 0.3);
-              const flow = 0.55 + 0.45 * Math.sin((2 * Math.PI * sm) / (0.45 * L) - 1.6 * t + st.ph);
-              const gx = glintAt !== null ? (sm - glintAt) / (1.4 * fs) : 9;
-              const g = Math.exp(-gx * gx);
+        // —— 气流丝（每步采一次 segAtOut，三股共用，省去 2/3 曲线求值） ——
+        const invL13 = (2 * Math.PI) / (1.3 * L);
+        const invL045 = (2 * Math.PI) / (0.45 * L);
+        const seedRad = seed * 6.28;
+        for (let q = 0; q <= nSeg; q++) {
+          const u = q / nSeg;
+          const s = s0 + (s1 - s0) * u;
+          segAtOut(sg, s, _ap, _at, _ad);
+          const outD = Math.max(0, s - sg.half, -sg.half - s) / L;
+          const outSq5 = outD * outD * 5;
+          const um = (q - 0.5) / nSeg;
+          const sm = s0 + (s1 - s0) * um;
+          const taper = q > 0 ? smooth(um / 0.14) * smooth((1 - um) / 0.3) : 0;
+          const g = q > 0 && glintAt !== null ? Math.exp(-(((sm - glintAt) / (1.4 * fs)) ** 2)) : 0;
+          for (let si = 0; si < 3; si++) {
+            const st = STRANDS[si]!;
+            const base = bases[si]!;
+            const off = (base + st.amp * Math.sin(s * invL13 - 1.1 * t + st.ph + seedRad) + (base >= 0 ? outSq5 : -outSq5)) * fs;
+            _sCur[0] = _ap[0] + _ad[0] * off;
+            _sCur[1] = _ap[1] + _ad[1] * off;
+            _sCur[2] = _ap[2] + _ad[2] * off;
+            const pv = _sPrev[si]!;
+            if (q > 0) {
+              const flow = 0.55 + 0.45 * Math.sin(sm * invL045 - 1.6 * t + st.ph);
               const A = k * taper * st.a * (0.05 * flow + 0.22 * g);
-              if (A > 0.002) strokePiece(prev, cur, st.w * (0.7 + 0.5 * taper) * (1 + 0.6 * g), A, col, 1.5);
+              if (A > 0.002) strokePiece(pv, _sCur, st.w * (0.7 + 0.5 * taper) * (1 + 0.6 * g), A, col, 1.5);
             }
-            prev = cur;
+            pv[0] = _sCur[0]; pv[1] = _sCur[1]; pv[2] = _sCur[2];
           }
         }
         // —— 光雾：沿字的中线排一串互相重叠的柔光椭圆（宽光段拼接在弯处会拼出放射状的条纹），唱到的地方亮一点 ——
@@ -955,10 +1084,10 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
           for (let q = 0; q <= n; q++) {
             const um = q / n;
             const s = -sg.half + L * um;
-            const { p, t: tg, d: dn } = segAt(sg, s);
-            const x = p[0] + dn[0] * m;
-            const y = p[1] + dn[1] * m;
-            const z = p[2] + dn[2] * m;
+            segAtOut(sg, s, _ap, _at, _ad);
+            const x = _ap[0] + _ad[0] * m;
+            const y = _ap[1] + _ad[1] * m;
+            const z = _ap[2] + _ad[2] * m;
             const dz = z - pZ;
             if (dz < 300) continue;
             const taper = smooth((um + 0.05) / 0.25) * smooth((1.05 - um) / 0.25);
@@ -967,7 +1096,7 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
             // 重叠的高斯叠加后约是单个的 rx / step 倍，这里除掉
             const I = ((hk * taper * (0.014 + 0.03 * g) * step) / rx) * smooth((dz - 300) / 500);
             if (I < 0.0015) continue;
-            put(dz + 2, x, y, z, tg[0] * rx, tg[1] * rx, tg[2] * rx, dn[0] * ry, dn[1] * ry, dn[2] * ry, 0, 0, 1, 1, KIND_LIGHT, 0, 1, col[0]! * I, col[1]! * I, col[2]! * I, 0, 0, 0, 0, 0);
+            put(dz + 2, x, y, z, _at[0] * rx, _at[1] * rx, _at[2] * rx, _ad[0] * ry, _ad[1] * ry, _ad[2] * ry, 0, 0, 1, 1, KIND_LIGHT, 0, 1, col[0]! * I, col[1]! * I, col[2]! * I, 0, 0, 0, 0, 0);
           }
         }
         // —— 浮尘 ——
@@ -982,11 +1111,11 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
           const s = s0 + ((h1 * span + t * 0.1 * L * (0.6 + 0.8 * h2)) % span);
           const v = (s - s0) / span;
           const edge = smooth(v / 0.12) * smooth((1 - v) / 0.2);
-          const { p, d: dn } = segAt(sg, s);
+          segAtOut(sg, s, _ap, _at, _ad);
           const off = (-1.7 + (3.2 + trOff) * h3 + 0.12 * Math.sin(t * 0.7 + h4 * 6.28)) * fs;
-          const x = p[0] + dn[0] * off;
-          const y = p[1] + dn[1] * off;
-          const z = p[2] + dn[2] * off;
+          const x = _ap[0] + _ad[0] * off;
+          const y = _ap[1] + _ad[1] * off;
+          const z = _ap[2] + _ad[2] * off;
           const dz = z - pZ;
           if (dz < 300) continue;
           const tw = 0.5 + 0.5 * Math.sin(t * (1.2 + 1.8 * h2) + h4 * 6.28);
@@ -1178,7 +1307,7 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
         // 姿态：远处 → 开唱前 2.4–0.3 秒间以句首为轴慢慢转正；唱完往离路线远的一侧推开、略往下（从镜头侧边掠过，不糊在画面正中）
         const turnK = smooth((t - (e.s - TURN_FROM)) / (TURN_FROM - TURN_TO));
         const passK = smooth((t - e.e - 0.05) / 1.2);
-        const segs = placeSegs(d.g, d.split, i, anchorOf(d, passK), d.fs, plan[i]!, turnK);
+        const segs = segsOf(d, turnK, passK);
         // —— 招式：环（§9.4）——开唱前 1.7–0.4 秒绕上去，唱完 0.15 秒后 0.9 秒内松开、回到路上（随后掠过）
         const mv = choreo[i]!;
         d.ring = null;
@@ -1259,21 +1388,31 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
           //    （设计稿写 55°；实测正对着看时 55° 只矮一截、不像「躺着」，加到 62°，透视下仍读得出）——
           const us = d.g.units;
           const eu = e.units;
-          d.warp = (em, _u, p, tg, dn) => {
-            let ui = 0;
-            for (let k = 0; k < us.length; k++) if (em >= us[k]!.left - 0.05) ui = k;
-            const x = t - ((eu[ui] ?? eu[eu.length - 1]!).s - 0.1);
+          const nU = us.length;
+          const csArr = new Float32Array(nU * 2);
+          for (let q = 0; q < nU; q++) {
+            const x = t - ((eu[q] ?? eu[eu.length - 1]!).s - 0.1);
             const sk = x <= 0 ? 0 : 1 - Math.exp(-7 * x) * Math.cos(12 * x);
             const phi = 62 * DEG * (1 - sk);
+            csArr[q * 2] = Math.cos(phi);
+            csArr[q * 2 + 1] = Math.sin(phi);
+          }
+          let curU = 0;
+          d.warp = (em, _u, p, tg, dn) => {
+            if (curU >= nU || em < us[curU]!.left - 0.05) curU = 0;
+            while (curU + 1 < nU && em >= us[curU + 1]!.left - 0.05) curU++;
+            const c = csArr[curU * 2]!;
+            const sn = csArr[curU * 2 + 1]!;
+            if (sn < 0.001) return { p, t: tg, d: dn, vis: 1 };
             // 往远处的方向（垂直于切向和「向下」）：字以基线为轴往后倒
             const nx = tg[1] * dn[2] - tg[2] * dn[1];
             const ny = tg[2] * dn[0] - tg[0] * dn[2];
             const nz = tg[0] * dn[1] - tg[1] * dn[0];
-            const c = Math.cos(phi);
-            const sn = Math.sin(phi);
-            const d2: V3 = [dn[0] * c - nx * sn, dn[1] * c - ny * sn, dn[2] * c - nz * sn];
-            const l = Math.hypot(d2[0], d2[1], d2[2]) || 1;
-            return { p, t: tg, d: [d2[0] / l, d2[1] / l, d2[2] / l], vis: 1 };
+            const d2x = dn[0] * c - nx * sn;
+            const d2y = dn[1] * c - ny * sn;
+            const d2z = dn[2] * c - nz * sn;
+            const l = Math.hypot(d2x, d2y, d2z) || 1;
+            return { p, t: tg, d: [d2x / l, d2y / l, d2z / l], vis: 1 };
           };
         }
         const mode = d.w ? (state === 'cur' ? 1 : state === 'past' ? 2 : 0) : t >= e.s ? 2 : 0;
@@ -1431,11 +1570,45 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
         put(lightPt[2] - camZ - 0.02, lightPt[0], lightPt[1], lightPt[2], r, 0, 0, 0, r, 0, 0, 0, 1, 1, KIND_LIGHT, 0, 1, pal.sung[0]! * I, pal.sung[1]! * I, pal.sung[2]! * I, 0, 0, 0, 0, 0);
       }
 
-      // —— 从远到近排序 ——
+      // —— 从远到近排序（手写原地快排 + 直接拷贝，避开 TypedArray.sort 的 JS 回调与每帧数百次 subarray 分配） ——
       for (let q = 0; q < n; q++) order[q] = q;
-      const ord = order.subarray(0, n);
-      ord.sort((a, b) => depth[b]! - depth[a]!);
-      for (let q = 0; q < n; q++) out.set(scratch.subarray(ord[q]! * INST, ord[q]! * INST + INST), q * INST);
+      const sortDesc = (lo0: number, hi0: number) => {
+        if (hi0 - lo0 < 16) {
+          for (let a = lo0 + 1; a <= hi0; a++) {
+            const idx = order[a]!;
+            const dv = depth[idx]!;
+            let b = a - 1;
+            while (b >= lo0 && depth[order[b]!]! < dv) {
+              order[b + 1] = order[b]!;
+              b--;
+            }
+            order[b + 1] = idx;
+          }
+          return;
+        }
+        const piv = depth[order[(lo0 + hi0) >> 1]!]!;
+        let i0 = lo0;
+        let j0 = hi0;
+        while (i0 <= j0) {
+          while (depth[order[i0]!]! > piv) i0++;
+          while (depth[order[j0]!]! < piv) j0--;
+          if (i0 <= j0) {
+            const tmp = order[i0]!;
+            order[i0] = order[j0]!;
+            order[j0] = tmp;
+            i0++;
+            j0--;
+          }
+        }
+        if (lo0 < j0) sortDesc(lo0, j0);
+        if (i0 < hi0) sortDesc(i0, hi0);
+      };
+      if (n > 1) sortDesc(0, n - 1);
+      for (let q = 0; q < n; q++) {
+        const src = order[q]! * INST;
+        const dst = q * INST;
+        for (let k = 0; k < INST; k++) out[dst + k] = scratch[src + k]!;
+      }
 
       // —— 背景：径向渐变，色相随颜色旅程从反差色走到封面色，段落开合越大越亮（同 #287） ——
       const bgHue = baseHue + hueOffsetAt(route, camZ + DREST);
