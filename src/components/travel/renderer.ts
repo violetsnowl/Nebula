@@ -16,8 +16,10 @@ export const KIND_COVER = 0;
 export const KIND_GLYPH = 1;
 export const KIND_LIGHT = 2;
 export const KIND_CHIP = 3;
-/** 光丝的一小段（句与句之间的那段路） */
+/** 光丝 / 连续丝带的一小段 */
 export const KIND_STROKE = 4;
+/** 间奏 / 取词 3D 清晰圆点（抗锯齿实心珠 + 极轻微光晕） */
+export const KIND_DOT = 5;
 
 const BG_VS = `#version 300 es
 precision highp float;
@@ -69,7 +71,9 @@ flat out vec3 v_kla;
 flat out vec4 v_A;
 flat out vec4 v_B;
 void main() {
-  vec3 p = a_pos + a_ax * a_corner.x + a_ay * a_corner.y;
+  vec2 t = a_corner * 0.5 + 0.5;
+  vec3 ay = (int(a_kla.x + 0.5) == 4 && a_uv.w > 0.5) ? mix(a_ay, a_uv.xyz, t.x) : a_ay;
+  vec3 p = a_pos + a_ax * a_corner.x + ay * a_corner.y;
   float dz = p.z - u_cam.z;
   float n = u_nf.x;
   float f = u_nf.y;
@@ -78,7 +82,6 @@ void main() {
     -(2.0 * u_F * (p.y - u_cam.y) + 2.0 * (u_cy - 0.5 * u_view.y) * dz) / u_view.y,
     (f + n) / (f - n) * dz - 2.0 * f * n / (f - n),
     dz);
-  vec2 t = a_corner * 0.5 + 0.5;
   v_local = t;
   v_uv = vec2(mix(a_uv.x, a_uv.z, t.x), mix(a_uv.y, a_uv.w, t.y));
   v_kla = a_kla;
@@ -175,10 +178,22 @@ void main() {
     rgb += u_glow * soft * v_B.y;
     o = vec4(rgb, oa) * alpha;
   } else if (kind == 4) {
-    // 光丝：横向高斯，叠加（不遮东西）
+    // 连续光带 / 光丝：横向高斯 + 沿段线性插值透明度，节点共用半宽向量，无段间硬切与重叠加亮
     float y = v_local.y * 2.0 - 1.0;
     float g = exp(-y * y * 3.0);
-    o = vec4(v_A.rgb * g * alpha, 0.0);
+    float a = v_B.z > 0.5 ? mix(v_B.x, v_B.y, v_local.x) : alpha;
+    o = vec4(v_A.rgb * g * a, 0.0);
+  } else if (kind == 5) {
+    // 间奏 / 取词 3D 清晰圆点：锐利抗锯齿实心珠 + 极轻微柔和光晕，不糊成大团光斑
+    vec2 q = v_local * 2.0 - 1.0;
+    float r = length(q);
+    float d = r - 0.52;
+    float aa = max(fwidth(d), 1e-4);
+    float bead = clamp(0.5 - d / aa, 0.0, 1.0);
+    float halo = exp(-r * r * 5.5) * v_B.x;
+    float a = clamp(bead * alpha, 0.0, 1.0);
+    vec3 rgb = v_A.rgb * a + v_A.rgb * halo * alpha;
+    o = vec4(rgb, a);
   } else {
     // 光点：柔的高斯圆，叠加（不遮东西）
     vec2 q = v_local * 2.0 - 1.0;

@@ -15,14 +15,15 @@ import { oklabToRgb, toneOf } from '../lib/space/tone';
 import { cssRgba } from './travel/glCore';
 import { CoverTextures } from './travel/coverTex';
 import { ATLAS_H, GlyphAtlas, PAD, R_MAIN, TR_K, type FontSpec, type GLine, type GUnit } from './travel/glyphAtlas';
-import { INST, KIND_CHIP, KIND_COVER, KIND_GLYPH, KIND_LIGHT, KIND_STROKE, Renderer, type Palette } from './travel/renderer';
+import { INST, KIND_CHIP, KIND_COVER, KIND_DOT, KIND_GLYPH, KIND_LIGHT, KIND_STROKE, Renderer, type Palette } from './travel/renderer';
 import { DREST, F, FAR, buildRoute, buildSlots, camAt, hashStr, hueOffsetAt, lowerBound, notifySmallLibraryOnce, pathX, pathY, slotRadius, slotYAspect, songHue } from './travel/route';
 import { BEATS, buildSegs, headOf, locate, placeSegs, placeSegsWithHead, planShapes, segAt, segAtOut, splitAt, type Seg, type V3 } from './travel/pathText';
 import { tunnelBasis } from './travel/tunnel';
 import { planChoreo } from './travel/choreo';
 import { buildStar, warpRing, warpStar, type Ring, type StarPiece, type Warp } from './travel/moves';
 import { wordRt, type WordRt } from './travel/wordState';
-import { LsFly, columnSideOf, columnUnitsOf, hideFlyElements, launchStageToListenFly, matchColumnLines, type FlyPair } from '../lib/listen/flyTransition';
+import { LsFly, columnSideOf, columnUnitsOf, hideFlyElements, launchStageToListenFly, matchColumnLines, normLyricText, type FlyPair, type FlySide } from '../lib/listen/flyTransition';
+import { pageBus } from '../lib/listen/stageBus';
 import { createTravelFlySession, type FlyCam, type TravelFlySession } from './travel/travelFly';
 import './listen/lyric-words.css';
 import './listen/fly-transition.css';
@@ -157,6 +158,8 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
   noticeRef.current = onNotice;
   const pinRef = useRef(settings.listenPin);
   pinRef.current = settings.listenPin;
+  const roamRef = useRef(settings.roamLyrics);
+  roamRef.current = settings.roamLyrics;
   /** 记住从穿行聆听态进听音空间的路径（听音空间内切歌后 useEffect 重跑也不丢，同 LyricPage） */
   const enteredFromTravelRef = useRef(false);
   const failRef = useRef(onFail);
@@ -262,13 +265,18 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       }
       return { fs: clamp(fs, FS_MIN, FS_MAX), split: 0 };
     };
-    // —— 初始尺寸与路线 / 槽位 / 隧道壁（窗口变化超 15% 时原地重建，封面纹理数组与字形贴图不重建） ——
+    // —— 初始尺寸与路线 / 槽位 / 隧道壁（拖曳期间不清空画布；松手防抖 220ms 后再按 >15% 重排路线，零闪烁） ——
     const initRect = root.getBoundingClientRect();
     vw = initRect.width || window.innerWidth;
     vh = initRect.height || window.innerHeight;
     dpr = Math.min(2, window.devicePixelRatio || 1);
     canvas.width = Math.max(1, Math.round(vw * dpr));
     canvas.height = Math.max(1, Math.round(vh * dpr));
+    let pendingW = vw;
+    let pendingH = vh;
+    let pendingDpr = dpr;
+    let sizeDirty = false;
+    let rebuildTimer: number | null = null;
 
     const songSeed = hashStr(songKey);
     const baseHue = songHue(song);
@@ -293,15 +301,19 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       .map((g) => ({ s: g.s + 1.0, e: g.e - 1.4 }))
       .filter((g) => g.e - g.s >= 1.2);
 
-    const fit = () => {
-      const b = root.getBoundingClientRect();
-      const r = Math.min(2, window.devicePixelRatio || 1);
-      if (b.width === vw && b.height === vh && r === dpr) return;
-      vw = b.width;
-      vh = b.height;
-      dpr = r;
+    const applyPendingResize = () => {
+      if (!sizeDirty) return;
+      sizeDirty = false;
+      if (pendingW <= 0 || pendingH <= 0) return;
+      vw = pendingW;
+      vh = pendingH;
+      dpr = pendingDpr;
       canvas.width = Math.max(1, Math.round(vw * dpr));
       canvas.height = Math.max(1, Math.round(vh * dpr));
+    };
+    const commitResizeRebuild = () => {
+      rebuildTimer = null;
+      applyPendingResize();
       if (vw > 0 && vh > 0 && routeW > 0 && routeH > 0) {
         if (Math.abs(vw - routeW) / routeW > 0.15 || Math.abs(vh - routeH) / routeH > 0.15) {
           routeW = vw;
@@ -324,7 +336,19 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
         d.passSegs = null;
       }
     };
-    const ro = new ResizeObserver(fit);
+    const onResize = () => {
+      const b = root.getBoundingClientRect();
+      const r = Math.min(2, window.devicePixelRatio || 1);
+      if (b.width <= 0 || b.height <= 0) return;
+      if (b.width === pendingW && b.height === pendingH && r === pendingDpr) return;
+      pendingW = b.width;
+      pendingH = b.height;
+      pendingDpr = r;
+      sizeDirty = true;
+      if (rebuildTimer !== null) clearTimeout(rebuildTimer);
+      rebuildTimer = window.setTimeout(commitResizeRebuild, 220);
+    };
+    const ro = new ResizeObserver(onResize);
     ro.observe(root);
 
     /** 第 i 句的锚点（世界 x / y）：路线中心 + 四拍错开（按当前窗口大小，改窗口后自然重排） */
@@ -805,20 +829,23 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
           }
         }
         if (j > 0) {
-          // 连线：唱到这截时从上一截句尾画过来
+          // 连线：唱到这截时从上一截句尾画过来（连续丝带）
           const g = smooth((t - (s0 - 0.3)) / 0.4);
           if (g > 0.001) {
             const A = tailOf(pieces[j - 1]!);
             const B = nd;
-            const n = 12;
-            let prev = A;
-            for (let q = 1; q <= n; q++) {
-              const u = (q / n) * g;
-              const cur: V3 = [A[0] + (B[0] - A[0]) * u, A[1] + (B[1] - A[1]) * u, A[2] + (B[2] - A[2]) * u];
-              const head = act && q === n ? 1 : 0;
-              strokePiece(prev, cur, 0.9 + head, op * k * (0.16 + 0.2 * act), col, 1.2);
-              prev = cur;
+            const nSeg = 12;
+            const alpha = op * k * (0.16 + 0.2 * act);
+            for (let q = 0; q <= nSeg; q++) {
+              const u = (q / nSeg) * g;
+              const o = q * 3;
+              _rbP[o] = A[0] + (B[0] - A[0]) * u;
+              _rbP[o + 1] = A[1] + (B[1] - A[1]) * u;
+              _rbP[o + 2] = A[2] + (B[2] - A[2]) * u;
+              _rbH[q] = 0.9 + (act && q === nSeg ? 0.9 : 0);
+              _rbA[q] = alpha;
             }
+            emitRibbon(_rbP, _rbH, _rbA, nSeg + 1, col, 1.2, false);
           }
         }
       });
@@ -833,24 +860,24 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       const R = 0.3 * (((vw || window.innerWidth) * DSING) / F);
       const z0 = sw.zEnd - 1800;
       const z1 = sw.zEnd - 150;
-      const N2 = 110;
+      const N2 = 96;
       for (const ph of [0, Math.PI]) {
-        let prev: V3 | null = null;
         for (let q = 0; q <= N2; q++) {
           const u = q / N2;
           const z = z0 + (z1 - z0) * u;
           const th = sw.side * u * 1.6 * 2 * Math.PI + ph + t * 0.5 * sw.side;
           // 越靠近这句半径越收，像气流收进句子
           const r = R * (1 - 0.45 * u);
-          const cur: V3 = [pathX(z) + r * Math.cos(th), pathY(z) + r * Math.sin(th) * 0.8, z];
-          if (prev) {
-            const um = (q - 0.5) / N2;
-            const taper = smooth(um / 0.15) * smooth((1 - um) / 0.2);
-            const flow = 0.5 + 0.5 * Math.sin(um * 18 - t * 2.2 + ph);
-            strokePiece(prev, cur, 7, sw.sw * taper * (0.03 + 0.05 * flow), col, 0);
-          }
-          prev = cur;
+          const o = q * 3;
+          _rbP[o] = pathX(z) + r * Math.cos(th);
+          _rbP[o + 1] = pathY(z) + r * Math.sin(th) * 0.8;
+          _rbP[o + 2] = z;
+          const taper = smooth(u / 0.15) * smooth((1 - u) / 0.2);
+          const flow = 0.5 + 0.5 * Math.sin(u * 18 - t * 2.2 + ph);
+          _rbH[q] = 7;
+          _rbA[q] = sw.sw * taper * (0.03 + 0.05 * flow);
         }
+        emitRibbon(_rbP, _rbH, _rbA, N2 + 1, col, 0, false);
       }
     };
 
@@ -971,44 +998,101 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
      * 不是常驻的线：光点飞到之后尾巴很快收拢消失。
      */
     /**
-     * 一小段光：a → b，横向高斯、叠加（不遮东西）。半宽 hwPx 是画面像素（世界宽 = 像素 × 距离 / F），
-     * hwWorld > 0 时改用世界宽度（光雾这种要跟着字一起变大的）。离镜头 300–800 内淡掉；bias 让它排在同一深度的字前面画（字压在光上）。
+     * 连续无缝光带 / 气流丝（复用预分配缓冲，零每帧分配）：
+     * 每个顶点算平滑切向与垂直视线的半宽向量，相邻两段完全共用端点顶点与透明度并由着色器逐像素插值，
+     * 杜绝段间切缝、阶梯色差与弯处重叠加亮（「火柴棍拼接」）。
      */
-    const strokePiece = (a: V3, b: V3, hwPx: number, alpha: number, col: number[], bias = 0, hwWorld = 0) => {
-      const mx = (a[0] + b[0]) / 2;
-      const my = (a[1] + b[1]) / 2;
-      const mz = (a[2] + b[2]) / 2;
-      const dz = mz - pZ;
-      if (dz <= NEAR + 40) return;
-      const A = alpha * smooth((dz - 300) / 500);
-      if (A < 0.002) return;
-      const dx = b[0] - a[0];
-      const dy = b[1] - a[1];
-      const dzz = b[2] - a[2];
-      // 方向垂直于这一小段和视线
-      const vx = mx - pX;
-      const vy = my - pY;
-      let wx = dy * dz - dzz * vy;
-      let wy = dzz * vx - dx * dz;
-      let wz = dx * vy - dy * vx;
-      const wl = Math.hypot(wx, wy, wz) || 1;
-      const hw = hwWorld > 0 ? hwWorld : (hwPx * dz) / F;
-      wx = (wx / wl) * hw;
-      wy = (wy / wl) * hw;
-      wz = (wz / wl) * hw;
-      put(dz + bias, mx, my, mz, dx / 2, dy / 2, dzz / 2, wx, wy, wz, 0, 0, 1, 1, KIND_STROKE, 0, A, col[0]!, col[1]!, col[2]!, 0, 0, 0, 0, 0);
+    const RIB_MAX = 128;
+    const _rbP = new Float32Array(RIB_MAX * 3);
+    const _rbW = new Float32Array(RIB_MAX * 3);
+    const _rbH = new Float32Array(RIB_MAX);
+    const _rbA = new Float32Array(RIB_MAX);
+    const _rbEA = new Float32Array(RIB_MAX);
+    const _rbDz = new Float32Array(RIB_MAX);
+    const emitRibbon = (
+      pts: Float32Array,
+      hwPxArr: Float32Array,
+      aArr: Float32Array,
+      count: number,
+      col: number[],
+      bias = 0,
+      closed = false,
+    ) => {
+      if (count < 2) return;
+      for (let q = 0; q < count; q++) {
+        const o = q * 3;
+        const px = pts[o]!;
+        const py = pts[o + 1]!;
+        const pz = pts[o + 2]!;
+        const dz = pz - pZ;
+        _rbDz[q] = dz;
+        if (dz <= NEAR + 40) {
+          _rbEA[q] = 0;
+          continue;
+        }
+        _rbEA[q] = aArr[q]! * smooth((dz - 300) / 500);
+        const iPrev = q === 0 ? (closed ? count - 1 : 0) : q - 1;
+        const iNext = q === count - 1 ? (closed ? 0 : count - 1) : q + 1;
+        const oP = iPrev * 3;
+        const oN = iNext * 3;
+        const tx = pts[oN]! - pts[oP]!;
+        const ty = pts[oN + 1]! - pts[oP + 1]!;
+        const tz = pts[oN + 2]! - pts[oP + 2]!;
+        const vx = px - pX;
+        const vy = py - pY;
+        let wx = ty * dz - tz * vy;
+        let wy = tz * vx - tx * dz;
+        let wz = tx * vy - ty * vx;
+        const wl = Math.hypot(wx, wy, wz) || 1;
+        const hw = (hwPxArr[q]! * dz) / F;
+        _rbW[o] = (wx / wl) * hw;
+        _rbW[o + 1] = (wy / wl) * hw;
+        _rbW[o + 2] = (wz / wl) * hw;
+      }
+      const segsN = closed ? count : count - 1;
+      for (let q = 0; q < segsN; q++) {
+        const i0 = q;
+        const i1 = closed && q === count - 1 ? 0 : q + 1;
+        const dz0 = _rbDz[i0]!;
+        const dz1 = _rbDz[i1]!;
+        if (dz0 <= NEAR + 40 || dz1 <= NEAR + 40) continue;
+        const a0 = _rbEA[i0]!;
+        const a1 = _rbEA[i1]!;
+        if (a0 < 0.002 && a1 < 0.002) continue;
+        const o0 = i0 * 3;
+        const o1 = i1 * 3;
+        const mx = (pts[o0]! + pts[o1]!) * 0.5;
+        const my = (pts[o0 + 1]! + pts[o1 + 1]!) * 0.5;
+        const mz = (pts[o0 + 2]! + pts[o1 + 2]!) * 0.5;
+        const dx = (pts[o1]! - pts[o0]!) * 0.5;
+        const dy = (pts[o1 + 1]! - pts[o0 + 1]!) * 0.5;
+        const dzz = (pts[o1 + 2]! - pts[o0 + 2]!) * 0.5;
+        put(
+          (dz0 + dz1) * 0.5 + bias,
+          mx, my, mz,
+          dx, dy, dzz,
+          _rbW[o0]!, _rbW[o0 + 1]!, _rbW[o0 + 2]!,
+          _rbW[o1]!, _rbW[o1 + 1]!, _rbW[o1 + 2]!, 1,
+          KIND_STROKE, 0, Math.max(a0, a1),
+          col[0]!, col[1]!, col[2]!, 0,
+          a0, a1, 1, 0,
+        );
+      }
     };
     const TRAIL_N = 24;
     const emitTrail = (curve: (u: number) => V3, u0: number, u1: number, alpha: number) => {
       const span = u1 - u0;
-      let a = curve(u0);
-      for (let q = 1; q <= TRAIL_N; q++) {
-        const b = curve(u0 + (span * q) / TRAIL_N);
-        // r：0 = 尾端，1 = 光点
-        const r = (q - 0.5) / TRAIL_N;
-        strokePiece(a, b, 0.5 + 1.3 * r, alpha * Math.pow(r, 1.6), pal.glow);
-        a = b;
+      for (let q = 0; q <= TRAIL_N; q++) {
+        const r = q / TRAIL_N;
+        const pt = curve(u0 + span * r);
+        const o = q * 3;
+        _rbP[o] = pt[0];
+        _rbP[o + 1] = pt[1];
+        _rbP[o + 2] = pt[2];
+        _rbH[q] = 0.5 + 1.3 * r;
+        _rbA[q] = alpha * Math.pow(r, 1.6);
       }
+      emitRibbon(_rbP, _rbH, _rbA, TRAIL_N + 1, pal.glow, 0, false);
     };
 
     /**
@@ -1021,8 +1105,8 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
      * 光有语义（§9.2）：平时都很淡，只有正在唱的位置把它们点亮——丝上滑过一道亮光、那一片雾和尘变亮。
      * 颜色取封面色（pal.glow），全部叠加，不挡字也不挡封面。k = 强度：当前句 1，下一句约 0.35（告诉眼睛下一句在哪），唱完掠过时淡出。
      */
-    const AURA_N = 28;
-    const AURA_NEXT_N = 16;
+    const AURA_N = 44;
+    const AURA_NEXT_N = 24;
     const DUST = 26;
     const STRANDS = [
       // off：离基线多远（字号，负 = 往上）；amp 起伏幅度；ph 相位；w 画面半宽（px，横向高斯，看上去是一股虚的气，不是一根线）；a 亮度
@@ -1033,12 +1117,13 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
     const _ap: V3 = [0, 0, 0];
     const _at: V3 = [0, 0, 0];
     const _ad: V3 = [0, 0, 0];
-    const _sPrev: [V3, V3, V3] = [[0, 0, 0], [0, 0, 0], [0, 0, 0]];
-    const _sCur: V3 = [0, 0, 0];
+    const _stP = [new Float32Array((AURA_N + 1) * 3), new Float32Array((AURA_N + 1) * 3), new Float32Array((AURA_N + 1) * 3)];
+    const _stH = [new Float32Array(AURA_N + 1), new Float32Array(AURA_N + 1), new Float32Array(AURA_N + 1)];
+    const _stA = [new Float32Array(AURA_N + 1), new Float32Array(AURA_N + 1), new Float32Array(AURA_N + 1)];
     const emitAura = (d: LS, segs: Seg[], kIn: number, S: number, t: number) => {
       const fs = d.fs;
       const col = pal.glow;
-      // 环：气流丝换成两圈很淡的轨道光（Demo 3 的轨道环），正前方唱到的地方亮一点；后半圈在封面后面被挡住
+      // 环：气流丝换成两圈很淡的闭合轨道光（Demo 3 的轨道环），正前方唱到的地方亮一点；后半圈在封面后面被挡住
       const rg = d.ring;
       const k = (rg ? kIn * (1 - rg.k) : kIn) * (1 - d.starK);
       if (rg && rg.k > 0.01) {
@@ -1050,26 +1135,21 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
           const al = rg.a + da;
           const sa = Math.sin(al);
           const ca = Math.cos(al);
-          let hasPrev = false;
-          const prev: V3 = [0, 0, 0];
-          const N2 = 56;
-          for (let q = 0; q <= N2; q++) {
+          const N2 = 64;
+          for (let q = 0; q < N2; q++) {
             const th = (q / N2) * 2 * Math.PI;
-            _sCur[0] = rg.C[0] + R2 * Math.sin(th);
-            _sCur[1] = rg.C[1] + R2 * Math.cos(th) * sa;
-            _sCur[2] = rg.C[2] - R2 * Math.cos(th) * ca;
-            if (hasPrev) {
-              const tm = ((q - 0.5) / N2) * 2 * Math.PI;
-              const front = 0.5 + 0.5 * Math.cos(tm);
-              const flow = 0.55 + 0.45 * Math.sin(3 * tm - 1.4 * t + mul * 3);
-              const wrap = Math.atan2(Math.sin(tm), Math.cos(tm));
-              const g = S >= 0 ? Math.exp(-((wrap / 0.32) ** 2)) : 0;
-              const A = kIn * rg.k * a0 * (0.05 * flow * (0.35 + 0.65 * front) + 0.2 * g);
-              if (A > 0.002) strokePiece(prev, _sCur, 2 + 2 * g, A, col, 1.5);
-            }
-            prev[0] = _sCur[0]; prev[1] = _sCur[1]; prev[2] = _sCur[2];
-            hasPrev = true;
+            const o = q * 3;
+            _rbP[o] = rg.C[0] + R2 * Math.sin(th);
+            _rbP[o + 1] = rg.C[1] + R2 * Math.cos(th) * sa;
+            _rbP[o + 2] = rg.C[2] - R2 * Math.cos(th) * ca;
+            const front = 0.5 + 0.5 * Math.cos(th);
+            const flow = 0.55 + 0.45 * Math.sin(3 * th - 1.4 * t + mul * 3);
+            const wrap = Math.atan2(Math.sin(th), Math.cos(th));
+            const g = S >= 0 ? Math.exp(-((wrap / 0.32) ** 2)) : 0;
+            _rbH[q] = 2 + 2 * g;
+            _rbA[q] = kIn * rg.k * a0 * (0.05 * flow * (0.35 + 0.65 * front) + 0.2 * g);
           }
+          emitRibbon(_rbP, _rbH, _rbA, N2, col, 1.5, true);
         }
       }
       if (k < 0.01) return;
@@ -1090,7 +1170,7 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
         const s0 = -sg.half - (r === 0 ? 0.16 : 0.06) * L;
         const s1 = sg.half + (r === last ? 0.46 : 0.06) * L;
         const glintAt = sing && sing.sg === sg ? sing.s : null;
-        // —— 气流丝（每步采一次 segAtOut，三股共用，省去 2/3 曲线求值） ——
+        // —— 气流丝（每步采一次 segAtOut，三股共用，再按连续无缝丝带提交） ——
         const invL13 = (2 * Math.PI) / (1.3 * L);
         const invL045 = (2 * Math.PI) / (0.45 * L);
         const seedRad = seed * 6.28;
@@ -1100,25 +1180,24 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
           segAtOut(sg, s, _ap, _at, _ad);
           const outD = Math.max(0, s - sg.half, -sg.half - s) / L;
           const outSq5 = outD * outD * 5;
-          const um = (q - 0.5) / nSeg;
-          const sm = s0 + (s1 - s0) * um;
-          const taper = q > 0 ? smooth(um / 0.14) * smooth((1 - um) / 0.3) : 0;
-          const g = q > 0 && glintAt !== null ? Math.exp(-(((sm - glintAt) / (1.4 * fs)) ** 2)) : 0;
+          const taper = smooth(u / 0.14) * smooth((1 - u) / 0.3);
+          const g = glintAt !== null ? Math.exp(-(((s - glintAt) / (1.4 * fs)) ** 2)) : 0;
+          const o = q * 3;
           for (let si = 0; si < 3; si++) {
             const st = STRANDS[si]!;
             const base = bases[si]!;
             const off = (base + st.amp * Math.sin(s * invL13 - 1.1 * t + st.ph + seedRad) + (base >= 0 ? outSq5 : -outSq5)) * fs;
-            _sCur[0] = _ap[0] + _ad[0] * off;
-            _sCur[1] = _ap[1] + _ad[1] * off;
-            _sCur[2] = _ap[2] + _ad[2] * off;
-            const pv = _sPrev[si]!;
-            if (q > 0) {
-              const flow = 0.55 + 0.45 * Math.sin(sm * invL045 - 1.6 * t + st.ph);
-              const A = k * taper * st.a * (0.05 * flow + 0.22 * g);
-              if (A > 0.002) strokePiece(pv, _sCur, st.w * (0.7 + 0.5 * taper) * (1 + 0.6 * g), A, col, 1.5);
-            }
-            pv[0] = _sCur[0]; pv[1] = _sCur[1]; pv[2] = _sCur[2];
+            const pArr = _stP[si]!;
+            pArr[o] = _ap[0] + _ad[0] * off;
+            pArr[o + 1] = _ap[1] + _ad[1] * off;
+            pArr[o + 2] = _ap[2] + _ad[2] * off;
+            const flow = 0.55 + 0.45 * Math.sin(s * invL045 - 1.6 * t + st.ph);
+            _stH[si]![q] = st.w * (0.7 + 0.5 * taper) * (1 + 0.6 * g);
+            _stA[si]![q] = k * taper * st.a * (0.05 * flow + 0.22 * g);
           }
+        }
+        for (let si = 0; si < 3; si++) {
+          emitRibbon(_stP[si]!, _stH[si]!, _stA[si]!, nSeg + 1, col, 1.5, false);
         }
         // —— 光雾：沿字的中线排一串互相重叠的柔光椭圆（宽光段拼接在弯处会拼出放射状的条纹），唱到的地方亮一点 ——
         if (k > 0.5) {
@@ -1203,27 +1282,25 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
     /** 取词加载三点淡入淡出进度（0–1），以及三点探针状态 */
     let loadVis = 0;
     let dotsProbe: { mode: 'interlude' | 'loading' | 'none'; op: number; levels: number[] } = { mode: 'none', op: 0, levels: [0, 0, 0] };
-    /** 在隧道前方路线上画三颗柔光点（间奏逐个亮起 / 取词循环波浪呼吸，均走 KIND_LIGHT） */
+    /** 在隧道前方路线上画三颗清晰 3D 圆点（抗锯齿实心珠 + 极轻光晕，不再糊成大光斑） */
     const emitDots = (op0: number, levels: [number, number, number], scales: [number, number, number], yOffs: [number, number, number]) => {
       const zDot = camZ + DREST;
       const cx3 = pathX(zDot);
       const cy3 = pathY(zDot);
       const col = pal.glow;
-      const rCol = col[0]! + (1 - col[0]!) * 0.35;
-      const gCol = col[1]! + (1 - col[1]!) * 0.35;
-      const bCol = col[2]! + (1 - col[2]!) * 0.35;
+      const rCol = col[0]! + (1 - col[0]!) * 0.55;
+      const gCol = col[1]! + (1 - col[1]!) * 0.55;
+      const bCol = col[2]! + (1 - col[2]!) * 0.55;
       const dz = DREST - 1;
       for (let idx = 0; idx < 3; idx++) {
         const lv = levels[idx]!;
         const sc = scales[idx]!;
-        const x = cx3 + (idx - 1) * 44;
+        const x = cx3 + (idx - 1) * 28;
         const y = cy3 + yOffs[idx]!;
-        const rCore = (16 + 6 * lv) * sc;
-        const iCore = op0 * (0.24 + 0.76 * lv) * 0.82;
-        const rHalo = rCore * 2.5;
-        const iHalo = op0 * (0.14 + 0.38 * lv) * 0.22;
-        put(dz + 0.2, x, y, zDot, rHalo, 0, 0, 0, rHalo, 0, 0, 0, 1, 1, KIND_LIGHT, 0, 1, col[0]! * iHalo, col[1]! * iHalo, col[2]! * iHalo, 0, 0, 0, 0, 0);
-        put(dz, x, y, zDot, rCore, 0, 0, 0, rCore, 0, 0, 0, 1, 1, KIND_LIGHT, 0, 1, rCol * iCore, gCol * iCore, bCol * iCore, 0, 0, 0, 0, 0);
+        const rad = 11 * sc;
+        const a = op0 * (0.28 + 0.72 * lv);
+        const halo = 0.22 * lv;
+        put(dz, x, y, zDot, rad, 0, 0, 0, rad, 0, 0, 0, 1, 1, KIND_DOT, 0, a, rCol, gCol, bCol, 0, halo, 0, 0, 0);
       }
     };
 
@@ -1233,6 +1310,10 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
     let lsFly: LsFly | null = null;
     let lsFlyDir: 'in' | 'out' | null = null;
     let lsFlySlots: TravelFlySession | null = null;
+    let morphFly: LsFly | null = null;
+    let morphDir: 'in' | 'out' | null = null;
+    let morphSlots: TravelFlySession | null = null;
+    let morphTries = 0;
     let lsFadeT0 = 0;
     let lsBoostUntil = 0;
     let lsWantAt = 0;
@@ -1240,6 +1321,65 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
     let lastGeos: Geo[] = [];
     let lastCur = -1;
     const camNow = (): FlyCam => ({ pcx, pcy, pX, pY, pZ, F, near: NEAR });
+    const endMorph = () => {
+      if (morphFly) {
+        morphFly.end();
+        morphFly = null;
+      }
+      if (morphSlots) {
+        morphSlots.clear();
+        morphSlots = null;
+      }
+      morphDir = null;
+      if (pageBus.morph) pageBus.morph = false;
+    };
+    const startMorph = (i: number, d: LS, e: EngineLine, segs: Seg[], state: LS['state'], k: number, t: number): boolean => {
+      if (!flyHost || reduceMotion) return false;
+      const caption = roamRef.current === 'caption';
+      const host = document.querySelector<HTMLElement>(
+        caption ? '.lyric-caption > :first-child' : '.lyrics-layer .flow-lyric.is-current .fl-words',
+      );
+      if (!host) return false;
+      const src = [...host.querySelectorAll<HTMLElement>(':scope > .u, :scope > .fl-whole')];
+      if (!src.length) return false;
+      const slots0 = createTravelFlySession(flyHost, i, e, d.g, d.fs, segs, d.warp, camNow(), t, schemeRef.current, state);
+      if (!slots0) return false;
+      if (src.length !== slots0.units.length || normLyricText(src.map((u) => u.textContent || '').join('')) !== normLyricText(slots0.text)) {
+        slots0.clear();
+        return false;
+      }
+      const srcHost = (caption ? host : host.closest<HTMLElement>('.flow-lyric')) ?? host;
+      const mRot = (srcHost.style.transform.match(/rotate\((-?[\d.]+)deg\)/) ?? [])[1];
+      const srcRot = caption ? 0 : mRot ? parseFloat(mRot) : 0;
+      const dir: 'in' | 'out' = k < 0.5 ? 'in' : 'out';
+      const roamOp = caption ? 1 : 0.5;
+      const roamSide = (el: HTMLElement): FlySide => ({
+        el,
+        ctx: el.classList.contains('fl-whole') ? 'lpm-r' : 'lpm-r is-grad',
+        rot: srcRot,
+        vert: false,
+        opacity: roamOp,
+        endOpacity: roamOp,
+      });
+      const pairs: FlyPair[] =
+        dir === 'in'
+          ? src.map((el, j) => ({ from: roamSide(el), to: slots0.sides[j]! }))
+          : src.map((el, j) => ({ from: slots0.sides[j]!, to: roamSide(el) }));
+      const fly = new LsFly(pairs, () => null, 1, hideFlyElements, (x) => x);
+      if (fly.done) {
+        slots0.clear();
+        return false;
+      }
+      // 先在 0 处附着终点并锁定 e0=0，保证无论正向推进还是中途折返都对称插值
+      fly.render(0);
+      morphFly = fly;
+      morphDir = dir;
+      morphSlots = slots0;
+      pageBus.morph = true;
+      pageBus.morphS = e.s;
+      pageBus.caption = caption;
+      return true;
+    };
     const endLsFly = () => {
       lsFly?.end();
       lsFly = null;
@@ -1249,6 +1389,7 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
     };
     const startLsIn = (t: number) => {
       if (!flyHost || lastCur < 0) return;
+      endMorph();
       const gCur = lastGeos.find((g) => g.d.i === lastCur && g.op > 0.12 && !g.d.done);
       if (!gCur) return;
       const slots0 = createTravelFlySession(flyHost, gCur.d.i, els[gCur.d.i]!, gCur.d.g, gCur.d.fs, gCur.segs, gCur.d.warp, camNow(), t, schemeRef.current, gCur.state);
@@ -1267,7 +1408,13 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
     };
     const startLsOut = (t: number) => {
       if (!flyHost || !els.length) return;
-      if (!vw) fit();
+      endMorph();
+      applyPendingResize();
+      if (!vw) {
+        const b = root.getBoundingClientRect();
+        vw = b.width || window.innerWidth;
+        vh = b.height || window.innerHeight;
+      }
       const cx0 = vw / 2;
       const cy0 = vh * 0.47;
       camZ = camAt(route, t);
@@ -1387,6 +1534,13 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
         root.style.opacity = opS;
         rootOp = opS;
       }
+      if (lsNow || lsFly || boost > 0) {
+        if (morphFly) endMorph();
+        morphTries = 99;
+      } else if (k <= 0.001 || k >= 0.999) {
+        if (morphFly) endMorph();
+        morphTries = 0;
+      }
       if (op < 0.002) {
         if (lsFly && lsFlyDir === 'out' && lsFly.step(now)) endLsFly();
         return;
@@ -1394,7 +1548,14 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       if (k > 0.35 && !lsNow) notifySmallLibraryOnce(tracks, noticeRef.current);
       const t0 = performance.now();
       frameNo++;
-      if (!vw) fit();
+      applyPendingResize();
+      if (!vw) {
+        const b = root.getBoundingClientRect();
+        vw = b.width || window.innerWidth;
+        vh = b.height || window.innerHeight;
+        canvas.width = Math.max(1, Math.round(vw * dpr));
+        canvas.height = Math.max(1, Math.round(vh * dpr));
+      }
       if (frameNo % 20 === 1) syncPalette();
       const cx = vw / 2;
       const cy = vh * 0.47;
@@ -1634,12 +1795,17 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
         const blur = done ? smooth((820 - dz) / 440) : 0;
         const trK = smooth((t - e.s + 0.05) / 0.45);
         const bd: Bound = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity };
+        // 漫游 ↔ 穿行一镜到底：在保持场景淡入淡出与轻纵深推入的同时，当前句逐字飞向/飞离 3D 曲线（允许最多 4 帧等漫游 DOM 对齐）
+        if (i === cur && !done && !lsNow && !lsFly && !boost && k > 0.001 && k < 0.999 && !morphFly && morphTries < 4) {
+          morphTries = startMorph(i, d, e, segs, state, k, t) ? 99 : morphTries + 1;
+        }
         // 衬托层强度：下一句约 0.35，开唱前后 0.6 秒升到 1，唱完掠过时随推开淡出；更远的句子不画
         const auraK =
           i === cur + 1 ? 0.35 * o : i <= cur && i >= cur - 1 ? (0.35 + 0.65 * smooth((t - e.s + 0.4) / 0.6)) * (1 - passK) * Math.min(1, o * 1.4) : 0;
-        const flyingThis = lsFlySlots?.lineIdx === i;
-        if (!flyingThis && auraK > 0.01) emitAura(d, segs, auraK, i === cur ? S : -1, t);
-        if (!flyingThis && o > 0.004) emitLine(d, segs, o, mode, blur, trK, bd, i > cur && curBox ? curBox : null);
+        const flyingLs = lsFlySlots?.lineIdx === i;
+        const flyingMorph = morphSlots?.lineIdx === i;
+        if (!flyingLs && auraK > 0.01) emitAura(d, segs, auraK, i === cur ? S : -1, t);
+        if (!flyingLs && !flyingMorph && o > 0.004) emitLine(d, segs, o, mode, blur, trK, bd, i > cur && curBox ? curBox : null);
         if (i === cur && bd.x1 > bd.x0) curBox = { x0: bd.x0 - 10, x1: bd.x1 + 10, y0: bd.y0 - 8, y1: bd.y1 + 8 };
         geos.push({ d, segs, op: o, dz, state, bd });
         if (S >= 0) lightPt = pointOn(d, segs, S).p;
@@ -1647,6 +1813,16 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       }
       lastGeos = geos;
       lastCur = cur;
+      // 漫游 ↔ 穿行一镜到底逐帧同步：跟随纵深推入中的 3D 曲线位置与扫光状态
+      if (morphFly && morphSlots) {
+        const gM = geos.find((g) => g.d.i === morphSlots!.lineIdx);
+        if (gM) {
+          morphSlots.update(gM.segs, gM.d.warp, camNow(), t, scheme, gM.state);
+          morphFly.render(morphDir === 'in' ? k : 1 - k);
+        } else {
+          endMorph();
+        }
+      }
       // 听音空间收起回飞穿行：逐帧同步目标句的三维投影，落位贴合正在推进的曲线
       if (lsFly && lsFlyDir === 'out') {
         if (lsFlySlots) {
@@ -1825,7 +2001,7 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
         const lvs: [number, number, number] = [0.22 + 0.78 * w0, 0.22 + 0.78 * w1, 0.22 + 0.78 * w2];
         const envSc = 0.65 + 0.35 * loadVis;
         const scs: [number, number, number] = [(0.82 + 0.24 * w0) * envSc, (0.82 + 0.24 * w1) * envSc, (0.82 + 0.24 * w2) * envSc];
-        emitDots(loadVis, lvs, scs, [-w0 * 10, -w1 * 10, -w2 * 10]);
+        emitDots(loadVis, lvs, scs, [-w0 * 7, -w1 * 7, -w2 * 7]);
         dotsProbe = { mode: 'loading', op: loadVis, levels: lvs };
       } else {
         dotsProbe = { mode: 'none', op: 0, levels: [0, 0, 0] };
@@ -1902,7 +2078,7 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
     };
     raf = requestAnimationFrame(tick);
 
-    const w = window as unknown as { __nebulaTravel?: { probe: () => unknown; lsProbe?: () => unknown } };
+    const w = window as unknown as { __nebulaTravel?: { probe: () => unknown; lsProbe?: () => unknown; morphProbe?: () => unknown } };
     w.__nebulaTravel = {
       probe: () => {
         const sorted = [...times].sort((a, b) => a - b);
@@ -1943,12 +2119,20 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
           : 0;
         return { n: err.length, err, off };
       },
+      morphProbe: () => {
+        if (!morphFly) return null;
+        morphFly.render(1);
+        const err = morphFly.probe();
+        return { dir: morphDir, n: err.length, err };
+      },
     };
 
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
+      if (rebuildTimer !== null) clearTimeout(rebuildTimer);
       canvas.removeEventListener('webglcontextlost', onLost);
+      endMorph();
       endLsFly();
       for (const d of [...doms.values()]) dropLine(d);
       root.style.opacity = '0';

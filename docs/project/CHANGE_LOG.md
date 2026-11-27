@@ -6,6 +6,24 @@
 
 ---
 
+## #311 — 2026-11-27 — 穿行第二版桌面验收反馈四项精修：3D 清晰圆点、连续无缝气流光带、防拖曳闪烁重排与漫游一镜到底
+
+**目标**：按用户第四步桌面验收反馈与四张截图，逐项修复 3D 间奏/取词三点发糊、气流光带分段如「火柴棍拼接」、拖曳缩放窗口持续闪烁，并在保持漫游 ↔ 穿行淡入淡出与轻纵深推入的基础上，补上当前句双向一镜到底飞字联动。
+
+**改动点**
+- **3D 清晰圆点（不再糊成一团）**（`src/components/travel/renderer.ts`、`src/components/TravelSpace.tsx`）：新增着色器图元 `KIND_DOT = 5`（抗锯齿锐利实心珠 `r - 0.52` + 极轻外晕 `exp(-r²·5.5)`）；`emitDots` 改用 `KIND_DOT`、半径收紧为 `11`、间距收紧至 `28`，彻底告别旧 `KIND_LIGHT` 大高斯光斑相互糊成一片的问题。
+- **连续无缝气流光带（消除分段火柴棍）**（`src/components/travel/renderer.ts`、`src/components/TravelSpace.tsx`）：`KIND_STROKE` 顶点着色器支持沿段线性插值两端半宽向量（`mix(a_ay, a_uv.xyz, t.x)`），片元着色器沿段线性插值端点透明度（`mix(v_B.x, v_B.y, v_local.x)`）；`TravelSpace.tsx` 新增零分配连续丝带提交器 `emitRibbon`（节点共享平滑切向与法向，相邻段严丝合缝无接缝与重叠加亮），气流三股（`44/24` 段）、轨道环（64 段闭合）、光尾、螺旋光与星座连线全部切换至 `emitRibbon`。
+- **窗口缩放防闪烁 + 停手重排**（`src/components/TravelSpace.tsx`、`src/components/TravelStage.tsx`）：`ResizeObserver` 回调中不再同步改写 `canvas.width / height`（杜绝拖曳期间 WebGL2/2D 帧缓冲被反复清黑闪烁），改为在 rAF 绘制前同帧 `applyPendingResize()` 同步尺寸；超 15% 的路线 / 封面槽位重建改为 `220ms` 停手防抖（`commitResizeRebuild`），拖曳全程画面连贯不跳变、松手后平滑重排。
+- **漫游 ↔ 穿行当前句双向一镜到底**（`src/components/TravelSpace.tsx`、`src/components/LyricsLayer.tsx`）：保留既有背景淡入淡出与 `-420·(1-k)²` 轻纵深推入，新增 `startMorph / endMorph` 复用 `travelFly.ts` + `LsFly`（线形映射直接受 `listenBus.k` 驱动，支持「淡淡一句」与「底部字幕」，正向进入与反向退出双向对齐移动中的 3D 曲线与纵深推入）；`LyricsLayer.tsx` 在 `travelMode && pageBus.morph` 时同步隐去原句防重影；`window.__nebulaTravel.morphProbe()` 暴露落位校验。
+- `scripts/qa.cjs`：新增 `travelRoamMorph` 回归断言（验证穿行 ↔ 漫游飞字命中、落位误差 ≤ 1.5px、落地后 `.lp-lsfly` / `[data-flyhide]` 归零）。
+
+**验证**
+- 无头 Chrome 截图自检（`scratch/verify-aura.png` & `scratch/verify-dots.png`，不进仓库）：三股气流丝呈完整丝滑连续渐变丝带、零分段切痕；间奏三点边缘锐利清晰、微光不黏连。
+- 真实 2877 首曲库《Telescope》12 点采样：`p95` 中位 `0.4ms`（`avg 0.24ms`，0 错误）。
+- `$env:pnpm_config_verify_deps_before_run='false'; pnpm build; pnpm qa` 全绿（0 控制台错误；`travelGL` `avg 0.21ms / p95 0.4ms`；`travelGLResize` `rebuilds: 1, out: 0`；`travelLsFly` `inErr: 0, outErr: 0`；`travelRoamMorph` `dir: "out", n: 4, err: 0, clean: { layers: 0, hidden: 0 }`）。
+
+**遗留与风险**：默认体验不变（实验开关 `lab.travelGL` 仍默认关）。待用户桌面验收确认后，再执行第四步第 6/7 项（替换设置里的穿行、删实验开关、规格写进 `NEBULA_UI_SYSTEM.md` §7.1c 并删 `TRAVEL_HANDOFF.md`）。
+
 ## #310 — 2026-11-27 — 穿行第二版第四步（五）：漫游轻纵深推入、听音空间双向飞字一镜到底与文档刷新
 
 **目标**：`TRAVEL_HANDOFF.md` §9.10 第四步第 5 项（用户选定方案 1A + 2A），完成穿行进出过渡与听音空间一镜到底，并刷新交接文档交付桌面验收（验收通过后再做第 6/7 项：替换设置里的穿行、删实验开关并落档 §7.1c）。

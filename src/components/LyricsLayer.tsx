@@ -717,8 +717,9 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist, l
       const labNow = getSpaceLab();
       up = labNow.lyricShape;
       pageMode = labNow.stageMode === 'page';
-      // 穿行（初版）在聆听中接管舞台：漫游歌词不再请星云刷新、不做和听音空间的一镜到底（漫游态照旧）
-      const travelOwns = labNow.stageMode === 'travel' && listenBus.enabled && listenBus.k > 0.5;
+      const travelMode = labNow.stageMode === 'travel';
+      // 穿行在聆听中接管舞台：漫游歌词不再请星云刷新、不做和听音空间的一镜到底（漫游态照旧）
+      const travelOwns = travelMode && listenBus.enabled && listenBus.k > 0.5;
       if (up || pageMode) {
         const sd = shapeRef.current;
         const st = stageAt(sd.shape, sd.sl, tSec);
@@ -902,8 +903,8 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist, l
           scM *= 1 - 0.12 * gapK;
           gapDy = (fl.sy < ch * MAIN_Y ? -1 : 1) * ch * 0.065 * gapK;
         }
-        // 版面转场（逐字飞入）：这句正由 LyricPage 的替身逐字飞往版面，原句（不论当前还是正在离场）藏起来
-        if (pageMode && pageBus.morph) {
+        // 版面 / 穿行转场（逐字飞入）：这句正由替身逐字飞往目标舞台，原句（不论当前还是正在离场）藏起来
+        if ((pageMode || travelMode) && pageBus.morph) {
           const e = engineLinesRef.current[lineIdx];
           if (e && Math.abs(e.s - pageBus.morphS) < 0.12) opM = 0;
         }
@@ -970,7 +971,7 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist, l
         }
       } else if (lightRef.current && lightRef.current.style.opacity !== '0') lightRef.current.style.opacity = '0';
       // 先同步本帧底部字幕（保证打开/收起听音空间的那一帧 captionDom 与 --cap-o 已是最新当前句）
-      const rawCapShow = captionOn && !(pageMode && pageBus.morph && pageBus.caption) ? 1 - k : 0;
+      const rawCapShow = captionOn && !((pageMode || travelMode) && pageBus.morph && pageBus.caption) ? 1 - k : 0;
       const capFadeIn =
         roamFly && roamFlyInKind === 'flow'
           ? (() => {

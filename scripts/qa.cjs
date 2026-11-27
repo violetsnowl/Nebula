@@ -2158,25 +2158,43 @@ async function main() {
       );
       await page.waitForTimeout(550);
       const travelLoadDots = await page.evaluate(() => window.__nebulaTravel?.probe?.()?.dots ?? null);
-      // 还原为 song2Data 与默认状态，免影响后续 stageFlyExtra
+      // 4b) 漫游 ↔ 穿行当前句一镜到底（保持淡入淡出与轻纵深推入的同时，当前句逐字飞离 3D 曲线落回漫游态并清空残留）
       await page.evaluate(
         ({ data, audio }) => {
           window.nebulaAPI.fetchLyric = async () => ({ ok: true, data });
-          window.__nebula.travelGL(false);
-          document.querySelector('.sd-panel.sd-right [data-stage-tile="page"]')?.click();
           const n = window.__nebula;
           const s2 = { ...n.songsData()[4], source: 'netease', sourceId: 'qa-page-ls-switch-back', title: 'Switch Back', audio };
           n.player.playSong(s2, [s2]);
         },
         { data: song2Data, audio: leakAudio },
       );
-      await page.waitForTimeout(300);
+      await page.waitForTimeout(350);
+      await page.evaluate(() => window.__nebula.player.seek(1.5));
+      await page.waitForTimeout(260);
       await page.evaluate(() => document.querySelector('.listen-exit')?.click());
+      await page.waitForTimeout(220);
+      const tvMorphOut = await page.evaluate(() => window.__nebulaTravel?.morphProbe?.() ?? null);
+      await page.waitForTimeout(1400);
+      const tvMorphClean = await page.evaluate(() => ({
+        layers: document.querySelectorAll('.lp-lsfly').length,
+        hidden: document.querySelectorAll('[data-flyhide]').length,
+      }));
+      const travelRoamMorph = {
+        dir: tvMorphOut?.dir ?? null,
+        n: tvMorphOut?.n ?? 0,
+        err: tvWorst(tvMorphOut),
+        clean: tvMorphClean,
+      };
+      // 还原默认状态，免影响后续 stageFlyExtra
+      await page.evaluate(() => {
+        window.__nebula.travelGL(false);
+        document.querySelector('.sd-panel.sd-right [data-stage-tile="page"]')?.click();
+      });
       await page.waitForTimeout(250);
       await pinTg();
       await tab('歌词');
       await page.waitForTimeout(250);
-      return { beforeGap, gapOpen, switchInLs, afterClose, travelLsFly, travelGapDots, travelLoadDots };
+      return { beforeGap, gapOpen, switchInLs, afterClose, travelLsFly, travelRoamMorph, travelGapDots, travelLoadDots };
     })();
     await page.keyboard.press('Control+Shift+M');
     await page.waitForTimeout(300);
@@ -2432,6 +2450,12 @@ async function main() {
     pageLsLeakCheck.travelLsFly.outDone.op > 0.9 &&
     !pageLsLeakCheck.travelLsFly.outDone.layer &&
     pageLsLeakCheck.travelLsFly.outDone.hidden === 0 &&
+    pageLsLeakCheck.travelRoamMorph?.dir === 'out' &&
+    pageLsLeakCheck.travelRoamMorph.n > 0 &&
+    pageLsLeakCheck.travelRoamMorph.err !== null &&
+    pageLsLeakCheck.travelRoamMorph.err <= 1.5 &&
+    pageLsLeakCheck.travelRoamMorph.clean?.layers === 0 &&
+    pageLsLeakCheck.travelRoamMorph.clean?.hidden === 0 &&
     pageLsLeakCheck.travelGapDots?.mode === 'interlude' &&
     pageLsLeakCheck.travelGapDots.op > 0.4 &&
     pageLsLeakCheck.travelGapDots.levels?.[0] > 0.2 &&

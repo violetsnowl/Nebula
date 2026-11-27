@@ -194,27 +194,48 @@ function TravelStageFlat({ lines, songKey, lsOpen, song, cards, onNotice }: Trav
     let slotPack = buildSlots(route, tracks, baseHue, songSeed, routeW, routeH);
     let slots = slotPack.slots;
     let small = slotPack.small;
+    let pendingW = vw;
+    let pendingH = vh;
+    let pendingDpr = dpr;
+    let resizeDirty = false;
+    let rebuildTimer = 0;
+    let needRebuild = false;
+    const applyPendingResize = () => {
+      if (resizeDirty) {
+        vw = pendingW;
+        vh = pendingH;
+        dpr = pendingDpr;
+        canvas.width = Math.max(1, Math.round(vw * dpr));
+        canvas.height = Math.max(1, Math.round(vh * dpr));
+        resizeDirty = false;
+      }
+      if (needRebuild) {
+        needRebuild = false;
+        if (vw > 0 && vh > 0 && routeW > 0 && routeH > 0) {
+          if (Math.abs(vw - routeW) / routeW > 0.15 || Math.abs(vh - routeH) / routeH > 0.15) {
+            routeW = vw;
+            routeH = vh;
+            route = buildRoute(els, shape, routeW, routeH);
+            slotPack = buildSlots(route, tracks, baseHue, songSeed, routeW, routeH);
+            slots = slotPack.slots;
+            small = slotPack.small;
+          }
+        }
+        for (const d of doms.values()) d.fs = fitFont(d);
+      }
+    };
     const fit = () => {
       const b = root.getBoundingClientRect();
       const r = Math.min(1.5, window.devicePixelRatio || 1);
-      if (b.width === vw && b.height === vh && r === dpr) return;
-      vw = b.width;
-      vh = b.height;
-      dpr = r;
-      canvas.width = Math.max(1, Math.round(vw * dpr));
-      canvas.height = Math.max(1, Math.round(vh * dpr));
-      if (vw > 0 && vh > 0 && routeW > 0 && routeH > 0) {
-        if (Math.abs(vw - routeW) / routeW > 0.15 || Math.abs(vh - routeH) / routeH > 0.15) {
-          routeW = vw;
-          routeH = vh;
-          route = buildRoute(els, shape, routeW, routeH);
-          slotPack = buildSlots(route, tracks, baseHue, songSeed, routeW, routeH);
-          slots = slotPack.slots;
-          small = slotPack.small;
-        }
-      }
-      // 窗口变了，长句的世界字号要重算
-      for (const d of doms.values()) d.fs = fitFont(d);
+      if (b.width === pendingW && b.height === pendingH && r === pendingDpr) return;
+      pendingW = b.width;
+      pendingH = b.height;
+      pendingDpr = r;
+      resizeDirty = true;
+      window.clearTimeout(rebuildTimer);
+      rebuildTimer = window.setTimeout(() => {
+        needRebuild = true;
+      }, 220);
     };
     const ro = new ResizeObserver(fit);
     ro.observe(root);
@@ -318,6 +339,7 @@ function TravelStageFlat({ lines, songKey, lsOpen, song, cards, onNotice }: Trav
       if (k > 0.35 && !lsOpenRef.current) notifySmallLibraryOnce(tracks, noticeRef.current);
       const t0 = performance.now();
       frameNo++;
+      applyPendingResize();
       if (!vw) fit();
       const cx = vw / 2;
       const cy = vh * 0.47;
@@ -526,6 +548,7 @@ function TravelStageFlat({ lines, songKey, lsOpen, song, cards, onNotice }: Trav
 
     return () => {
       cancelAnimationFrame(raf);
+      window.clearTimeout(rebuildTimer);
       ro.disconnect();
       for (const d of [...doms.values()]) dropLine(d);
       root.style.opacity = '0';
