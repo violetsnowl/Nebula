@@ -1788,6 +1788,22 @@ async function main() {
       frame: p ? p.frameMs : null,
     };
   });
+  // 改窗口大小超 15% 重排路线与封面槽位：1600×900 → 1024×640 → 还原，验证重建计数递增、字不出画幅
+  await page.setViewportSize({ width: 1024, height: 640 });
+  await page.waitForTimeout(450);
+  const travelGLResize = await page.evaluate(() => {
+    const p = window.__nebulaTravel ? window.__nebulaTravel.probe() : null;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const seen = p ? p.lines.filter((l) => l.op > 0.3) : [];
+    return {
+      rebuilds: p ? p.rebuilds : 0,
+      seen: seen.length,
+      out: seen.filter((l) => !l.done).filter((l) => l.x < -2 || l.y < -2 || l.x + l.w > vw + 2 || l.y + l.h > vh + 2).length,
+    };
+  });
+  await page.setViewportSize({ width: 1600, height: 900 });
+  await page.waitForTimeout(350);
   await page.evaluate(() => window.__nebula.travelGL(false));
   await page.waitForTimeout(600);
   const travelGLOff = await page.evaluate(() => ({ space: !!document.querySelector('.travel-space'), flat: !!document.querySelector('.travel-stage:not(.travel-space)') }));
@@ -1811,9 +1827,10 @@ async function main() {
     !!travelOn.frame && travelOn.frame.n > 30 && travelOn.frame.p95 < 6 && travelOn.stageHidden && travelOn.roamHidden &&
     travelLs.ls && travelLs.op < 0.05 && !travelLs.roamFly && !travelOff.root && travelOff.mode === null &&
     travelGL.gl && travelGL.canvas && travelGL.op > 0.9 && travelGL.covers > 0 && travelGL.quads > travelGL.covers && travelGL.seen >= 1 && travelGL.out === 0 &&
+    travelGLResize.rebuilds >= 1 && travelGLResize.seen >= 1 && travelGLResize.out === 0 &&
     !!travelGL.frame && travelGL.frame.n > 30 && travelGL.frame.p95 < 6 && !travelGLOff.space && travelGLOff.flat;
   log('穿行（初版：聆听中取代星云与漫游歌词）', JSON.stringify({ travelOn, travelLs, travelOff }));
-  log('穿行第二版·空间歌词（实验开关）', JSON.stringify({ travelGL, travelGLOff }));
+  log('穿行第二版·空间歌词（实验开关）', JSON.stringify({ travelGL, travelGLResize, travelGLOff }));
 
   // 版面·英文占位歌（样张 M 的原创歌词，带中文翻译，有主歌 / 预副歌 / 副歌 / 间奏 / 桥段）：
   // 判定间奏三点（跳到间奏中段，三点出现且在亮、这时没有页）；设了 NEBULA_QA_SHOT 时另外跳到各段拍一张给开发目测

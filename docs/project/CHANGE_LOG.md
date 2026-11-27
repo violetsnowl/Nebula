@@ -6,6 +6,19 @@
 
 ---
 
+## #308 — 2026-11-27 — 穿行第二版第四步（三）：改窗口大小超 15% 原地重建路线与走廊适配
+
+**目标**：`TRAVEL_HANDOFF.md` §9.10 第四步第 3 项，窗口宽高大幅变化时重新生成路线、封面槽位与隧道壁朝向，避免纵深与走廊宽失配，且不重建封面纹理数组与字形贴图。
+
+**改动点**
+- `src/components/travel/route.ts` & `src/components/travel/tunnel.ts`：`slotRadius`、`buildSlots` 与 `tunnelBasis` 支持按窗口宽高适配走廊半径与竖向压缩比（新增 `slotYAspect`；1600×900 基准下数值与原先完全一致，窄屏 / 竖屏自动放开防封面挤出左右边缘）。
+- `src/components/TravelSpace.tsx` & `src/components/TravelStage.tsx`：先量初始尺寸再建 `route / slots / basis`；`fit()` 检测到宽或高变化超过 15% 时原地重建路线、槽位与隧道壁（封面纹理与字形贴图保持复用，镜头按当前时间平滑衔接），探针新增 `rebuilds` 计数。
+- `scripts/qa.cjs`：穿行第二版项新增 `1600×900 → 1024×640 → 1600×900` 视口缩放回归（`travelGLResize`），断言 `rebuilds ≥ 1` 且未唱完歌词不出画幅。
+
+**验证**：`$env:pnpm_config_verify_deps_before_run='false'; pnpm build; pnpm qa` 全绿（0 控制台错误；`travelGLResize: { rebuilds: 1, seen: 2, out: 0 }`；`travelGL` `avg 0.20ms / p95 0.4ms`）。
+
+**遗留与风险**：默认体验不变。接下来做第四步第 4 项：小曲库实测与进入穿行时的轻量提示。
+
 ## #307 — 2026-11-27 — 穿行第二版第四步（二）：3D 柔光三点（长间奏逐个亮起 + 切歌取词波浪呼吸）
 
 **目标**：`TRAVEL_HANDOFF.md` §9.10 第四步第 2 项（用户选定方案 3A），补齐穿行第二版在 ≥ 4 秒长间奏与切歌慢取词时的视觉提示，全部融进 WebGL2 3D 隧道空间。

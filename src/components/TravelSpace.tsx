@@ -16,7 +16,7 @@ import { cssRgba } from './travel/glCore';
 import { CoverTextures } from './travel/coverTex';
 import { ATLAS_H, GlyphAtlas, PAD, R_MAIN, TR_K, type FontSpec, type GLine, type GUnit } from './travel/glyphAtlas';
 import { INST, KIND_CHIP, KIND_COVER, KIND_GLYPH, KIND_LIGHT, KIND_STROKE, Renderer, type Palette } from './travel/renderer';
-import { DREST, F, FAR, buildRoute, buildSlots, camAt, hashStr, hueOffsetAt, lowerBound, pathX, pathY, slotRadius, songHue } from './travel/route';
+import { DREST, F, FAR, buildRoute, buildSlots, camAt, hashStr, hueOffsetAt, lowerBound, pathX, pathY, slotRadius, slotYAspect, songHue } from './travel/route';
 import { BEATS, buildSegs, headOf, locate, placeSegs, placeSegsWithHead, planShapes, segAt, segAtOut, splitAt, type Seg, type V3 } from './travel/pathText';
 import { tunnelBasis } from './travel/tunnel';
 import { planChoreo } from './travel/choreo';
@@ -251,6 +251,37 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       }
       return { fs: clamp(fs, FS_MIN, FS_MAX), split: 0 };
     };
+    // —— 初始尺寸与路线 / 槽位 / 隧道壁（窗口变化超 15% 时原地重建，封面纹理数组与字形贴图不重建） ——
+    const initRect = root.getBoundingClientRect();
+    vw = initRect.width || window.innerWidth;
+    vh = initRect.height || window.innerHeight;
+    dpr = Math.min(2, window.devicePixelRatio || 1);
+    canvas.width = Math.max(1, Math.round(vw * dpr));
+    canvas.height = Math.max(1, Math.round(vh * dpr));
+
+    const songSeed = hashStr(songKey);
+    const baseHue = songHue(song);
+    let routeW = vw;
+    let routeH = vh;
+    let rebuilds = 0;
+    let route = buildRoute(els, shape, routeW, routeH);
+    let slotPack = buildSlots(route, tracks, baseHue, songSeed, routeW, routeH);
+    let slots = slotPack.slots;
+    let small = slotPack.small;
+    let basis = (() => {
+      const { rMin, rMax } = slotRadius(small, routeW);
+      return tunnelBasis(slots, rMin, rMax, slotYAspect(routeW, routeH));
+    })();
+    /** 每句的句形（斜坡 / 波 / 扬尾 / 拐角 / 弧，§9.3）：按句组轮换，同一首歌每次一样 */
+    const plan = planShapes(els, shape, songSeed);
+    /** 每句的招式（穿针 / 环 / 卷起 / 立起 / 星座，§9.4–9.5）：同一首歌每次一样 */
+    const choreo = planChoreo(els, shape).moves;
+    /** 间奏三点窗口（≥ 4s 间奏，上一句掠过完到下一句临近开唱，§9.10 第 2 项） */
+    const gapWindows = (shape?.gaps ?? [])
+      .filter((g) => g.kind === 'interlude')
+      .map((g) => ({ s: g.s + 1.0, e: g.e - 1.4 }))
+      .filter((g) => g.e - g.s >= 1.2);
+
     const fit = () => {
       const b = root.getBoundingClientRect();
       const r = Math.min(2, window.devicePixelRatio || 1);
@@ -260,6 +291,19 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       dpr = r;
       canvas.width = Math.max(1, Math.round(vw * dpr));
       canvas.height = Math.max(1, Math.round(vh * dpr));
+      if (vw > 0 && vh > 0 && routeW > 0 && routeH > 0) {
+        if (Math.abs(vw - routeW) / routeW > 0.15 || Math.abs(vh - routeH) / routeH > 0.15) {
+          routeW = vw;
+          routeH = vh;
+          route = buildRoute(els, shape, routeW, routeH);
+          slotPack = buildSlots(route, tracks, baseHue, songSeed, routeW, routeH);
+          slots = slotPack.slots;
+          small = slotPack.small;
+          const { rMin, rMax } = slotRadius(small, routeW);
+          basis = tunnelBasis(slots, rMin, rMax, slotYAspect(routeW, routeH));
+          rebuilds++;
+        }
+      }
       for (const d of doms.values()) {
         Object.assign(d, sizeLine(els[d.i]!, d.g));
         d.fix = fixOf(d);
@@ -271,22 +315,6 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
     };
     const ro = new ResizeObserver(fit);
     ro.observe(root);
-    fit();
-
-    const route = buildRoute(els, shape, vw || window.innerWidth, vh || window.innerHeight);
-    const baseHue = songHue(song);
-    const { slots, small } = buildSlots(route, tracks, baseHue, hashStr(songKey));
-    /** 每句的句形（斜坡 / 波 / 扬尾 / 拐角 / 弧，§9.3）：按句组轮换，同一首歌每次一样 */
-    const plan = planShapes(els, shape, hashStr(songKey));
-    /** 每句的招式（穿针 / 环 / 卷起 / 立起 / 星座，§9.4–9.5）：同一首歌每次一样 */
-    const choreo = planChoreo(els, shape).moves;
-    /** 间奏三点窗口（≥ 4s 间奏，上一句掠过完到下一句临近开唱，§9.10 第 2 项） */
-    const gapWindows = (shape?.gaps ?? [])
-      .filter((g) => g.kind === 'interlude')
-      .map((g) => ({ s: g.s + 1.0, e: g.e - 1.4 }))
-      .filter((g) => g.e - g.s >= 1.2);
-    const { rMin, rMax } = slotRadius(small);
-    const basis = tunnelBasis(slots, rMin, rMax);
 
     /** 第 i 句的锚点（世界 x / y）：路线中心 + 四拍错开（按当前窗口大小，改窗口后自然重排） */
     const KREST = DREST / F;
@@ -1722,6 +1750,7 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
           covers: drawn,
           slots: slots.length,
           small,
+          rebuilds,
           lines: [...probeLines].sort((a, b) => a.i - b.i),
           frameMs: {
             avg: sorted.length ? sorted.reduce((a, b) => a + b, 0) / sorted.length : 0,

@@ -300,18 +300,25 @@ const NEUTRAL_CHROMA = 0.035;
  * 每个位置挑颜色最接近该处目标色相的封面（颜色旅程），离路线中心 380–1700（开方分布）。
  * 小曲库补偿（样张，300 首以下逐渐生效）：封面放大（样张 300–360，初版 250–290）、离路线更近（300–900），路段缩短到可见纵深，按段重复。
  */
-/** 封面离路线中心的范围（小曲库补偿程度 small 0–1 时）。穿行第二版的隧道壁按它算内倾。 */
-export function slotRadius(small: number): { rMin: number; rMax: number } {
-  return { rMin: 380 + (300 - 380) * small, rMax: 1700 + (900 - 1700) * small };
+/** 封面离路线中心的范围（小曲库补偿程度 small 0–1 时，按窗口宽适配走廊宽，1600 宽时与原值一致）。 */
+export function slotRadius(small: number, vw = 1600): { rMin: number; rMax: number } {
+  const k = clamp(vw / 1600, 0.72, 1.25);
+  return { rMin: (380 + (300 - 380) * small) * k, rMax: (1700 + (900 - 1700) * small) * k };
 }
 
-export function buildSlots(r: Route, tracks: Track[], baseHue: number, seed: number): { slots: Slot[]; small: number } {
+/** 走廊竖向压缩比（1600×900 下为 0.66，窄屏 / 竖屏自动放开，免得封面全挤出左右边）。 */
+export function slotYAspect(vw = 1600, vh = 900): number {
+  return clamp((vh / Math.max(1, vw)) * (0.66 / (900 / 1600)), 0.52, 1.15);
+}
+
+export function buildSlots(r: Route, tracks: Track[], baseHue: number, seed: number, vw = 1600, vh = 900): { slots: Slot[]; small: number } {
   const n = tracks.length;
   if (!n) return { slots: [], small: 0 };
   const rand = mulberry(seed);
   const small = clamp((300 - n) / 260, 0, 1);
   const lerp = (a: number, b: number) => a + (b - a) * small;
-  const { rMin, rMax } = slotRadius(small);
+  const { rMin, rMax } = slotRadius(small, vw);
+  const yAspect = slotYAspect(vw, vh);
   // 样张补偿到 300–360；真实封面（白底、大字）放这么大像海报拼贴，初版收到 250–290
   const sMin = lerp(165, 250);
   const sVar = lerp(20, 40);
@@ -359,7 +366,7 @@ export function buildSlots(r: Route, tracks: Track[], baseHue: number, seed: num
       if (ci < 0) break;
       const rr = rMin + (rMax - rMin) * Math.sqrt(rand());
       const th = rand() * 2 * Math.PI;
-      slots.push({ z, x: pathX(z) + rr * Math.cos(th), y: pathY(z) + rr * Math.sin(th) * 0.66, size: sMin + rand() * sVar, ci });
+      slots.push({ z, x: pathX(z) + rr * Math.cos(th), y: pathY(z) + rr * Math.sin(th) * yAspect, size: sMin + rand() * sVar, ci });
     }
   }
   slots.sort((a, b) => a.z - b.z);

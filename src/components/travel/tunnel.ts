@@ -29,14 +29,14 @@ function hash01(i: number, salt: number): number {
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
 
-/** 每张封面 6 个数：半宽向量 (ax) 与半高向量 (ay)。rMin / rMax 是摆位时离路线的范围。 */
-export function tunnelBasis(slots: Slot[], rMin: number, rMax: number): Float32Array {
+/** 每张封面 6 个数：半宽向量 (ax) 与半高向量 (ay)。rMin / rMax 是摆位时离路线的范围，yAspect 是竖向压缩比。 */
+export function tunnelBasis(slots: Slot[], rMin: number, rMax: number, yAspect = 0.66): Float32Array {
   const out = new Float32Array(slots.length * 6);
   for (let i = 0; i < slots.length; i++) {
     const s = slots[i]!;
     const dx = s.x - pathX(s.z);
-    // 摆位时竖向压到 0.66：按还原后的方向算朝向，上下两侧的倾角和左右一致
-    const dy = (s.y - pathY(s.z)) / 0.66;
+    // 摆位时竖向压到 yAspect：按还原后的方向算朝向，上下两侧的倾角和左右一致
+    const dy = (s.y - pathY(s.z)) / yAspect;
     const rr = Math.hypot(dx, dy) || 1;
     const rx = dx / rr;
     const ry = dy / rr;

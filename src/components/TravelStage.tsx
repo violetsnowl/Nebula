@@ -175,7 +175,22 @@ function TravelStageFlat({ lines, songKey, lsOpen, song, cards }: TravelStagePro
       return clamp(max, 30, 60);
     };
 
-    // —— 画布尺寸 ——
+    // —— 画布尺寸与路线（窗口变化超 15% 时原地重建路线与槽位） ——
+    const initRect = root.getBoundingClientRect();
+    vw = initRect.width || window.innerWidth;
+    vh = initRect.height || window.innerHeight;
+    dpr = Math.min(1.5, window.devicePixelRatio || 1);
+    canvas.width = Math.max(1, Math.round(vw * dpr));
+    canvas.height = Math.max(1, Math.round(vh * dpr));
+
+    const songSeed = hashStr(songKey);
+    const baseHue = songHue(song);
+    let routeW = vw;
+    let routeH = vh;
+    let route = buildRoute(els, shape, routeW, routeH);
+    let slotPack = buildSlots(route, tracks, baseHue, songSeed, routeW, routeH);
+    let slots = slotPack.slots;
+    let small = slotPack.small;
     const fit = () => {
       const b = root.getBoundingClientRect();
       const r = Math.min(1.5, window.devicePixelRatio || 1);
@@ -185,17 +200,21 @@ function TravelStageFlat({ lines, songKey, lsOpen, song, cards }: TravelStagePro
       dpr = r;
       canvas.width = Math.max(1, Math.round(vw * dpr));
       canvas.height = Math.max(1, Math.round(vh * dpr));
+      if (vw > 0 && vh > 0 && routeW > 0 && routeH > 0) {
+        if (Math.abs(vw - routeW) / routeW > 0.15 || Math.abs(vh - routeH) / routeH > 0.15) {
+          routeW = vw;
+          routeH = vh;
+          route = buildRoute(els, shape, routeW, routeH);
+          slotPack = buildSlots(route, tracks, baseHue, songSeed, routeW, routeH);
+          slots = slotPack.slots;
+          small = slotPack.small;
+        }
+      }
       // 窗口变了，长句的世界字号要重算
       for (const d of doms.values()) d.fs = fitFont(d);
     };
     const ro = new ResizeObserver(fit);
     ro.observe(root);
-    fit();
-
-    // 路线按开唱时在画面上的位置摆句子，用当前窗口大小（初版：中途改窗口大小不重排路线，只重算字号）
-    const route = buildRoute(els, shape, vw || window.innerWidth, vh || window.innerHeight);
-    const baseHue = songHue(song);
-    const { slots, small } = buildSlots(route, tracks, baseHue, hashStr(songKey));
     const lineFar = LINE_FAR;
     /** 当前句之后最多露几句（样张：后两句）。样张在小曲库补偿时露后五句当路标，真实歌词里远处几句会往画面中心收、互相叠字，初版不采用 */
     const ahead = 2;
