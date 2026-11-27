@@ -737,8 +737,8 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist, l
         stageShapeBus.gap = st.gap;
         stageShapeBus.sinkDepth = depth;
         stageShapeBus.sinkPos = posK;
-        // 听音空间打开 / 收起及一镜到底飞行期间冻住根元素 --sdep / --sopen，且仅在值变化时写入，避免每帧触发布局与样式重算
-        if (!lsBusy) {
+        // 听音空间开合、飞行期间或穿行转场期间冻住根元素 --sdep / --sopen，避免全文档样式失效与每帧重算
+        if (!lsBusy && !(travelMode && listenBus.enabled && listenBus.k > 0.001)) {
           const sdep = depth.toFixed(3);
           const sopen = sk.open.toFixed(3);
           if (sdep !== lastSdep) {
@@ -967,7 +967,7 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist, l
             glow.style.transform = `translate3d(${stageShapeBus.lx.toFixed(1)}px, ${stageShapeBus.ly.toFixed(1)}px, 0)`;
             glow.style.opacity = Math.min(1, stageShapeBus.lk * (enabled ? k : 1) * 1.6).toFixed(3);
           }
-          if (!pageMode && !travelOwns && (playingNow || relayoutNow)) pokeListenFrame();
+          if (!pageMode && !(travelMode && enabled && k > 0.001) && (playingNow || relayoutNow)) pokeListenFrame();
         }
       } else if (lightRef.current && lightRef.current.style.opacity !== '0') lightRef.current.style.opacity = '0';
       // 先同步本帧底部字幕（保证打开/收起听音空间的那一帧 captionDom 与 --cap-o 已是最新当前句）

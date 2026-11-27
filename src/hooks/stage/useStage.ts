@@ -257,9 +257,10 @@ export function useStage({
     const pool = pickPoolRef.current;
     // 聆听「沉降」：整片星云往下沉、后退（缩到 86%、下移 4vh，中心在 50% / 45%），在屏幕坐标上算（见 lens.applyXf）
     // 漫游歌词升级（样张 M）：沉降幅度随段落开合、间奏让位变化（主歌略沉，副歌浮起一半，间奏完全浮起）
-    const pageStage = document.documentElement.dataset.stageMode === 'page';
-    const shape = !pageStage && stageShapeBus.on ? stageShapeBus : null;
-    const sinkK = !pageStage && listenBus.style === 'sink' ? listenBus.k * (shape ? shape.sinkPos : 1) : 0;
+    const stageMode = document.documentElement.dataset.stageMode;
+    const noSinkStage = stageMode === 'page' || stageMode === 'travel';
+    const shape = !noSinkStage && stageShapeBus.on ? stageShapeBus : null;
+    const sinkK = !noSinkStage && listenBus.style === 'sink' ? listenBus.k * (shape ? shape.sinkPos : 1) : 0;
     const xf: ScreenXf | null = sinkK > 0.0005 ? { f: 1 - 0.14 * sinkK, ox: vw / 2, oy: vh * 0.45, ty: vh * 0.04 * sinkK } : null;
     const qk = xf ? 1 / xf.f : 1; // 缩小后一屏装得下更大一片世界，查询范围跟着放大
     let np = 0;
@@ -327,8 +328,8 @@ export function useStage({
     }
 
     const spawnSet = spawnFromCenterRef.current;
-    const partK = !pageStage && listenBus.style === 'part' ? listenBus.k : 0;
-    const ebbK = !pageStage && listenBus.style === 'ebb' ? listenBus.k : 0;
+    const partK = !noSinkStage && listenBus.style === 'part' ? listenBus.k : 0;
+    const ebbK = !noSinkStage && listenBus.style === 'ebb' ? listenBus.k : 0;
     // 字照亮空间：正在唱的字附近的卡片提亮（高斯衰减，半径约 0.22 屏宽）。
     // lk = 光心处卡片从让开后的暗度往原亮度（1.05）拉回的比例，所以要知道这一刻整片星云被压到多暗
     const lightK = shape ? shape.lk * listenBus.k : 0;
@@ -698,11 +699,12 @@ export function useStage({
 
   useEffect(() => initGlassGlow(), []);
 
-  // 交接进行中每帧刷新一次卡片位置（「沉降」「散开」「退潮」都会移动卡片；版面模式下交由纸面托底，不触发整片星云每帧重排；切走前若仍有偏移则刷新一次归位）
+  // 交接进行中每帧刷新一次卡片位置（「沉降」「散开」「退潮」都会移动卡片；版面与穿行模式下星云只做合成淡出，不触发 140 卡每帧重排）
   useEffect(
     () =>
       onListenFrame(() => {
-        if (document.documentElement.dataset.stageMode === 'page' && !partActiveRef.current) return;
+        const sm = document.documentElement.dataset.stageMode;
+        if ((sm === 'page' || sm === 'travel') && !partActiveRef.current) return;
         if (listenBus.style === 'sink' || listenBus.style === 'part' || listenBus.style === 'ebb' || partActiveRef.current) controllerRef.current?.refresh();
       }),
     [controllerRef],

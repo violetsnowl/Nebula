@@ -133,12 +133,18 @@
   color: rgba(255, 255, 255, 0.62);
 }
 
-/* 退让：聆听中星云、漫游歌词与前奏歌名随交接进度淡出，完全进入后不再绘制（穿行自己画背景与封面） */
+/* 退让：聆听中星云、漫游歌词与前奏歌名随交接进度纯合成淡出（关掉漫游的整屏 brightness/saturate/blur 滤镜，避免 2K 140 卡逐帧滤镜重绘），完全进入后不再绘制 */
 :root[data-stage-mode='travel'] .app[data-listen-style][data-lk] .stage-3d {
   opacity: calc(1 - var(--lk));
+  filter: none;
+  will-change: opacity;
+}
+:root[data-stage-mode='travel'] .app[data-lk] .bg-layer {
+  filter: none;
 }
 :root[data-stage-mode='travel'] .app[data-listen-style][data-lk-full] .stage-3d {
   visibility: hidden;
+  will-change: auto;
 }
 :root[data-stage-mode='travel'] .app[data-lk] .lyrics-layer {
   opacity: calc(1 - var(--lk));

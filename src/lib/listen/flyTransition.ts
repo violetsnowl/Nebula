@@ -28,6 +28,8 @@ export interface FlySide {
   opacity?: number;
   /** 看上去的位置和盒子的差（屏幕像素）与两个方向的压扁：版面「断层」错开的那半、「回声滚筒」上的行。 */
   adj?: () => { dx: number; dy: number; sx: number; sy: number } | null;
+  /** 直接返回目标中心、视觉字号与倾角（如穿行 WebGL2 3D 实时投影），跳过每帧 DOM 写布局与 getBoundingClientRect 重排。 */
+  place?: () => { x: number; y: number; f: number; rot: number; sx?: number; sy?: number } | null;
   /**
    * 版面「色场」页：这个字有一部分落在色块里，色块里的真字是深墨（色块那份副本）。替身另叠一份深墨克隆、按色块边线裁剪，
    * 和真字一致（2026-11-26：原来替身是原文的浅色，落地换真字时才变深）。field = 色块元素；color = --lp-field-ink 的值。
@@ -143,8 +145,13 @@ export function isPageStageActive(pageMode: boolean, listenEnabled: boolean, lis
 
 export const normLyricText = (s: string): string => s.replace(/\s+/g, '');
 
-/** 把原元素的行内样式与类名（含拆字子节点）同步到克隆节点。 */
+/** 把原元素的行内样式与类名（含拆字子节点）同步到克隆节点；带 __tvRev 脏戳且未变时 O(1) 跳过，避免每帧序列化 cssText。 */
 export function syncUnitClone(from: HTMLElement, to: HTMLElement): void {
+  const rev = (from as { __tvRev?: number }).__tvRev;
+  if (rev !== undefined) {
+    if ((to as { __tvRev?: number }).__tvRev === rev) return;
+    (to as { __tvRev?: number }).__tvRev = rev;
+  }
   if (to.style.cssText !== from.style.cssText) to.style.cssText = from.style.cssText;
   if (to.className !== from.className) to.className = from.className;
   const fc = from.children;
@@ -372,22 +379,28 @@ export class LsFly {
         }
       }
     }
-    // 第二遍集中测量终点位置与整句透明度，避免读写交错重排
+    // 第二遍集中测量终点位置与整句透明度，避免读写交错重排（带 place 回调的目标直接读 JS 坐标，零 DOM 重排）
     for (const l of this.lives) {
       if (!l.b || !l.p.to) continue;
-      const m = placeOf(l.p.to.el, l.p.to, l.bw, l.bh, l.fsB);
-      if (m) l.t = m;
+      if (l.p.to.place) {
+        const dp = l.p.to.place();
+        if (dp) l.t = { x: dp.x, y: dp.y, f: dp.f, rot: dp.rot, sx: dp.sx ?? 1, sy: dp.sy ?? 1 };
+      } else {
+        const m = placeOf(l.p.to.el, l.p.to, l.bw, l.bh, l.fsB);
+        if (m) l.t = m;
+      }
       const oe = l.p.to.opEl;
       if (oe && l.p.to.endOpacity === undefined && !opCache.has(oe)) {
         opCache.set(oe, parseFloat(getComputedStyle(oe).opacity));
       }
     }
-    // 色场页的色块边线（集中读）：横排左缘、竖排上缘，相对替身层
-    const lb = this.layer.getBoundingClientRect();
+    // 色场页的色块边线（仅在存在色场克隆时才量取，避免非色场转场每帧触发布局读）
     const edges = new Map<HTMLElement, number>();
+    let lb: DOMRect | null = null;
     for (const l of this.lives) for (const ink of [l.ai, l.bi]) {
       const fe = ink?.side.ink?.field;
       if (fe && !edges.has(fe)) {
+        if (!lb) lb = this.layer.getBoundingClientRect();
         const fr = fe.getBoundingClientRect();
         edges.set(fe, ink!.side.ink!.vert ? fr.top - lb.top : fr.left - lb.left);
       }
@@ -396,13 +409,13 @@ export class LsFly {
     for (const l of this.lives) {
       const le = l.b ? Math.min(1, Math.max(0, (e - l.e0) / Math.max(0.001, 1 - l.e0))) : 0;
       const lq = smooth((le - 0.2) / 0.6);
-      syncUnitClone(l.p.from.el, l.ac);
+      if (!l.b || lq < 0.999) syncUnitClone(l.p.from.el, l.ac);
       const ctxA = l.a.parentElement!;
       ctxA.style.opacity = l.b ? (l.a0 * (1 - lq)).toFixed(3) : (waitOp * l.sOp).toFixed(3);
       ctxA.style.setProperty('--lw', lwA);
       let T = l.t;
       if (l.b && l.bc && l.p.to) {
-        syncUnitClone(l.p.to.el, l.bc);
+        if (lq > 0.001) syncUnitClone(l.p.to.el, l.bc);
         const ctxB = l.b.parentElement!;
         const op = l.p.to.endOpacity ?? (l.p.to.opEl ? (opCache.get(l.p.to.opEl) ?? 1) : 1);
         const opK = Number.isNaN(op) ? 1 : 1 + (op - 1) * smooth((le - 0.7) / 0.3);

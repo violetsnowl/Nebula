@@ -6,6 +6,32 @@
 
 ---
 
+## #314 — 2026-11-27 — 穿行转场性能优化：消除漫游↔穿行与穿行↔听音空间掉帧（真实 2877 首实测 138–165 FPS）
+
+**目标**：修复用户在视觉验收通过后反馈的「漫游主舞台 ↔ 穿行」与「穿行 ↔ 听音空间」转场掉帧问题（尤其漫游 ↔ 穿行掉帧最重），在不改动视觉效果的前提下彻底清理每帧重排、全屏滤镜与 140 卡星云重算。
+
+**改动点**
+- **漫游主舞台退场零重算、零整屏滤镜**（`src/hooks/stage/useStage.ts`、`src/components/LyricsLayer.tsx`、`src/components/travel-stage.css`、`src/lib/listenMode.ts`）：
+  - `useStage.ts` 补齐 `stageMode === 'travel'` 分支（与 `page` 一致），穿行过渡期不再每帧重排 140 张星云卡片与重绘 2D 星层画布；
+  - `LyricsLayer.tsx` 在穿行过渡期（`travelMode && listenBus.k > 0.001`）冻住 `:root` 的 `--sdep / --sopen` 写入并停止调用 `pokeListenFrame()`；
+  - `travel-stage.css` 对穿行过渡期的 `.stage-3d` 与 `.bg-layer` 显式设 `filter: none; will-change: opacity;`，彻底移除漫游遗留的整屏 2K `brightness / saturate / blur` 滤镜重绘；
+  - `listenMode.ts` 在穿行过渡中（`0 < k < 1`）改为直接写 `.stage-3d / .lyrics-layer / .lyrics-intro / .center-btn / .listen-exit` 的合成层 `opacity`（不每帧在根 `.app` 上写继承变量 `--lk / --lo / --ls`），消除整棵 140 卡星云 1,500+ 节点每帧全量样式重算。
+- **飞字替身零 DOM 重排 + O(1) 脏戳克隆同步**（`src/lib/listen/flyTransition.ts`、`src/components/travel/travelFly.ts`、`src/components/TravelSpace.tsx`）：
+  - `FlySide` 新增 `place` 回调，穿行 3D 实时投影直接走 JS 内存坐标传入 `LsFly.render()`，彻底消除此前每帧改写 `.tv-fly-slot` 的 `fontSize / left / top` 再立刻 `getBoundingClientRect()` 触发的同步全页重排（仅 QA 探针通过 `syncSlots()` 写回槽位校验）；
+  - `LsFly.render()` 延迟只在存在色场页时才读取 `layer.getBoundingClientRect()`，跳过不可见一侧（`opacity = 0`）的克隆同步，并在 `syncUnitClone` 支持 `__tvRev` 脏戳 O(1) 跳过，避免每帧序列化 40+ `.ch` 的 `cssText`；
+  - `travelFly.ts` 量化字母弯曲写入（`0.004em / 0.2°`）、满弯曲锁位期降频、`--f` 建句一次性写入、静止非当前词直接跳过字母循环；`TravelSpace.tsx` 转场期间限制每帧最多新排 1 句字形（优先当前句）平摊首帧上传开销。
+
+**验证**
+- 真实 2877 首曲库《Telescope》+ 140 挂载星云卡片（无头 Chrome D3D11 165Hz 实测，`scratch/bench-trans.cjs`）：
+  - 漫游 → 穿行（首次）：`avg 57.72ms / p95 42.4ms / max 1636ms` → **`avg 7.27ms / p95 12.2ms / max 30.4ms`**；
+  - 漫游 → 穿行（稳态）：`avg 15.21ms / p95 30.4ms / over25: 27` → **`avg 7.23ms / p95 12.2ms / max 18.3ms / over25: 0`**（~138 FPS 零掉帧）；
+  - 穿行 → 漫游：`avg 11.83ms / p95 36.3ms` → **`avg 7.58ms / p95 18.2ms`**（~132 FPS）；
+  - 穿行 → 听音空间：`avg 6.79ms / max 66.7ms / over25: 2` → **`avg 6.08ms / p95 6.2ms / max 12.1ms / over25: 0`**（165 FPS）；
+  - 听音空间 → 穿行：**`avg 6.03ms / p95 6.2ms / max 6.2ms / over25: 0`**（165 FPS 满帧平直）；`TravelSpace` JS 帧耗时 `avg 0.70ms / p95 1.1ms`。
+- `$env:pnpm_config_verify_deps_before_run='false'; pnpm build; pnpm qa` 全绿（0 控制台错误；`travelLsFly: { inErr: 0, outErr: 0.02, outDone: { op: 1, layer: false, hidden: 0 } }`；`travelRoamMorph: { dir: "out", n: 4, err: 0, clean: { layers: 0, hidden: 0 } }`；`travelGL` `avg 0.27ms / p95 0.4ms`）。
+
+**遗留与风险**：默认体验不变（实验开关 `lab.travelGL` 仍默认关）。待用户桌面复验流畅度满意后，即执行第四步第 6/7 项最终收口（正式替换「设置 › 聆听 › 穿行」、删实验开关、规格写进 `NEBULA_UI_SYSTEM.md` §7.1c 并删 `TRAVEL_HANDOFF.md`）。
+
 ## #313 — 2026-11-27 — 穿行第二版飞入落地终极打磨：飞行中逐字母弯成 3D 弧线 + 封面暗化遮罩提前平滑就位
 
 **目标**：彻底消除用户二次验收指出的两处落地穿帮：① 英文多字母词在 DOM 中是直排词块、落地给 WebGL2 时瞬间弯成弧线导致的「重新渲染跳一下」感；② 转场期间穿行封面保持全亮，直到歌词落地瞬间才触发字后封面压暗与后句让位导致的最后一帧场景割裂闪暗。

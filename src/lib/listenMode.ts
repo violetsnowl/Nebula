@@ -254,7 +254,22 @@ export class ListenDirector {
     return (this.cfg.style === 'sink' || this.cfg.style === 'ebb') && this.cfg.lyricsUnder;
   }
 
+  private travelDirect = false;
+
+  private clearTravelDirect(): void {
+    if (!this.travelDirect) return;
+    this.travelDirect = false;
+    const r = this.root;
+    for (const sel of ['.stage-3d', '.lyrics-layer', '.lyrics-intro', '.center-btn', '.listen-exit']) {
+      const el = r.querySelector<HTMLElement>(sel);
+      if (el) el.style.opacity = '';
+    }
+    const ps = r.querySelector<HTMLElement>('.player-surface');
+    if (ps) ps.style.removeProperty('--lk');
+  }
+
   private clearRoot(): void {
+    this.clearTravelDirect();
     const d = this.root.dataset;
     delete d.listenStyle;
     delete d.listenBar;
@@ -404,6 +419,36 @@ export class ListenDirector {
   private write(): void {
     const s = this.root.style;
     const d = this.root.dataset;
+    const isTravel = document.documentElement.dataset.stageMode === 'travel';
+    const mid = this.k > 0.001 && this.k < 0.999;
+    if (isTravel && mid) {
+      // 穿行过渡期（0<k<1）：直接写 5 个合成层节点的 opacity，避免每帧在 .app 上改 --lk/--lo/--ls 导致整棵 140 卡星云子树全量样式重算
+      this.travelDirect = true;
+      const r = this.root;
+      const inv = (1 - this.k).toFixed(4);
+      const ks = this.k.toFixed(4);
+      const st = r.querySelector<HTMLElement>('.stage-3d');
+      if (st) st.style.opacity = inv;
+      const ly = r.querySelector<HTMLElement>('.lyrics-layer');
+      if (ly) ly.style.opacity = inv;
+      const intro = r.querySelector<HTMLElement>('.lyrics-intro');
+      if (intro) intro.style.opacity = (0.92 * (1 - this.k)).toFixed(4);
+      const cb = r.querySelector<HTMLElement>('.center-btn');
+      if (cb) cb.style.opacity = inv;
+      if (this.cfg.pin) {
+        const ex = r.querySelector<HTMLElement>('.listen-exit');
+        if (ex) ex.style.opacity = ks;
+      } else if (this.cfg.dimBar) {
+        const ps = r.querySelector<HTMLElement>('.player-surface');
+        if (ps) ps.style.setProperty('--lk', ks);
+      }
+      if (!d.lk) d.lk = 'on';
+      if (this.k >= 0.98) d.lkFull = 'on';
+      else delete d.lkFull;
+      listenBus.k = this.k;
+      return;
+    }
+    this.clearTravelDirect();
     s.setProperty('--lk', this.k.toFixed(4));
     s.setProperty('--lo', this.lyrOp.toFixed(4));
     s.setProperty('--ls', (1 + (this.cfg.style === 'sink' ? 0.04 : 0.03) * this.k).toFixed(4));

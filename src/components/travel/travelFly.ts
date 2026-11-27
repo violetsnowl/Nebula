@@ -40,6 +40,8 @@ export interface TravelFlySession {
   units: HTMLElement[];
   sides: FlySide[];
   update: (segs: Seg[], warp: Warp | null, cam: FlyCam, t: number, scheme: 'accent' | 'mono', state: 'future' | 'cur' | 'past', curveK?: number) => void;
+  /** 仅供 QA 探针调用：把最新 3D 投影坐标写回隐藏宿主 DOM 槽位，平时帧循环走 FlySide.place 零重排。 */
+  syncSlots: () => void;
   clear: () => void;
 }
 
@@ -133,7 +135,15 @@ interface CharCurve {
   straightX: number[];
   /** 是否为非长音词自建的 .ch（需要按字母把词的扫光梯度拆写到各 .ch） */
   extra: boolean;
+  /** 上一次写入的量化字符串缓存，避免无变化时触发脏戳与克隆重解析 */
+  lastCx: string[];
+  lastCy: string[];
+  lastCr: string[];
+  lastK: number;
+  lastPState: number;
 }
+
+type RevEl = HTMLElement & { __tvRev?: number };
 
 /** 为穿行第二版的指定句在 `host` 中生成临时 DOM 单元与 `FlySide`，供 `LsFly` / `launchStageToListenFly` 复用。 */
 export function createTravelFlySession(
@@ -158,53 +168,65 @@ export function createTravelFlySession(
   const units: HTMLElement[] = [];
   const slots: HTMLElement[] = [];
   const sides: FlySide[] = [];
+  const places: Array<{ x: number; y: number; f: number; rot: number; st: 'future' | 'cur' | 'past' }> = [];
   const cyEms: number[] = [];
   const charCurves: Array<CharCurve | null> = [];
   let rts: UnitRt[] | null = null;
   let wholeEl: HTMLElement | null = null;
+  let revSeq = 1;
+  let updFrame = 0;
+  let lastScheme: 'accent' | 'mono' | '' = '';
+  let lastState: 'future' | 'cur' | 'past' | '' = '';
   // 实测 DOM 行框中点相对字母基线的偏移（em）：避免把 WebGL2 字形贴图带中点(-0.375em)硬套给 DOM 导致落地上下跳动
   let domCyEm = -0.32;
 
-  const applySlot = (
-    slot: HTMLElement,
-    side: FlySide,
-    x: number,
-    y: number,
-    fsPx: number,
-    rot: number,
-    vis: number,
-    st: 'future' | 'cur' | 'past',
-  ) => {
-    slot.style.left = `${x.toFixed(2)}px`;
-    slot.style.top = `${y.toFixed(2)}px`;
-    slot.style.fontSize = `${fsPx.toFixed(2)}px`;
-    slot.style.transform = `translate(-50%, -50%) rotate(${rot.toFixed(2)}deg)`;
-    slot.classList.toggle('is-cur', st === 'cur');
-    slot.classList.toggle('is-past', st === 'past');
-    slot.classList.toggle('is-grad', st === 'cur' && !!rts);
-    side.rot = rot;
-    side.opacity = vis;
+  const bumpRev = (el: HTMLElement) => {
+    (el as RevEl).__tvRev = ++revSeq;
+  };
+
+  const writeSlotDom = (slot: HTMLElement, p: { x: number; y: number; f: number; rot: number; st: 'future' | 'cur' | 'past' }) => {
+    slot.style.left = `${p.x.toFixed(2)}px`;
+    slot.style.top = `${p.y.toFixed(2)}px`;
+    slot.style.fontSize = `${p.f.toFixed(2)}px`;
+    slot.style.transform = `translate(-50%, -50%) rotate(${p.rot.toFixed(2)}deg)`;
+    slot.classList.toggle('is-cur', p.st === 'cur');
+    slot.classList.toggle('is-past', p.st === 'past');
+    slot.classList.toggle('is-grad', p.st === 'cur' && !!rts);
   };
 
   const applyCharCurve = (
     ui: number,
+    uEl: HTMLElement,
     sg: Seg,
     pr: { x: number; y: number; fsPx: number; rot: number },
     nextWarp: Warp | null,
     nextCam: FlyCam,
     curveK: number,
+    force = false,
   ) => {
     const cc = charCurves[ui];
     if (!cc) return;
+    // 弯曲度已满（如 220ms 锁位交叉淡化期）且非强制帧时降频刷新，避免每帧对 40+ 字母重算投影与写样式
+    if (!force && cc.lastK >= 0.999 && curveK >= 0.999 && updFrame % 3 !== 0) return;
+    if (!force && cc.lastK <= 0.002 && curveK <= 0.002) return;
     const gu = g.units[ui]!;
     const nL = Math.min(cc.vars.length, gu.edges.length - 1);
+    let dirty = false;
     if (curveK <= 0.002) {
       for (let j = 0; j < nL; j++) {
-        const v = cc.vars[j]!;
-        v.set('--cx', '0');
-        v.set('--cy', '0');
-        v.set('--cr', '0deg');
+        if (cc.lastCx[j] !== '0' || cc.lastCy[j] !== '0' || cc.lastCr[j] !== '0deg') {
+          const v = cc.vars[j]!;
+          v.set('--cx', '0');
+          v.set('--cy', '0');
+          v.set('--cr', '0deg');
+          cc.lastCx[j] = '0';
+          cc.lastCy[j] = '0';
+          cc.lastCr[j] = '0deg';
+          dirty = true;
+        }
       }
+      cc.lastK = 0;
+      if (dirty) bumpRev(uEl);
       return;
     }
     const uCy = cyEms[ui] ?? domCyEm;
@@ -219,14 +241,23 @@ export function createTravelFlySession(
       const dy = cp.y - pr.y;
       const lx = (dx * cos - dy * sin) * invFs;
       const ly = (dx * sin + dy * cos) * invFs;
-      const cx = (lx - cc.straightX[j]!) * curveK;
-      const cy = ly * curveK;
-      const cr = (cp.rot - pr.rot) * curveK;
-      const v = cc.vars[j]!;
-      v.set('--cx', cx.toFixed(4));
-      v.set('--cy', cy.toFixed(4));
-      v.set('--cr', `${cr.toFixed(2)}deg`);
+      // 量化到 ~0.25px / 0.2°，肉眼无感但可过滤绝大多数微小镜头抖动写入
+      const cxS = (Math.round((lx - cc.straightX[j]!) * curveK * 250) / 250).toFixed(3);
+      const cyS = (Math.round(ly * curveK * 250) / 250).toFixed(3);
+      const crS = `${(Math.round((cp.rot - pr.rot) * curveK * 5) / 5).toFixed(1)}deg`;
+      if (cxS !== cc.lastCx[j] || cyS !== cc.lastCy[j] || crS !== cc.lastCr[j]) {
+        const v = cc.vars[j]!;
+        v.set('--cx', cxS);
+        v.set('--cy', cyS);
+        v.set('--cr', crS);
+        cc.lastCx[j] = cxS;
+        cc.lastCy[j] = cyS;
+        cc.lastCr[j] = crS;
+        dirty = true;
+      }
     }
+    cc.lastK = curveK;
+    if (dirty) bumpRev(uEl);
   };
 
   const syncWords = (curRts: UnitRt[], nextT: number, nextScheme: 'accent' | 'mono', nextState: 'future' | 'cur' | 'past') => {
@@ -235,42 +266,51 @@ export function createTravelFlySession(
     const rawWave = singing ? waveOf(curRts, line.dens, nextT) : null;
     const waveK = smooth((nextT - (line.s - 0.05)) / 0.15);
     const wave = rawWave ? (c: number) => rawWave(c) * waveK : null;
+    const modeChanged = nextScheme !== lastScheme || nextState !== lastState;
+    lastScheme = nextScheme;
+    lastState = nextState;
     for (let ui = 0; ui < curRts.length; ui++) {
       const rt = curRts[ui]!;
+      const u = rt.u;
+      // 远离当前演唱时间窗的词在波浪与扫光上已完全静止，跳过 DOM 写入与克隆脏戳
+      const nearActive = modeChanged || (nextState === 'cur' && nextT >= u.s - 2.2 && nextT <= u.e + 1.8);
+      if (!nearActive) continue;
       if (nextState === 'cur') {
         unitFrame(rt, nextT, nextScheme, singing, wave, line.dens);
         rt.v.set('--un', ghost);
         rt.chs?.forEach((c) => c.set('--un', ghost));
         const cc = charCurves[ui];
         if (cc?.extra) {
-          // 非长音多字母词：把整词扫光进度按字母宽占比精确映射到各 .ch，与 WebGL2 着色器逐像素一致
           const gu = g.units[ui]!;
           const wTotal = Math.max(1e-4, gu.w);
-          const u = rt.u;
           const pWord = clamp((nextT - u.s) / Math.max(0.001, u.e - u.s), 0, 1);
-          const fW = 0.26;
-          const pW = pWord * (1 + 2 * fW) - fW;
-          const st = rt.v.el.style;
-          const sung = st.getPropertyValue('--sung');
-          const edge = st.getPropertyValue('--edge');
-          const nL = Math.min(cc.vars.length, gu.edges.length - 1);
-          for (let j = 0; j < nL; j++) {
-            const g0 = gu.edges[j]! / wTotal;
-            const g1 = gu.edges[j + 1]! / wTotal;
-            const dw = Math.max(1e-4, g1 - g0);
-            const fL = fW / dw;
-            const pL = clamp(((pW - g0) / dw + fL) / (1 + 2 * fL), 0, 1);
-            const cv = cc.vars[j]!;
-            cv.set('--sung', sung);
-            cv.set('--edge', edge);
-            cv.set('--un', ghost);
-            cv.set('--f', `${(fL * 100).toFixed(1)}%`);
-            cv.set('--p', pL.toFixed(4));
+          const pState = pWord <= 0 ? -1 : pWord >= 1 ? 1 : 0;
+          if (modeChanged || pState === 0 || pState !== cc.lastPState) {
+            cc.lastPState = pState;
+            const fW = 0.26;
+            const pW = pWord * (1 + 2 * fW) - fW;
+            const st = rt.v.el.style;
+            const sung = st.getPropertyValue('--sung');
+            const edge = st.getPropertyValue('--edge');
+            const nL = Math.min(cc.vars.length, gu.edges.length - 1);
+            for (let j = 0; j < nL; j++) {
+              const g0 = gu.edges[j]! / wTotal;
+              const g1 = gu.edges[j + 1]! / wTotal;
+              const dw = Math.max(1e-4, g1 - g0);
+              const fL = fW / dw;
+              const pL = clamp(((pW - g0) / dw + fL) / (1 + 2 * fL), 0, 1);
+              const cv = cc.vars[j]!;
+              cv.set('--sung', sung);
+              cv.set('--edge', edge);
+              cv.set('--un', ghost);
+              cv.set('--p', pL.toFixed(4));
+            }
           }
         }
       } else {
         restUnit(rt);
       }
+      bumpRev(rt.v.el);
     }
   };
 
@@ -323,7 +363,24 @@ export function createTravelFlySession(
           const r = v.el.getBoundingClientRect();
           return (r.left + r.width * 0.5 - wordMid) / tmpFs;
         });
-        charCurves.push({ vars: chList, straightX, extra: !!extraLists[ui] });
+        const isExtra = !!extraLists[ui];
+        if (isExtra) {
+          const wTotal = Math.max(1e-4, gu.w);
+          for (let j = 0; j < chList.length; j++) {
+            const dw = Math.max(1e-4, (gu.edges[j + 1]! - gu.edges[j]!) / wTotal);
+            chList[j]!.set('--f', `${((0.26 / dw) * 100).toFixed(1)}%`);
+          }
+        }
+        charCurves.push({
+          vars: chList,
+          straightX,
+          extra: isExtra,
+          lastCx: new Array(chList.length).fill(''),
+          lastCy: new Array(chList.length).fill(''),
+          lastCr: new Array(chList.length).fill(''),
+          lastK: -1,
+          lastPState: 99,
+        });
       } else {
         charCurves.push(null);
       }
@@ -340,22 +397,26 @@ export function createTravelFlySession(
       const sg = ui >= splitUi ? seg1! : seg0;
       const em = gu.left + gu.w / 2;
       const pr = projectUnit(em, invW, sg, fs, uCy, warp, cam);
-      applyCharCurve(ui, sg, pr, warp, cam, initCurveK);
+      applyCharCurve(ui, uEl, sg, pr, warp, cam, initCurveK, true);
+      bumpRev(uEl);
       const slot = document.createElement('div');
       slot.className = 'tv-fly-slot';
       slot.appendChild(uEl);
       host.appendChild(slot);
+      const pObj = { x: pr.x, y: pr.y, f: pr.fsPx, rot: pr.rot, st: state };
+      writeSlotDom(slot, pObj);
       const side: FlySide = {
         el: uEl,
         ctx: state === 'cur' ? 'lpm-c is-grad' : 'lpm-c',
         rot: pr.rot,
         vert: false,
         opacity: pr.vis,
+        place: () => pObj,
       };
-      applySlot(slot, side, pr.x, pr.y, pr.fsPx, pr.rot, pr.vis, state);
       units.push(uEl);
       slots.push(slot);
       sides.push(side);
+      places.push(pObj);
     }
     tmp.remove();
   } else {
@@ -375,22 +436,26 @@ export function createTravelFlySession(
     if (wr0.height > 0) domCyEm = clamp((wr0.top + wr0.height / 2 - baseY) / tmpFs, -0.55, -0.15);
     const em = g.width / 2;
     const pr = projectUnit(em, invW, seg0, fs, domCyEm, warp, cam);
+    bumpRev(wholeEl);
     const slot = document.createElement('div');
     slot.className = 'tv-fly-slot';
     slot.appendChild(wholeEl);
     host.appendChild(slot);
     tmp.remove();
+    const pObj = { x: pr.x, y: pr.y, f: pr.fsPx, rot: pr.rot, st: state };
+    writeSlotDom(slot, pObj);
     const side: FlySide = {
       el: wholeEl,
       ctx: 'lpm-c',
       rot: pr.rot,
       vert: false,
       opacity: pr.vis,
+      place: () => pObj,
     };
-    applySlot(slot, side, pr.x, pr.y, pr.fsPx, pr.rot, pr.vis, state);
     units.push(wholeEl);
     slots.push(slot);
     sides.push(side);
+    places.push(pObj);
   }
 
   return {
@@ -401,23 +466,45 @@ export function createTravelFlySession(
     update(nextSegs, nextWarp, nextCam, nextT, nextScheme, nextState, curveK = 1) {
       const s0 = nextSegs[0];
       if (!s0) return;
+      updFrame++;
       if (rts) {
         syncWords(rts, nextT, nextScheme, nextState);
         const s1 = nextSegs.length > 1 ? nextSegs[1]! : null;
         const splitUi = s1 ? s1.from : 1e9;
-        for (let ui = 0; ui < slots.length; ui++) {
+        for (let ui = 0; ui < places.length; ui++) {
           const gu = g.units[ui]!;
           const sg = ui >= splitUi ? s1! : s0;
           const em = gu.left + gu.w / 2;
           const pr = projectUnit(em, invW, sg, fs, cyEms[ui] ?? domCyEm, nextWarp, nextCam);
-          applyCharCurve(ui, sg, pr, nextWarp, nextCam, curveK);
-          applySlot(slots[ui]!, sides[ui]!, pr.x, pr.y, pr.fsPx, pr.rot, pr.vis, nextState);
+          applyCharCurve(ui, units[ui]!, sg, pr, nextWarp, nextCam, curveK);
+          const pObj = places[ui]!;
+          pObj.x = pr.x;
+          pObj.y = pr.y;
+          pObj.f = pr.fsPx;
+          pObj.rot = pr.rot;
+          pObj.st = nextState;
+          sides[ui]!.rot = pr.rot;
+          sides[ui]!.opacity = pr.vis;
         }
-      } else if (wholeEl && slots[0] && sides[0]) {
-        wholeEl.classList.toggle('is-on', nextT >= line.s);
+      } else if (wholeEl && places[0] && sides[0]) {
+        const on = nextT >= line.s;
+        if (wholeEl.classList.contains('is-on') !== on) {
+          wholeEl.classList.toggle('is-on', on);
+          bumpRev(wholeEl);
+        }
         const pr = projectUnit(g.width / 2, invW, s0, fs, domCyEm, nextWarp, nextCam);
-        applySlot(slots[0], sides[0], pr.x, pr.y, pr.fsPx, pr.rot, pr.vis, nextState);
+        const pObj = places[0];
+        pObj.x = pr.x;
+        pObj.y = pr.y;
+        pObj.f = pr.fsPx;
+        pObj.rot = pr.rot;
+        pObj.st = nextState;
+        sides[0].rot = pr.rot;
+        sides[0].opacity = pr.vis;
       }
+    },
+    syncSlots() {
+      for (let i = 0; i < slots.length; i++) writeSlotDom(slots[i]!, places[i]!);
     },
     clear() {
       host.innerHTML = '';

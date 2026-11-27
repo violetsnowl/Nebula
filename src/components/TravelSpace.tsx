@@ -1674,12 +1674,21 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       for (const d of [...doms.values()]) if (!want.has(d.i) && d.i !== pre) dropLine(d);
       if (fontsReady) {
         let built = 0;
-        for (const i of pre >= 0 ? [...want, pre] : want) {
+        const maxBuild = morphFly || lsFly || (k > 0.001 && k < 0.999) ? 1 : 2;
+        const orderBuild = pre >= 0 ? [...want, pre] : [...want];
+        if (cur >= 0 && want.has(cur) && !doms.has(cur)) {
+          const idx = orderBuild.indexOf(cur);
+          if (idx > 0) {
+            orderBuild.splice(idx, 1);
+            orderBuild.unshift(cur);
+          }
+        }
+        for (const i of orderBuild) {
           if (doms.has(i)) continue;
           const d = makeLine(i);
           if (d) doms.set(i, d);
-          // 一帧最多新画两句（排版 + 上传几毫秒），其余下一帧
-          if (++built >= 2) break;
+          // 转场期每帧最多建 1 句（且优先建当前句），平时最多 2 句，平摊首帧上传与 mipmap 开销
+          if (++built >= maxBuild) break;
         }
       }
       atlas.flush();
@@ -2226,6 +2235,7 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       },
       lsProbe: () => {
         if (!lsFly) return null;
+        lsFlySlots?.syncSlots();
         lsFly.render(1);
         const err = lsFly.probe();
         const box = document.querySelector('.ls-col')?.getBoundingClientRect();
@@ -2239,6 +2249,7 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       },
       morphProbe: () => {
         if (!morphFly) return null;
+        morphSlots?.syncSlots();
         morphFly.render(1);
         const err = morphFly.probe();
         return { dir: morphDir, n: err.length, err };
