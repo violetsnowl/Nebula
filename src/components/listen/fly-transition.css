@@ -44,10 +44,17 @@
   will-change: transform;
 }
 
-/* 克隆自身的波浪浮起 / 长音放大乘 --lw：只在起飞与落地两端保留，外框 .lpm-u 已成合成层，内部不再重复挂 will-change */
-.lpm-ctx .u,
-.lpm-ctx .u .ch {
+/* 克隆自身的波浪浮起 / 长音放大乘 --lw；穿行弯曲词的子字母叠加 --cx/--cy/--cr 随飞行渐弯，落地前已贴齐 3D 曲线 */
+.lpm-ctx .u {
   transform: translate3d(0, calc(var(--lift, 0) * -1em * var(--lw, 1) * var(--lfk, 1)), 0) scale(calc(1 + (var(--sc, 1) - 1) * var(--lw, 1)));
+}
+.lpm-ctx .u .ch {
+  transform: translate3d(
+      calc(var(--cx, 0) * 1em * var(--cv, 1)),
+      calc((var(--cy, 0) * var(--cv, 1) - var(--lift, 0) * var(--lw, 1) * var(--lfk, 1)) * 1em),
+      0
+    )
+    rotate(calc(var(--cr, 0deg) * var(--cv, 1))) scale(calc(1 + (var(--sc, 1) - 1) * var(--lw, 1)));
 }
 
 /* 漫游歌词启用段落起伏（data-shape）时，舞台当前句的长音放大系数为 2.8 倍，替身起点同步一致避免首帧缩放跳变 */

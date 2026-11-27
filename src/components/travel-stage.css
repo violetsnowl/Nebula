@@ -56,6 +56,8 @@
   top: 0;
   white-space: pre;
   transform-origin: 50% 50%;
+  /* 测量宿主里的词保持不弯曲，避免干扰 placeOf/probe 的中心框测量；飞行克隆在 body 上自动取 --cv: 1 逐字贴合曲线 */
+  --cv: 0;
 }
 .tv-fly-slot .u,
 .tv-fly-slot .u .ch {

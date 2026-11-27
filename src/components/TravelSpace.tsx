@@ -133,6 +133,7 @@ interface Geo {
   d: LS;
   segs: Seg[];
   op: number;
+  boxOp: number;
   dz: number;
   state: LS['state'];
   bd: Bound;
@@ -618,6 +619,43 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       if (x1 < x0) return false;
       const pad = (minDz < Infinity ? (d.fs * F) / minDz : 80) * 1.6 + 44;
       return x1 + pad >= box.x0 && x0 - pad <= box.x1 && y1 + pad >= box.y0 && y0 - pad <= box.y1;
+    };
+    /** 估算一句的画面外接框（飞入期间 WebGL2 尚未出字时，提前给字后封面压暗与后句让位用，避免落地最后一帧场景突兀变暗） */
+    const boundOf = (d: LS, segs: Seg[], bd: Bound) => {
+      const add = (wx: number, wy: number, wz: number, padX = 0, padY = 0) => {
+        const dz = wz - pZ;
+        if (dz < NEAR) return;
+        const s = F / dz;
+        const sx = pcx + (wx - pX) * s;
+        const sy = pcy + (wy - pY) * s;
+        const px = padX * s;
+        const py = padY * s;
+        if (sx - px < bd.x0) bd.x0 = sx - px;
+        if (sx + px > bd.x1) bd.x1 = sx + px;
+        if (sy - py < bd.y0) bd.y0 = sy - py;
+        if (sy + py > bd.y1) bd.y1 = sy + py;
+      };
+      if (d.star) {
+        for (const pc of d.star) {
+          const hw = ((pc.e1 - pc.e0) / 2) * d.fs;
+          add(pc.C[0] - pc.U[0] * hw, pc.C[1] - pc.U[1] * hw, pc.C[2], 0, 0.55 * d.fs);
+          add(pc.C[0] + pc.U[0] * hw, pc.C[1] + pc.U[1] * hw, pc.C[2], 0, 0.55 * d.fs);
+        }
+      } else if (d.ring) {
+        const r = d.ring;
+        add(r.C[0] - r.R, r.C[1] - r.R, r.C[2] - r.R * 0.5);
+        add(r.C[0] + r.R, r.C[1] + r.R, r.C[2] - r.R * 0.5);
+      } else {
+        const py = 0.58 * d.fs;
+        for (const sg of segs) {
+          const P = sg.P;
+          const C = sg.C;
+          for (let q = 0; q <= 32; q += 4) {
+            const o = q * 3;
+            add(C[0] + P[o]!, C[1] + P[o + 1]! - 0.35 * d.fs, C[2] + P[o + 2]!, 0.25 * d.fs, py);
+          }
+        }
+      }
     };
     const emitLine = (d: LS, segs: Seg[], op: number, mode: number, blur: number, trK: number, bd: Bound, yield_: Bound | null) => {
       const { g, fs } = d;
@@ -1348,7 +1386,9 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       if (!host) return false;
       const src = [...host.querySelectorAll<HTMLElement>(':scope > .u, :scope > .fl-whole')];
       if (!src.length) return false;
-      const slots0 = createTravelFlySession(flyHost, i, e, d.g, d.fs, segs, d.warp, camNow(), t, schemeRef.current, state);
+      syncPalette();
+      const dir: 'in' | 'out' = k < 0.5 ? 'in' : 'out';
+      const slots0 = createTravelFlySession(flyHost, i, e, d.g, d.fs, segs, d.warp, camNow(), t, schemeRef.current, state, dir === 'in' ? 0 : 1);
       if (!slots0) return false;
       if (src.length !== slots0.units.length || normLyricText(src.map((u) => u.textContent || '').join('')) !== normLyricText(slots0.text)) {
         slots0.clear();
@@ -1357,7 +1397,6 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       const srcHost = (caption ? host : host.closest<HTMLElement>('.flow-lyric')) ?? host;
       const mRot = (srcHost.style.transform.match(/rotate\((-?[\d.]+)deg\)/) ?? [])[1];
       const srcRot = caption ? 0 : mRot ? parseFloat(mRot) : 0;
-      const dir: 'in' | 'out' = k < 0.5 ? 'in' : 'out';
       const roamOp = caption ? 1 : 0.5;
       const roamSide = (el: HTMLElement): FlySide => ({
         el,
@@ -1462,7 +1501,8 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       const passK = smooth((t - e.e - 0.05) / 1.2);
       const segs = segsOf(d, turnK, passK);
       const state: LS['state'] = t > e.e + 0.9 ? 'past' : t >= e.s - 0.05 ? 'cur' : 'future';
-      const slots0 = createTravelFlySession(flyHost, cur0, e, d.g, d.fs, segs, d.warp, camNow(), t, schemeRef.current, state);
+      syncPalette();
+      const slots0 = createTravelFlySession(flyHost, cur0, e, d.g, d.fs, segs, d.warp, camNow(), t, schemeRef.current, state, 0);
       if (!slots0) return;
       const cols = matchColumnLines([{ text: slots0.text, offsetFromCur: 0 }]);
       const col = cols[0] ?? null;
@@ -1645,8 +1685,8 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       atlas.flush();
 
       n = 0;
-      // 落地锁位交叉淡化（140ms）：飞行全程 WebGL2 不提前露重影；抵达 100% 锁齐曲线后再 140ms 融化交接，杜绝落地闪黑或位置瞬跳
-      const HANDOFF_MS = 140;
+      // 落地锁位交叉淡化（220ms）：飞行全程 WebGL2 不提前露重影；抵达 100% 锁齐曲线后再 220ms 融化交接，杜绝落地闪黑与样式跳变
+      const HANDOFF_MS = 220;
       const lsOutP = lsFly && lsFlyDir === 'out' ? lsFly.progress : -1;
       if (lsFly && lsFlyDir === 'out' && !lsOutBlendT0 && lsOutP >= 1) lsOutBlendT0 = now;
       const lsOutBlend = lsOutBlendT0 > 0 ? clamp((now - lsOutBlendT0) / HANDOFF_MS, 0, 1) : 0;
@@ -1857,22 +1897,27 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
         const flyingLsOut = lsFlyDir === 'out' && lsFlySlots?.lineIdx === i;
         const flyingMorphIn = morphDir === 'in' && morphSlots?.lineIdx === i;
         const flyingMorphOut = morphDir === 'out' && morphSlots?.lineIdx === i;
-        // 飞入穿行最后 22% 时 WebGL2 字形与 DOM 替身交叉淡化（0→1 / 1→0），飞出穿行保持隐藏 WebGL2 原样
+        // 飞入穿行抵达后锁位交叉淡化（0→1 / 1→0）；飞出穿行保持隐藏 WebGL2 原样
         const glLineK = flyingLsIn || flyingMorphOut ? 0 : flyingLsOut ? glLsOutK : flyingMorphIn ? glMorphInK : 1;
+        // 字后封面压暗与后句让位提前生效：漫游→穿行首帧即就位（随画布整体淡入，落地零变化）；听音空间→穿行在飞行前 78% 舒缓铺开，落地前已就位
+        const boxK = flyingLsIn || flyingMorphOut ? 0 : flyingMorphIn ? 1 : flyingLsOut ? (lsOutBlendT0 > 0 ? 1 : smooth(lsOutP / 0.78)) : 1;
+        const lineTrK = i === landingLineIdx ? trK * landingAura : trK;
         if (!flyingLsIn && auraK > 0.01) emitAura(d, segs, auraK, i === cur ? S : -1, t);
-        if (glLineK > 0.004 && o > 0.004) emitLine(d, segs, o * glLineK, mode, blur, trK * glLineK, bd, i > cur && curBox ? curBox : null);
-        if (i === cur && bd.x1 > bd.x0) curBox = { x0: bd.x0 - 10, x1: bd.x1 + 10, y0: bd.y0 - 8, y1: bd.y1 + 8 };
-        geos.push({ d, segs, op: o * glLineK, dz, state, bd });
+        if (glLineK > 0.004 && o > 0.004) emitLine(d, segs, o * glLineK, mode, blur, lineTrK, bd, i > cur && curBox ? curBox : null);
+        else if (boxK > 0.05 && o > 0.004) boundOf(d, segs, bd);
+        if (i === cur && bd.x1 > bd.x0 && boxK > 0.05) curBox = { x0: bd.x0 - 10, x1: bd.x1 + 10, y0: bd.y0 - 8, y1: bd.y1 + 8 };
+        geos.push({ d, segs, op: o * glLineK, boxOp: o * boxK, dz, state, bd });
         if (S >= 0) lightPt = pointOn(d, segs, S).p;
         if (bd.x1 > bd.x0) probeLines.push({ i, text: e.text, x: bd.x0, y: bd.y0, w: bd.x1 - bd.x0, h: bd.y1 - bd.y0, op: o * glLineK, state: d.state, done, kind: plan[i]!.kind, move: choreo[i]!.move });
       }
       lastGeos = geos;
       lastCur = cur;
-      // 漫游 ↔ 穿行一镜到底逐帧同步：抵达后保持 140ms 锁位融化淡出，DOM 为 0 时无声卸载
+      // 漫游 ↔ 穿行一镜到底逐帧同步：飞行中逐字母渐弯贴合 3D 弧线，抵达后 220ms 锁位融化淡出
       if (morphFly && morphSlots) {
         const gM = geos.find((g) => g.d.i === morphSlots!.lineIdx);
         if (gM) {
-          morphSlots.update(gM.segs, gM.d.warp, camNow(), t, scheme, gM.state);
+          const mCurveK = morphDir === 'in' ? (morphInBlendT0 > 0 ? 1 : smooth((k - 0.25) / 0.65)) : 1 - smooth((1 - k) / 0.55);
+          morphSlots.update(gM.segs, gM.d.warp, camNow(), t, scheme, gM.state, mCurveK);
           if (morphInBlendT0 > 0) {
             morphFly.render(1);
             morphFly.setLayerOpacity(1 - glMorphInK);
@@ -1887,11 +1932,12 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
           endMorph();
         }
       }
-      // 听音空间收起回飞穿行：逐帧同步目标句的三维投影，抵达后 140ms 锁位与 WebGL2 交叉淡化，落地帧零闪黑
+      // 听音空间收起回飞穿行：飞行中逐字母渐弯贴合 3D 弧线，抵达后 220ms 锁位与 WebGL2 交叉淡化，落地帧零闪黑
       if (lsFly && lsFlyDir === 'out') {
         if (lsFlySlots) {
           const gFly = geos.find((g) => g.d.i === lsFlySlots!.lineIdx);
-          if (gFly) lsFlySlots.update(gFly.segs, gFly.d.warp, camNow(), t, scheme, gFly.state);
+          const lCurveK = lsOutBlendT0 > 0 ? 1 : smooth((lsOutP - 0.25) / 0.65);
+          if (gFly) lsFlySlots.update(gFly.segs, gFly.d.warp, camNow(), t, scheme, gFly.state, lCurveK);
         }
         if (lsOutBlendT0 > 0) {
           lsFly.render(1);
@@ -1939,16 +1985,16 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       if (swirl) emitHelix(swirl, t);
       if (needle) emitNeedle(needle, t);
 
-      // —— 封面：隧道壁；字后面的压暗、挡在字前面的让开（按画面上的字框） ——
+      // —— 封面：隧道壁；字后面的压暗、挡在字前面的让开（按画面上的字框，飞入句提前平滑就位不瞬暗） ——
       const boxes = geos
-        .filter((g) => g.op > 0.05 && g.bd.x1 > g.bd.x0)
+        .filter((g) => g.boxOp > 0.05 && g.bd.x1 > g.bd.x0)
         .map((g) => ({
           x0: g.bd.x0 - 18,
           x1: g.bd.x1 + 18,
           y0: g.bd.y0 - 10,
           y1: g.bd.y1 + 10,
-          k: g.op * (g.state === 'future' ? 0.6 : 1),
-          front: g.d.done ? 0 : g.state === 'future' ? 0.7 * g.op : Math.min(1, g.op),
+          k: g.boxOp * (g.state === 'future' ? 0.6 : 1),
+          front: g.d.done ? 0 : g.state === 'future' ? 0.7 * g.boxOp : Math.min(1, g.boxOp),
           dz: g.dz,
         }));
       if (lightPt) {

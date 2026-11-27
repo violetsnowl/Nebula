@@ -6,6 +6,25 @@
 
 ---
 
+## #313 — 2026-11-27 — 穿行第二版飞入落地终极打磨：飞行中逐字母弯成 3D 弧线 + 封面暗化遮罩提前平滑就位
+
+**目标**：彻底消除用户二次验收指出的两处落地穿帮：① 英文多字母词在 DOM 中是直排词块、落地给 WebGL2 时瞬间弯成弧线导致的「重新渲染跳一下」感；② 转场期间穿行封面保持全亮，直到歌词落地瞬间才触发字后封面压暗与后句让位导致的最后一帧场景割裂闪暗。
+
+**改动点**
+- **飞行中逐字母弯成 3D 弧线（消除直排→弯曲重绘跳感）**（`src/components/travel/travelFly.ts`、`src/components/listen/fly-transition.css`、`src/components/travel-stage.css`）：
+  - 在 `travelFly.ts` 中对非长音多字母拉丁词也拆出内部 `.ch` 子节点并按字母宽占比精确映射整词扫光梯度（不改动 `words.ts`）；
+  - 改为对称切向投影并去掉会引发旋转斜切的非等比 `scale(sx, sy)`，改由 `applyCharCurve` 在飞行后半程（`25%–90%`）逐字母平滑写入 `--cx / --cy / --cr`，让词在落地前就已逐字母贴齐 WebGL2 3D 弧线与偏航缩短（测量宿主 `.tv-fly-slot` 设 `--cv: 0` 不影响 `placeOf / probe` 测量）；
+  - 放宽倾角钳制至 `±85°`；`startMorph / startLsOut` 启动时立刻 `syncPalette()` 对齐颜色；译文跟随 `landingAura` 柔和渐入，锁位交叉淡化延至 `220ms` 消化微弱暗晕差。
+- **字后封面压暗与后句让位提前就位（消除落地瞬间背后突暗）**（`src/components/TravelSpace.tsx`）：
+  - 新增 `boundOf(d, segs, bd)`，在 WebGL2 字形尚未出字时直接按 3D 曲线估算画面外接框，并在 `Geo` 中独立维护 `boxOp`；
+  - 「漫游 → 穿行」飞入首帧即 `boxK = 1`（封面暗化随画布整体淡入同步呈现，落地时刻背景零变化）；「听音空间 → 穿行」在飞行前 `78%`（约 550ms）内提前舒缓推开并压暗落点背后与前方的封面以及重叠后句，歌词抵达时背景已完全就位。
+
+**验证**
+- 无头 Chrome 对比抓拍交接前 100% DOM（`scratch/ab-before.png`）与交接后 100% WebGL2（`scratch/ab-after.png`，不进仓库）：弯曲长英文句每一字母的弧度、倾角、字距与扫光梯度在落地前即与 WebGL2 完全一致。
+- `$env:pnpm_config_verify_deps_before_run='false'; pnpm build; pnpm qa` 全绿（0 控制台错误；`travelLsFly: { inErr: 0, outErr: 0.18, outDone: { op: 1, layer: false, hidden: 0 } }`；`travelRoamMorph: { dir: "out", n: 4, err: 0, clean: { layers: 0, hidden: 0 } }`；`travelGL` `avg 0.27ms / p95 0.5ms`）。
+
+**遗留与风险**：默认体验不变（实验开关 `lab.travelGL` 仍默认关）。待用户桌面复验通过后，即执行第四步第 6/7 项（替换「设置 › 聆听 › 穿行」、删实验开关、规格写进 `NEBULA_UI_SYSTEM.md` §7.1c 并删 `TRAVEL_HANDOFF.md`）。
+
 ## #312 — 2026-11-27 — 穿行第二版飞入落地精修：DOM-WebGL2 亚像素对齐、140ms 锁位交叉淡化与衬托光带柔和渐显
 
 **目标**：修复用户反馈的「漫游 → 穿行」与「听音空间 → 穿行」两个飞入方向在最后一帧落地时的细微位置瞬跳、闪黑交接以及背后气流光带瞬间弹出问题（穿行 → 漫游、穿行 → 听音空间已验收通过，保持原样不变）。
