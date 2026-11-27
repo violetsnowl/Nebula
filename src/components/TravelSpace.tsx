@@ -17,7 +17,7 @@ import { CoverTextures } from './travel/coverTex';
 import { ATLAS_H, GlyphAtlas, PAD, R_MAIN, TR_K, type FontSpec, type GLine, type GUnit } from './travel/glyphAtlas';
 import { INST, KIND_CHIP, KIND_COVER, KIND_GLYPH, KIND_LIGHT, KIND_STROKE, Renderer, type Palette } from './travel/renderer';
 import { DREST, F, FAR, buildRoute, buildSlots, camAt, hashStr, hueOffsetAt, lowerBound, pathX, pathY, slotRadius, songHue } from './travel/route';
-import { BEATS, locate, placeSegs, segAt, splitAt, type Seg, type V3 } from './travel/pathText';
+import { BEATS, locate, placeSegs, planShapes, segAt, splitAt, type Seg, type V3 } from './travel/pathText';
 import { tunnelBasis } from './travel/tunnel';
 import { wordRt, type WordRt } from './travel/wordState';
 import './listen/lyric-words.css';
@@ -82,6 +82,8 @@ interface LS {
   fs: number;
   /** 拆成两段时第二段的第一个单位（0 = 不拆） */
   split: number;
+  /** 句形弯出画面时把锚点挪回来（世界 x / y，按唱完那一刻的镜头算） */
+  fix: [number, number];
   w: WordRt | null;
   state: 'future' | 'cur' | 'past';
   active: boolean;
@@ -105,7 +107,7 @@ interface Geo {
   bd: Bound;
 }
 
-type ProbeLine = { i: number; text: string; x: number; y: number; w: number; h: number; op: number; state: string; done: boolean };
+type ProbeLine = { i: number; text: string; x: number; y: number; w: number; h: number; op: number; state: string; done: boolean; kind: string };
 
 export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Props) {
   const lab = useSpaceLab();
@@ -230,7 +232,10 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
       dpr = r;
       canvas.width = Math.max(1, Math.round(vw * dpr));
       canvas.height = Math.max(1, Math.round(vh * dpr));
-      for (const d of doms.values()) Object.assign(d, sizeLine(els[d.i]!, d.g));
+      for (const d of doms.values()) {
+        Object.assign(d, sizeLine(els[d.i]!, d.g));
+        d.fix = fixOf(d);
+      }
     };
     const ro = new ResizeObserver(fit);
     ro.observe(root);
@@ -239,6 +244,8 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
     const route = buildRoute(els, shape, vw || window.innerWidth, vh || window.innerHeight);
     const baseHue = songHue(song);
     const { slots, small } = buildSlots(route, tracks, baseHue, hashStr(songKey));
+    /** 每句的句形（斜坡 / 波 / 扬尾 / 拐角 / 弧，§9.3）：按句组轮换，同一首歌每次一样 */
+    const plan = planShapes(els, shape, hashStr(songKey));
     const { rMin, rMax } = slotRadius(small);
     const basis = tunnelBasis(slots, rMin, rMax);
 
@@ -254,7 +261,56 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
       const [bx, by] = beatAt(d.i);
       const side = bx >= 0 ? 1 : -1;
       const hasTr = !!d.g.tr && showTr;
-      return [bx + side * passK * PASS_X, by + (hasTr ? 0.11 : 0.4) * d.fs + passK * PASS_Y, route.lines[d.i]!.z];
+      return [bx + d.fix[0] + side * passK * PASS_X, by + d.fix[1] + (hasTr ? 0.11 : 0.4) * d.fs + passK * PASS_Y, route.lines[d.i]!.z];
+    };
+    /**
+     * 句形弯得大（扬尾、拐角、拆两段）时，整句在画面上可能伸出窗口。按唱完那一刻（镜头最近、字最大）的镜头位置
+     * 把开唱姿态投到画面上，伸出去多少就把锚点往回挪多少（§9.2 可读性底线：没唱完的句子不出画面）。
+     */
+    const fixOf = (d: LS): [number, number] => {
+      d.fix = [0, 0];
+      const e = els[d.i]!;
+      const L = route.lines[d.i]!;
+      const zc = camAt(route, e.e);
+      const dz = L.z - zc;
+      if (dz < NEAR * 4) return [0, 0];
+      const W = vw || window.innerWidth;
+      const H = vh || window.innerHeight;
+      const s = F / dz;
+      const cxs = W / 2;
+      const cys = H * 0.47;
+      const ox = pathX(zc);
+      const oy = pathY(zc);
+      let x0 = Infinity;
+      let x1 = -Infinity;
+      let y0 = Infinity;
+      let y1 = -Infinity;
+      for (const sg of placeSegs(d.g, d.split, d.i, anchorOf(d, 0), d.fs, plan[d.i]!, 1)) {
+        for (let k = 0; k <= 32; k += 2) {
+          const x = cxs + (sg.C[0] + sg.P[k * 3]! - ox) * s;
+          const y = cys + (sg.C[1] + sg.P[k * 3 + 1]! - oy) * s;
+          if (x < x0) x0 = x;
+          if (x > x1) x1 = x;
+          if (y < y0) y0 = y;
+          if (y > y1) y1 = y;
+        }
+      }
+      // 曲线是基线：往上留一个字高、往下留降部（有译文再留一行）
+      const fpx = d.fs * s;
+      y0 -= 0.85 * fpx;
+      y1 += (d.g.tr && showTr ? 1.15 : 0.3) * fpx;
+      const mx = W * 0.05;
+      const top = H * 0.07;
+      const bot = H - 104;
+      let dx = 0;
+      let dy = 0;
+      if (x1 - x0 > W - 2 * mx) dx = W / 2 - (x0 + x1) / 2;
+      else if (x0 < mx) dx = mx - x0;
+      else if (x1 > W - mx) dx = W - mx - x1;
+      if (y1 - y0 > bot - top) dy = (top + bot) / 2 - (y0 + y1) / 2;
+      else if (y0 < top) dy = top - y0;
+      else if (y1 > bot) dy = bot - y1;
+      return [dx / s, dy / s];
     };
     let buildMax = 0;
     const makeLine = (i: number): LS | null => {
@@ -263,7 +319,9 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
       const g = atlas.build(e, font, showTr && e.tr ? e.tr : null);
       buildMax = Math.max(buildMax, performance.now() - tb);
       if (!g) return null;
-      return { i, g, ...sizeLine(e, g), w: wordRt(e, g), state: 'future', active: false, done: false };
+      const d: LS = { i, g, ...sizeLine(e, g), fix: [0, 0], w: wordRt(e, g), state: 'future', active: false, done: false };
+      d.fix = fixOf(d);
+      return d;
     };
     const dropLine = (d: LS) => {
       atlas.release(d.g);
@@ -493,7 +551,7 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
      * 光的飞行路线（§9.3）：上一句句尾 → 下一句句首，三次贝塞尔，切向接着两句的走向（把手短一点，弧线平缓、不打圈）。
      * 起点固定在「唱完那一刻」的句尾：唱完的句子会往外侧滑走，光点不跟着走，留在路上等，再从那里飞向下一句。
      */
-    const tailRest = (d: LS) => lineAt(placeSegs(d.g, d.split, d.i, anchorOf(d, 0), d.fs, 1), d.fs, d.g.width);
+    const tailRest = (d: LS) => lineAt(placeSegs(d.g, d.split, d.i, anchorOf(d, 0), d.fs, plan[d.i]!, 1), d.fs, d.g.width);
     const threadCurve = (a: Geo, b: Geo): ((u: number) => V3) => {
       const A = tailRest(a.d);
       const B = lineAt(b.segs, b.d.fs, 0);
@@ -736,7 +794,7 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
         // 姿态：远处 → 开唱前 2.4–0.3 秒间以句首为轴慢慢转正；唱完往离路线远的一侧推开、略往下（从镜头侧边掠过，不糊在画面正中）
         const turnK = smooth((t - (e.s - TURN_FROM)) / (TURN_FROM - TURN_TO));
         const passK = smooth((t - e.e - 0.05) / 1.2);
-        const segs = placeSegs(d.g, d.split, i, anchorOf(d, passK), d.fs, turnK);
+        const segs = placeSegs(d.g, d.split, i, anchorOf(d, passK), d.fs, plan[i]!, turnK);
         const mode = d.w ? (state === 'cur' ? 1 : state === 'past' ? 2 : 0) : t >= e.s ? 2 : 0;
         const blur = done ? smooth((820 - dz) / 440) : 0;
         const trK = smooth((t - e.s + 0.05) / 0.45);
@@ -744,7 +802,7 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
         if (o > 0.004) emitLine(d, segs, o, mode, blur, trK, bd);
         geos.push({ d, segs, op: o, dz, state, bd });
         if (S >= 0) lightPt = lineAt(segs, d.fs, S).p;
-        if (bd.x1 > bd.x0) probeLines.push({ i, text: e.text, x: bd.x0, y: bd.y0, w: bd.x1 - bd.x0, h: bd.y1 - bd.y0, op: o, state: d.state, done });
+        if (bd.x1 > bd.x0) probeLines.push({ i, text: e.text, x: bd.x0, y: bd.y0, w: bd.x1 - bd.x0, h: bd.y1 - bd.y0, op: o, state: d.state, done, kind: plan[i]!.kind });
       }
 
       // —— 光的飞行（§9.3，2026-11-27 用户反馈后改：不再常驻光丝，免得像隧道里的蛛丝、把句子「扯直」）——
