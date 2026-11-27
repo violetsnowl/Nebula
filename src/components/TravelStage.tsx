@@ -290,6 +290,7 @@ function TravelStageFlat({ lines, songKey, lsOpen, song, cards, onNotice }: Trav
     let camZ = route.z0;
     const times: number[] = [];
 
+    const reduceMotion = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick);
       const dt = clamp((now - last) / 1000, 0.001, 0.05);
@@ -320,7 +321,9 @@ function TravelStageFlat({ lines, songKey, lsOpen, song, cards, onNotice }: Trav
       if (!vw) fit();
       const cx = vw / 2;
       const cy = vh * 0.47;
-      camZ = camAt(route, t);
+      // 漫游 ↔ 穿行轻纵深推入（方案 1A）：进入时镜头从后方 420 单位平滑滑入，k=1 时归零无折角
+      const enterPull = reduceMotion ? 0 : -420 * (1 - k) * (1 - k);
+      camZ = camAt(route, t) + enterPull;
       const camX = pathX(camZ);
       const camY = pathY(camZ);
       const st = shape ? stageAt(shape, shapeLines, t) : { lift: 0.3, gap: 0, section: -1, stanza: -1 };

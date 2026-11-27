@@ -22,7 +22,10 @@ import { tunnelBasis } from './travel/tunnel';
 import { planChoreo } from './travel/choreo';
 import { buildStar, warpRing, warpStar, type Ring, type StarPiece, type Warp } from './travel/moves';
 import { wordRt, type WordRt } from './travel/wordState';
+import { LsFly, columnSideOf, columnUnitsOf, hideFlyElements, launchStageToListenFly, matchColumnLines, type FlyPair } from '../lib/listen/flyTransition';
+import { createTravelFlySession, type FlyCam, type TravelFlySession } from './travel/travelFly';
 import './listen/lyric-words.css';
+import './listen/fly-transition.css';
 import './travel-stage.css';
 
 /**
@@ -152,10 +155,15 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
   schemeRef.current = listen.scheme;
   const noticeRef = useRef(onNotice);
   noticeRef.current = onNotice;
+  const pinRef = useRef(settings.listenPin);
+  pinRef.current = settings.listenPin;
+  /** 记住从穿行聆听态进听音空间的路径（听音空间内切歌后 useEffect 重跑也不丢，同 LyricPage） */
+  const enteredFromTravelRef = useRef(false);
   const failRef = useRef(onFail);
   failRef.current = onFail;
   const rootRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const flyHostRef = useRef<HTMLDivElement>(null);
 
   const model = useMemo(() => {
     const src = lines.filter(usable);
@@ -1178,7 +1186,6 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
     let lastPos = -1;
     let extrap = 0;
     let smoothT = 0;
-    let lsVis = lsOpenRef.current ? 0 : 1;
     let rootOp = '';
     let frameNo = 0;
     let lightK = 0;
@@ -1220,6 +1227,104 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       }
     };
 
+    const reduceMotion = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const flyHost = flyHostRef.current;
+    let lsPrev = lsOpenRef.current;
+    let lsFly: LsFly | null = null;
+    let lsFlyDir: 'in' | 'out' | null = null;
+    let lsFlySlots: TravelFlySession | null = null;
+    let lsFadeT0 = 0;
+    let lsBoostUntil = 0;
+    let lsWantAt = 0;
+    let lsAttemptAt = 0;
+    let lastGeos: Geo[] = [];
+    let lastCur = -1;
+    const camNow = (): FlyCam => ({ pcx, pcy, pX, pY, pZ, F, near: NEAR });
+    const endLsFly = () => {
+      lsFly?.end();
+      lsFly = null;
+      lsFlyDir = null;
+      lsFlySlots?.clear();
+      lsFlySlots = null;
+    };
+    const startLsIn = (t: number) => {
+      if (!flyHost || lastCur < 0) return;
+      const gCur = lastGeos.find((g) => g.d.i === lastCur && g.op > 0.12 && !g.d.done);
+      if (!gCur) return;
+      const slots0 = createTravelFlySession(flyHost, gCur.d.i, els[gCur.d.i]!, gCur.d.g, gCur.d.fs, gCur.segs, gCur.d.warp, camNow(), t, schemeRef.current, gCur.state);
+      if (!slots0) return;
+      const fly = launchStageToListenFly(
+        [{ text: slots0.text, offsetFromCur: 0, units: slots0.units, sideOf: (el) => slots0.sides[slots0.units.indexOf(el)]! }],
+        { flightMs: 600 },
+      );
+      if (fly) {
+        lsFly = fly;
+        lsFlyDir = 'in';
+        lsFlySlots = slots0;
+      } else {
+        slots0.clear();
+      }
+    };
+    const startLsOut = (t: number) => {
+      if (!flyHost || !els.length) return;
+      if (!vw) fit();
+      const cx0 = vw / 2;
+      const cy0 = vh * 0.47;
+      camZ = camAt(route, t);
+      pcx = cx0;
+      pcy = cy0;
+      pX = pathX(camZ);
+      pY = pathY(camZ);
+      pZ = camZ;
+      let cur0 = -1;
+      {
+        let lo0 = 0;
+        let hi0 = route.lines.length - 1;
+        while (lo0 <= hi0) {
+          const m = (lo0 + hi0) >> 1;
+          if (route.lines[m]!.s <= t + 0.05) {
+            cur0 = m;
+            lo0 = m + 1;
+          } else hi0 = m - 1;
+        }
+      }
+      if (cur0 < 0) return;
+      const e = els[cur0]!;
+      if (t > e.e + 0.1) return;
+      let d = doms.get(cur0);
+      if (!d) {
+        d = makeLine(cur0) ?? undefined;
+        if (d) {
+          doms.set(cur0, d);
+          atlas.flush();
+        }
+      }
+      if (!d) return;
+      const turnK = smooth((t - (e.s - TURN_FROM)) / (TURN_FROM - TURN_TO));
+      const passK = smooth((t - e.e - 0.05) / 1.2);
+      const segs = segsOf(d, turnK, passK);
+      const state: LS['state'] = t > e.e + 0.9 ? 'past' : t >= e.s - 0.05 ? 'cur' : 'future';
+      const slots0 = createTravelFlySession(flyHost, cur0, e, d.g, d.fs, segs, d.warp, camNow(), t, schemeRef.current, state);
+      if (!slots0) return;
+      const cols = matchColumnLines([{ text: slots0.text, offsetFromCur: 0 }]);
+      const col = cols[0] ?? null;
+      const us = columnUnitsOf(col);
+      lsBoostUntil = performance.now() + 2600;
+      if (!col || !us.length || us.length !== slots0.units.length) {
+        slots0.clear();
+        return;
+      }
+      const pairs: FlyPair[] = us.map((el, j) => ({ from: columnSideOf(col, el), to: slots0.sides[j]! }));
+      const fly = new LsFly(pairs, () => null, 700, hideFlyElements);
+      if (fly.done) {
+        slots0.clear();
+        return;
+      }
+      lsFly = fly;
+      lsFlyDir = 'out';
+      lsFlySlots = slots0;
+    };
+
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick);
       if (lost) return;
@@ -1235,23 +1340,67 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       smoothT = cand;
       const t = cand;
       const k = listenBus.enabled ? listenBus.k : 0;
-      const lsTarget = lsOpenRef.current ? 0 : 1;
-      lsVis += (lsTarget - lsVis) * (1 - Math.exp(-dt * (lsTarget ? 6 : 12)));
-      const op = Math.min(k, lsVis);
+      const lsNow = lsOpenRef.current;
+      const travelOwns = listenBus.enabled && k > 0.5;
+      if (lsNow !== lsPrev) {
+        endLsFly();
+        if (lsNow) {
+          enteredFromTravelRef.current = travelOwns;
+          lsFadeT0 = travelOwns || Number(rootOp) > 0.002 ? now : 0;
+          if (travelOwns) {
+            startLsIn(t);
+            lsWantAt = lsFly ? 0 : now;
+            lsAttemptAt = now;
+          } else {
+            lsWantAt = 0;
+          }
+        } else {
+          lsFadeT0 = 0;
+          lsWantAt = 0;
+          if (pinRef.current && (enteredFromTravelRef.current || travelOwns)) {
+            startLsOut(t);
+          }
+          enteredFromTravelRef.current = false;
+        }
+        lsPrev = lsNow;
+      }
+      if (lsNow && enteredFromTravelRef.current && !lsFly && lsWantAt && now - lsWantAt < 250 && now - lsAttemptAt > 60) {
+        lsAttemptAt = now;
+        startLsIn(t);
+        if (lsFly) lsWantAt = 0;
+      }
+      const boost = now < lsBoostUntil && k < 0.99 ? 1 : 0;
+      if (k >= 0.99) lsBoostUntil = 0;
+      if (lsFly && lsFlyDir === 'in') {
+        if (lsFly.step(now)) endLsFly();
+      }
+      const fade = !lsNow
+        ? 1
+        : lsFly
+          ? 1 - smooth(lsFly.progress / 0.55)
+          : lsFadeT0 > 0
+            ? 1 - smooth((now - lsFadeT0) / 330)
+            : 0;
+      const op = Math.min(Math.max(k, boost), fade);
       const opS = op < 0.002 ? '0' : op.toFixed(3);
       if (opS !== rootOp) {
         root.style.opacity = opS;
         rootOp = opS;
       }
-      if (op < 0.002) return;
-      if (k > 0.35 && !lsOpenRef.current) notifySmallLibraryOnce(tracks, noticeRef.current);
+      if (op < 0.002) {
+        if (lsFly && lsFlyDir === 'out' && lsFly.step(now)) endLsFly();
+        return;
+      }
+      if (k > 0.35 && !lsNow) notifySmallLibraryOnce(tracks, noticeRef.current);
       const t0 = performance.now();
       frameNo++;
       if (!vw) fit();
       if (frameNo % 20 === 1) syncPalette();
       const cx = vw / 2;
       const cy = vh * 0.47;
-      camZ = camAt(route, t);
+      // 漫游 ↔ 穿行轻纵深推入（方案 1A）：进入时镜头从后方 420 单位平滑滑入，k=1 时归零无折角
+      const enterPull = reduceMotion || boost > 0 ? 0 : -420 * (1 - k) * (1 - k);
+      camZ = camAt(route, t) + enterPull;
       const camX = pathX(camZ);
       const camY = pathY(camZ);
       pcx = cx;
@@ -1488,12 +1637,23 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
         // 衬托层强度：下一句约 0.35，开唱前后 0.6 秒升到 1，唱完掠过时随推开淡出；更远的句子不画
         const auraK =
           i === cur + 1 ? 0.35 * o : i <= cur && i >= cur - 1 ? (0.35 + 0.65 * smooth((t - e.s + 0.4) / 0.6)) * (1 - passK) * Math.min(1, o * 1.4) : 0;
-        if (auraK > 0.01) emitAura(d, segs, auraK, i === cur ? S : -1, t);
-        if (o > 0.004) emitLine(d, segs, o, mode, blur, trK, bd, i > cur && curBox ? curBox : null);
+        const flyingThis = lsFlySlots?.lineIdx === i;
+        if (!flyingThis && auraK > 0.01) emitAura(d, segs, auraK, i === cur ? S : -1, t);
+        if (!flyingThis && o > 0.004) emitLine(d, segs, o, mode, blur, trK, bd, i > cur && curBox ? curBox : null);
         if (i === cur && bd.x1 > bd.x0) curBox = { x0: bd.x0 - 10, x1: bd.x1 + 10, y0: bd.y0 - 8, y1: bd.y1 + 8 };
         geos.push({ d, segs, op: o, dz, state, bd });
         if (S >= 0) lightPt = pointOn(d, segs, S).p;
         if (bd.x1 > bd.x0) probeLines.push({ i, text: e.text, x: bd.x0, y: bd.y0, w: bd.x1 - bd.x0, h: bd.y1 - bd.y0, op: o, state: d.state, done, kind: plan[i]!.kind, move: choreo[i]!.move });
+      }
+      lastGeos = geos;
+      lastCur = cur;
+      // 听音空间收起回飞穿行：逐帧同步目标句的三维投影，落位贴合正在推进的曲线
+      if (lsFly && lsFlyDir === 'out') {
+        if (lsFlySlots) {
+          const gFly = geos.find((g) => g.d.i === lsFlySlots!.lineIdx);
+          if (gFly) lsFlySlots.update(gFly.segs, gFly.d.warp, camNow(), t, scheme, gFly.state);
+        }
+        if (lsFly.step(now)) endLsFly();
       }
 
       // —— 光的飞行（§9.3，2026-11-27 用户反馈后改：不再常驻光丝，免得像隧道里的蛛丝、把句子「扯直」）——
@@ -1742,7 +1902,7 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
     };
     raf = requestAnimationFrame(tick);
 
-    const w = window as unknown as { __nebulaTravel?: { probe: () => unknown } };
+    const w = window as unknown as { __nebulaTravel?: { probe: () => unknown; lsProbe?: () => unknown } };
     w.__nebulaTravel = {
       probe: () => {
         const sorted = [...times].sort((a, b) => a - b);
@@ -1770,12 +1930,26 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
           atlasTiming: atlas.timing.slice(-12),
         };
       },
+      lsProbe: () => {
+        if (!lsFly) return null;
+        lsFly.render(1);
+        const err = lsFly.probe();
+        const box = document.querySelector('.ls-col')?.getBoundingClientRect();
+        const off = box
+          ? lsFly.targets().filter((el) => {
+              const r = el.getBoundingClientRect();
+              return r.top < box.top - 2 || r.bottom > box.bottom + 2;
+            }).length
+          : 0;
+        return { n: err.length, err, off };
+      },
     };
 
     return () => {
       cancelAnimationFrame(raf);
       ro.disconnect();
       canvas.removeEventListener('webglcontextlost', onLost);
+      endLsFly();
       for (const d of [...doms.values()]) dropLine(d);
       root.style.opacity = '0';
       if (w.__nebulaTravel) delete w.__nebulaTravel;
@@ -1791,10 +1965,14 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
   if (!active) return null;
   const vars = {
     '--lc-a': settings.lyricColorSource === 'custom' ? settings.customColor : 'var(--ly-a, rgb(238 240 244))',
+    '--lc-font': typo.f,
+    '--lc-ls': typo.ls,
+    '--lyric-weight': weight,
   } as CSSProperties;
   return (
-    <div ref={rootRef} className="travel-stage travel-space" data-scheme={listen.scheme} style={vars} aria-hidden="true">
+    <div ref={rootRef} className="travel-stage travel-space lw" data-scheme={listen.scheme} style={vars} aria-hidden="true">
       <canvas ref={canvasRef} className="tv-canvas" />
+      <div ref={flyHostRef} className="tv-fly-host" />
     </div>
   );
 }

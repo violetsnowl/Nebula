@@ -2112,6 +2112,38 @@ async function main() {
         { data: song1Data, audio: leakAudio },
       );
       await page.waitForTimeout(350);
+      // 4a) 穿行第二版 ↔ 听音空间当前句双向一镜到底（常驻聆听下往返飞字，量落位误差与清理）
+      await page.evaluate(() => window.__nebula.player.seek(1.5));
+      await page.waitForTimeout(320);
+      await page.evaluate(() => document.querySelector('.bp-cover[data-np-cover]')?.click());
+      await page.waitForTimeout(260);
+      const tvFlyIn = await page.evaluate(() => window.__nebulaTravel?.lsProbe?.() ?? null);
+      await page.waitForTimeout(600);
+      const tvFlyInDone = await page.evaluate(() => ({
+        op: window.__nebulaTravel?.probe?.()?.op ?? -1,
+        layer: !!document.querySelector('.lp-lsfly'),
+      }));
+      await page.evaluate(() => window.__nebula.player.seek(1.5));
+      await page.waitForTimeout(180);
+      await page.evaluate(() => document.querySelector('.ls-exit')?.click());
+      await page.waitForTimeout(260);
+      const tvFlyOut = await page.evaluate(() => window.__nebulaTravel?.lsProbe?.() ?? null);
+      await page.waitForTimeout(750);
+      const tvFlyOutDone = await page.evaluate(() => ({
+        op: window.__nebulaTravel?.probe?.()?.op ?? -1,
+        layer: !!document.querySelector('.lp-lsfly'),
+        hidden: document.querySelectorAll('[data-flyhide]').length,
+      }));
+      const tvWorst = (p) => (p && p.err && p.err.length ? Math.max(...p.err.flat().map(Math.abs)) : null);
+      const travelLsFly = {
+        inN: tvFlyIn?.n ?? 0,
+        inOff: tvFlyIn?.off ?? -1,
+        inErr: tvWorst(tvFlyIn),
+        inDone: tvFlyInDone,
+        outN: tvFlyOut?.n ?? 0,
+        outErr: tvWorst(tvFlyOut),
+        outDone: tvFlyOutDone,
+      };
       await page.evaluate(() => window.__nebula.player.seek(8.2));
       await page.waitForTimeout(450);
       const travelGapDots = await page.evaluate(() => window.__nebulaTravel?.probe?.()?.dots ?? null);
@@ -2144,7 +2176,7 @@ async function main() {
       await pinTg();
       await tab('歌词');
       await page.waitForTimeout(250);
-      return { beforeGap, gapOpen, switchInLs, afterClose, travelGapDots, travelLoadDots };
+      return { beforeGap, gapOpen, switchInLs, afterClose, travelLsFly, travelGapDots, travelLoadDots };
     })();
     await page.keyboard.press('Control+Shift+M');
     await page.waitForTimeout(300);
@@ -2388,6 +2420,18 @@ async function main() {
     pageLsLeakCheck.afterClose.pageOp >= 0.99 &&
     !pageLsLeakCheck.afterClose.flyLayer &&
     pageLsLeakCheck.afterClose.flyHide === 0 &&
+    pageLsLeakCheck.travelLsFly?.inN > 0 &&
+    pageLsLeakCheck.travelLsFly.inOff === 0 &&
+    pageLsLeakCheck.travelLsFly.inErr !== null &&
+    pageLsLeakCheck.travelLsFly.inErr <= 1.5 &&
+    pageLsLeakCheck.travelLsFly.inDone.op < 0.05 &&
+    !pageLsLeakCheck.travelLsFly.inDone.layer &&
+    pageLsLeakCheck.travelLsFly.outN > 0 &&
+    pageLsLeakCheck.travelLsFly.outErr !== null &&
+    pageLsLeakCheck.travelLsFly.outErr <= 1.5 &&
+    pageLsLeakCheck.travelLsFly.outDone.op > 0.9 &&
+    !pageLsLeakCheck.travelLsFly.outDone.layer &&
+    pageLsLeakCheck.travelLsFly.outDone.hidden === 0 &&
     pageLsLeakCheck.travelGapDots?.mode === 'interlude' &&
     pageLsLeakCheck.travelGapDots.op > 0.4 &&
     pageLsLeakCheck.travelGapDots.levels?.[0] > 0.2 &&

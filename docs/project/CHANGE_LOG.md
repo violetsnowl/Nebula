@@ -6,6 +6,22 @@
 
 ---
 
+## #310 — 2026-11-27 — 穿行第二版第四步（五）：漫游轻纵深推入、听音空间双向飞字一镜到底与文档刷新
+
+**目标**：`TRAVEL_HANDOFF.md` §9.10 第四步第 5 项（用户选定方案 1A + 2A），完成穿行进出过渡与听音空间一镜到底，并刷新交接文档交付桌面验收（验收通过后再做第 6/7 项：替换设置里的穿行、删实验开关并落档 §7.1c）。
+
+**改动点**
+- **漫游 ↔ 穿行轻纵深推入**（`src/components/TravelSpace.tsx`、`src/components/TravelStage.tsx`）：进入穿行时镜头从 `camAt(route, t) - 420·(1-k)²` 顺交接进度平滑滑入隧道（`k = 1` 时斜率归零无缝贴合原轨迹；`prefers-reduced-motion` 下关闭，仅保留淡入淡出）。
+- **穿行第二版 ↔ 听音空间双向飞字一镜到底**：
+  - 新增 `src/components/travel/travelFly.ts`：按当前句每个词 / 字在 3D 曲线与当前招式变形（环 / 星座 / 立起 / 卷起）下的实时屏幕投影中心、字号与倾角，在隐藏宿主 `.tv-fly-host` 内临时挂载对应 DOM 单元并复用 `words.ts` 逐字状态，交给 `flyTransition.ts`（`launchStageToListenFly` / `LsFly`）与大封面同步飞行；
+  - `src/components/TravelSpace.tsx` & `src/components/travel-stage.css`：进入听音空间时当前句 600ms 飞进右栏歌词栏、穿行画布同步柔淡；常驻聆听下收起听音空间时 700ms 从歌词栏回飞并逐帧追踪推进中的 3D 曲线；飞行期间 WebGL2 隐去飞行句防重影，落地立刻清空宿主；听音空间内切歌不叠加露出；`window.__nebulaTravel.lsProbe()` 暴露落位校验；
+- `scripts/qa.cjs`：新增穿行第二版 ↔ 听音空间双向一镜到底回归（`travelLsFly`），断言去程与回程均命中飞字、不飞出歌词栏、落位误差 ≤ 1.5px、落地后零残留 `.lp-lsfly` / `[data-flyhide]`。
+- 文档同步：`CONTEXT_SNAPSHOT.md`（刷新至 `#310`）、`TRAVEL_HANDOFF.md` §9.10（标记第 1–5 项已完成待桌面验收）、`docs/README.md`（更新 `TRAVEL_HANDOFF.md` 备注）。
+
+**验证**：`$env:pnpm_config_verify_deps_before_run='false'; pnpm build; pnpm qa` 全绿（0 控制台错误；`travelLsFly: { inN: 5, inOff: 0, inErr: 0, inDone: { op: 0, layer: false }, outN: 5, outErr: 0, outDone: { op: 1, layer: false, hidden: 0 } }`；`travelGL` `avg 0.21ms / p95 0.4ms`）。
+
+**遗留与风险**：默认体验不变（实验开关 `lab.travelGL` 仍默认关）。待用户桌面验收第四步第 1–5 项通过后，再执行第 6/7 项（替换设置里的穿行、删实验开关、规格写入 `NEBULA_UI_SYSTEM.md` §7.1c 并删 `TRAVEL_HANDOFF.md`）。
+
 ## #309 — 2026-11-27 — 穿行第二版第四步（四）：小曲库实测与进入穿行轻量提示（不强行退出）
 
 **目标**：`TRAVEL_HANDOFF.md` §9.10 第四步第 4 项（用户拍板：小曲库保留放大靠近 + 按段重复的补偿、不强行退回其他舞台，改为进入穿行时弹轻量提示，把选择权留给用户）。

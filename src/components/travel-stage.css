@@ -31,6 +31,51 @@
   inset: 0;
 }
 
+/* 穿行第二版（WebGL2）↔ 听音空间一镜到底临时替身宿主：仅飞行期间挂当前句，平时空；不建立可见元素 */
+.tv-fly-host {
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  visibility: hidden;
+  z-index: -1;
+  font-family: var(--lc-font, 'Noto Serif SC', serif);
+  font-weight: var(--lyric-weight, 600);
+  letter-spacing: var(--lc-ls, 0.02em);
+  line-height: 1.2;
+}
+.tv-fly-tmp {
+  position: fixed;
+  left: 0;
+  top: 0;
+  white-space: nowrap;
+  font-size: 72px;
+}
+.tv-fly-slot {
+  position: fixed;
+  left: 0;
+  top: 0;
+  white-space: pre;
+  transform-origin: 50% 50%;
+}
+.tv-fly-slot .u,
+.tv-fly-slot .u .ch {
+  padding: 0;
+  margin: 0;
+  transform: none !important;
+}
+.tv-fly-slot.is-past .u,
+.tv-fly-slot.is-past .u .ch {
+  color: var(--tv-ink);
+}
+.tv-fly-slot .fl-whole {
+  display: inline-block;
+  color: var(--lc-rest);
+}
+.tv-fly-slot .fl-whole.is-on,
+.tv-fly-slot.is-past .fl-whole {
+  color: var(--tv-ink);
+}
+
 /* 按透视投影逐帧定位：transform = 投影点 · 缩放 · 自身居中 */
 .tv-line {
   position: absolute;
