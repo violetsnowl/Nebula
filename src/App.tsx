@@ -120,6 +120,7 @@ export default function App() {
     refreshAccount,
     setDrawerPlatform,
     requestLogin,
+    syncPlaylistTrackCount,
   } = useAccounts();
   // ---------- 歌单/导入领域（组合层接线） ----------
   const playlist = usePlaylist();
@@ -365,6 +366,9 @@ export default function App() {
   sessionStartRef.current = resetImportState;
   commitRef.current = (c) => {
     playlist.setCurrent(c.meta);
+    if (c.meta && c.meta.platform !== 'merged' && c.tracks.length > 0) {
+      syncPlaylistTrackCount(c.meta.platform, c.meta.id, c.tracks.length);
+    }
     beginImport(c.adapterName, c.tracks, c.simulated, c.note);
   };
 

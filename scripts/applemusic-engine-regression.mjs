@@ -93,7 +93,11 @@ function makeEnv(opts = {}) {
 
 /** 在假页面里执行代码，结果过一遍 JSON（模拟 Electron 的结构化克隆，也免得跨 vm 域的对象原型不同）。 */
 async function runInPage(code, state) {
-  const out = await vm.runInNewContext(code, { window: { MusicKit: { getInstance: () => makeMusicKit(state) } } });
+  const out = await vm.runInNewContext(code, {
+    setTimeout,
+    clearTimeout,
+    window: { MusicKit: { getInstance: () => makeMusicKit(state) } },
+  });
   return out === undefined ? undefined : JSON.parse(JSON.stringify(out));
 }
 
@@ -499,6 +503,30 @@ await test('目录搜索：响应体 results.songs.data 按 thin 精简后放进
   assert.equal((await engine.call({ path: '/v1/catalog/cn/search' })).data[0].id, 'top');
   state.music = async () => ({ status: 200, data: { results: { songs: { data: 'bad' } } } });
   assert.deepEqual(await engine.call({ path: '/v1/catalog/cn/search' }), { status: 200 });
+});
+
+await test('callMany：单项卡住只令该项返回 timeout 错误，其余项曲目数照常返回；readInPage 支持字符串 total 与空 tracks=0', async () => {
+  const { engine, state } = makeEnv({
+    engine: { timing: { readyTimeoutMs: 120, readyPollMs: 10, requestTimeoutMs: 150, batchItemTimeoutMs: 40, batchTimeoutMs: 400, loginPollMs: 15, loginProbeMs: 60 } },
+  });
+  state.music = async (path) => {
+    if (path.includes('/p.HANG/')) return new Promise(() => {});
+    if (path.includes('/p.STR/')) return { status: 200, data: { data: [], meta: { total: '42' } } };
+    if (path.includes('/p.EMPTY/')) return { status: 200, data: { data: [] } };
+    return { status: 200, meta: { total: 15 }, data: { data: [] } };
+  };
+  const rs = await engine.callMany([
+    { path: '/v1/me/library/playlists/p.STR/tracks', query: { limit: 1 } },
+    { path: '/v1/me/library/playlists/p.HANG/tracks', query: { limit: 1 } },
+    { path: '/v1/me/library/playlists/p.EMPTY/tracks', query: { limit: 1 } },
+    { path: '/v1/me/library/playlists/p.TOP/tracks', query: { limit: 1 } },
+  ]);
+  assert.equal(rs.length, 4);
+  assert.equal(rs[0].total, 42);
+  assert.equal(rs[1].status, 0);
+  assert.equal(rs[1].errors[0].code, 'timeout');
+  assert.equal(rs[2].total, 0);
+  assert.equal(rs[3].total, 15);
 });
 
 say(`Apple Music 页面引擎回归 ${passed}/${passed}`);

@@ -114,7 +114,7 @@ const COUNT_BATCH = 60;
 /** 歌单曲目数缓存多久（用户可能在手机上改歌单，不能一直用旧数）。 */
 const COUNT_TTL_MS = 5 * 60 * 1000;
 /** 拉曲目数最多等多久；超时就不显示数量，不拖慢歌单列表。 */
-const COUNT_BUDGET_MS = 8000;
+const COUNT_BUDGET_MS = 20000;
 
 /** 路径里的 ID 段：字母数字和 . _ -，且不能含 ..（防止拼出上级路径）。 */
 const SEGMENT_RE = /^[A-Za-z0-9._-]+$/;
@@ -264,8 +264,9 @@ export class AppleMusicClient {
   /**
    * 资料库歌单的曲目总数：歌单列表接口不给数量，每张歌单读一次 `tracks?limit=1` 的 `meta.total`，
    * 用批量请求在页面里并行跑。桥不支持批量、页面没就绪或单张失败的，结果里就没有那张。
+   * 对单项明确超时的条目，额外收集到 `timedOutIds` 供上层按需重试。
    */
-  async libraryPlaylistTrackCounts(ids: string[]): Promise<Map<string, number>> {
+  async libraryPlaylistTrackCounts(ids: string[], timedOutIds?: string[]): Promise<Map<string, number>> {
     const out = new Map<string, number>();
     const valid = ids.filter((id) => LIBRARY_ID_RE.test(id));
     if (!this.bridge?.callMany || !valid.length) return out;
@@ -274,8 +275,12 @@ export class AppleMusicClient {
       const res = await this.bridge.callMany(chunk.map((id) => ({ path: `/v1/me/library/playlists/${segment(id, '歌单 ID')}/tracks`, query: { limit: 1 } })));
       if (!Array.isArray(res)) break; // 页面没就绪
       res.forEach((r, k) => {
-        const total = r && Number(r.status) < 400 && !r.errors?.length ? Number(r.total) : NaN;
-        if (Number.isFinite(total) && total >= 0) out.set(chunk[k]!, total);
+        const total = r && Number(r.status) >= 200 && Number(r.status) < 400 && !r.errors?.length ? Number(r.total) : NaN;
+        if (Number.isFinite(total) && total >= 0) {
+          out.set(chunk[k]!, total);
+        } else if (timedOutIds && r?.errors?.some((e) => e?.code === 'timeout')) {
+          timedOutIds.push(chunk[k]!);
+        }
       });
     }
     return out;
@@ -453,7 +458,7 @@ export class AppleMusicAdapter implements PlatformAdapter {
     return [...list.filter((p) => p.favorited), ...list.filter((p) => !p.favorited)].map(({ favorited: _f, ...p }) => p);
   }
 
-  /** 补曲目数：缓存里 5 分钟内的直接用，其余批量读；最多等 8 秒，失败不影响歌单列表。 */
+  /** 补曲目数：缓存里 5 分钟内的直接用，其余批量读；超时单项在预算内重试一次，失败不拖慢歌单列表。 */
   private async fillTrackCounts(list: PlaylistSummary[]): Promise<void> {
     const fresh = (id: string) => {
       const c = this.trackCounts.get(id);
@@ -461,12 +466,20 @@ export class AppleMusicAdapter implements PlatformAdapter {
     };
     const missing = list.filter((p) => !p.trackCount && fresh(p.id) === undefined).map((p) => p.id);
     if (missing.length) {
+      const startAt = Date.now();
       let timer: ReturnType<typeof setTimeout> | undefined;
-      // 结果一到就写缓存：超时没赶上这一次的，下次刷新歌单时就有了
-      const job = this.client.libraryPlaylistTrackCounts(missing).then((counts) => {
+      // 挂 .catch 防止预算超时先行返回后，晚到的底层 rejection 变成未捕获异常
+      const job = (async () => {
+        const timedOut: string[] = [];
+        const counts = await this.client.libraryPlaylistTrackCounts(missing, timedOut);
         const at = Date.now();
         counts.forEach((count, id) => this.trackCounts.set(id, { count, at }));
-      });
+        if (timedOut.length > 0 && timedOut.length <= 12 && Date.now() - startAt < COUNT_BUDGET_MS * 0.6) {
+          const retried = await this.client.libraryPlaylistTrackCounts(timedOut);
+          const atRetry = Date.now();
+          retried.forEach((count, id) => this.trackCounts.set(id, { count, at: atRetry }));
+        }
+      })().catch(() => {});
       try {
         await Promise.race([
           job,
@@ -474,10 +487,12 @@ export class AppleMusicAdapter implements PlatformAdapter {
             timer = setTimeout(resolve, COUNT_BUDGET_MS);
           }),
         ]);
-      } catch {
-        /* 读不到就不显示数量 */
       } finally {
         if (timer) clearTimeout(timer);
+      }
+      const populated = missing.filter((id) => fresh(id) !== undefined).length;
+      if (populated === 0) {
+        console.warn(`[AppleMusic] 歌单曲目数未取到: count=${missing.length}, elapsed=${Date.now() - startAt}ms`);
       }
     }
     for (const p of list) {

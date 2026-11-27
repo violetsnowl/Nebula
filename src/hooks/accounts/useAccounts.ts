@@ -84,6 +84,19 @@ export function useAccounts() {
     setLoginNonce((n) => n + 1);
   }, []);
 
+  /** 导入歌单后顺手同步列表中对应的曲目数（如 Apple Music 首次未拉到的数目），避免等整页刷新。 */
+  const syncPlaylistTrackCount = useCallback((platform: string, id: string, trackCount: number) => {
+    if (!platform || !id || trackCount <= 0) return;
+    setAccounts((prev) => {
+      const acc = prev[platform];
+      if (!acc?.playlists.length) return prev;
+      const idx = acc.playlists.findIndex((p) => p.id === id);
+      if (idx < 0 || acc.playlists[idx]!.trackCount === trackCount) return prev;
+      const nextPlaylists = acc.playlists.map((p, i) => (i === idx ? { ...p, trackCount } : p));
+      return { ...prev, [platform]: { ...acc, playlists: nextPlaylists } };
+    });
+  }, []);
+
   return {
     platforms,
     accounts,
@@ -92,5 +105,6 @@ export function useAccounts() {
     refreshAccount,
     setDrawerPlatform,
     requestLogin,
+    syncPlaylistTrackCount,
   };
 }

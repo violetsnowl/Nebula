@@ -21,6 +21,8 @@ const READY_TIMEOUT_MS = 25000;
 const READY_POLL_MS = 500;
 /** 单个请求在页面里执行的最长时间。 */
 const REQUEST_TIMEOUT_MS = 15000;
+/** 批量读（callMany）里单项最长等待：避免某一张歌单卡住导致整批全军覆没。 */
+const BATCH_ITEM_TIMEOUT_MS = 8000;
 /** 登录弹窗期间多久查一次 isAuthorized。 */
 const LOGIN_POLL_MS = 1500;
 /** 点「登录」时先等页面就绪多久，好判断「其实已经登录了」；等不到就直接开弹窗。 */
@@ -157,7 +159,17 @@ async function readInPage(req) {
     if (rows) result.data = rows.slice(0, 300).map(thin).filter(Boolean);
     if (typeof body.next === 'string' && body.next.length <= 500) result.next = body.next;
     const meta = body.meta && typeof body.meta === 'object' ? body.meta : null;
-    if (meta && typeof meta.total === 'number' && isFinite(meta.total)) result.total = meta.total;
+    const rawTotal =
+      meta && meta.total !== undefined && meta.total !== null
+        ? meta.total
+        : res && res.meta && typeof res.meta === 'object' && res.meta.total !== undefined && res.meta.total !== null
+          ? res.meta.total
+          : undefined;
+    const totalNum = rawTotal !== undefined && rawTotal !== '' ? Number(rawTotal) : NaN;
+    if (Number.isFinite(totalNum) && totalNum >= 0) result.total = totalNum;
+    else if (status === 200 && Array.isArray(body.data) && body.data.length === 0 && !body.next && /\/tracks$/.test(path)) {
+      result.total = 0;
+    }
     if (meta && meta.subscription && typeof meta.subscription.active === 'boolean') {
       result.meta = { subscription: { active: meta.subscription.active } };
     }
@@ -182,14 +194,27 @@ function buildRequestCode(path, query) {
 const BATCH_MAX = 60;
 const BATCH_CONCURRENCY = 6;
 
-/** 批量：在页面里用同一个读取函数并行跑多个请求（限并发），结果按顺序返回。 */
-function buildBatchCode(reqs) {
+/** 批量：在页面里用同一个读取函数并行跑多个请求（限并发、单项带超时隔离），结果按顺序返回。 */
+function buildBatchCode(reqs, itemTimeoutMs = BATCH_ITEM_TIMEOUT_MS) {
+  const ms = Math.max(25, Number(itemTimeoutMs) || BATCH_ITEM_TIMEOUT_MS);
   return `(async () => {
     const read = ${readInPage.toString()};
     const reqs = ${JSON.stringify(reqs)};
     const out = new Array(reqs.length);
     let next = 0;
-    const worker = async () => { while (next < reqs.length) { const i = next++; out[i] = await read(reqs[i]); } };
+    const timedRead = (req) => {
+      if (typeof setTimeout !== 'function') return read(req);
+      let timer;
+      return Promise.race([
+        read(req),
+        new Promise((resolve) => {
+          timer = setTimeout(() => resolve({ status: 0, errors: [{ code: 'timeout', status: '' }] }), ${ms});
+        }),
+      ]).finally(() => {
+        if (timer !== undefined && typeof clearTimeout === 'function') clearTimeout(timer);
+      });
+    };
+    const worker = async () => { while (next < reqs.length) { const i = next++; out[i] = await timedRead(reqs[i]); } };
     await Promise.all(Array.from({ length: Math.min(${BATCH_CONCURRENCY}, reqs.length) }, worker));
     return out;
   })()`;
@@ -220,6 +245,8 @@ function createAppleMusicEngine({ WebContentsView, session, sheetHost, userAgent
   const readyTimeoutMs = timing.readyTimeoutMs ?? READY_TIMEOUT_MS;
   const readyPollMs = timing.readyPollMs ?? READY_POLL_MS;
   const requestTimeoutMs = timing.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
+  const batchItemTimeoutMs =
+    timing.batchItemTimeoutMs ?? (timing.requestTimeoutMs !== undefined ? requestTimeoutMs : BATCH_ITEM_TIMEOUT_MS);
   const loginPollMs = timing.loginPollMs ?? LOGIN_POLL_MS;
   const loginProbeMs = timing.loginProbeMs ?? LOGIN_PROBE_MS;
 
@@ -385,7 +412,17 @@ function createAppleMusicEngine({ WebContentsView, session, sheetHost, userAgent
     return enqueue(async () => {
       ensureView();
       if (!(await waitReady())) return { notReady: true };
-      const raws = await withTimeout(view.webContents.executeJavaScript(buildBatchCode(list), true), requestTimeoutMs, 'Apple Music 请求超时');
+      const waves = Math.max(1, Math.ceil(list.length / BATCH_CONCURRENCY));
+      const outerTimeoutMs =
+        timing.batchTimeoutMs ??
+        (timing.requestTimeoutMs !== undefined
+          ? requestTimeoutMs
+          : Math.max(requestTimeoutMs, Math.min(35000, waves * (batchItemTimeoutMs + 1500) + 4000)));
+      const raws = await withTimeout(
+        view.webContents.executeJavaScript(buildBatchCode(list, batchItemTimeoutMs), true),
+        outerTimeoutMs,
+        'Apple Music 请求超时',
+      );
       if ((raws && raws.notReady) || (Array.isArray(raws) && raws.some((r) => r && r.notReady))) {
         readyFlag = false;
         return { notReady: true };
@@ -535,6 +572,7 @@ module.exports = {
   buildRequestCode,
   buildBatchCode,
   BATCH_MAX,
+  BATCH_ITEM_TIMEOUT_MS,
   HOME_URL,
   PARTITION,
   PATH_RE,

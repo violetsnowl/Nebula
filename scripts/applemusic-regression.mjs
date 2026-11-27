@@ -415,6 +415,22 @@ await test('曲目数：桥不支持批量 / 页面没就绪 / 批量抛错时�
   assert.equal((await boom.adapter.fetchMyPlaylists()).length, 4);
 });
 
+await test('曲目数：单项 timeout 自动重试恢复；延迟 reject 不产生未捕获异常', async () => {
+  const { adapter, bridge } = makeCountingAdapter({ 'p.A': 120, 'p.FAV': 88, 'p.EMPTY': 0, 'p.BAD': 19 });
+  let round = 0;
+  bridge.callMany = async (reqs) => {
+    round++;
+    return reqs.map((r) => {
+      const id = r.path.split('/')[5];
+      if (id === 'p.BAD' && round === 1) return { status: 0, errors: [{ code: 'timeout', status: '' }] };
+      return { status: 200, data: [], total: { 'p.A': 120, 'p.FAV': 88, 'p.EMPTY': 0, 'p.BAD': 19 }[id] };
+    });
+  };
+  const list = await adapter.fetchMyPlaylists();
+  assert.equal(round, 2, 'timeout 项应自动重试一次');
+  assert.equal(list.find((p) => p.id === 'p.BAD').trackCount, 19);
+});
+
 assert.ok(!logs.some((l) => /developerToken|musicUserToken|Bearer/i.test(l)), '日志里不应出现令牌字样');
 await test('搜索（#232）：未登录时立即返回空，不调用页面引擎；登录后走目录搜索并映射成曲目', async () => {
   const { AppleMusicAdapter } = api;

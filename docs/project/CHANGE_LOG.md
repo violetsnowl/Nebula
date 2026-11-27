@@ -6,6 +6,19 @@
 
 ---
 
+## #待定 — 2026-11-27 — 修复 Apple Music 歌单列表偶发全员不显示曲目数并支持导入后即时同步
+
+**问题根因**
+- `electron/appleMusicEngine.cjs` 的 `callMany`（`buildBatchCode`）内部没有单项超时，且外层整批共享 15 秒超时；同时 `applemusicAdapter.ts` 的 `fillTrackCounts` 将整批预算卡在 8 秒（与启动时 `storefront`/`socialProfile`/`subscriptionActive`、歌词检查共用页面串行队列）。任一张歌单卡住或整批排队超 8 秒，都会导致所有歌单回落为 `0` 且页面上全部隐藏不显示数字；另外 `readInPage` 只认 `typeof meta.total === 'number'`，且进入歌单实际导入后未同步更新左侧歌单列表的 `trackCount`。
+
+**改动点**
+- `electron/appleMusicEngine.cjs`：`buildBatchCode` 为每项请求增加独立的 `8000ms` 超时隔离（超时项回 `{ status: 0, errors: [{ code: 'timeout' }] }`，不拖累同批其他歌单）；外层整批超时按并发波次自适应扩展（最高 35 秒）；`readInPage` 兼容数字字符串 `meta.total` / 顶层 `res.meta.total`，以及空的 `/tracks`（200 无 `next`）计为 `0`。
+- `src/main/adapters/applemusicAdapter.ts`：`COUNT_BUDGET_MS` 放宽至 `20000ms`，对 `job` 挂载 `.catch(() => {})` 防超时后遗留未捕获 rejection，并对明确超时的单项在预算前半段内自动重试一次；全量失败时打印不含任何凭据的统计日志。
+- `src/hooks/accounts/useAccounts.ts` & `src/App.tsx`：新增 `syncPlaylistTrackCount`，打开/导入单平台歌单后即时回填左侧列表中该歌单的曲目数。
+- `scripts/applemusic-engine-regression.mjs` & `scripts/applemusic-regression.mjs`：补齐单项超时隔离、`total` 解析与超时重试回归测试。
+
+**验证**：工作树内跑 `$env:pnpm_config_verify_deps_before_run='false'; pnpm build; pnpm qa:backend; pnpm qa` 验证通过（结果见提交检查）。
+
 ## #待定 — 2026-11-27 — 整合歌单前端与文档：多选构建、2×2 拼贴封面、快照刷新删除与小曲库引导
 
 **背景**：完成「整合歌单」前端链路（Phase 3），将跨平台/同平台去重整合融入左侧「歌单」面板，并与曲库、`altSources` 会话持久化及矩阵文档对齐。
