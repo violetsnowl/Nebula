@@ -26,6 +26,17 @@ export interface Track {
   quality?: string;
   /** Platform-specific extra fields (e.g. kugou AlbumID). */
   extra?: Record<string, unknown>;
+  /** Known alternate sources for the same recording (populated by playlist merge). */
+  altSources?: AltSource[];
+}
+
+export interface AltSource {
+  platform: Platform;
+  sourceId: string;
+  album?: string;
+  albumId?: string;
+  duration?: number;
+  extra?: Record<string, unknown>;
 }
 
 export interface LyricLine {
@@ -265,3 +276,32 @@ export interface SearchSongGroup {
   /** 同一录音的全部来源，按平台偏好排序；至少含 primary。 */
   sources: Track[];
 }
+
+export interface MergeSourceRef {
+  platform: Platform;
+  id: string;
+  name: string;
+  cover?: string;
+}
+
+export interface MergedPlaylistStats {
+  rawTotal: number;
+  dedupCount: number;
+  exactIdDupes: number;
+  crossMatchDupes: number;
+  overlapPairSummary?: string;
+}
+
+export interface MergedPlaylistRecord {
+  id: string;
+  name: string;
+  covers: string[];
+  sources: MergeSourceRef[];
+  trackCount: number;
+  dedupCount: number;
+  createdAt: number;
+  updatedAt: number;
+  tracks: Track[];
+}
+
+export type MergedPlaylistSummary = Omit<MergedPlaylistRecord, 'tracks'>;

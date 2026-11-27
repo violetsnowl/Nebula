@@ -38,6 +38,7 @@ const {
   LyricCache,
   LyricOverrides,
   WallpaperLibrary,
+  MergedPlaylistStore,
   createFallbackPriorityProvider,
   probeAudioUrl,
   clearProbeCache,
@@ -625,6 +626,7 @@ app.whenReady().then(async () => {
     appleMusic: new AppleMusicLyrics(adapters.applemusic.client, cookies),
   }, new LyricOverrides(app.getPath('userData')));
   const wallpaperLibrary = new WallpaperLibrary();
+  const mergedStore = new MergedPlaylistStore(app.getPath('userData'));
   protocol.handle('wallpaper', (request) => wallpaperLibrary.handle(request));
   const login = new NeteaseLogin(http, cookies);
   const qqRights = new QqRightsService(http);
@@ -754,6 +756,7 @@ app.whenReady().then(async () => {
     // 汽水车机协议授权（抖音扫码）：适配器里的 QishuiCar 实例，取链也用同一个
     qishuiCar: createQishuiCarLogin(adapters.qishui.car),
     wallpaperLibrary,
+    mergedStore,
     // 退出登录时同步清空 QQ / 酷我官方登录窗口独立分区的 Cookie，
     // 确保 CookieStore 与浏览器会话一并干净退出。
     onCookieClear: async (platform, previous) => {

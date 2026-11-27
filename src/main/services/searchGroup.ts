@@ -5,7 +5,7 @@ import { recordingMatch } from './recordingMatch';
  * 组内「默认来源」的偏好顺序：点整条就按这家优先播。排前面的能直接取链、音质稳、歌词全。
  * 只决定默认用哪家、以及展开列表的展示顺序，不影响用户自己挑。
  */
-const SOURCE_ORDER: Platform[] = ['netease', 'qq', 'kugou', 'kuwo', 'bodian', 'spotify', 'qishui', 'ytmusic', 'applemusic'];
+export const SOURCE_ORDER: Platform[] = ['netease', 'qq', 'kugou', 'kuwo', 'bodian', 'spotify', 'qishui', 'ytmusic', 'applemusic'];
 const rank = (p: Platform): number => {
   const i = SOURCE_ORDER.indexOf(p);
   return i < 0 ? SOURCE_ORDER.length : i;

@@ -160,6 +160,44 @@ export class SongResolver {
     if (this.fallbackTargets) {
       try { order=await this.stage(timings,'priority','all',100,()=>this.fallbackTargets!()); } catch { throwIfCancelled(); }
     }
+    const orderRank = new Map<string, number>();
+    order.forEach((t, i) => orderRank.set(t.platform, i));
+
+    let trial: ResolveResult | null = null;
+    const altList = Array.isArray(track.altSources)
+      ? track.altSources
+          .filter(
+            (a) =>
+              !!a?.sourceId &&
+              a.platform !== track.platform &&
+              PLAYABLE.includes(a.platform) &&
+              !!this.adapters[a.platform]?.fetchSongUrl,
+          )
+          .sort((a, b) => (orderRank.get(a.platform) ?? 99) - (orderRank.get(b.platform) ?? 99))
+      : [];
+
+    for (const alt of altList) {
+      throwIfCancelled();
+      const altTrack: Track = {
+        ...track,
+        platform: alt.platform,
+        sourceId: alt.sourceId,
+        album: alt.album ?? track.album,
+        duration: alt.duration ?? track.duration,
+        extra: alt.extra ?? (alt.albumId ? { albumId: alt.albumId } : undefined),
+      };
+      const started = Date.now();
+      const result = await this.source(altTrack, alt.platform, quality, true, timings);
+      timings.push({
+        stage: 'alt-source',
+        platform: alt.platform,
+        ms: Date.now() - started,
+        outcome: result?.url ? (result.trial ? 'trial' : 'hit') : 'miss',
+      });
+      if (result?.url && !result.trial) return result;
+      trial ??= result;
+    }
+
     const platforms = (order.length ? order.map(t=>t.platform) : PLAYABLE)
       .filter((p): p is Platform => PLAYABLE.includes(p as Platform) && p !== track.platform && !!this.adapters[p as Platform]?.searchSongs);
     const cancel = new AbortController();
@@ -178,22 +216,22 @@ export class SongResolver {
             .filter(x=>x.guard.ok && x.score>=.55).sort((a,b)=>a.guard.rank-b.guard.rank || b.score-a.score).slice(0,2).map(x=>x.c);
           if (candidates.length) remember(this.matches,matchKey,{at:Date.now(),tracks:candidates},512);
         }
-        let trial: ResolveResult | null=null;
+        let localTrial: ResolveResult | null=null;
         for (const c of candidates) {
           throwIfCancelled();
           const result=await this.source(c,platform,quality,true,timings);
           if (result?.url && !result.trial) return result;
-          trial ??= result;
+          localTrial ??= result;
         }
-        return trial;
+        return localTrial;
       },{signal:cancel.signal}).catch(()=>null));
-      if (!tasks.length) return null;
+      if (!tasks.length) return trial;
       return await new Promise<ResolveResult | null>(resolve=> {
-        let remaining=tasks.length, trial: ResolveResult | null=null;
+        let remaining=tasks.length, resolvedTrial: ResolveResult | null=trial;
         for (const task of tasks) void task.then(result=> {
           if (result?.url && !result.trial) { resolve(result); return; }
-          trial ??= result;
-          if (--remaining===0) resolve(trial);
+          resolvedTrial ??= result;
+          if (--remaining===0) resolve(resolvedTrial);
         });
       });
     } finally { cancel.abort(new RequestCancelled('CANCELLED')); }

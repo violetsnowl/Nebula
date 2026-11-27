@@ -37,7 +37,9 @@ export * from './login/index';
 export { registerIpcHandlers, firstTrackCover } from './ipc';
 export type { IpcLike, IpcDeps } from './ipc';
 
-export { recordingMatch, identityText, searchKeyword } from './services/recordingMatch';
+export { recordingMatch, identityText, searchKeyword, titleKeys } from './services/recordingMatch';
+export * from './services/playlistMerge';
+export { MergedPlaylistStore } from './services/mergedPlaylistStore';
 
 export * from './parsers/timedLyrics';
 

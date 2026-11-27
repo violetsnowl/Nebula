@@ -1,15 +1,18 @@
+import { randomUUID } from 'node:crypto';
 import type { AdapterMap, UrlTarget } from './adapters/index';
 import { resolveAdapterByUrl } from './adapters/index';
 import type { CookieStore } from './cookieStore';
 import type { NeteaseLogin } from './login/neteaseLogin';
 import type { SongResolver } from './services/songResolver';
 import type { LyricService } from './services/lyricService';
-import type { Platform, PlaylistSummary, Track } from './types';
+import type { MergedPlaylistRecord, MergeSourceRef, Platform, PlaylistSummary, Track } from './types';
 import type { LoginAdapter } from './login/index';
 import type { QishuiCarLogin } from './login/qishuiCarLogin';
 import type { AudioProxy } from './audioProxy';
 import { CoverService,coverCandidates } from './services/coverService';
 import type { WallpaperLibrary } from './services/wallpaperLibrary';
+import { MergedPlaylistStore } from './services/mergedPlaylistStore';
+import { mergeTrackLists, type AccountRightsMap } from './services/playlistMerge';
 import { normalizeCookieHeader, validatePlatformCookie } from './cookieStore';
 
 /** 歌单自己没有封面时用的图：第一首有封面的歌。 */
@@ -43,6 +46,7 @@ export interface IpcDeps {
    */
   onCookieClear?: (platform: Platform, previous?: { token?: string }) => Promise<void> | void;
   wallpaperLibrary?: WallpaperLibrary;
+  mergedStore?: MergedPlaylistStore;
 }
 
 export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
@@ -342,4 +346,161 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
     if (!deps.qishuiCar) return true;
     return deps.qishuiCar.carLogout();
   });
+
+  const mergedItemsMemory = new Map<string, MergedPlaylistRecord>();
+  const mergedRepo = {
+    list: () =>
+      deps.mergedStore
+        ? deps.mergedStore.list()
+        : [...mergedItemsMemory.values()]
+            .sort((a, b) => b.updatedAt - a.updatedAt)
+            .map(({ tracks: _t, ...summary }) => summary),
+    get: (id: string) => (deps.mergedStore ? deps.mergedStore.get(id) : mergedItemsMemory.get(id) ?? null),
+    save: (record: MergedPlaylistRecord) => {
+      if (deps.mergedStore) return deps.mergedStore.save(record);
+      mergedItemsMemory.set(record.id, record);
+      const { tracks: _t, ...summary } = record;
+      return summary;
+    },
+    rename: (id: string, name: string) => {
+      if (deps.mergedStore) return deps.mergedStore.rename(id, name);
+      const trimmed = String(name || '').trim();
+      if (!trimmed) throw new Error('歌单名称不能为空');
+      const existing = mergedItemsMemory.get(id);
+      if (!existing) return null;
+      existing.name = trimmed;
+      existing.updatedAt = Date.now();
+      const { tracks: _t, ...summary } = existing;
+      return summary;
+    },
+    remove: (id: string) =>
+      deps.mergedStore ? deps.mergedStore.remove(id) : mergedItemsMemory.delete(id),
+  };
+
+  const mergeAccountsOf = (incoming?: AccountRightsMap): AccountRightsMap => {
+    const out: AccountRightsMap = { ...(incoming ?? {}) };
+    for (const p of Object.keys(deps.adapters) as Platform[]) {
+      const hasCookie = Boolean(deps.cookies.get(p)?.cookies);
+      if (!out[p]) out[p] = { loggedIn: hasCookie };
+      else if (out[p]!.loggedIn === undefined) out[p] = { ...out[p], loggedIn: hasCookie };
+    }
+    return out;
+  };
+
+  const toMergedResult = (record: MergedPlaylistRecord) => {
+    const { tracks, ...summary } = record;
+    return {
+      record: summary,
+      playlist: {
+        platformName: 'merged' as const,
+        id: record.id,
+        name: record.name,
+        cover: record.covers[0] || firstTrackCover(tracks),
+        covers: record.covers,
+        sources: record.sources,
+        trackCount: record.trackCount,
+        dedupCount: record.dedupCount,
+        tracks,
+      },
+    };
+  };
+
+  const buildMergedRecord = async (
+    rawSources: MergeSourceRef[],
+    options: { id?: string; name?: string; createdAt?: number; accounts?: AccountRightsMap },
+  ) => {
+    const seenSource = new Set<string>();
+    const cleanSources: MergeSourceRef[] = [];
+    for (const s of rawSources || []) {
+      if (!s || typeof s.platform !== 'string' || typeof s.id !== 'string') continue;
+      if (!deps.adapters[s.platform as Platform]) throw new Error(`不支持的平台: ${s.platform}`);
+      const key = `${s.platform}:${s.id}`;
+      if (seenSource.has(key)) continue;
+      seenSource.add(key);
+      cleanSources.push({
+        platform: s.platform as Platform,
+        id: String(s.id),
+        name: String(s.name || s.id),
+        ...(s.cover ? { cover: String(s.cover) } : {}),
+      });
+    }
+    if (cleanSources.length < 2) throw new Error('至少选择 2 个不同的歌单才能整合');
+
+    const fetched = await Promise.all(
+      cleanSources.map(async (src) => {
+        try {
+          const pl = await deps.adapters[src.platform].fetchPlaylist(src.id);
+          const plCover = pl.cover || firstTrackCover(pl.tracks) || src.cover;
+          return {
+            source: {
+              ...src,
+              name: pl.name || src.name,
+              ...(plCover ? { cover: plCover } : {}),
+            },
+            tracks: pl.tracks.map((t) => ({
+              ...t,
+              coverInfo: t.coverInfo || (t.cover ? { url: coverCandidates(t)[0] || t.cover, verified: false } : undefined),
+            })),
+          };
+        } catch (err) {
+          const msg = err instanceof Error ? err.message : String(err);
+          throw new Error(`源歌单「${src.name}」读取失败：${msg}`);
+        }
+      }),
+    );
+
+    const accounts = mergeAccountsOf(options.accounts);
+    const { tracks, covers, stats } = mergeTrackLists(fetched, accounts);
+    const now = Date.now();
+    const resolvedSources = fetched.map((f) => f.source);
+    const trimmedName = String(options.name || '').trim();
+    const defaultName =
+      resolvedSources.slice(0, 2).map((s) => s.name).join(' + ') +
+      (resolvedSources.length > 2 ? ` 等 ${resolvedSources.length} 个` : '');
+
+    const record: MergedPlaylistRecord = {
+      id: options.id || `merged_${randomUUID().slice(0, 8)}`,
+      name: trimmedName || defaultName,
+      covers,
+      sources: resolvedSources,
+      trackCount: tracks.length,
+      dedupCount: stats.dedupCount,
+      createdAt: options.createdAt ?? now,
+      updatedAt: now,
+      tracks,
+    };
+    const summary = mergedRepo.save(record);
+    return { record: summary, playlist: toMergedResult(record).playlist, stats };
+  };
+
+  safe('nebula:merged:list', async () => mergedRepo.list());
+  safe('nebula:merged:get', async ({ id }: { id: string }) => {
+    const existing = mergedRepo.get(String(id || ''));
+    if (!existing) throw new Error('找不到该整合歌单，可能已被删除');
+    return toMergedResult(existing);
+  });
+  safe(
+    'nebula:merged:create',
+    async ({ name, sources, accounts }: { name?: string; sources: MergeSourceRef[]; accounts?: AccountRightsMap }) =>
+      buildMergedRecord(sources, { name, accounts }),
+  );
+  safe(
+    'nebula:merged:refresh',
+    async ({ id, accounts }: { id: string; accounts?: AccountRightsMap }) => {
+      const existing = mergedRepo.get(String(id || ''));
+      if (!existing) throw new Error('找不到该整合歌单');
+      return buildMergedRecord(existing.sources, {
+        id: existing.id,
+        name: existing.name,
+        createdAt: existing.createdAt,
+        accounts,
+      });
+    },
+  );
+  safe('nebula:merged:rename', async ({ id, name }: { id: string; name: string }) => {
+    const updated = mergedRepo.rename(String(id || ''), name);
+    if (!updated) throw new Error('找不到该整合歌单');
+    return updated;
+  });
+  safe('nebula:merged:delete', async ({ id }: { id: string }) => mergedRepo.remove(String(id || '')));
 }

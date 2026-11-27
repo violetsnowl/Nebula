@@ -6,6 +6,23 @@
 
 ---
 
+## #待定 — 2026-11-27 — 整合歌单后端：多歌单 $O(N)$ 去重整合、本机持久化与备用源直取兜底
+
+**背景**：实现全局新功能「整合歌单」（Phase 2 后端）：支持同平台或跨平台勾选多个歌单，按同录音规则自动去重整合为一个独立本机快照歌单，既丰富星云与穿行曲库，又提供全局多平台红心/歌单聚合能力。
+
+**改动点**
+- `src/main/services/recordingMatch.ts`：补充实测高频中日繁体/日语新字体与简体映射字符（如 `高橋優`/`高桥优`、`折戸伸治`/`折户伸治`、`幾田りら`/`几田りら` 等，不放松歌手与版本门禁）；新增并导出 `titleKeys(track)`，与 `recordingMatch` 标题归一化保持一致，作为 $O(N)$ 分桶索引键。
+- `src/main/services/searchGroup.ts` & `src/main/types.ts`：导出 `SOURCE_ORDER`；`Track` 新增可选 `altSources?: AltSource[]`；新增 `MergeSourceRef`、`MergedPlaylistStats`、`MergedPlaylistRecord`、`MergedPlaylistSummary`。
+- `src/main/services/playlistMerge.ts`：实现 `sourcePriorityScore`（可播平台 SVIP/VIP > 已登录直连 > 汽水 > 未登录 > 仅元数据平台）、`mergeTrackLists`（按勾选顺序保留首个位置；高优来源在原槽位升级为主源并留存旧来源至 `altSources`，最多 6 个；聚合重复统计文案）与 `collectCollageCovers`（最多 4 张唯一封面）。
+- `src/main/services/mergedPlaylistStore.ts`：新增本机 `userData/merged-playlists.json` 原子写入/读取仓库（列表视图剥离曲目列表以减轻传输体积）。
+- `src/main/services/songResolver.ts`：`fallback` 阶段在触发全网 `searchSongs` 之前，先按当前 VIP 路由优先级直取曲目已知的 `altSources`（记入 `timings` `stage: 'alt-source'`），命中直接出声不发搜索请求。
+- `src/main/index.ts`、`src/main/ipc.ts`、`electron/main.cjs`、`electron/preload.cjs`：注册并暴露 6 个通道（`nebula:merged:list/get/create/refresh/rename/delete`），刷新遇任一源歌单失败时保留原快照不覆盖。
+- `scripts/playlist-merge-regression.mjs` & `package.json`：纳入 `qa:backend`，覆盖繁简日语汉字去重、Live 隔离、`titleKeys`、原位 VIP 升级 + `altSources` 保留、2000 首合并耗时、磁盘持久化、`SongResolver` `altSources` 快速通道（0 次搜索）与 IPC 全链路。
+
+**验证**：`$env:pnpm_config_verify_deps_before_run='false'; pnpm qa:backend` 全 27 项通过（`playlist-merge-regression` 2000 首合并 24ms）；`tsc --noEmit` 通过；真实脱敏数据（YouTube Music + QQ + 酷狗共 3718 首）去重合并为 1838 首耗时 130ms。
+
+**遗留与风险**：前端整合构建器、拼贴封面、歌单分组/刷新/删除及文档更新将在下一步实现。
+
 ## #299 — 2026-11-27 — 结项交接：穿行第二版第四步计划写进 TRAVEL_HANDOFF §9.10
 
 **目标**：本窗口结项。用户已看过第三步，结论是「效果不错，暂时通过验收，细扣等后续再做」。第四步收尾交给新窗口，本窗口已经想好的做法写进文档，免得新窗口重新推一遍。

@@ -3,8 +3,8 @@ import { cleanMetadataText } from '../parsers/metadataText';
 
 // 小范围、可审计的别名；未知译名不自动音译。仅做明确的等价归一化。
 const ALIASES = [['椎名林檎','しいなりんご','シイナリンゴ','Shiina Ringo','Ringo Shiina'], ['宇多田ヒカル','Hikaru Utada','Utada Hikaru'], ['周杰伦','周杰倫','Jay Chou'],['BTS','防弹少年团','防彈少年團']];
-const TRAD='愛樂風雲夢時後來說聽見過還這個為與無聲會開關讓淚從滿飛遠離憶';
-const SIMP='爱乐风云梦时后来说听见过还这个为与无声会开关让泪从满飞远离忆';
+const TRAD='愛樂風雲夢時後來說聽見過還這個為與無聲會開關讓淚從滿飛遠離憶戶戸橋優葉幾澤櫻遙廣邊應當華國萬詩畫書語點線雙單戀誰實現發變轉動靜響龍氣電鐵銀鐘門問間獨傷歲絲終結連網絕綠紅藍黃';
+const SIMP='爱乐风云梦时后来说听见过还这个为与无声会开关让泪从满飞远离忆户户桥优叶几泽樱遥广边应当华国万诗画书语点线双单恋谁实现发变转动静响龙气电铁银钟门问间独伤岁丝终结连网绝绿红蓝黄';
 export function identityText(text: string): string {
   // 去掉拉丁字母的重音符号（Sofía / Sofia、Cécile / Cecile；#206）。只删 U+0300–036F，日文浊点 U+3099 不动
   return cleanMetadataText(text).normalize('NFKC').normalize('NFD').replace(/[̀-ͯ]/g,'').normalize('NFC').toLowerCase()
@@ -107,6 +107,10 @@ function title(t:Track):{names:Set<string>;version:string;cjk:boolean} {
   if (bare) {versions.push(versionText(bare[1]!));base=base.slice(0,bare.index);}
   const aliases=Array.isArray(t.extra?.titleAliases)?t.extra.titleAliases.filter((x):x is string=>typeof x==='string'):[];
   return {names:new Set([base,...alt,...aliases].map(identityText).filter(Boolean)),version:versions.filter(Boolean).sort().join('|'),cjk:CJK.test(base)};
+}
+/** 提取录音标题归一化分桶键，与 `recordingMatch` 标题门禁保持一致，用于 $O(N)$ 去重索引。 */
+export function titleKeys(t:Track):string[] {
+  return [...title(t).names];
 }
 /** 兜底搜索词：去掉译名、Explicit 等不构成版本的括注和歌手末尾的读音别名；版本括注保留。 */
 export function searchKeyword(t:Track):string {
