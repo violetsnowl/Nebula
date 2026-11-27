@@ -17,7 +17,7 @@ import { CoverTextures } from './travel/coverTex';
 import { ATLAS_H, GlyphAtlas, PAD, R_MAIN, TR_K, type FontSpec, type GLine, type GUnit } from './travel/glyphAtlas';
 import { INST, KIND_CHIP, KIND_COVER, KIND_GLYPH, KIND_LIGHT, KIND_STROKE, Renderer, type Palette } from './travel/renderer';
 import { DREST, F, FAR, buildRoute, buildSlots, camAt, hashStr, hueOffsetAt, lowerBound, pathX, pathY, slotRadius, songHue } from './travel/route';
-import { BEATS, buildSegs, lerpPose, locate, poseFar, poseSing, segAt, splitAt, type Seg, type V3 } from './travel/pathText';
+import { BEATS, locate, placeSegs, segAt, splitAt, type Seg, type V3 } from './travel/pathText';
 import { tunnelBasis } from './travel/tunnel';
 import { wordRt, type WordRt } from './travel/wordState';
 import './listen/lyric-words.css';
@@ -61,8 +61,16 @@ const DSING = 1000;
 const FS_MAX = 84;
 const FS_SPLIT = 62;
 const FS_MIN = 30;
-/** 开唱前多少秒开始转正 */
-const TURN = 0.75;
+/**
+ * 转正的时间窗：开唱前 TURN_FROM 秒开始、TURN_TO 秒转完（2026-11-27 用户反馈：原来 0.75 秒内转完、开唱那一刻才停，
+ * 和光点到达撞在同一刻，像被光丝扯直）。现在约 2 秒慢慢转过来，开唱前已经停稳，转的时候它还只是「下一句」。
+ */
+const TURN_FROM = 2.4;
+const TURN_TO = 0.3;
+/** 光点在两句之间飞行：最长 / 最短用时（秒），光尾比光点晚多少（占飞行时长） */
+const FLY_MAX = 0.9;
+const FLY_MIN = 0.24;
+const FLY_LAG = 0.3;
 /** 唱完往外侧推开 / 往下沉多少（世界单位，1.2 秒内） */
 const PASS_X = 260;
 const PASS_Y = 70;
@@ -240,6 +248,13 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
       const z = route.lines[i]!.z;
       const [fx, fy] = BEATS[i % BEATS.length]!;
       return [pathX(z) + fx * (vw || window.innerWidth) * KREST, pathY(z) + fy * (vh || window.innerHeight) * KREST];
+    };
+    /** 一句的锚点；passK = 唱完后往外侧推开的进度 */
+    const anchorOf = (d: LS, passK: number): V3 => {
+      const [bx, by] = beatAt(d.i);
+      const side = bx >= 0 ? 1 : -1;
+      const hasTr = !!d.g.tr && showTr;
+      return [bx + side * passK * PASS_X, by + (hasTr ? 0.11 : 0.4) * d.fs + passK * PASS_Y, route.lines[d.i]!.z];
     };
     let buildMax = 0;
     const makeLine = (i: number): LS | null => {
@@ -474,13 +489,17 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
       return { p: [r.p[0] - r.d[0] * 0.36 * fs, r.p[1] - r.d[1] * 0.36 * fs, r.p[2] - r.d[2] * 0.36 * fs], t: r.t };
     };
 
-    /** 光丝（§9.3）：当前句句尾 → 下一句句首，三次贝塞尔，切向接着两句的走向 */
+    /**
+     * 光的飞行路线（§9.3）：上一句句尾 → 下一句句首，三次贝塞尔，切向接着两句的走向（把手短一点，弧线平缓、不打圈）。
+     * 起点固定在「唱完那一刻」的句尾：唱完的句子会往外侧滑走，光点不跟着走，留在路上等，再从那里飞向下一句。
+     */
+    const tailRest = (d: LS) => lineAt(placeSegs(d.g, d.split, d.i, anchorOf(d, 0), d.fs, 1), d.fs, d.g.width);
     const threadCurve = (a: Geo, b: Geo): ((u: number) => V3) => {
-      const A = lineAt(a.segs, a.d.fs, a.d.g.width + 0.25);
-      const B = lineAt(b.segs, b.d.fs, -0.25);
+      const A = tailRest(a.d);
+      const B = lineAt(b.segs, b.d.fs, 0);
       const L = Math.hypot(B.p[0] - A.p[0], B.p[1] - A.p[1], B.p[2] - A.p[2]);
-      const c1: V3 = [A.p[0] + A.t[0] * L * 0.42, A.p[1] + A.t[1] * L * 0.42, A.p[2] + A.t[2] * L * 0.42];
-      const c2: V3 = [B.p[0] - B.t[0] * L * 0.42, B.p[1] - B.t[1] * L * 0.42, B.p[2] - B.t[2] * L * 0.42];
+      const c1: V3 = [A.p[0] + A.t[0] * L * 0.3, A.p[1] + A.t[1] * L * 0.3, A.p[2] + A.t[2] * L * 0.3];
+      const c2: V3 = [B.p[0] - B.t[0] * L * 0.3, B.p[1] - B.t[1] * L * 0.3, B.p[2] - B.t[2] * L * 0.3];
       return (u: number) => {
         const v = 1 - u;
         const k0 = v * v * v;
@@ -494,12 +513,31 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
         ];
       };
     };
-    const THREAD_N = 32;
-    const emitThread = (curve: (u: number) => V3, alpha: number) => {
+    /**
+     * 第 a 句 → 第 a+1 句的飞行时间窗：唱完马上起飞（这时句尾还在画面里；等到下一句快开唱再飞，上一句已经贴到镜头边上，
+     * 光会从画面外斜穿全屏射进来），飞到下一句句首后停在那里等开唱。空档太长（> 6 秒，光已熄）不飞。
+     */
+    const flightOf = (a: number): { f0: number; f1: number; fd: number; lag: number } | null => {
+      const A = route.lines[a];
+      const B = route.lines[a + 1];
+      if (!A || !B) return null;
+      if (B.s - A.e > 6) return null;
+      const f0 = A.e + 0.05;
+      const fd = clamp(B.s - 0.05 - f0, FLY_MIN, FLY_MAX);
+      return { f0, f1: f0 + fd, fd, lag: fd * FLY_LAG };
+    };
+
+    /**
+     * 光尾：飞行路线上 [u0, u1] 这一截（u1 是光点），越靠光点越亮越粗（画面上尾端约 1px → 光点处约 3.6px），
+     * 不是常驻的线：光点飞到之后尾巴很快收拢消失。
+     */
+    const TRAIL_N = 24;
+    const emitTrail = (curve: (u: number) => V3, u0: number, u1: number, alpha: number) => {
       const col = pal.glow;
-      let a = curve(0);
-      for (let q = 1; q <= THREAD_N; q++) {
-        const b = curve(q / THREAD_N);
+      const span = u1 - u0;
+      let a = curve(u0);
+      for (let q = 1; q <= TRAIL_N; q++) {
+        const b = curve(u0 + (span * q) / TRAIL_N);
         const mx = (a[0] + b[0]) / 2;
         const my = (a[1] + b[1]) / 2;
         const mz = (a[2] + b[2]) / 2;
@@ -516,15 +554,14 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
           let wy = dzz * vx - dx * vz;
           let wz = dx * vy - dy * vx;
           const wl = Math.hypot(wx, wy, wz) || 1;
-          const hw = (1.6 * dz) / F;
+          // r：0 = 尾端，1 = 光点
+          const r = (q - 0.5) / TRAIL_N;
+          const hw = ((0.5 + 1.3 * r) * dz) / F;
           wx = (wx / wl) * hw;
           wy = (wy / wl) * hw;
           wz = (wz / wl) * hw;
-          // 两端淡入淡出：不在字上压一截线头
-          const u = (q - 0.5) / THREAD_N;
-          const ends = smooth(u / 0.18) * smooth((1 - u) / 0.18);
           const fade = smooth((dz - 300) / 500);
-          const A = alpha * ends * fade;
+          const A = alpha * Math.pow(r, 1.6) * fade;
           if (A > 0.003) put(dz, mx, my, mz, dx / 2, dy / 2, dzz / 2, wx, wy, wz, 0, 0, 1, 1, KIND_STROKE, 0, A, col[0]!, col[1]!, col[2]!, 0, 0, 0, 0, 0);
         }
         a = b;
@@ -541,6 +578,8 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
     let rootOp = '';
     let frameNo = 0;
     let lightK = 0;
+    /** 光点亮度：飞到下一句句首、等开唱时稍暗 */
+    let lightI = 1;
     let lx = 0;
     let ly = 0;
     let lz = 0;
@@ -548,6 +587,8 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
     let camZ = route.z0;
     const times: number[] = [];
     let probeLines: ProbeLine[] = [];
+    /** 光点这一帧在做什么（自检用）：唱 / 飞 / 在句首等 / 无 */
+    let lightMode: 'sing' | 'fly' | 'wait' | 'off' = 'off';
 
     const tick = (now: number) => {
       raf = requestAnimationFrame(tick);
@@ -692,15 +733,10 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
             }
           }
         }
-        // 姿态：远处 → 开唱前 0.75 秒内转正；唱完往离路线远的一侧推开、略往下（从镜头侧边掠过，不糊在画面正中）
-        const turnK = smooth((t - (e.s - TURN)) / TURN);
-        const pose = lerpPose(poseFar(i), poseSing(i), turnK);
+        // 姿态：远处 → 开唱前 2.4–0.3 秒间以句首为轴慢慢转正；唱完往离路线远的一侧推开、略往下（从镜头侧边掠过，不糊在画面正中）
+        const turnK = smooth((t - (e.s - TURN_FROM)) / (TURN_FROM - TURN_TO));
         const passK = smooth((t - e.e - 0.05) / 1.2);
-        const [bx, by] = beatAt(i);
-        const side = bx >= 0 ? 1 : -1;
-        const hasTr = !!d.g.tr && showTr;
-        const anchor: V3 = [bx + side * passK * PASS_X, by + (hasTr ? 0.11 : 0.4) * d.fs + passK * PASS_Y, L.z];
-        const segs = buildSegs(d.g, d.split, i, anchor, d.fs, pose, turnK);
+        const segs = placeSegs(d.g, d.split, i, anchorOf(d, passK), d.fs, turnK);
         const mode = d.w ? (state === 'cur' ? 1 : state === 'past' ? 2 : 0) : t >= e.s ? 2 : 0;
         const blur = done ? smooth((820 - dz) / 440) : 0;
         const trK = smooth((t - e.s + 0.05) / 0.45);
@@ -711,19 +747,39 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
         if (bd.x1 > bd.x0) probeLines.push({ i, text: e.text, x: bd.x0, y: bd.y0, w: bd.x1 - bd.x0, h: bd.y1 - bd.y0, op: o, state: d.state, done });
       }
 
-      // —— 光丝：当前句 → 下一句；句间空档里光点沿它走过去 ——
-      const ga = geos.find((g) => g.d.i === cur);
-      const gb = geos.find((g) => g.d.i === cur + 1);
-      if (ga && gb && ga.op > 0.02 && gb.op > 0.02) {
+      // —— 光的飞行（§9.3，2026-11-27 用户反馈后改：不再常驻光丝，免得像隧道里的蛛丝、把句子「扯直」）——
+      //    上一句唱完，光点马上沿平缓弧线飞向下一句句首（最长 0.9 秒），身后拖一截很快收拢的光尾；
+      //    到了就停在句首（稍暗）等开唱。句首是转正的轴，光点停着的地方不动。两句紧挨着时飞得很快（最短 0.24 秒，和下一句的第一个字重叠）。
+      let lingering = false;
+      let flying = false;
+      for (const a of [cur - 1, cur]) {
+        const fl = flightOf(a);
+        if (!fl || t < fl.f0) continue;
+        const ga = geos.find((g) => g.d.i === a);
+        const gb = geos.find((g) => g.d.i === a + 1);
+        if (!ga || !gb || gb.op < 0.02) continue;
+        if (t > fl.f1 + fl.lag) {
+          // 光尾已收拢：还没开唱就停在句首等
+          if (a === cur) {
+            lightPt = lineAt(gb.segs, gb.d.fs, 0).p;
+            lingering = true;
+          }
+          continue;
+        }
         const curve = threadCurve(ga, gb);
-        const eCur = els[cur]!;
-        const passCur = smooth((t - eCur.e - 0.05) / 1.2);
-        emitThread(curve, 0.14 * smooth(gb.op / 0.3) * (1 - 0.85 * passCur));
-        if (inGap && nextL && curL) {
-          const u = smooth((t - curL.e) / Math.max(0.05, nextL.s - curL.e));
-          lightPt = curve(u);
+        const head = smooth((t - fl.f0) / fl.fd);
+        const tail = smooth((t - fl.f0 - fl.lag) / fl.fd);
+        if (head - tail > 0.004) emitTrail(curve, tail, head, 0.42 * smooth(gb.op / 0.3));
+        if (t < fl.f1) {
+          lightPt = curve(head);
+          flying = true;
+        } else if (a === cur) {
+          lightPt = curve(1);
+          lingering = true;
         }
       }
+      lightI += ((lingering ? 0.55 : 1) - lightI) * (1 - Math.exp(-dt * 4));
+      lightMode = !lightPt || lightK < 0.02 ? 'off' : flying ? 'fly' : lingering ? 'wait' : 'sing';
 
       // —— 封面：隧道壁；字后面的压暗、挡在字前面的让开（按画面上的字框） ——
       const boxes = geos
@@ -801,7 +857,7 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
         const curD = doms.get(cur);
         const fs = curD?.fs ?? 50;
         const r = fs * 1.15;
-        const I = 0.2 * lightK;
+        const I = 0.2 * lightK * lightI;
         put(lightPt[2] - camZ - 0.02, lightPt[0], lightPt[1], lightPt[2], r, 0, 0, 0, r, 0, 0, 0, 1, 1, KIND_LIGHT, 0, 1, pal.sung[0]! * I, pal.sung[1]! * I, pal.sung[2]! * I, 0, 0, 0, 0, 0);
       }
 
@@ -862,6 +918,7 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
           },
           cache: covers.stats(),
           quads: n,
+          light: lightMode,
           buildMax,
           atlasTiming: atlas.timing.slice(-12),
         };

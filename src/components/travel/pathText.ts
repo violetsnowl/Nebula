@@ -237,6 +237,32 @@ export function buildSegs(g: GLine, split: number, i: number, anchor: V3, fs: nu
   return segs;
 }
 
+/** 句首、字母中线（基线往上约 0.36em）：转正的轴，也是光点等开唱时停的地方 */
+function headOf(segs: Seg[], fs: number): V3 {
+  const s0 = segs[0]!;
+  const { p, d } = segAt(s0, -(s0.w * fs) / 2);
+  return [p[0] - d[0] * 0.36 * fs, p[1] - d[1] * 0.36 * fs, p[2] - d[2] * 0.36 * fs];
+}
+
+/**
+ * 这一帧一句的曲线段：姿态从远处插值到开唱，转正时以「句首」为轴（2026-11-27 用户反馈后改）。
+ * 原来整句绕外接框中心转、0.75 秒内转完、正好在开唱那一刻停：句首在转的最后一刻还在动，
+ * 光丝又钉在句首，光点沿丝到达时句子刚好转正，看上去像被线扯直。现在句首不动（读的人眼睛落在那里），
+ * 句尾像一扇门慢慢合到面前；开唱时的落位仍按开唱姿态的外接框中心对齐锚点。
+ */
+export function placeSegs(g: GLine, split: number, i: number, anchor: V3, fs: number, turnK: number): Seg[] {
+  const sing = buildSegs(g, split, i, anchor, fs, poseSing(i), 1);
+  if (turnK >= 1) return sing;
+  const segs = buildSegs(g, split, i, anchor, fs, lerpPose(poseFar(i), poseSing(i), turnK), turnK);
+  const H = headOf(sing, fs);
+  const h = headOf(segs, fs);
+  const dx = H[0] - h[0];
+  const dy = H[1] - h[1];
+  const dz = H[2] - h[2];
+  for (const sg of segs) sg.C = [sg.C[0] + dx, sg.C[1] + dy, sg.C[2] + dz];
+  return segs;
+}
+
 /** 整句排版坐标 e（主字号 em，从句首起）在哪一段、段上 s 是多少（世界长度） */
 export function locate(segs: Seg[], e: number, fs: number): { sg: Seg; s: number } {
   let sg = segs[0]!;
