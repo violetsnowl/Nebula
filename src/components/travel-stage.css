@@ -61,7 +61,6 @@
 .tv-fly-slot .u .ch {
   padding: 0;
   margin: 0;
-  transform: none !important;
 }
 .tv-fly-slot.is-past .u,
 .tv-fly-slot.is-past .u .ch {

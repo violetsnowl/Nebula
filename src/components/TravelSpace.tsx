@@ -1310,10 +1310,15 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
     let lsFly: LsFly | null = null;
     let lsFlyDir: 'in' | 'out' | null = null;
     let lsFlySlots: TravelFlySession | null = null;
+    let lsOutBlendT0 = 0;
     let morphFly: LsFly | null = null;
     let morphDir: 'in' | 'out' | null = null;
     let morphSlots: TravelFlySession | null = null;
+    let morphInBlendT0 = 0;
     let morphTries = 0;
+    /** 飞入穿行（漫游 → 穿行 / 听音空间 → 穿行）落地句的衬托光带渐显，避免落地瞬间气流与光雾突兀弹出 */
+    let landingLineIdx = -1;
+    let landingAura = 1;
     let lsFadeT0 = 0;
     let lsBoostUntil = 0;
     let lsWantAt = 0;
@@ -1331,6 +1336,7 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
         morphSlots = null;
       }
       morphDir = null;
+      morphInBlendT0 = 0;
       if (pageBus.morph) pageBus.morph = false;
     };
     const startMorph = (i: number, d: LS, e: EngineLine, segs: Seg[], state: LS['state'], k: number, t: number): boolean => {
@@ -1375,6 +1381,10 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       morphFly = fly;
       morphDir = dir;
       morphSlots = slots0;
+      if (dir === 'in') {
+        landingLineIdx = i;
+        landingAura = 0;
+      }
       pageBus.morph = true;
       pageBus.morphS = e.s;
       pageBus.caption = caption;
@@ -1386,6 +1396,7 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       lsFlyDir = null;
       lsFlySlots?.clear();
       lsFlySlots = null;
+      lsOutBlendT0 = 0;
     };
     const startLsIn = (t: number) => {
       if (!flyHost || lastCur < 0) return;
@@ -1470,6 +1481,8 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       lsFly = fly;
       lsFlyDir = 'out';
       lsFlySlots = slots0;
+      landingLineIdx = cur0;
+      landingAura = 0;
     };
 
     const tick = (now: number) => {
@@ -1537,8 +1550,20 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       if (lsNow || lsFly || boost > 0) {
         if (morphFly) endMorph();
         morphTries = 99;
-      } else if (k <= 0.001 || k >= 0.999) {
+      } else if (k <= 0.001) {
         if (morphFly) endMorph();
+        morphTries = 0;
+      } else if (k >= 0.999) {
+        if (morphFly && morphDir === 'in') {
+          // 漫游 → 穿行抵达 k=1：进入 140ms 锁位交叉淡化（DOM 与 WebGL2 完全重合后融化交接，零闪跳）
+          if (!morphInBlendT0) morphInBlendT0 = now;
+        } else {
+          if (morphFly) endMorph();
+          morphTries = 0;
+        }
+      } else if (morphInBlendT0 > 0) {
+        // 交接融化尚未结束就被用户退出（k < 1）：立刻清理进入反向流程
+        endMorph();
         morphTries = 0;
       }
       if (op < 0.002) {
@@ -1620,6 +1645,31 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       atlas.flush();
 
       n = 0;
+      // 落地锁位交叉淡化（140ms）：飞行全程 WebGL2 不提前露重影；抵达 100% 锁齐曲线后再 140ms 融化交接，杜绝落地闪黑或位置瞬跳
+      const HANDOFF_MS = 140;
+      const lsOutP = lsFly && lsFlyDir === 'out' ? lsFly.progress : -1;
+      if (lsFly && lsFlyDir === 'out' && !lsOutBlendT0 && lsOutP >= 1) lsOutBlendT0 = now;
+      const lsOutBlend = lsOutBlendT0 > 0 ? clamp((now - lsOutBlendT0) / HANDOFF_MS, 0, 1) : 0;
+      const glLsOutK = lsOutBlendT0 > 0 ? smooth(lsOutBlend) : 0;
+      const morphInBlend = morphInBlendT0 > 0 ? clamp((now - morphInBlendT0) / HANDOFF_MS, 0, 1) : 0;
+      const glMorphInK = morphInBlendT0 > 0 ? smooth(morphInBlend) : 0;
+      if (landingLineIdx >= 0) {
+        let arrP = 2;
+        if (morphFly && morphDir === 'in' && morphSlots?.lineIdx === landingLineIdx) arrP = morphInBlendT0 > 0 ? 2 : k;
+        else if (lsFly && lsFlyDir === 'out' && lsFlySlots?.lineIdx === landingLineIdx) arrP = lsOutBlendT0 > 0 ? 2 : lsOutP;
+        if (arrP < 0.65) {
+          landingAura = 0;
+        } else if (arrP <= 1) {
+          const target = 0.35 * smooth((arrP - 0.65) / 0.35);
+          landingAura += (target - landingAura) * (1 - Math.exp(-dt * 10));
+        } else {
+          landingAura += (1 - landingAura) * (1 - Math.exp(-dt * 4.0));
+          if (landingAura > 0.995) {
+            landingAura = 1;
+            landingLineIdx = -1;
+          }
+        }
+      }
       // —— 歌词：逐字层算状态 → 姿态（远处侧着、开唱前转正、唱完往外侧掠过）→ 沿曲线出字 ——
       const geos: Geo[] = [];
       /** 当前句这一帧在画面上的外接框（后面的句子落进来时让开） */
@@ -1799,37 +1849,57 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
         if (i === cur && !done && !lsNow && !lsFly && !boost && k > 0.001 && k < 0.999 && !morphFly && morphTries < 4) {
           morphTries = startMorph(i, d, e, segs, state, k, t) ? 99 : morphTries + 1;
         }
-        // 衬托层强度：下一句约 0.35，开唱前后 0.6 秒升到 1，唱完掠过时随推开淡出；更远的句子不画
-        const auraK =
+        // 衬托层强度：下一句约 0.35，开唱前后 0.6 秒升到 1，唱完掠过时随推开淡出；落地句叠加柔和渐显，不瞬弹
+        const rawAuraK =
           i === cur + 1 ? 0.35 * o : i <= cur && i >= cur - 1 ? (0.35 + 0.65 * smooth((t - e.s + 0.4) / 0.6)) * (1 - passK) * Math.min(1, o * 1.4) : 0;
-        const flyingLs = lsFlySlots?.lineIdx === i;
-        const flyingMorph = morphSlots?.lineIdx === i;
-        if (!flyingLs && auraK > 0.01) emitAura(d, segs, auraK, i === cur ? S : -1, t);
-        if (!flyingLs && !flyingMorph && o > 0.004) emitLine(d, segs, o, mode, blur, trK, bd, i > cur && curBox ? curBox : null);
+        const auraK = i === landingLineIdx ? rawAuraK * landingAura : rawAuraK;
+        const flyingLsIn = lsFlyDir === 'in' && lsFlySlots?.lineIdx === i;
+        const flyingLsOut = lsFlyDir === 'out' && lsFlySlots?.lineIdx === i;
+        const flyingMorphIn = morphDir === 'in' && morphSlots?.lineIdx === i;
+        const flyingMorphOut = morphDir === 'out' && morphSlots?.lineIdx === i;
+        // 飞入穿行最后 22% 时 WebGL2 字形与 DOM 替身交叉淡化（0→1 / 1→0），飞出穿行保持隐藏 WebGL2 原样
+        const glLineK = flyingLsIn || flyingMorphOut ? 0 : flyingLsOut ? glLsOutK : flyingMorphIn ? glMorphInK : 1;
+        if (!flyingLsIn && auraK > 0.01) emitAura(d, segs, auraK, i === cur ? S : -1, t);
+        if (glLineK > 0.004 && o > 0.004) emitLine(d, segs, o * glLineK, mode, blur, trK * glLineK, bd, i > cur && curBox ? curBox : null);
         if (i === cur && bd.x1 > bd.x0) curBox = { x0: bd.x0 - 10, x1: bd.x1 + 10, y0: bd.y0 - 8, y1: bd.y1 + 8 };
-        geos.push({ d, segs, op: o, dz, state, bd });
+        geos.push({ d, segs, op: o * glLineK, dz, state, bd });
         if (S >= 0) lightPt = pointOn(d, segs, S).p;
-        if (bd.x1 > bd.x0) probeLines.push({ i, text: e.text, x: bd.x0, y: bd.y0, w: bd.x1 - bd.x0, h: bd.y1 - bd.y0, op: o, state: d.state, done, kind: plan[i]!.kind, move: choreo[i]!.move });
+        if (bd.x1 > bd.x0) probeLines.push({ i, text: e.text, x: bd.x0, y: bd.y0, w: bd.x1 - bd.x0, h: bd.y1 - bd.y0, op: o * glLineK, state: d.state, done, kind: plan[i]!.kind, move: choreo[i]!.move });
       }
       lastGeos = geos;
       lastCur = cur;
-      // 漫游 ↔ 穿行一镜到底逐帧同步：跟随纵深推入中的 3D 曲线位置与扫光状态
+      // 漫游 ↔ 穿行一镜到底逐帧同步：抵达后保持 140ms 锁位融化淡出，DOM 为 0 时无声卸载
       if (morphFly && morphSlots) {
         const gM = geos.find((g) => g.d.i === morphSlots!.lineIdx);
         if (gM) {
           morphSlots.update(gM.segs, gM.d.warp, camNow(), t, scheme, gM.state);
-          morphFly.render(morphDir === 'in' ? k : 1 - k);
+          if (morphInBlendT0 > 0) {
+            morphFly.render(1);
+            morphFly.setLayerOpacity(1 - glMorphInK);
+            if (morphInBlend >= 1) {
+              endMorph();
+              morphTries = 0;
+            }
+          } else {
+            morphFly.render(morphDir === 'in' ? k : 1 - k);
+          }
         } else {
           endMorph();
         }
       }
-      // 听音空间收起回飞穿行：逐帧同步目标句的三维投影，落位贴合正在推进的曲线
+      // 听音空间收起回飞穿行：逐帧同步目标句的三维投影，抵达后 140ms 锁位与 WebGL2 交叉淡化，落地帧零闪黑
       if (lsFly && lsFlyDir === 'out') {
         if (lsFlySlots) {
           const gFly = geos.find((g) => g.d.i === lsFlySlots!.lineIdx);
           if (gFly) lsFlySlots.update(gFly.segs, gFly.d.warp, camNow(), t, scheme, gFly.state);
         }
-        if (lsFly.step(now)) endLsFly();
+        if (lsOutBlendT0 > 0) {
+          lsFly.render(1);
+          lsFly.setLayerOpacity(1 - glLsOutK);
+          if (lsOutBlend >= 1) endLsFly();
+        } else {
+          lsFly.render(lsOutP);
+        }
       }
 
       // —— 光的飞行（§9.3，2026-11-27 用户反馈后改：不再常驻光丝，免得像隧道里的蛛丝、把句子「扯直」）——
@@ -1878,7 +1948,7 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
           y0: g.bd.y0 - 10,
           y1: g.bd.y1 + 10,
           k: g.op * (g.state === 'future' ? 0.6 : 1),
-          front: g.d.done ? 0 : g.state === 'future' ? 0.7 * g.op : 1,
+          front: g.d.done ? 0 : g.state === 'future' ? 0.7 * g.op : Math.min(1, g.op),
           dz: g.dz,
         }));
       if (lightPt) {
@@ -1968,8 +2038,10 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
         const curD = doms.get(cur);
         const fs = curD?.fs ?? 50;
         const r = fs * 1.15;
-        const I = 0.2 * lightK * lightI;
-        put(lightPt[2] - camZ - 0.02, lightPt[0], lightPt[1], lightPt[2], r, 0, 0, 0, r, 0, 0, 0, 1, 1, KIND_LIGHT, 0, 1, pal.sung[0]! * I, pal.sung[1]! * I, pal.sung[2]! * I, 0, 0, 0, 0, 0);
+        const I = 0.2 * lightK * lightI * (cur === landingLineIdx ? landingAura : 1);
+        if (I > 0.002) {
+          put(lightPt[2] - camZ - 0.02, lightPt[0], lightPt[1], lightPt[2], r, 0, 0, 0, r, 0, 0, 0, 1, 1, KIND_LIGHT, 0, 1, pal.sung[0]! * I, pal.sung[1]! * I, pal.sung[2]! * I, 0, 0, 0, 0, 0);
+        }
       }
 
       // —— 3D 柔光三点：间奏（≥ 4s，逐个亮起） / 切歌慢取词（循环波浪呼吸） ——

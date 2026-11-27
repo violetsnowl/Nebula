@@ -6,6 +6,26 @@
 
 ---
 
+## #312 — 2026-11-27 — 穿行第二版飞入落地精修：DOM-WebGL2 亚像素对齐、140ms 锁位交叉淡化与衬托光带柔和渐显
+
+**目标**：修复用户反馈的「漫游 → 穿行」与「听音空间 → 穿行」两个飞入方向在最后一帧落地时的细微位置瞬跳、闪黑交接以及背后气流光带瞬间弹出问题（穿行 → 漫游、穿行 → 听音空间已验收通过，保持原样不变）。
+
+**改动点**
+- **亚像素 DOM-WebGL2 几何对齐**（`src/components/travel/travelFly.ts`、`src/components/travel-stage.css`）：
+  - 用行内零高基线探针按词实测 DOM 行框中点到字母基线的偏移 `cyEms[ui]`（替代硬编码 `-0.375em`），消除不同字体 / 中英混排落地时的 5–8px 竖向跳动；
+  - 实测各词 DOM 与字形贴图宽比 `wRatios`，并同步投影曲线切向与竖向得到三维透视压扁 `sx / sy`（覆盖斜坡 / 拐角 / 环偏航与「立起」倒伏），通过 `.tv-fly-slot` transform 与 `FlySide.adj` 无缝插值到位；
+  - 接入与 `TravelSpace.tsx` 同源的 `waveOf` 逐字波浪，并移除 `.tv-fly-slot .u` 上阻断 `placeOf()` 契约的 `transform: none !important`，让正在唱的词落地时波浪浮起与长音放大零跳变。
+- **140ms 抵达后锁位交叉淡化（杜绝落地闪黑与重影）**（`src/lib/listen/flyTransition.ts`、`src/components/TravelSpace.tsx`）：
+  - `LsFly` 新增 `setLayerOpacity(op)`；
+  - 飞入穿行（`morphDir === 'in'` 与 `lsFlyDir === 'out'`）飞行全程 WebGL2 保持不提前露字（无前方重影），抵达 `100%` 锁齐 3D 曲线后进入 `140ms` 锁位融化交接：DOM 替身继续逐帧跟随移动曲线并 `1 → 0` 淡出，WebGL2 字形、译文与字后封面压暗同步 `0 → 1` 淡入，DOM 归零后再静默卸载，彻底消除 `lsFlyDir === 'out'` 旧实现末帧空一帧闪黑的问题。
+- **衬托光带与光源柔和渐显**（`src/components/TravelSpace.tsx`）：新增 `landingLineIdx / landingAura`，飞入前半段不悬空挂出孤立光带，抵达前 35% 开始轻柔苏醒、落地后约 350ms 舒缓绽放至 100%（气流三股、光雾、浮尘、轨道环与演唱光点同步柔和渐显，不再最后一帧瞬间弹出）。
+
+**验证**
+- 无头 Chrome 抓拍 60% DOM / 40% WebGL2 锁位叠加帧（`scratch/handoff-blend.png`，不进仓库）：弯曲偏航且正在唱波浪的整句逐词重合、零重影零错位，背后气流丝柔和渐入。
+- `$env:pnpm_config_verify_deps_before_run='false'; pnpm build; pnpm qa` 全绿（0 控制台错误；`travelLsFly: { inErr: 0, outErr: 0.17, outDone: { op: 1, layer: false, hidden: 0 } }`；`travelRoamMorph: { dir: "out", n: 4, err: 0, clean: { layers: 0, hidden: 0 } }`；`travelGL` `avg 0.25ms / p95 0.5ms`）。
+
+**遗留与风险**：默认体验不变（实验开关 `lab.travelGL` 仍默认关）。待用户桌面复验飞入落地手感通过后，即执行第四步第 6/7 项（替换「设置 › 聆听 › 穿行」、删实验开关、规格写进 `NEBULA_UI_SYSTEM.md` §7.1c 并删 `TRAVEL_HANDOFF.md`）。
+
 ## #311 — 2026-11-27 — 穿行第二版桌面验收反馈四项精修：3D 清晰圆点、连续无缝气流光带、防拖曳闪烁重排与漫游一镜到底
 
 **目标**：按用户第四步桌面验收反馈与四张截图，逐项修复 3D 间奏/取词三点发糊、气流光带分段如「火柴棍拼接」、拖曳缩放窗口持续闪烁，并在保持漫游 ↔ 穿行淡入淡出与轻纵深推入的基础上，补上当前句双向一镜到底飞字联动。

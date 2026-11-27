@@ -430,6 +430,13 @@ export class LsFly {
     }
   }
 
+  /** 外部平滑淡出替身层（例如穿行 WebGL2 落地最后 20% 与着色器字形交叉淡化，不改变定位测量）。 */
+  setLayerOpacity(op: number): void {
+    if (this.done) return;
+    const v = op <= 0.001 ? '0' : op >= 0.999 ? '1' : op.toFixed(3);
+    if (this.layer.style.opacity !== v) this.layer.style.opacity = v;
+  }
+
   /** 起点真实坐标列表（QA 用：验证底部字幕 / 漫游句从真实位置起飞，而非屏幕中心兜底）。 */
   starts(): Array<{ x: number; y: number; f: number; rot: number }> {
     return this.lives.map((l) => ({ ...l.s }));
