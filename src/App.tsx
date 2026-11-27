@@ -34,6 +34,8 @@ import { useAccounts } from './hooks/accounts/useAccounts';
 import { useLibrary } from './hooks/library/useLibrary';
 import { usePlaylist } from './hooks/playlist/usePlaylist';
 import { usePlaylistImport, type ImportCommit } from './hooks/playlistImport/usePlaylistImport';
+import { useMergedPlaylists } from './hooks/playlistImport/useMergedPlaylists';
+import type { MergeSourceRef } from './lib/playlistTypes';
 import { useOverlays } from './hooks/overlays/useOverlays';
 import { useLyrics } from './hooks/lyrics/useLyrics';
 import { useBackground } from './hooks/background/useBackground';
@@ -131,6 +133,7 @@ export default function App() {
     onImported: handleImportCommitted,
   });
   const { complete: completeImport } = importer;
+  const merged = useMergedPlaylists();
   const [wallpaperOpen, setWallpaperOpen] = useState(false);
   // 内嵌登录 / 验证弹窗（第三方页面叠在弹窗里，见 LoginSheet）：打开时和其他全局弹窗一样不进入聆听
   const [loginSheetOpen, setLoginSheetOpen] = useState(false);
@@ -462,6 +465,26 @@ export default function App() {
     });
   }, [accounts, refreshAccount]);
 
+  const handleCreateMerged = useCallback(
+    async (sources: MergeSourceRef[], name: string) => {
+      const res = await merged.createMerged(sources, name, accounts);
+      if (res.ok && res.response) importer.commitMergedResult(res.response, res.notice);
+      return res;
+    },
+    [merged.createMerged, accounts, importer.commitMergedResult],
+  );
+
+  const handleRefreshMerged = useCallback(
+    async (id: string) => {
+      const res = await merged.refreshMerged(id, accounts);
+      if (res.ok && res.response) importer.commitMergedResult(res.response, res.notice);
+      return res;
+    },
+    [merged.refreshMerged, accounts, importer.commitMergedResult],
+  );
+
+  const handleClearCurrentPlaylist = useCallback(() => playlist.setCurrent(null), [playlist.setCurrent]);
+
   const effectiveBgSetting: BackgroundSetting =
     bgSetting.type === 'cover'
       ? playerState.song?.cover
@@ -663,6 +686,16 @@ export default function App() {
         near={near.left}
         onPinChange={pinLeft}
         openRequest={playlistDockRequest}
+        mergedPlaylists={merged.mergedPlaylists}
+        mergeBusy={merged.mergeBusy}
+        mergeError={merged.mergeError}
+        mergeNotice={merged.mergeNotice}
+        onImportMerged={importer.importMergedPlaylist}
+        onCreateMerged={handleCreateMerged}
+        onRefreshMerged={handleRefreshMerged}
+        onDeleteMerged={merged.deleteMerged}
+        onClearCurrentPlaylist={handleClearCurrentPlaylist}
+        onClearMergeFeedback={merged.clearMergeFeedback}
       />
 
       <button ref={centerRef} className="center-btn glass-g2" onClick={handleReset} aria-label="回到中心" data-tip="回到中心">

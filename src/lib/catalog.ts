@@ -56,6 +56,17 @@ export interface Track {
    * 音质列表与切换都要按这个平台来（档位是它的），否则菜单列的是原平台的档位、和正在放的对不上。
    */
   via?: { platform: string; sourceId: string };
+  /** 整合歌单跨平台/多来源去重后留存的已知同录音备用源，供播放兜底优先直取。 */
+  altSources?: TrackAltSource[];
+}
+
+export interface TrackAltSource {
+  platform: string;
+  sourceId: string;
+  album?: string;
+  albumId?: string;
+  duration?: number;
+  extra?: Record<string, unknown>;
 }
 
 /**

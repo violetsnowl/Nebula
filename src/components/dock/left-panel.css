@@ -532,3 +532,135 @@
   color: var(--fg-2);
   padding: 0 12px 12px;
 }
+
+/* ---------- 整合歌单（拼贴封面 / 来源摘要 / 构建勾选） ---------- */
+.sd-panel .cv-collage {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 1px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.sd-panel .cv-collage > span {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background-size: cover;
+  background-position: center;
+}
+
+.sd-panel .cv-collage > span.ph {
+  background-color: rgba(255, 255, 255, 0.08);
+}
+
+.sd-panel .pl-merge-sources {
+  font-size: 12px;
+  line-height: 1.45;
+  color: var(--fg-3s);
+  margin: -4px 4px 12px;
+  overflow-wrap: anywhere;
+}
+
+.sd-panel .pl-actions .btn.sec,
+.sd-panel .pl-actions .btn.danger {
+  flex: none;
+}
+
+.sd-panel .merge-name-box {
+  padding: 10px 12px;
+}
+
+.sd-panel .merge-name-input {
+  width: 100%;
+  box-sizing: border-box;
+  height: 36px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 10px;
+  font-family: inherit;
+  font-size: 13px;
+  color: var(--fg);
+  background: rgba(0, 0, 0, 0.25);
+  box-shadow: inset 0 0 0 1px var(--hair);
+  outline: none;
+  transition: box-shadow 0.12s ease;
+}
+
+.sd-panel .merge-name-input::placeholder {
+  color: var(--fg-3);
+}
+
+.sd-panel .merge-name-input:hover {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
+}
+
+.sd-panel .merge-name-input:focus {
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.3);
+}
+
+.sd-panel .merge-quick {
+  margin: 8px 4px 0;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sd-panel .merge-quick .btn.text {
+  height: 24px;
+  padding: 0 4px;
+  font-size: 12px;
+  color: var(--fg-2);
+}
+
+.sd-panel .merge-quick .btn.text:hover:not(:disabled) {
+  color: var(--fg);
+}
+
+.sd-panel .merge-check {
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  flex: none;
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--fg-3s);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  background: transparent;
+  transition:
+    border-color 0.12s ease,
+    color 0.12s ease,
+    background 0.12s ease;
+}
+
+.sd-panel .pl-row:hover .merge-check {
+  border-color: rgba(255, 255, 255, 0.42);
+  color: var(--fg);
+}
+
+.sd-panel .pl-row.is-picked .merge-check {
+  border-color: var(--acc);
+  background: var(--acc);
+  color: #0b0c10;
+}
+
+.sd-panel .merge-footer {
+  margin: 14px 4px 8px;
+  display: grid;
+  gap: 10px;
+}
+
+.sd-panel .merge-summary {
+  font-size: 12px;
+  color: var(--fg-3s);
+  font-variant-numeric: tabular-nums;
+}
+
+.sd-panel .hint-line.is-error {
+  color: var(--danger);
+}

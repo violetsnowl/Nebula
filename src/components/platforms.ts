@@ -27,6 +27,7 @@ export const PLATFORM_META: Record<string, PlatformMeta> = {
   bodian: { id: 'bodian', name: '波点音乐', logo: bodianLogo, brand: '#00e0b8' },
   ytmusic: { id: 'ytmusic', name: 'YouTube Music', logo: ytmusicLogo, brand: '#ff0033' },
   applemusic: { id: 'applemusic', name: 'Apple Music', logo: applemusicLogo, brand: '#fa243c' },
+  merged: { id: 'merged', name: '整合歌单', logo: '', brand: '#a8b0c4' },
 };
 
 /** 左右 Dock 统一的平台顺序（与后端 platform id 一致）。 */

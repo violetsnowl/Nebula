@@ -21,6 +21,9 @@ function restoreSessionPlaylist(): PlaylistMeta | null {
       id: p.id,
       name: typeof p.name === 'string' ? p.name : '',
       cover: typeof p.cover === 'string' ? p.cover : '',
+      ...(Array.isArray(p.covers) ? { covers: p.covers.filter((x): x is string => typeof x === 'string') } : {}),
+      ...(Array.isArray(p.sources) ? { sources: p.sources } : {}),
+      ...(typeof p.dedupCount === 'number' ? { dedupCount: p.dedupCount } : {}),
     };
   } catch {
     return null;

@@ -1,6 +1,11 @@
-import { memo, useCallback, useEffect, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AccountState } from '../lib/accounts';
 import type { Track } from '../lib/catalog';
+import {
+  hasDesktopAPI,
+  type DesktopMergedPlaylistResponse,
+} from '../lib/playlist/ipcClient';
+import type { MergeSourceRef, MergedPlaylistSummary, PlaylistMeta } from '../lib/playlistTypes';
 import { usePlayback } from '../hooks/playback/PlaybackContext';
 import type { ImportStatus } from './ImportBar';
 import { DOCK_PLATFORM_ORDER, platformMeta } from './platforms';
@@ -8,13 +13,20 @@ import { SideDock } from './dock/SideDock';
 import { IconChevronLeft, IconChevronRight, IconFolder } from './icons';
 import './dock/left-panel.css';
 
+interface MergeCallbackResult {
+  ok: boolean;
+  response?: DesktopMergedPlaylistResponse;
+  notice?: string;
+  error?: string;
+}
+
 interface PlaylistDockProps {
   visible: boolean;
   accounts: Record<string, AccountState>;
   importStatus: ImportStatus;
   importMessage: string;
   songs: Track[];
-  currentPlaylist: { platform: string; id: string; name: string; cover: string } | null;
+  currentPlaylist: PlaylistMeta | null;
   onEnter: () => void;
   onLeave: () => void;
   onImportPlaylist: (platform: string, id: string) => void;
@@ -32,10 +44,20 @@ interface PlaylistDockProps {
   onPinChange: (open: boolean) => void;
   /** 外部打开某一页（首次启动空状态的「粘贴歌单链接」）：nonce 变化时打开 panel 页，focusInput 时聚焦链接输入框。 */
   openRequest?: { panel: PanelId; focusInput?: boolean; nonce: number };
+  mergedPlaylists?: MergedPlaylistSummary[];
+  mergeBusy?: boolean;
+  mergeError?: string;
+  mergeNotice?: string;
+  onImportMerged?: (id: string) => void;
+  onCreateMerged?: (sources: MergeSourceRef[], name: string) => Promise<MergeCallbackResult>;
+  onRefreshMerged?: (id: string) => Promise<MergeCallbackResult>;
+  onDeleteMerged?: (id: string) => Promise<boolean>;
+  onClearCurrentPlaylist?: () => void;
+  onClearMergeFeedback?: () => void;
 }
 
 export type PanelId = 'playlists' | 'import';
-type LibView = 'list' | 'detail';
+type LibView = 'list' | 'detail' | 'merge';
 
 /** 面板内被选中的歌单（点进详情时记下，返回列表后仍保留，供离场动画使用）。 */
 interface SelectedPlaylist {
@@ -44,6 +66,9 @@ interface SelectedPlaylist {
   name: string;
   cover: string;
   trackCount: number;
+  covers?: string[];
+  sources?: MergeSourceRef[];
+  dedupCount?: number;
 }
 
 /** 推入动画状态：当前视图 + 正在离场的视图（NAV_MS 后移除）。 */
@@ -85,6 +110,22 @@ function Cover({ src, className }: { src?: string; className: string }) {
       style={src ? { backgroundImage: `url(${src})` } : undefined}
     />
   );
+}
+
+/** 整合歌单 2x2 拼贴封面（1 张或缺失时退回常规 Cover）。 */
+function CollageCover({ src, covers, className }: { src?: string; covers?: string[]; className: string }) {
+  const pics = (covers ?? []).filter(Boolean).slice(0, 4);
+  if (pics.length >= 2) {
+    return (
+      <span className={`${className} cv-collage`} aria-hidden="true">
+        {[0, 1, 2, 3].map((i) => {
+          const u = pics[i % pics.length];
+          return <span key={i} style={{ backgroundImage: `url(${u})` }} />;
+        })}
+      </span>
+    );
+  }
+  return <Cover src={pics[0] || src} className={className} />;
 }
 
 /** 歌单详情里的一行歌曲（1500 首也要顺滑：memo + content-visibility）。 */
@@ -188,6 +229,16 @@ export const PlaylistDock = memo(function PlaylistDock({
   near,
   onPinChange,
   openRequest,
+  mergedPlaylists = [],
+  mergeBusy = false,
+  mergeError = '',
+  mergeNotice = '',
+  onImportMerged,
+  onCreateMerged,
+  onRefreshMerged,
+  onDeleteMerged,
+  onClearCurrentPlaylist,
+  onClearMergeFeedback,
 }: PlaylistDockProps) {
   const [active, setActive] = useState<PanelId | null>(null);
   const lastRef = useRef<PanelId>('playlists');
@@ -222,6 +273,9 @@ export const PlaylistDock = memo(function PlaylistDock({
   // 歌单详情：大页头（含「播放全部」）滚出顶部后，顶部浮出一条紧凑栏（返回 · 封面 · 歌单名 · 播放 · 回到顶部）
   const actionsRef = useRef<HTMLDivElement>(null);
   const [stuck, setStuck] = useState(false);
+  const [mergeDraftName, setMergeDraftName] = useState('');
+  const [mergePicked, setMergePicked] = useState<MergeSourceRef[]>([]);
+  const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
 
   useEffect(
     () => () => {
@@ -232,12 +286,14 @@ export const PlaylistDock = memo(function PlaylistDock({
 
   const scroller = (): HTMLElement | null => navRef.current?.closest<HTMLElement>('.sd-scroll') ?? null;
 
-  /** 列表 ↔ 详情的推入动画（样张 F renderLib 的 React 版）。 */
+  /** 列表 ↔ 详情 / 整合构建的推入动画（样张 F renderLib 的 React 版）。 */
   const go = (view: LibView) => {
     if (view === nav.view) return;
     timersRef.current.forEach((t) => window.clearTimeout(t));
     timersRef.current = [];
-    setNav({ view, prev: nav.view, dir: view === 'detail' ? 'fwd' : 'back', entered: false });
+    const dir: 'fwd' | 'back' =
+      view === 'list' || (nav.view === 'detail' && view === 'merge') ? 'back' : 'fwd';
+    setNav({ view, prev: nav.view, dir, entered: false });
     const scrollEl = scroller();
     if (scrollEl) scrollEl.scrollTop = 0;
     requestAnimationFrame(() =>
@@ -252,10 +308,45 @@ export const PlaylistDock = memo(function PlaylistDock({
     !!currentPlaylist && currentPlaylist.platform === platform && currentPlaylist.id === id;
 
   const openPlaylist = (pl: SelectedPlaylist) => {
+    onClearMergeFeedback?.();
+    setConfirmDeleteId(null);
     // 不是当前歌单：先载入星云（与以前点歌单的行为一致），再推入详情
     if (!isCurrent(pl.platform, pl.id)) onImportPlaylist(pl.platform, pl.id);
     setSel(pl);
     go('detail');
+  };
+
+  const openMergedPlaylist = (m: MergedPlaylistSummary) => {
+    onClearMergeFeedback?.();
+    setConfirmDeleteId(null);
+    if (!isCurrent('merged', m.id)) onImportMerged?.(m.id);
+    setSel({
+      platform: 'merged',
+      id: m.id,
+      name: m.name,
+      cover: m.covers[0] || '',
+      covers: m.covers,
+      sources: m.sources,
+      trackCount: m.trackCount,
+      dedupCount: m.dedupCount,
+    });
+    go('detail');
+  };
+
+  const openMergeBuilder = (initial?: MergeSourceRef[]) => {
+    onClearMergeFeedback?.();
+    setConfirmDeleteId(null);
+    setMergeDraftName('');
+    setMergePicked(initial ?? []);
+    go('merge');
+  };
+
+  const togglePickSource = (src: MergeSourceRef) => {
+    setMergePicked((prev) => {
+      const idx = prev.findIndex((x) => x.platform === src.platform && x.id === src.id);
+      if (idx >= 0) return prev.filter((_, i) => i !== idx);
+      return [...prev, src];
+    });
   };
 
   const isPlayingTrack = useCallback(
@@ -275,6 +366,18 @@ export const PlaylistDock = memo(function PlaylistDock({
   const lapsed = notLoggedIn.find((p) => !!accounts[p]?.auth);
   const lapsedLine = lapsed ? `${platformMeta(lapsed).name}登录已过期` : null;
   const totalPlaylists = loggedIn.reduce((n, p) => n + (accounts[p]?.playlists.length ?? 0), 0);
+  const canMerge = hasDesktopAPI() && !!onCreateMerged && totalPlaylists >= 2;
+  const likedPicks = useMemo<MergeSourceRef[]>(() => {
+    const out: MergeSourceRef[] = [];
+    for (const p of loggedIn) {
+      const list = accounts[p]?.playlists ?? [];
+      const hit =
+        list.find((pl) => /^(?:.*我喜欢.*|.*喜欢的音乐.*|liked\s*songs|favorite\s*songs|赞过的音乐)$/i.test(pl.name)) ||
+        list.find((pl) => /喜欢|liked|favorite/i.test(pl.name));
+      if (hit) out.push({ platform: p, id: hit.id, name: hit.name, cover: hit.cover });
+    }
+    return out;
+  }, [accounts, loggedIn]);
   // 筛选的平台退出登录后自动回到「全部」
   const curFilter = loggedIn.some((p) => p === filter) ? filter : 'all';
   const shownPfs = loggedIn.filter((p) => curFilter === 'all' || p === curFilter);
@@ -289,6 +392,11 @@ export const PlaylistDock = memo(function PlaylistDock({
           <span className="sub">
             {totalPlaylists} 个歌单 · {loggedIn.length} 个平台
           </span>
+          {canMerge && (
+            <button type="button" className="btn text" onClick={() => openMergeBuilder()}>
+              整合
+            </button>
+          )}
           <button type="button" className="btn text" onClick={onRefreshAll}>
             刷新
           </button>
@@ -317,6 +425,38 @@ export const PlaylistDock = memo(function PlaylistDock({
             );
           })}
         </div>
+      )}
+
+      {curFilter === 'all' && mergedPlaylists.length > 0 && (
+        <>
+          <div className="g-title">整合歌单</div>
+          <div className="group">
+            {mergedPlaylists.map((m) => {
+              const cur = isCurrent('merged', m.id);
+              const open = () => openMergedPlaylist(m);
+              return (
+                <div
+                  key={`merged:${m.id}`}
+                  className={`pl-row${cur ? ' is-cur' : ''}`}
+                  role="button"
+                  tabIndex={0}
+                  onClick={open}
+                  onKeyDown={(e) => activateOnKey(e, open)}
+                >
+                  <CollageCover covers={m.covers} className="cv" />
+                  <span className="lbl">
+                    <span className="nm">{m.name}</span>
+                    <small>
+                      {m.trackCount.toLocaleString('en-US')} 首 · 来自 {m.sources.length} 个歌单
+                      {m.dedupCount > 0 ? ` · 去重 ${m.dedupCount} 首` : ''}
+                    </small>
+                  </span>
+                  {cur ? <span className="now">当前</span> : <span className="chev"><IconChevronRight size={14} /></span>}
+                </div>
+              );
+            })}
+          </div>
+        </>
       )}
 
       {hasRows && (
@@ -399,7 +539,72 @@ export const PlaylistDock = memo(function PlaylistDock({
   // 载入完成 = 选中的已经是当前歌单（歌曲在这一刻就已写入曲库；导入状态要等星云 4 秒的卡片揭示结束才变，不必等它）
   const ready = !!sel && isCurrent(sel.platform, sel.id);
   const selMeta = sel ? platformMeta(sel.platform) : null;
-  const detailCover = (ready && currentPlaylist?.cover) || sel?.cover;
+  const isMergedSel = sel?.platform === 'merged';
+  const liveMerged = isMergedSel ? mergedPlaylists.find((m) => m.id === sel.id) : undefined;
+  const detailCover = (ready && currentPlaylist?.cover) || liveMerged?.covers[0] || sel?.cover;
+  const detailCovers = liveMerged?.covers ?? (ready ? currentPlaylist?.covers : undefined) ?? sel?.covers;
+  const detailSources = liveMerged?.sources ?? (ready ? currentPlaylist?.sources : undefined) ?? sel?.sources;
+  const detailDedup = liveMerged?.dedupCount ?? (ready ? currentPlaylist?.dedupCount : undefined) ?? sel?.dedupCount;
+
+  const handleRefreshMerged = async () => {
+    if (!sel || !isMergedSel || !onRefreshMerged || mergeBusy) return;
+    const res = await onRefreshMerged(sel.id);
+    if (res.ok && res.response) {
+      const rec = res.response.record;
+      setSel({
+        platform: 'merged',
+        id: rec.id,
+        name: rec.name,
+        cover: rec.covers[0] || '',
+        covers: rec.covers,
+        sources: rec.sources,
+        trackCount: rec.trackCount,
+        dedupCount: rec.dedupCount,
+      });
+    }
+  };
+
+  const handleDeleteMerged = async () => {
+    if (!sel || !isMergedSel || !onDeleteMerged) return;
+    if (confirmDeleteId !== sel.id) {
+      setConfirmDeleteId(sel.id);
+      return;
+    }
+    const deletingCurrent = isCurrent('merged', sel.id);
+    const removed = await onDeleteMerged(sel.id);
+    if (removed) {
+      setConfirmDeleteId(null);
+      if (deletingCurrent) onClearCurrentPlaylist?.();
+      go('list');
+    }
+  };
+
+  const estMergeCount = useMemo(() => {
+    let total = 0;
+    for (const s of mergePicked) {
+      const hit = accounts[s.platform]?.playlists.find((p) => p.id === s.id);
+      total += hit?.trackCount ?? 0;
+    }
+    return total;
+  }, [mergePicked, accounts]);
+
+  const handleCreateMerged = async () => {
+    if (!onCreateMerged || mergePicked.length < 2 || mergeBusy) return;
+    const res = await onCreateMerged(mergePicked, mergeDraftName);
+    if (!res.ok || !res.response) return;
+    const rec = res.response.record;
+    setSel({
+      platform: 'merged',
+      id: rec.id,
+      name: rec.name,
+      cover: rec.covers[0] || '',
+      covers: rec.covers,
+      sources: rec.sources,
+      trackCount: rec.trackCount,
+      dedupCount: rec.dedupCount,
+    });
+    go('detail');
+  };
 
   const inDetail = shown === 'playlists' && nav.view === 'detail' && !!sel;
   useEffect(() => {
@@ -442,8 +647,8 @@ export const PlaylistDock = memo(function PlaylistDock({
         >
           <IconChevronLeft size={18} />
         </button>
-        <Cover src={detailCover} className="cv" />
-        <span className="pl-bar-name">{sel.name}</span>
+        <CollageCover src={detailCover} covers={detailCovers} className="cv" />
+        <span className="pl-bar-name">{liveMerged?.name ?? sel.name}</span>
         <button
           type="button"
           className="pl-bar-play"
@@ -481,18 +686,24 @@ export const PlaylistDock = memo(function PlaylistDock({
       {sel && selMeta && (
         <>
           <div className="pl-head">
-            <Cover src={detailCover} className="cv" />
+            <CollageCover src={detailCover} covers={detailCovers} className="cv" />
             <div className="pl-info">
-              <h3 title={sel.name}>{sel.name}</h3>
+              <h3 title={liveMerged?.name ?? sel.name}>{liveMerged?.name ?? sel.name}</h3>
               <div className="meta">
                 {selMeta.logo ? <img alt="" src={selMeta.logo} /> : null}
                 {selMeta.name}
                 {sel.platform === 'applemusic' && !ready && sel.trackCount === 0
                   ? ''
-                  : ` · ${(ready ? songs.length : sel.trackCount).toLocaleString('en-US')} 首`}
+                  : ` · ${(ready ? songs.length : liveMerged?.trackCount ?? sel.trackCount).toLocaleString('en-US')} 首`}
+                {isMergedSel && detailDedup && detailDedup > 0 ? ` · 去重 ${detailDedup} 首` : ''}
               </div>
             </div>
           </div>
+          {isMergedSel && detailSources && detailSources.length > 0 && (
+            <p className="pl-merge-sources">
+              来自：{detailSources.map((s) => `${platformMeta(s.platform).name}「${s.name}」`).join(' + ')}
+            </p>
+          )}
           <div className="pl-actions" ref={actionsRef}>
             <button
               type="button"
@@ -502,7 +713,45 @@ export const PlaylistDock = memo(function PlaylistDock({
             >
               播放全部
             </button>
+            {isMergedSel && onRefreshMerged && (
+              <button
+                type="button"
+                className="btn sec"
+                disabled={mergeBusy}
+                onClick={() => void handleRefreshMerged()}
+              >
+                {mergeBusy ? '刷新中…' : '刷新快照'}
+              </button>
+            )}
+            {isMergedSel && onDeleteMerged && (
+              <button
+                type="button"
+                className="btn danger"
+                disabled={mergeBusy}
+                onClick={() => void handleDeleteMerged()}
+              >
+                {confirmDeleteId === sel.id ? '确认删除' : '删除'}
+              </button>
+            )}
           </div>
+          {isMergedSel && mergeError && <p className="hint-line is-error">{mergeError}</p>}
+          {isMergedSel && !mergeError && mergeNotice && <p className="hint-line">{mergeNotice}</p>}
+          {!isMergedSel && ready && songs.length > 0 && songs.length < 80 && canMerge && (
+            <div className="hint-inline">
+              <span>曲库偏小，可整合多个歌单丰富星云与穿行</span>
+              <button
+                type="button"
+                className="btn text"
+                onClick={() =>
+                  openMergeBuilder([
+                    { platform: sel.platform, id: sel.id, name: sel.name, cover: detailCover },
+                  ])
+                }
+              >
+                去整合
+              </button>
+            </div>
+          )}
           {ready && songs.length === 0 ? (
             <p className="hint-line">这个歌单是空的</p>
           ) : ready ? (
@@ -526,10 +775,108 @@ export const PlaylistDock = memo(function PlaylistDock({
     </div>
   );
 
+  const mergeView = (
+    <div key="merge" className={`view${viewClass('merge', nav)}`}>
+      <button type="button" className="back" onClick={() => go('list')}>
+        <IconChevronLeft size={16} />
+        歌单
+      </button>
+      <div className="win-head">
+        <h2>整合歌单</h2>
+        <span className="sub">按勾选顺序 · 自动去重</span>
+      </div>
+
+      <div className="g-title">名称（可选）</div>
+      <div className="group">
+        <div className="merge-name-box">
+          <input
+            type="text"
+            className="merge-name-input"
+            placeholder="留空自动命名，如 A + B"
+            aria-label="整合歌单名称"
+            value={mergeDraftName}
+            onChange={(e) => setMergeDraftName(e.target.value)}
+            maxLength={60}
+          />
+        </div>
+      </div>
+
+      {likedPicks.length >= 2 && (
+        <div className="merge-quick">
+          <span className="val">快速选择</span>
+          <button
+            type="button"
+            className="btn text"
+            onClick={() => setMergePicked(likedPicks)}
+          >
+            一键勾选各平台「我喜欢」（{likedPicks.length}）
+          </button>
+        </div>
+      )}
+
+      {loggedIn.map((p) => {
+        const meta = platformMeta(p);
+        const list = accounts[p]?.playlists ?? [];
+        if (!list.length) return null;
+        return (
+          <div key={`merge-src:${p}`}>
+            <div className="g-title">{meta.name}</div>
+            <div className="group">
+              {list.map((pl) => {
+                const pickIndex = mergePicked.findIndex((x) => x.platform === p && x.id === pl.id);
+                const picked = pickIndex >= 0;
+                const toggle = () =>
+                  togglePickSource({ platform: p, id: pl.id, name: pl.name, cover: pl.cover });
+                return (
+                  <div
+                    key={`pick:${p}:${pl.id}`}
+                    className={`pl-row${picked ? ' is-picked' : ''}`}
+                    role="button"
+                    tabIndex={0}
+                    aria-pressed={picked}
+                    onClick={toggle}
+                    onKeyDown={(e) => activateOnKey(e, toggle)}
+                  >
+                    <Cover src={pl.cover} className="cv" />
+                    <span className="lbl">
+                      <span className="nm">{pl.name}</span>
+                      <small>
+                        {meta.logo ? <img alt="" src={meta.logo} /> : null}
+                        {p === 'applemusic' && pl.trackCount === 0 ? '' : `${pl.trackCount.toLocaleString('en-US')} 首`}
+                      </small>
+                    </span>
+                    <span className="merge-check">{picked ? pickIndex + 1 : ''}</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })}
+
+      <div className="merge-footer">
+        {mergeError && <p className="hint-line is-error">{mergeError}</p>}
+        <div className="merge-summary">
+          已选 {mergePicked.length} 个歌单
+          {estMergeCount > 0 ? ` · 原始约 ${estMergeCount.toLocaleString('en-US')} 首` : ''}
+        </div>
+        <button
+          type="button"
+          className="btn primary full"
+          disabled={mergePicked.length < 2 || mergeBusy}
+          onClick={() => void handleCreateMerged()}
+        >
+          {mergeBusy ? '正在拉取并去重…' : '生成整合歌单'}
+        </button>
+      </div>
+    </div>
+  );
+
   const playlistsView = (
     <div className="nav" ref={navRef}>
       {nav.prev === 'list' || nav.view === 'list' ? listView : null}
       {nav.prev === 'detail' || nav.view === 'detail' ? detailView : null}
+      {nav.prev === 'merge' || nav.view === 'merge' ? mergeView : null}
     </div>
   );
 

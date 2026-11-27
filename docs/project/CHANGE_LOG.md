@@ -6,6 +6,24 @@
 
 ---
 
+## #待定 — 2026-11-27 — 整合歌单前端与文档：多选构建、2×2 拼贴封面、快照刷新删除与小曲库引导
+
+**背景**：完成「整合歌单」前端链路（Phase 3），将跨平台/同平台去重整合融入左侧「歌单」面板，并与曲库、`altSources` 会话持久化及矩阵文档对齐。
+
+**改动点**
+- `src/lib/catalog.ts`、`src/lib/playlistTypes.ts`、`src/lib/playlist/ipcClient.ts`：定义 `TrackAltSource`、`MergeSourceRef`、`MergedPlaylistSummary`、`MergedPlaylistStats` 与 `DesktopMergedPlaylistResponse`，并在 `toFrontendTrack` / `toBackendTrack` 全程透传 `altSources`（含会话恢复）。
+- `src/hooks/playlist/usePlaylist.ts`：会话恢复保留整合歌单的 `covers`、`sources` 与 `dedupCount`。
+- `src/hooks/playlistImport/useMergedPlaylists.ts` & `usePlaylistImport.ts`：在 `playlistImport` 域新增整合歌单列表读取、构建器创建（附带当前已登录平台 VIP 权益快照）、快照刷新、重命名、删除及免重拉直接上舞台提交。
+- `src/components/platforms.ts`、`src/components/PlaylistDock.tsx`、`src/components/dock/left-panel.css`、`src/App.tsx`：
+  - 新增 `CollageCover`（2×2 封面拼贴）与 `整合歌单` 顶部分组列表、`当前` 标记；
+  - 新增「整合」构建视图（可选命名、跨平台「我喜欢」一键勾选、按勾选序号展示、生成后直接切入详情与重合摘要提示）；
+  - 详情页针对整合歌单显示来源清单、去重数、「刷新快照」与两步确认「删除」；针对普通小曲库（< 80 首）在详情页底部给出轻量「去整合」引导；遵守零外发光、零圆形背景 hover 规范。
+- `docs/project/PLATFORM_MATRIX.md`：补充整合歌单同/跨平台去重、VIP 选主源、`altSources` 优先兜底与手动快照策略说明。
+
+**验证**：`$env:pnpm_config_verify_deps_before_run='false'; pnpm build; pnpm qa:backend; pnpm qa` 全绿（`tsc`、`vite build`、`check-arch`、`ui-playback-regression` 6/6、`sections-regression` 12/12、`qa:backend` 27 项含 `playlist-merge-regression`、`qa.cjs` 含 0 控制台错误）。
+
+**遗留与风险**：待合回 `main`（需先确认主工作区 `E:\CUFE\vibecoding\nebula` 无 Claude 未提交改动后 rebase、取正式编号再并入）。
+
 ## #待定 — 2026-11-27 — 整合歌单后端：多歌单 $O(N)$ 去重整合、本机持久化与备用源直取兜底
 
 **背景**：实现全局新功能「整合歌单」（Phase 2 后端）：支持同平台或跨平台勾选多个歌单，按同录音规则自动去重整合为一个独立本机快照歌单，既丰富星云与穿行曲库，又提供全局多平台红心/歌单聚合能力。

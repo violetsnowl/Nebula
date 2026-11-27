@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Track } from '../../lib/catalog';
-import { hasDesktopAPI, toFrontendTrack } from '../../lib/playlist/ipcClient';
+import {
+  hasDesktopAPI,
+  toFrontendTrack,
+  type DesktopMergedPlaylistResponse,
+} from '../../lib/playlist/ipcClient';
 import { resolvePlaylist } from '../../lib/playlist/adapters';
 import type { ImportStatus, PlaylistMeta } from '../../lib/playlistTypes';
 
@@ -130,11 +134,81 @@ export function usePlaylistImport({ onSessionStart, onImported }: UsePlaylistImp
     }
   }, [onSessionStart, onImported, clearWarnTimer, flashWarn]);
 
+  const commitMergedResult = useCallback(
+    (data: DesktopMergedPlaylistResponse, note?: string) => {
+      clearWarnTimer();
+      setImportStatus('parsing');
+      setImportMessage('');
+      onSessionStart();
+      const pl = data.playlist;
+      onImported({
+        adapterName: '整合歌单',
+        tracks: pl.tracks.map((t, i) => toFrontendTrack(t, i)),
+        simulated: false,
+        note,
+        meta: {
+          platform: 'merged',
+          id: pl.id,
+          name: pl.name,
+          cover: pl.cover || pl.covers[0] || '',
+          covers: pl.covers,
+          sources: pl.sources,
+          dedupCount: pl.dedupCount,
+        },
+      });
+    },
+    [onSessionStart, onImported, clearWarnTimer],
+  );
+
+  const importMergedPlaylist = useCallback(
+    async (id: string, note?: string) => {
+      if (!hasDesktopAPI() || !window.nebulaAPI?.mergedGet) return;
+      clearWarnTimer();
+      setImportStatus('parsing');
+      setImportMessage('');
+      onSessionStart();
+      try {
+        const res = await window.nebulaAPI.mergedGet(id);
+        if (!res.ok) throw new Error(res.error);
+        const pl = res.data.playlist;
+        onImported({
+          adapterName: '整合歌单',
+          tracks: pl.tracks.map((t, i) => toFrontendTrack(t, i)),
+          simulated: false,
+          note,
+          meta: {
+            platform: 'merged',
+            id: pl.id,
+            name: pl.name,
+            cover: pl.cover || pl.covers[0] || '',
+            covers: pl.covers,
+            sources: pl.sources,
+            dedupCount: pl.dedupCount,
+          },
+        });
+      } catch (err) {
+        setImportStatus('error');
+        setImportMessage(`整合歌单读取失败：${err instanceof Error ? err.message : String(err)}`);
+      }
+    },
+    [onSessionStart, onImported, clearWarnTimer],
+  );
+
   /** 渐进揭示完成后的收尾（由 App 的 beginImport onDone 调用）。 */
   const complete = useCallback((status: ImportStatus, message: string) => {
     setImportStatus(status);
     setImportMessage(message);
   }, []);
 
-  return { importStatus, importMessage, localBusy, importUrl, importPlaylistId, openLocal, complete };
+  return {
+    importStatus,
+    importMessage,
+    localBusy,
+    importUrl,
+    importPlaylistId,
+    importMergedPlaylist,
+    commitMergedResult,
+    openLocal,
+    complete,
+  };
 }

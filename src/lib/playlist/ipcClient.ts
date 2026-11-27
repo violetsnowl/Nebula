@@ -1,4 +1,5 @@
-import type { Track } from '../catalog';
+import type { Track, TrackAltSource } from '../catalog';
+import type { MergeSourceRef, MergedPlaylistStats, MergedPlaylistSummary } from '../playlistTypes';
 
 /** 与 src/main/types.ts 对齐的桌面端数据结构（渲染进程侧只读映射）。 */
 export interface DesktopCoverInfo {url:string;width?:number;height?:number;verified:boolean}
@@ -18,12 +19,14 @@ export interface DesktopTrack {
   quality?: string;
   artists?: string[];
   extra?: Record<string, unknown>;
+  altSources?: TrackAltSource[];
 }
 
 export interface PlaybackMetadata {
   coverInfo?: DesktopCoverInfo;
   artists?: string[];
   extra?: Record<string, unknown>;
+  altSources?: TrackAltSource[];
   resolvedAt?: number;
   expiresAt?: number;
 }
@@ -55,6 +58,18 @@ export interface DesktopPlaylistResult {
   name: string;
   cover: string;
   tracks: DesktopTrack[];
+}
+
+export interface DesktopMergedPlaylistResponse {
+  record: MergedPlaylistSummary;
+  playlist: DesktopPlaylistResult & {
+    id: string;
+    covers: string[];
+    sources: MergeSourceRef[];
+    trackCount: number;
+    dedupCount: number;
+  };
+  stats?: MergedPlaylistStats;
 }
 
 export interface DesktopPlaylistSummary {
@@ -281,6 +296,19 @@ export interface DesktopApi {
   setCookie: (platform: string, cookie: string, token?: string, nickname?: string) => IpcResult<boolean>;
   getCookie: (platform: string) => IpcResult<unknown>;
   clearCookie: (platform: string) => IpcResult<boolean>;
+  mergedList?: () => IpcResult<MergedPlaylistSummary[]>;
+  mergedGet?: (id: string) => IpcResult<DesktopMergedPlaylistResponse>;
+  mergedCreate?: (payload: {
+    name?: string;
+    sources: MergeSourceRef[];
+    accounts?: Record<string, { loggedIn?: boolean; isVip?: boolean; isSvip?: boolean }>;
+  }) => IpcResult<DesktopMergedPlaylistResponse>;
+  mergedRefresh?: (
+    id: string,
+    accounts?: Record<string, { loggedIn?: boolean; isVip?: boolean; isSvip?: boolean }>,
+  ) => IpcResult<DesktopMergedPlaylistResponse>;
+  mergedRename?: (id: string, name: string) => IpcResult<MergedPlaylistSummary>;
+  mergedDelete?: (id: string) => IpcResult<boolean>;
 }
 
 declare global {
@@ -328,6 +356,7 @@ export function toFrontendTrack(
     via: extra?.via,
     artists: t.artists,
     extra: t.extra,
+    altSources: t.altSources,
     resolvedAt: extra?.resolvedAt,
     expiresAt: extra?.expiresAt,
   };
@@ -362,5 +391,6 @@ export function toBackendTrack(t: Track): DesktopTrack {
     coverInfo: (t as Track & PlaybackMetadata).coverInfo,
     artists: (t as Track & PlaybackMetadata).artists,
     extra: (t as Track & PlaybackMetadata).extra,
+    altSources: (t as Track & PlaybackMetadata).altSources,
   };
 }
