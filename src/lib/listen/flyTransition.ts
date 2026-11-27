@@ -28,8 +28,8 @@ export interface FlySide {
   opacity?: number;
   /** 看上去的位置和盒子的差（屏幕像素）与两个方向的压扁：版面「断层」错开的那半、「回声滚筒」上的行。 */
   adj?: () => { dx: number; dy: number; sx: number; sy: number } | null;
-  /** 直接返回目标中心、视觉字号与倾角（如穿行 WebGL2 3D 实时投影），跳过每帧 DOM 写布局与 getBoundingClientRect 重排。 */
-  place?: () => { x: number; y: number; f: number; rot: number; sx?: number; sy?: number } | null;
+  /** 直接返回目标中心、视觉字号与倾角（如穿行 WebGL2 3D 实时投影或漫游歌词增量追踪），跳过每帧 DOM 写布局与 getBoundingClientRect 重排；返回 null 时回退 placeOf。 */
+  place?: (prev?: { x: number; y: number; f: number; rot: number; sx: number; sy: number } | null) => { x: number; y: number; f: number; rot: number; sx?: number; sy?: number } | null;
   /**
    * 版面「色场」页：这个字有一部分落在色块里，色块里的真字是深墨（色块那份副本）。替身另叠一份深墨克隆、按色块边线裁剪，
    * 和真字一致（2026-11-26：原来替身是原文的浅色，落地换真字时才变深）。field = 色块元素；color = --lp-field-ink 的值。
@@ -117,7 +117,6 @@ function stepInk(ink: InkClone | undefined, edge: number | undefined, opacity: s
   ink.wrap.style.transform = transform;
 }
 
-const fsOf = (el: HTMLElement) => parseFloat(getComputedStyle(el).fontSize) || 16;
 const smooth = (x: number) => {
   const t = Math.min(1, Math.max(0, x));
   return t * t * (3 - 2 * t);
@@ -184,8 +183,7 @@ function fitWholeCloneBox(wrapper: HTMLElement, src: HTMLElement): void {
 }
 
 /** 复制原字的计算后排版属性与颜色状态（含非扫光句 .is-past / 整句节点的精确实色）。 */
-function copyTypeAndColor(to: HTMLElement, from: HTMLElement, ctxClass: string): void {
-  const cs = getComputedStyle(from);
+function applyCopiedStyle(to: HTMLElement, cs: CSSStyleDeclaration, ctxClass: string, isWhole: boolean): void {
   to.style.fontFamily = cs.fontFamily;
   to.style.fontWeight = cs.fontWeight;
   to.style.fontStyle = cs.fontStyle;
@@ -198,14 +196,18 @@ function copyTypeAndColor(to: HTMLElement, from: HTMLElement, ctxClass: string):
     const val = cs.getPropertyValue(v);
     if (val) to.style.setProperty(v, val);
   }
-  const isWhole =
-    from.classList.contains('fl-whole') ||
-    from.classList.contains('ly-whole') ||
-    from.classList.contains('lp-whole');
   const isGrad = /\bis-grad\b/.test(ctxClass) && !isWhole;
   if (!isGrad && cs.color && cs.color !== 'rgba(0, 0, 0, 0)' && cs.color !== 'transparent') {
     to.style.setProperty('--lc-rest', cs.color);
   }
+}
+
+function copyTypeAndColor(to: HTMLElement, from: HTMLElement, ctxClass: string): void {
+  const isWhole =
+    from.classList.contains('fl-whole') ||
+    from.classList.contains('ly-whole') ||
+    from.classList.contains('lp-whole');
+  applyCopiedStyle(to, getComputedStyle(from), ctxClass, isWhole);
 }
 
 /** 量取单元扣除自身波浪浮起 / 长音缩放后的静止盒子中心与视觉字号。 */
@@ -274,7 +276,27 @@ export class LsFly {
     this.layer.setAttribute('aria-hidden', 'true');
     document.body.appendChild(this.layer);
 
-    for (const p of pairs) {
+    // 批量读写分离：先读全部源节点排版样式（零写），再集中挂载全部替身（零读），最后一次批量量框，避免 N 次交错强制重排
+    interface PreItem {
+      p: FlyPair;
+      a: HTMLElement;
+      ac: HTMLElement;
+      ctxA: HTMLElement;
+      fsA: number;
+      ai?: InkClone;
+    }
+    const specs = pairs.map((p) => {
+      const cs = getComputedStyle(p.from.el);
+      const isWhole =
+        p.from.el.classList.contains('fl-whole') ||
+        p.from.el.classList.contains('ly-whole') ||
+        p.from.el.classList.contains('lp-whole');
+      const wrapW = isWhole && cs.whiteSpace !== 'nowrap' && cs.whiteSpace !== 'pre' ? p.from.el.offsetWidth : 0;
+      return { p, cs, isWhole, wrapW, fsA: parseFloat(cs.fontSize) || 16 };
+    });
+    const pre: PreItem[] = [];
+    for (const sp of specs) {
+      const { p, cs, isWhole, wrapW, fsA } = sp;
       const a = document.createElement('span');
       a.className = p.from.vert ? 'lpm-u is-v' : 'lpm-u';
       const ctxA = document.createElement('div');
@@ -283,27 +305,37 @@ export class LsFly {
       a.appendChild(ac);
       ctxA.appendChild(a);
       this.layer.appendChild(ctxA);
-      copyTypeAndColor(a, p.from.el, p.from.ctx);
-      const fsA = fsOf(p.from.el);
+      applyCopiedStyle(a, cs, p.from.ctx, isWhole);
       a.style.fontSize = `${fsA}px`;
-      fitWholeCloneBox(a, p.from.el);
-      const ra = a.getBoundingClientRect();
+      if (wrapW > 0) {
+        a.style.whiteSpace = cs.whiteSpace;
+        a.style.width = `${Math.ceil(wrapW) + 1}px`;
+      }
+      const ai = makeInk(this.layer, p.from, fsA);
+      pre.push({ p, a, ac, ctxA, fsA, ai });
+    }
+    const toRemove: HTMLElement[] = [];
+    for (const it of pre) {
+      const ra = it.a.getBoundingClientRect();
       const aw = ra.width || 1;
       const ah = ra.height || 1;
-      const measured = placeOf(p.from.el, p.from, aw, ah, fsA);
+      const direct = it.p.from.place?.(null) ?? null;
+      const measured: FlyPlace | null = direct
+        ? { x: direct.x, y: direct.y, f: direct.f, rot: direct.rot, sx: direct.sx ?? 1, sy: direct.sy ?? 1 }
+        : placeOf(it.p.from.el, it.p.from, aw, ah, it.fsA);
       if (!measured) {
-        // 起点不可测量（被 display:none 等隐藏）的单元直接丢弃，绝不塞到屏幕正中心制造假飞行
-        ctxA.remove();
+        toRemove.push(it.ctxA);
+        if (it.ai) toRemove.push(it.ai.ctx);
         continue;
       }
-      const live: Live = {
-        p,
-        a,
-        ac,
+      this.lives.push({
+        p: it.p,
+        a: it.a,
+        ac: it.ac,
         b: null,
         bc: null,
-        fsA,
-        fsB: fsA,
+        fsA: it.fsA,
+        fsB: it.fsA,
         aw,
         ah,
         bw: 1,
@@ -312,12 +344,12 @@ export class LsFly {
         t: null,
         e0: 0,
         a0: 1,
-        sOp: p.from.opacity ?? 1,
-      };
-      live.ai = makeInk(this.layer, p.from, fsA);
-      this.lives.push(live);
-      this.hidden.push(p.from.el);
+        sOp: it.p.from.opacity ?? 1,
+        ai: it.ai,
+      });
+      this.hidden.push(it.p.from.el);
     }
+    for (const el of toRemove) el.remove();
     if (!this.lives.length) {
       this.done = true;
       this.layer.remove();
@@ -326,29 +358,48 @@ export class LsFly {
     this.hide(this.hidden, true);
   }
 
-  private attach(l: Live, to: FlySide): void {
-    l.p.to = to;
-    const b = document.createElement('span');
-    b.className = to.vert ? 'lpm-u is-v' : 'lpm-u';
-    const ctxB = document.createElement('div');
-    ctxB.className = `lpm-ctx ${to.ctx}`;
-    if (to.blend) ctxB.style.mixBlendMode = to.blend;
-    const bc = cleanClone(to.el.cloneNode(true) as HTMLElement);
-    b.appendChild(bc);
-    ctxB.appendChild(b);
-    this.layer.appendChild(ctxB);
-    copyTypeAndColor(b, to.el, to.ctx);
-    l.fsB = fsOf(to.el);
-    b.style.fontSize = `${l.fsB}px`;
-    fitWholeCloneBox(b, to.el);
-    const rb = b.getBoundingClientRect();
-    l.b = b;
-    l.bc = bc;
-    l.bw = rb.width || 1;
-    l.bh = rb.height || 1;
-    l.bi = makeInk(this.layer, to, l.fsB);
-    this.hidden.push(to.el);
-    this.hide([to.el], true);
+  private attachBatch(items: Array<{ l: Live; to: FlySide }>): void {
+    const specs = items.map(({ l, to }) => {
+      const cs = getComputedStyle(to.el);
+      const isWhole =
+        to.el.classList.contains('fl-whole') ||
+        to.el.classList.contains('ly-whole') ||
+        to.el.classList.contains('lp-whole');
+      const wrapW = isWhole && cs.whiteSpace !== 'nowrap' && cs.whiteSpace !== 'pre' ? to.el.offsetWidth : 0;
+      return { l, to, cs, isWhole, wrapW, fsB: parseFloat(cs.fontSize) || 16 };
+    });
+    const toHide: HTMLElement[] = [];
+    for (const sp of specs) {
+      const { l, to, cs, isWhole, wrapW, fsB } = sp;
+      l.p.to = to;
+      const b = document.createElement('span');
+      b.className = to.vert ? 'lpm-u is-v' : 'lpm-u';
+      const ctxB = document.createElement('div');
+      ctxB.className = `lpm-ctx ${to.ctx}`;
+      if (to.blend) ctxB.style.mixBlendMode = to.blend;
+      const bc = cleanClone(to.el.cloneNode(true) as HTMLElement);
+      b.appendChild(bc);
+      ctxB.appendChild(b);
+      this.layer.appendChild(ctxB);
+      applyCopiedStyle(b, cs, to.ctx, isWhole);
+      l.fsB = fsB;
+      b.style.fontSize = `${fsB}px`;
+      if (wrapW > 0) {
+        b.style.whiteSpace = cs.whiteSpace;
+        b.style.width = `${Math.ceil(wrapW) + 1}px`;
+      }
+      l.b = b;
+      l.bc = bc;
+      l.bi = makeInk(this.layer, to, fsB);
+      this.hidden.push(to.el);
+      toHide.push(to.el);
+    }
+    for (const sp of specs) {
+      const rb = sp.l.b!.getBoundingClientRect();
+      sp.l.bw = rb.width || 1;
+      sp.l.bh = rb.height || 1;
+    }
+    this.hide(toHide, true);
   }
 
   step(now: number): boolean {
@@ -368,23 +419,29 @@ export class LsFly {
     const lwA = (1 - smooth(e / 0.2)).toFixed(3);
     const waitOp = 1 - smooth(k / 0.55);
     const opCache = new Map<HTMLElement, number>();
-    // 第一遍集中补找终点并挂载
+    // 第一遍集中补找终点并批量挂载（读写分离，单次重排）
+    const pendingAttach: Array<{ l: Live; to: FlySide }> = [];
     for (const l of this.lives) {
       if (!l.b) {
         const to = l.p.to ?? this.retarget(l.p, k);
         if (to) {
-          this.attach(l, to);
+          pendingAttach.push({ l, to });
           l.e0 = e < 0.999 ? e : 0;
           l.a0 = (k > 0.08 ? waitOp : 1) * l.sOp;
         }
       }
     }
-    // 第二遍集中测量终点位置与整句透明度，避免读写交错重排（带 place 回调的目标直接读 JS 坐标，零 DOM 重排）
+    if (pendingAttach.length) this.attachBatch(pendingAttach);
+    // 第二遍集中测量终点位置与整句透明度，避免读写交错重排（带 place 回调的目标直接读 JS 坐标，零 DOM 重排；返回 null 时回退 placeOf）
     for (const l of this.lives) {
       if (!l.b || !l.p.to) continue;
       if (l.p.to.place) {
-        const dp = l.p.to.place();
+        const dp = l.p.to.place(l.t);
         if (dp) l.t = { x: dp.x, y: dp.y, f: dp.f, rot: dp.rot, sx: dp.sx ?? 1, sy: dp.sy ?? 1 };
+        else {
+          const m = placeOf(l.p.to.el, l.p.to, l.bw, l.bh, l.fsB);
+          if (m) l.t = m;
+        }
       } else {
         const m = placeOf(l.p.to.el, l.p.to, l.bw, l.bh, l.fsB);
         if (m) l.t = m;
@@ -448,6 +505,16 @@ export class LsFly {
     if (this.done) return;
     const v = op <= 0.001 ? '0' : op >= 0.999 ? '1' : op.toFixed(3);
     if (this.layer.style.opacity !== v) this.layer.style.opacity = v;
+  }
+
+  /** 直接调节起点侧（A）逐字母弯曲倍率 --cv（穿行 → 漫游解弯时只需改一次变量，零逐字母 DOM/cssText 同步）。 */
+  setCurveA(k: number): void {
+    if (this.done) return;
+    const v = k <= 0.001 ? '0' : k >= 0.999 ? '1' : k.toFixed(3);
+    for (const l of this.lives) {
+      const ctxA = l.a.parentElement;
+      if (ctxA && ctxA.style.getPropertyValue('--cv') !== v) ctxA.style.setProperty('--cv', v);
+    }
   }
 
   /** 起点真实坐标列表（QA 用：验证底部字幕 / 漫游句从真实位置起飞，而非屏幕中心兜底）。 */

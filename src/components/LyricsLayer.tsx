@@ -737,8 +737,8 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist, l
         stageShapeBus.gap = st.gap;
         stageShapeBus.sinkDepth = depth;
         stageShapeBus.sinkPos = posK;
-        // 听音空间开合、飞行期间或穿行转场期间冻住根元素 --sdep / --sopen，避免全文档样式失效与每帧重算
-        if (!lsBusy && !(travelMode && listenBus.enabled && listenBus.k > 0.001)) {
+        // 仅在非穿行且处于聆听/交接中才写根元素 --sdep / --sopen；穿行与漫游态零规则读取它们，避免每帧使 140 卡星云整棵树样式失效
+        if (!lsBusy && !travelMode && listenBus.enabled && listenBus.k > 0.001) {
           const sdep = depth.toFixed(3);
           const sopen = sk.open.toFixed(3);
           if (sdep !== lastSdep) {
@@ -879,17 +879,19 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist, l
 
         const el = elRefs.current.get(lineIdx);
         if (!el) continue;
-        // 漫游时的「氛围」：只留当前句（和刚离场的那句），缩到 84%、半透明、微虚；聆听时完整三句。只开字幕时整层让给字幕
+        // 漫游时的「氛围」：只留当前句（和刚离场的那句），缩到 84%、半透明、微虚；聆听时完整三句。只开字幕时整层让给字幕。
+        // 穿行模式下漫游歌词只在漫游态露面（交接期由整层合成 opacity 淡入淡出），固定按漫游态排版，避免逐帧改 blur() 重绘与缩放漂移
+        const lk = travelMode ? 0 : k;
         let opM = 1;
         let blur = 0;
         let scM = 1;
         if (ambient) {
           if (fl.role === 'current' || fl.role === 'leaving') {
-            opM = 0.5 + 0.5 * k;
-            blur = (1 - k) * 0.9;
-            scM = 0.84 + 0.16 * k;
-          } else opM = k;
-        } else if (enabled) opM = k;
+            opM = 0.5 + 0.5 * lk;
+            blur = (1 - lk) * 0.9;
+            scM = 0.84 + 0.16 * lk;
+          } else opM = lk;
+        } else if (enabled) opM = lk;
         // 版面模式：聆听中漫游歌词让给版面（漫游时的氛围 / 字幕不变）。淡得比交接曲线快（交接过半多就看不见），
         // 免得交接途中换了句时，新的那句还留在原位、和逐字飞行的替身同时出现
         if (pageMode && enabled) {
@@ -909,8 +911,8 @@ export function LyricsLayer({ lines, frameBus, songKey, songTitle, songArtist, l
           if (e && Math.abs(e.s - pageBus.morphS) < 0.12) opM = 0;
         }
         el.style.transform = `translate3d(${fl.sx.toFixed(1)}px, ${(fl.sy + gapDy).toFixed(1)}px, 0) rotate(${fl.rot.toFixed(2)}deg) scale(${(fl.scale * scM).toFixed(4)})`;
-        // 升级·字照亮空间：光源 = 当前句正在唱（或下一个要唱）的字，按元素中心缩放 / 旋转换到屏幕坐标
-        if (up && !pageMode && fl.role === 'current') {
+        // 升级·字照亮空间：光源 = 当前句正在唱（或下一个要唱）的字，按元素中心缩放 / 旋转换到屏幕坐标（穿行与纯漫游态不读，避免紧跟 transform 写后强刷 offsetHeight 重排）
+        if (up && !pageMode && !travelMode && (!enabled || k > 0.001) && fl.role === 'current') {
           const d = lineDoms.current.get(lineIdx);
           const e = engineLinesRef.current[lineIdx];
           const w = naturalW(lineIdx);

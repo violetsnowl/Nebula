@@ -36,13 +36,15 @@ export interface ListenConfig {
 /** 舞台帧循环读取的交接状态（对象引用恒定，字段原地更新）。 */
 export interface ListenBus {
   k: number;
+  /** 目标方向（0 = 漫游，1 = 聆听），供穿行转场可靠判定进出方向，避免卡顿帧下 k 跨过 0.5 误判。 */
+  target: 0 | 1;
   style: ListenStyle;
   layout: 'stacked' | 'offset';
   /** 交接是否启用。没启用时没有「聆听」，空域歌词按聆听时的样子常显（不退成氛围）。 */
   enabled: boolean;
 }
 
-export const listenBus: ListenBus = { k: 0, style: 'sink', layout: 'stacked', enabled: false };
+export const listenBus: ListenBus = { k: 0, target: 0, style: 'sink', layout: 'stacked', enabled: false };
 
 const frameSubs = new Set<() => void>();
 
@@ -63,9 +65,10 @@ export function pokeListenFrame(): void {
   for (const fn of frameSubs) fn();
 }
 
-/** 交接曲线时长：进入像灯光调暗，回来不让人等。 */
+/** 交接曲线时长：进入像灯光调暗，回来不让人等；穿行退回漫游带 3D 弧线解弯一镜到底，给足清晰可见的优雅飞行时间。 */
 const ENTER_MS = 1600;
 const EXIT_MS = 380;
+const TRAVEL_EXIT_MS = 760;
 /** 漫游时歌词层亮度。 */
 /** 漫游时歌词层的整体亮度。#124 起漫游的「氛围 / 字幕」由歌词层自己按 --lk 处理，这里不再压暗。 */
 const LYR_ROAM = 1;
@@ -130,6 +133,7 @@ interface Tween {
   dur: number;
   lyrFrom: number;
   needSwap: boolean;
+  easeInOutExit: boolean;
 }
 
 const easeInOut = (t: number): number => (t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2);
@@ -280,6 +284,7 @@ export class ListenDirector {
     delete d.listenPin;
     for (const v of ['--lk', '--lo', '--ls']) this.root.style.removeProperty(v);
     listenBus.k = 0;
+    listenBus.target = 0;
   }
 
   private onMove = (e: PointerEvent): void => {
@@ -372,12 +377,19 @@ export class ListenDirector {
   private setMode(m: 'roam' | 'listen', instant = false): void {
     if (this.mode === m) return;
     this.mode = m;
-    if (m === 'listen') this.root.dataset.listen = 'on';
-    else delete this.root.dataset.listen;
-    if (m === 'listen' && this.cfg.pin) this.root.dataset.listenPin = 'on';
-    else delete this.root.dataset.listenPin;
+    const isTravel = document.documentElement.dataset.stageMode === 'travel';
     const to = m === 'listen' ? 1 : 0;
-    const base = m === 'listen' ? ENTER_MS : EXIT_MS;
+    listenBus.target = to;
+    // 常驻穿行退回漫游时，推迟到 k=0 收尾时再移除 data-listen / data-listen-pin：
+    // 既避免点击首帧触发 1700+ 节点样式重算，也避免收起键与播放条在首帧闪一下
+    const deferTravelPinExit = isTravel && m === 'roam' && this.cfg.pin && !instant && !this.reduce;
+    if (!deferTravelPinExit) {
+      if (m === 'listen') this.root.dataset.listen = 'on';
+      else delete this.root.dataset.listen;
+      if (m === 'listen' && this.cfg.pin) this.root.dataset.listenPin = 'on';
+      else delete this.root.dataset.listenPin;
+    }
+    const base = m === 'listen' ? ENTER_MS : isTravel ? TRAVEL_EXIT_MS : EXIT_MS;
     this.tw = {
       from: this.k,
       to,
@@ -385,6 +397,7 @@ export class ListenDirector {
       dur: this.reduce || instant ? 1 : base * Math.max(0.35, Math.abs(to - this.k)),
       lyrFrom: this.lyrOp,
       needSwap: this.needsTop() && (m === 'listen') !== this.lyrTop,
+      easeInOutExit: isTravel && m === 'roam',
     };
     if (!this.raf) this.raf = requestAnimationFrame(this.tick);
   }
@@ -395,7 +408,7 @@ export class ListenDirector {
     if (!tw) return;
     const t = Math.min(1, Math.max(0, (now - tw.t0) / tw.dur));
     const into = tw.to === 1;
-    const ease = into ? easeInOut(t) : easeOut(t);
+    const ease = into || tw.easeInOutExit ? easeInOut(t) : easeOut(t);
     this.k = lerp(tw.from, tw.to, ease);
     const target = into ? 1 : LYR_ROAM;
     if (tw.needSwap) {
@@ -410,22 +423,24 @@ export class ListenDirector {
     } else {
       this.lyrOp = lerp(tw.lyrFrom, target, ease);
     }
+    if (t >= 1) this.tw = null;
     this.write();
     this.emit();
-    if (t < 1) this.raf = requestAnimationFrame(this.tick);
-    else this.tw = null;
+    if (this.tw) this.raf = requestAnimationFrame(this.tick);
   };
 
   private write(): void {
     const s = this.root.style;
     const d = this.root.dataset;
     const isTravel = document.documentElement.dataset.stageMode === 'travel';
-    const mid = this.k > 0.001 && this.k < 0.999;
+    // 穿行过渡全程（只要 tw 在跑，包括 easeInOut 首尾 k≈1 / k≈0 的几帧）都走直写通道，
+    // 杜绝首尾帧落回根元素改 --lk/--lo/--ls 触发 1500+ 节点全树样式重算
+    const mid = !!this.tw;
     if (isTravel && mid) {
-      // 穿行过渡期（0<k<1）：直接写 5 个合成层节点的 opacity，避免每帧在 .app 上改 --lk/--lo/--ls 导致整棵 140 卡星云子树全量样式重算
+      // 穿行过渡期：直接写 5 个合成层节点的 opacity，避免每帧在 .app 上改 --lk/--lo/--ls 导致整棵 140 卡星云子树全量样式重算
       this.travelDirect = true;
       const r = this.root;
-      const inv = (1 - this.k).toFixed(4);
+      const inv = (this.mode === 'roam' ? Math.max(0.001, 1 - this.k) : 1 - this.k).toFixed(4);
       const ks = this.k.toFixed(4);
       const st = r.querySelector<HTMLElement>('.stage-3d');
       if (st) st.style.opacity = inv;
@@ -443,21 +458,41 @@ export class ListenDirector {
         if (ps) ps.style.setProperty('--lk', ks);
       }
       if (!d.lk) d.lk = 'on';
-      if (this.k >= 0.98) d.lkFull = 'on';
-      else delete d.lkFull;
+      // 退回漫游时首帧立刻解除 data-lk-full 并给 0.001 透明度，让 .stage-3d（140 卡）在 easeInOut 起步静止期完成 GPU 唤醒，杜绝飞行中段掉帧
+      if (this.mode === 'listen' && this.k >= 0.98) {
+        if (!d.lkFull) d.lkFull = 'on';
+      } else if (d.lkFull) {
+        delete d.lkFull;
+      }
       listenBus.k = this.k;
       return;
     }
     this.clearTravelDirect();
-    s.setProperty('--lk', this.k.toFixed(4));
-    s.setProperty('--lo', this.lyrOp.toFixed(4));
-    s.setProperty('--ls', (1 + (this.cfg.style === 'sink' ? 0.04 : 0.03) * this.k).toFixed(4));
-    if (this.k > 0.001) d.lk = 'on';
-    else delete d.lk;
-    if (this.k >= 0.98) d.lkFull = 'on';
-    else delete d.lkFull;
-    if (this.lyrTop) d.lyrTop = 'on';
-    else delete d.lyrTop;
+    if (this.mode === 'roam') {
+      if (d.listen) delete d.listen;
+      if (d.listenPin) delete d.listenPin;
+    }
+    const lkS = this.k.toFixed(4);
+    const loS = this.lyrOp.toFixed(4);
+    const lsS = (1 + (this.cfg.style === 'sink' ? 0.04 : 0.03) * this.k).toFixed(4);
+    if (s.getPropertyValue('--lk') !== lkS) s.setProperty('--lk', lkS);
+    if (s.getPropertyValue('--lo') !== loS) s.setProperty('--lo', loS);
+    if (s.getPropertyValue('--ls') !== lsS) s.setProperty('--ls', lsS);
+    if (this.k > 0.001) {
+      if (!d.lk) d.lk = 'on';
+    } else if (d.lk) {
+      delete d.lk;
+    }
+    if (this.k >= 0.98) {
+      if (!d.lkFull) d.lkFull = 'on';
+    } else if (d.lkFull) {
+      delete d.lkFull;
+    }
+    if (this.lyrTop) {
+      if (!d.lyrTop) d.lyrTop = 'on';
+    } else if (d.lyrTop) {
+      delete d.lyrTop;
+    }
     listenBus.k = this.k;
   }
 

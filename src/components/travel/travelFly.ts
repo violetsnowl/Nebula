@@ -476,7 +476,8 @@ export function createTravelFlySession(
           const sg = ui >= splitUi ? s1! : s0;
           const em = gu.left + gu.w / 2;
           const pr = projectUnit(em, invW, sg, fs, cyEms[ui] ?? domCyEm, nextWarp, nextCam);
-          applyCharCurve(ui, units[ui]!, sg, pr, nextWarp, nextCam, curveK);
+          // curveK < 0 表示由外层 --cv 直接控制解弯（穿行 → 漫游），跳过逐字母重算与样式写入
+          if (curveK >= 0) applyCharCurve(ui, units[ui]!, sg, pr, nextWarp, nextCam, curveK);
           const pObj = places[ui]!;
           pObj.x = pr.x;
           pObj.y = pr.y;

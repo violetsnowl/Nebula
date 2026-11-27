@@ -6,6 +6,35 @@
 
 ---
 
+## #315 — 2026-11-27 — 穿行 → 漫游专项性能优化与一镜到底节奏精修（760ms easeInOut、零全树样式风暴、零重排追踪）
+
+**目标**：解决用户桌面实测反馈的「其他转场已流畅，但穿行 → 漫游依旧掉帧明显，且一镜到底歌词转场几乎看不出来」问题。通过 CDP Timeline 与 DOM 变更追踪定位全部根因并一并根除。
+
+**改动点**
+- **穿行 → 漫游节奏与防误判方向**（`src/lib/listenMode.ts`、`src/components/TravelSpace.tsx`）：
+  - 原 `EXIT_MS = 380ms` + `easeOut(1-(1-t)³)` 在前 150ms 即走完 78% 位移（有效可见飞行不足 7 帧），改为穿行退场专用 `TRAVEL_EXIT_MS = 760ms` + `easeInOut`（与听音空间回飞的 700ms 齐平，其他舞台仍保持 380ms），让 3D 弧线歌词从容起飞、解弯、落回漫游位；
+  - `listenBus` 新增 `target: 0 | 1` 显式方向字段，`startMorph` 不再按 `k < 0.5` 猜方向，彻底杜绝首帧稍慢时方向误判；
+  - 退场期 `boxK` 改为 `smooth(k / 0.75)` 柔和释放字后封面暗化，避免首帧背景突然变亮。
+- **消除 7 次 1,500+ 节点全树样式重算与 .stage-3d 飞行中段唤醒卡顿**（`src/lib/listenMode.ts`、`src/components/travel-stage.css`、`src/components/LyricsLayer.tsx`）：
+  - `listenMode.ts` 将穿行直写通道条件从 `0.001 < k < 0.999` 改为 `!!this.tw`（并在 `t >= 1` 置空 `tw` 后执行终帧写入），并对所有 `dataset` / CSS 变量加值比较守卫；常驻穿行退出时推迟至 `k = 0` 收尾再移除 `data-listen / data-listen-pin`，彻底根除 `easeInOut` 首尾 7 帧落回根 `.app` 触发 7 次 1,491–1,716 节点 `UpdateLayoutTree` 风暴及收起键/播放条首帧闪跳；
+  - 退出穿行首帧即解除 `data-lk-full` 并给 `.stage-3d` 设 `0.001` 不可见透明度，让 140 张星云卡片在 `easeInOut` 起步几乎静止的前 60ms 内提前完成 GPU 唤醒（同时 `travel-stage.css` 稳态保留 `will-change: opacity`、并设 `.lyrics-layer { transform: none }` 消除 `--ls: 1.04` 尾帧 4% 缩跳），根除此前飞行中段的 48–54ms 单帧长卡；
+  - `LyricsLayer.tsx` 仅在非穿行且处于聆听态写 `:root` `--sdep / --sopen`；穿行模式下漫游歌词固定按漫游态（`lk = 0`）排版，消除每帧改 `blur()` 重绘与 16% 缩放漂移；跳过穿行与漫游态的 `el.offsetHeight` 强制重排。
+- **飞字桥启动批量读写分离 + 零重排漫游终点追踪 + `--cv` 零 DOM 解弯**（`src/lib/listen/flyTransition.ts`、`src/components/travel/travelFly.ts`、`src/components/TravelSpace.tsx`）：
+  - `LsFly` 构造与 `attachBatch` 改为严格读写分离（先批量读样式 → 批量挂节点 → 单次批量量框，且有 `place` 时跳过 `placeOf`），把起飞首帧 20+ 次交错重排压成 2 次；
+  - 穿行 → 漫游的 `roamSide` 提供纯 JS `srcHost.style.transform` 增量追踪 `place(prev)` 回调，飞行全程 0 次漫游词 `getBoundingClientRect / getComputedStyle` 重排；
+  - `LsFly` 新增 `setCurveA(k)` 直接改起点侧 `--cv` 解弯，穿行 → 漫游不再每帧重算与拷贝 40+ `.ch` 字母样式。
+
+**验证**
+- 真实 2877 首曲库《Telescope》+ 140 挂载星云卡片（165Hz，`scratch/bench-trans.cjs`）五条转场全部 **`over25: 0`（零掉帧）**：
+  - 漫游 → 穿行（首次）：`avg 6.19ms / p95 6.2ms / max 24.3ms / over25: 0`（~162 FPS）；
+  - 漫游 → 穿行（热切换）：`avg 6.63ms / p95 12.1ms / max 18.2ms / over25: 0`（~151 FPS）；
+  - 穿行 → 漫游：**`avg 7.11ms / p95 12.2ms / max 18.2ms / over25: 0`**（~141 FPS，零掉帧；1080p 140 实图卡逐帧追踪中一镜到底飞行由 27 帧/145ms 跳帧提升至 **60+ 帧/650ms 完整丝滑飞行**）；
+  - 穿行 → 听音空间：`avg 6.11ms / p95 6.2ms / max 18.2ms / over25: 0`（~164 FPS）；
+  - 听音空间 → 穿行：`avg 6.10ms / p95 6.2ms / max 12.2ms / over25: 0`（~164 FPS）。
+- `$env:pnpm_config_verify_deps_before_run='false'; pnpm build; pnpm qa` 全绿（0 控制台错误；`travelRoamMorph: { dir: "out", n: 4, err: 0, clean: { layers: 0, hidden: 0 } }`；`travelLsFly: { inErr: 0, outErr: 0.02 }`；`travelGL` `avg 0.33ms / p95 0.6ms`）。
+
+**遗留与风险**：默认体验不变（实验开关 `lab.travelGL` 仍默认关）。待用户桌面复验「穿行 → 漫游」流畅度与一镜到底观感满意后，执行最终收口（步骤 4.6 & 4.7）。
+
 ## #314 — 2026-11-27 — 穿行转场性能优化：消除漫游↔穿行与穿行↔听音空间掉帧（真实 2877 首实测 138–165 FPS）
 
 **目标**：修复用户在视觉验收通过后反馈的「漫游主舞台 ↔ 穿行」与「穿行 ↔ 听音空间」转场掉帧问题（尤其漫游 ↔ 穿行掉帧最重），在不改动视觉效果的前提下彻底清理每帧重排、全屏滤镜与 140 卡星云重算。

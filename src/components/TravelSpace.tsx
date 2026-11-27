@@ -1377,7 +1377,7 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       morphInBlendT0 = 0;
       if (pageBus.morph) pageBus.morph = false;
     };
-    const startMorph = (i: number, d: LS, e: EngineLine, segs: Seg[], state: LS['state'], k: number, t: number): boolean => {
+    const startMorph = (i: number, d: LS, e: EngineLine, segs: Seg[], state: LS['state'], t: number): boolean => {
       if (!flyHost || reduceMotion) return false;
       const caption = roamRef.current === 'caption';
       const host = document.querySelector<HTMLElement>(
@@ -1387,7 +1387,7 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       const src = [...host.querySelectorAll<HTMLElement>(':scope > .u, :scope > .fl-whole')];
       if (!src.length) return false;
       syncPalette();
-      const dir: 'in' | 'out' = k < 0.5 ? 'in' : 'out';
+      const dir: 'in' | 'out' = listenBus.target === 1 ? 'in' : 'out';
       const slots0 = createTravelFlySession(flyHost, i, e, d.g, d.fs, segs, d.warp, camNow(), t, schemeRef.current, state, dir === 'in' ? 0 : 1);
       if (!slots0) return false;
       if (src.length !== slots0.units.length || normLyricText(src.map((u) => u.textContent || '').join('')) !== normLyricText(slots0.text)) {
@@ -1395,17 +1395,67 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
         return false;
       }
       const srcHost = (caption ? host : host.closest<HTMLElement>('.flow-lyric')) ?? host;
-      const mRot = (srcHost.style.transform.match(/rotate\((-?[\d.]+)deg\)/) ?? [])[1];
-      const srcRot = caption ? 0 : mRot ? parseFloat(mRot) : 0;
+      const parseRoamXf = (tf: string) => {
+        const mT = tf.match(/translate3d\((-?[\d.]+)px,\s*(-?[\d.]+)px/);
+        const mR = tf.match(/rotate\((-?[\d.]+)deg\)/);
+        const mS = tf.match(/scale\((-?[\d.]+)\)/);
+        return {
+          tx: mT ? parseFloat(mT[1]!) : 0,
+          ty: mT ? parseFloat(mT[2]!) : 0,
+          rot: mR ? parseFloat(mR[1]!) : 0,
+          sc: mS ? parseFloat(mS[1]!) : 1,
+        };
+      };
+      const initXf = caption ? { tx: 0, ty: 0, rot: 0, sc: 1 } : parseRoamXf(srcHost.style.transform);
+      const srcRot = caption ? 0 : initXf.rot;
       const roamOp = caption ? 1 : 0.5;
-      const roamSide = (el: HTMLElement): FlySide => ({
-        el,
-        ctx: el.classList.contains('fl-whole') ? 'lpm-r' : 'lpm-r is-grad',
-        rot: srcRot,
-        vert: false,
-        opacity: roamOp,
-        endOpacity: roamOp,
-      });
+      // 穿行 → 漫游时用纯 JS 解析 srcHost.style.transform 增量追踪终点，跳过每帧对漫游词调用 getBoundingClientRect / getComputedStyle 的强制重排
+      const roamSide = (el: HTMLElement): FlySide => {
+        let lastTx = initXf.tx;
+        let lastTy = initXf.ty;
+        let lastRot = initXf.rot;
+        let lastSc = initXf.sc;
+        const side: FlySide = {
+          el,
+          ctx: el.classList.contains('fl-whole') ? 'lpm-r' : 'lpm-r is-grad',
+          rot: srcRot,
+          vert: false,
+          opacity: roamOp,
+          endOpacity: roamOp,
+          place:
+            dir === 'out'
+              ? (prev) => {
+                  if (!prev) {
+                    if (!caption) {
+                      const xf = parseRoamXf(srcHost.style.transform);
+                      lastTx = xf.tx;
+                      lastTy = xf.ty;
+                      lastRot = xf.rot;
+                      lastSc = xf.sc;
+                      side.rot = xf.rot;
+                    }
+                    return null;
+                  }
+                  if (caption) return prev;
+                  const xf = parseRoamXf(srcHost.style.transform);
+                  if (Math.abs(xf.sc - lastSc) > 0.002 || Math.abs(xf.rot - lastRot) > 0.05) {
+                    lastTx = xf.tx;
+                    lastTy = xf.ty;
+                    lastRot = xf.rot;
+                    lastSc = xf.sc;
+                    side.rot = xf.rot;
+                    return null;
+                  }
+                  const dx = xf.tx - lastTx;
+                  const dy = xf.ty - lastTy;
+                  lastTx = xf.tx;
+                  lastTy = xf.ty;
+                  return { x: prev.x + dx, y: prev.y + dy, f: prev.f, rot: prev.rot, sx: prev.sx, sy: prev.sy };
+                }
+              : undefined,
+        };
+        return side;
+      };
       const pairs: FlyPair[] =
         dir === 'in'
           ? src.map((el, j) => ({ from: roamSide(el), to: slots0.sides[j]! }))
@@ -1896,7 +1946,7 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
         const bd: Bound = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity };
         // 漫游 ↔ 穿行一镜到底：在保持场景淡入淡出与轻纵深推入的同时，当前句逐字飞向/飞离 3D 曲线（允许最多 4 帧等漫游 DOM 对齐）
         if (i === cur && !done && !lsNow && !lsFly && !boost && k > 0.001 && k < 0.999 && !morphFly && morphTries < 4) {
-          morphTries = startMorph(i, d, e, segs, state, k, t) ? 99 : morphTries + 1;
+          morphTries = startMorph(i, d, e, segs, state, t) ? 99 : morphTries + 1;
         }
         // 衬托层强度：下一句约 0.35，开唱前后 0.6 秒升到 1，唱完掠过时随推开淡出；落地句叠加柔和渐显，不瞬弹
         const rawAuraK =
@@ -1908,8 +1958,8 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
         const flyingMorphOut = morphDir === 'out' && morphSlots?.lineIdx === i;
         // 飞入穿行抵达后锁位交叉淡化（0→1 / 1→0）；飞出穿行保持隐藏 WebGL2 原样
         const glLineK = flyingLsIn || flyingMorphOut ? 0 : flyingLsOut ? glLsOutK : flyingMorphIn ? glMorphInK : 1;
-        // 字后封面压暗与后句让位提前生效：漫游→穿行首帧即就位（随画布整体淡入，落地零变化）；听音空间→穿行在飞行前 78% 舒缓铺开，落地前已就位
-        const boxK = flyingLsIn || flyingMorphOut ? 0 : flyingMorphIn ? 1 : flyingLsOut ? (lsOutBlendT0 > 0 ? 1 : smooth(lsOutP / 0.78)) : 1;
+        // 字后封面压暗与后句让位提前生效：漫游→穿行首帧即就位（随画布整体淡入，落地零变化）；穿行→漫游随退场平滑松开不瞬亮；听音空间→穿行在飞行前 78% 舒缓铺开
+        const boxK = flyingLsIn ? 0 : flyingMorphOut ? smooth(k / 0.75) : flyingMorphIn ? 1 : flyingLsOut ? (lsOutBlendT0 > 0 ? 1 : smooth(lsOutP / 0.78)) : 1;
         const lineTrK = i === landingLineIdx ? trK * landingAura : trK;
         if (!flyingLsIn && auraK > 0.01) emitAura(d, segs, auraK, i === cur ? S : -1, t);
         if (glLineK > 0.004 && o > 0.004) emitLine(d, segs, o * glLineK, mode, blur, lineTrK, bd, i > cur && curBox ? curBox : null);
@@ -1921,12 +1971,19 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       }
       lastGeos = geos;
       lastCur = cur;
-      // 漫游 ↔ 穿行一镜到底逐帧同步：飞行中逐字母渐弯贴合 3D 弧线，抵达后 220ms 锁位融化淡出
+      // 漫游 ↔ 穿行一镜到底逐帧同步：飞入时逐字母渐弯贴合 3D 弧线并 220ms 锁位淡出；飞出时直接调起点侧 --cv 解弯（零逐字母 DOM 写入）
       if (morphFly && morphSlots) {
         const gM = geos.find((g) => g.d.i === morphSlots!.lineIdx);
         if (gM) {
-          const mCurveK = morphDir === 'in' ? (morphInBlendT0 > 0 ? 1 : smooth((k - 0.25) / 0.65)) : 1 - smooth((1 - k) / 0.55);
-          morphSlots.update(gM.segs, gM.d.warp, camNow(), t, scheme, gM.state, mCurveK);
+          const outP = 1 - k;
+          if (morphDir === 'in') {
+            const mCurveK = morphInBlendT0 > 0 ? 1 : smooth((k - 0.25) / 0.65);
+            morphSlots.update(gM.segs, gM.d.warp, camNow(), t, scheme, gM.state, mCurveK);
+          } else if (outP < 0.85) {
+            const mCurveK = 1 - smooth((outP - 0.08) / 0.62);
+            morphFly.setCurveA(mCurveK);
+            morphSlots.update(gM.segs, gM.d.warp, camNow(), t, scheme, gM.state, -1);
+          }
           if (morphInBlendT0 > 0) {
             morphFly.render(1);
             morphFly.setLayerOpacity(1 - glMorphInK);
@@ -1935,7 +1992,7 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
               morphTries = 0;
             }
           } else {
-            morphFly.render(morphDir === 'in' ? k : 1 - k);
+            morphFly.render(morphDir === 'in' ? k : outP);
           }
         } else {
           endMorph();

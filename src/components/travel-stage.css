@@ -133,18 +133,24 @@
   color: rgba(255, 255, 255, 0.62);
 }
 
-/* 退让：聆听中星云、漫游歌词与前奏歌名随交接进度纯合成淡出（关掉漫游的整屏 brightness/saturate/blur 滤镜，避免 2K 140 卡逐帧滤镜重绘），完全进入后不再绘制 */
+/* 退让：聆听中星云、漫游歌词与前奏歌名随交接进度纯合成淡出（关掉漫游的整屏 brightness/saturate/blur 滤镜，避免 2K 140 卡逐帧滤镜重绘），完全进入后不再绘制。
+   穿行模式下稳态保留 will-change: opacity，避免退回漫游首帧移除 data-lk-full 时重建 140 卡合成层触发掉帧；同时关掉漫游歌词的 --ls 4% 放大，杜绝飞回漫游尾帧缩跳 */
+:root[data-stage-mode='travel'] .app[data-listen-style] .stage-3d {
+  will-change: opacity;
+}
+:root[data-stage-mode='travel'] .app[data-listen-style] .lyrics-layer {
+  will-change: opacity;
+  transform: none;
+}
 :root[data-stage-mode='travel'] .app[data-listen-style][data-lk] .stage-3d {
   opacity: calc(1 - var(--lk));
   filter: none;
-  will-change: opacity;
 }
 :root[data-stage-mode='travel'] .app[data-lk] .bg-layer {
   filter: none;
 }
 :root[data-stage-mode='travel'] .app[data-listen-style][data-lk-full] .stage-3d {
   visibility: hidden;
-  will-change: auto;
 }
 :root[data-stage-mode='travel'] .app[data-lk] .lyrics-layer {
   opacity: calc(1 - var(--lk));
