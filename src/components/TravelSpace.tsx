@@ -19,6 +19,8 @@ import { INST, KIND_CHIP, KIND_COVER, KIND_GLYPH, KIND_LIGHT, KIND_STROKE, Rende
 import { DREST, F, FAR, buildRoute, buildSlots, camAt, hashStr, hueOffsetAt, lowerBound, pathX, pathY, slotRadius, songHue } from './travel/route';
 import { BEATS, locate, placeSegs, planShapes, segAt, splitAt, type Seg, type V3 } from './travel/pathText';
 import { tunnelBasis } from './travel/tunnel';
+import { planChoreo } from './travel/choreo';
+import { warpRing, type Ring } from './travel/moves';
 import { wordRt, type WordRt } from './travel/wordState';
 import './listen/lyric-words.css';
 import './travel-stage.css';
@@ -53,6 +55,7 @@ function hash01(i: number, salt: number): number {
 
 const usable = (l: LyricLineUI | undefined) => !!l && (!!l.text?.trim() || !!l.words?.length);
 const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
+const DEG = Math.PI / 180;
 const smooth = (x: number) => {
   const t = clamp(x, 0, 1);
   return t * t * (3 - 2 * t);
@@ -96,6 +99,9 @@ interface LS {
   state: 'future' | 'cur' | 'past';
   active: boolean;
   done: boolean;
+  /** 环（招式）：这一帧的环；rf = 转到正前方的排版坐标（平滑过的） */
+  ring: Ring | null;
+  rf: number;
 }
 
 interface Bound {
@@ -115,7 +121,7 @@ interface Geo {
   bd: Bound;
 }
 
-type ProbeLine = { i: number; text: string; x: number; y: number; w: number; h: number; op: number; state: string; done: boolean; kind: string };
+type ProbeLine = { i: number; text: string; x: number; y: number; w: number; h: number; op: number; state: string; done: boolean; kind: string; move: string };
 
 export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Props) {
   const lab = useSpaceLab();
@@ -254,6 +260,8 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
     const { slots, small } = buildSlots(route, tracks, baseHue, hashStr(songKey));
     /** 每句的句形（斜坡 / 波 / 扬尾 / 拐角 / 弧，§9.3）：按句组轮换，同一首歌每次一样 */
     const plan = planShapes(els, shape, hashStr(songKey));
+    /** 每句的招式（穿针 / 环 / 卷起 / 立起 / 星座，§9.4–9.5）：同一首歌每次一样 */
+    const choreo = planChoreo(els, shape).moves;
     const { rMin, rMax } = slotRadius(small);
     const basis = tunnelBasis(slots, rMin, rMax);
 
@@ -327,7 +335,7 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
       const g = atlas.build(e, font, showTr && e.tr ? e.tr : null);
       buildMax = Math.max(buildMax, performance.now() - tb);
       if (!g) return null;
-      const d: LS = { i, g, ...sizeLine(e, g), fix: [0, 0], w: wordRt(e, g), state: 'future', active: false, done: false };
+      const d: LS = { i, g, ...sizeLine(e, g), fix: [0, 0], w: wordRt(e, g), state: 'future', active: false, done: false, ring: null, rf: 0 };
       d.fix = fixOf(d);
       return d;
     };
@@ -508,7 +516,17 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
             yB -= lift;
             // 字母中点在曲线上的位置与方向：字沿切向摆、沿「向下」方向竖着
             const sMid = ((xl + xr) / 2 - sg.e0 - sg.w / 2) * fs;
-            const { p, t: tg, d: dn } = segAt(sg, sMid);
+            let { p, t: tg, d: dn } = segAt(sg, sMid);
+            let vis = 1;
+            if (d.ring && !isTr) {
+              const em = (xl + xr) / 2;
+              const w = warpRing(d.ring, em, em / Math.max(0.5, g.width), p, tg, dn, cam3());
+              p = w.p;
+              tg = w.t;
+              dn = w.d;
+              vis = w.vis;
+            }
+            if (vis < 0.01) continue;
             const hx = ((xr - xl) / 2) * fs;
             const hy = ((yB - yt) / 2) * fs;
             const cy0 = ((yt + yB) / 2) * fs;
@@ -521,11 +539,11 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
               tg[0] * hx, tg[1] * hx, tg[2] * hx,
               dn[0] * hy, dn[1] * hy, dn[2] * hy,
               (gu.ax + le * gu.px) / aw, gu.ay / ATLAS_H, (gu.ax + re * gu.px) / aw, (gu.ay + gu.bandEm * gu.px) / ATLAS_H,
-              KIND_GLYPH, 0, isTr ? op * trK : op,
+              KIND_GLYPH, 0, (isTr ? op * trK : op) * vis,
               P, f, g0, g1,
               isTr ? 3 : mode, isTr ? 0 : glow * 0.9, blur, isTr ? 0.6 : 1,
             );
-            if (!isTr || trK > 0.3) {
+            if ((!isTr || trK > 0.3) && vis > 0.3) {
               // 外接框只量字形本体（不含暗晕的留白）
               const ix = hx * 0.8;
               const iy = hy * 0.62;
@@ -548,21 +566,48 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
       }
     };
 
-    /** 一句在整句排版坐标 e（em）处、字母中线（基线往上约 0.36em）的世界位置与切向 */
-    const lineAt = (segs: Seg[], fs: number, e: number): { p: V3; t: V3 } => {
-      const { sg, s } = locate(segs, e, fs);
-      const r = segAt(sg, s);
-      return { p: [r.p[0] - r.d[0] * 0.36 * fs, r.p[1] - r.d[1] * 0.36 * fs, r.p[2] - r.d[2] * 0.36 * fs], t: r.t };
+
+    /**
+     * 主角封面（§9.6）：招式套住的那张，用正在播放的这首歌的封面（钩子句和这首歌绑在一起），放在环心、稍压暗，
+     * 好让绕在前面的字读得出。
+     */
+    const heroUrl = song?.cover || tracks[0]?.cover || '';
+    const emitHero = (r: Ring, a: number) => {
+      if (a < 0.01) return;
+      const dz = r.C[2] - pZ;
+      if (dz < NEAR * 2) return;
+      const half = r.R * 0.56;
+      const layer = heroUrl ? covers.layerOf(heroUrl, frameNo) : -1;
+      const chip = layer < 0 ? [0.2, 0.2, 0.24] : null;
+      put(
+        dz,
+        r.C[0], r.C[1] - r.R * 0.3, r.C[2],
+        half, 0, 0,
+        0, half, 0,
+        0, 0, 1, 1,
+        layer < 0 ? KIND_CHIP : KIND_COVER, Math.max(0, layer), a * 0.92,
+        -0.7, 0, 0.3, 0,
+        chip ? chip[0]! : 0, chip ? chip[1]! : 0, chip ? chip[2]! : 0, 0,
+      );
     };
+
+    /** 一句在整句排版坐标 e（em）处、字母中线（基线往上约 0.36em）的世界位置与切向；按这句这一帧的招式变形（环会把字挪到环上） */
+    const pointOn = (d: LS, segs: Seg[], e: number): { p: V3; t: V3 } => {
+      const { sg, s } = locate(segs, e, d.fs);
+      let { p, t, d: dn } = segAt(sg, s);
+      if (d.ring) ({ p, t, d: dn } = warpRing(d.ring, e, e / Math.max(0.5, d.g.width), p, t, dn, cam3()));
+      return { p: [p[0] - dn[0] * 0.36 * d.fs, p[1] - dn[1] * 0.36 * d.fs, p[2] - dn[2] * 0.36 * d.fs], t };
+    };
+    const cam3 = (): V3 => [pX, pY, pZ];
 
     /**
      * 光的飞行路线（§9.3）：上一句句尾 → 下一句句首，三次贝塞尔，切向接着两句的走向（把手短一点，弧线平缓、不打圈）。
      * 起点固定在「唱完那一刻」的句尾：唱完的句子会往外侧滑走，光点不跟着走，留在路上等，再从那里飞向下一句。
      */
-    const tailRest = (d: LS) => lineAt(placeSegs(d.g, d.split, d.i, anchorOf(d, 0), d.fs, plan[d.i]!, 1), d.fs, d.g.width);
+    const tailRest = (d: LS) => pointOn(d, placeSegs(d.g, d.split, d.i, anchorOf(d, 0), d.fs, plan[d.i]!, 1), d.g.width);
     const threadCurve = (a: Geo, b: Geo): ((u: number) => V3) => {
       const A = tailRest(a.d);
-      const B = lineAt(b.segs, b.d.fs, 0);
+      const B = pointOn(b.d, b.segs, 0);
       const L = Math.hypot(B.p[0] - A.p[0], B.p[1] - A.p[1], B.p[2] - A.p[2]);
       const c1: V3 = [A.p[0] + A.t[0] * L * 0.3, A.p[1] + A.t[1] * L * 0.3, A.p[2] + A.t[2] * L * 0.3];
       const c2: V3 = [B.p[0] - B.t[0] * L * 0.3, B.p[1] - B.t[1] * L * 0.3, B.p[2] - B.t[2] * L * 0.3];
@@ -656,9 +701,40 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
       { off: 0.52, amp: 0.13, ph: 2.1, w: 3, a: 0.9 },
       { off: 0.95, amp: 0.2, ph: 4.2, w: 6, a: 0.55 },
     ];
-    const emitAura = (d: LS, segs: Seg[], k: number, S: number, t: number) => {
+    const emitAura = (d: LS, segs: Seg[], kIn: number, S: number, t: number) => {
       const fs = d.fs;
       const col = pal.glow;
+      // 环：气流丝换成两圈很淡的轨道光（Demo 3 的轨道环），正前方唱到的地方亮一点；后半圈在封面后面被挡住
+      const rg = d.ring;
+      const k = rg ? kIn * (1 - rg.k) : kIn;
+      if (rg && rg.k > 0.01) {
+        for (const [mul, da, a0] of [
+          [1.16, 0.05, 1],
+          [1.32, -0.05, 0.6],
+        ] as const) {
+          const R2 = rg.R * mul;
+          const al = rg.a + da;
+          const sa = Math.sin(al);
+          const ca = Math.cos(al);
+          let prev: V3 | null = null;
+          const N2 = 72;
+          for (let q = 0; q <= N2; q++) {
+            const th = (q / N2) * 2 * Math.PI;
+            const cur: V3 = [rg.C[0] + R2 * Math.sin(th), rg.C[1] + R2 * Math.cos(th) * sa, rg.C[2] - R2 * Math.cos(th) * ca];
+            if (prev) {
+              const tm = ((q - 0.5) / N2) * 2 * Math.PI;
+              const front = 0.5 + 0.5 * Math.cos(tm);
+              const flow = 0.55 + 0.45 * Math.sin(3 * tm - 1.4 * t + mul * 3);
+              const wrap = Math.atan2(Math.sin(tm), Math.cos(tm));
+              const g = S >= 0 ? Math.exp(-((wrap / 0.32) ** 2)) : 0;
+              const A = kIn * rg.k * a0 * (0.05 * flow * (0.35 + 0.65 * front) + 0.2 * g);
+              if (A > 0.002) strokePiece(prev, cur, 2 + 2 * g, A, col, 1.5);
+            }
+            prev = cur;
+          }
+        }
+      }
+      if (k < 0.01) return;
       const trOff = d.g.tr && showTr ? 0.72 : 0;
       const sing = S >= 0 ? locate(segs, S, fs) : null;
       const last = segs.length - 1;
@@ -924,6 +1000,26 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
         const turnK = smooth((t - (e.s - TURN_FROM)) / (TURN_FROM - TURN_TO));
         const passK = smooth((t - e.e - 0.05) / 1.2);
         const segs = placeSegs(d.g, d.split, i, anchorOf(d, passK), d.fs, plan[i]!, turnK);
+        // —— 招式：环（§9.4）——开唱前 1.7–0.4 秒绕上去，唱完 0.15 秒后 0.9 秒内松开、回到路上（随后掠过）
+        const mv = choreo[i]!;
+        d.ring = null;
+        if (mv.move === 'ring') {
+          const rk = smooth((t - (e.s - 1.7)) / 1.3) * (1 - smooth((t - e.e - 0.15) / 0.9));
+          // 字只占环正面约 140°（设计稿原写「周长约为句长 1.15 倍」，实测短句的环直径只有两三个字宽，正面一次只露两三个字，读不出来）。
+          // 开唱前整句偏左居中朝前；唱的时候只在句子中间那段跟着转，正在唱的字始终在正前方 ±20° 内，整句一直大致看得见
+          const w = d.g.width;
+          const target = t < e.s ? 0.35 * w : clamp(S >= 0 ? S : t > e.e ? w : d.rf, 0.35 * w, 0.65 * w);
+          if (d.rf === 0) d.rf = target;
+          d.rf += (target - d.rf) * (1 - Math.exp(-dt * 6));
+          if (rk > 0.001) {
+            const R = (w * d.fs) / (140 * DEG);
+            const a = mv.side * 24 * DEG;
+            const an = anchorOf(d, 0);
+            // 正前方（离镜头最近、字最正）落在锚点上
+            d.ring = { C: [an[0], an[1] - R * Math.sin(a), an[2] + R * Math.cos(a)], R, a, k: rk, front: d.rf, fs: d.fs, width: d.g.width };
+            emitHero(d.ring, rk * o);
+          }
+        }
         const mode = d.w ? (state === 'cur' ? 1 : state === 'past' ? 2 : 0) : t >= e.s ? 2 : 0;
         const blur = done ? smooth((820 - dz) / 440) : 0;
         const trK = smooth((t - e.s + 0.05) / 0.45);
@@ -934,8 +1030,8 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
         if (auraK > 0.01) emitAura(d, segs, auraK, i === cur ? S : -1, t);
         if (o > 0.004) emitLine(d, segs, o, mode, blur, trK, bd);
         geos.push({ d, segs, op: o, dz, state, bd });
-        if (S >= 0) lightPt = lineAt(segs, d.fs, S).p;
-        if (bd.x1 > bd.x0) probeLines.push({ i, text: e.text, x: bd.x0, y: bd.y0, w: bd.x1 - bd.x0, h: bd.y1 - bd.y0, op: o, state: d.state, done, kind: plan[i]!.kind });
+        if (S >= 0) lightPt = pointOn(d, segs, S).p;
+        if (bd.x1 > bd.x0) probeLines.push({ i, text: e.text, x: bd.x0, y: bd.y0, w: bd.x1 - bd.x0, h: bd.y1 - bd.y0, op: o, state: d.state, done, kind: plan[i]!.kind, move: choreo[i]!.move });
       }
 
       // —— 光的飞行（§9.3，2026-11-27 用户反馈后改：不再常驻光丝，免得像隧道里的蛛丝、把句子「扯直」）——
@@ -952,7 +1048,7 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
         if (t > fl.f1 + fl.lag) {
           // 光尾已收拢：还没开唱就停在句首等
           if (a === cur) {
-            lightPt = lineAt(gb.segs, gb.d.fs, 0).p;
+            lightPt = pointOn(gb.d, gb.segs, 0).p;
             lingering = true;
           }
           continue;
@@ -1110,6 +1206,7 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
           cache: covers.stats(),
           quads: n,
           light: lightMode,
+          moves: choreo.map((m, i) => ({ i, m: m.move, s: els[i]!.s, e: els[i]!.e })).filter((x) => x.m !== 'none'),
           buildMax,
           atlasTiming: atlas.timing.slice(-12),
         };

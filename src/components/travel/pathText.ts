@@ -90,8 +90,10 @@ export const BEATS: ReadonlyArray<readonly [number, number]> = [
 // ---------------------------------------------------------------- 句形规划
 
 const norm = (t: string) => t.normalize('NFKC').toLowerCase().replace(/[^\p{L}\p{N}]/gu, '');
+/** 比较两句是否同一句（去标点、大小写） */
+export const normText = norm;
 /** 估计句宽（em）：只用来挑句形（实际排版宽度要等字形画好） */
-function estEm(t: string): number {
+export function estEm(t: string): number {
   let w = 0;
   for (const ch of t) w += /[⺀-鿿가-힯぀-ヿ＀-￯]/.test(ch) ? 1 : ch === ' ' ? 0.28 : 0.5;
   return w;
