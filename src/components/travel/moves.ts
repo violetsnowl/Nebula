@@ -63,3 +63,79 @@ export function warpRing(r: Ring, e: number, u: number, p: V3, t: V3, d: V3, cam
   const vis = smooth((face - 0.12) / 0.38);
   return { p: lerp3(p, q.p, w), t: norm3(lerp3(t, q.t, w)), d: norm3(lerp3(d, q.d, w)), vis: 1 + (vis - 1) * w };
 }
+
+/** 一个招式的变形：输入路上一个字（排版坐标 e，句中位置 u）的位置 / 切向 / 向下，返回变形后的，和可见度 */
+export type Warp = (e: number, u: number, p: V3, t: V3, d: V3) => { p: V3; t: V3; d: V3; vis: number };
+
+/**
+ * 星座：句子按停顿拆成 2–3 截，挂在画面中央 60% 框内的几个「星」上（§9.4）。
+ * 每截是一小段直的字，各自一点倾斜、前后错开一点深度；截与截之间唱到时才连上一根细线（在 TravelSpace 里画）。
+ */
+export interface StarPiece {
+  /** 这截字基线中点（世界） */
+  C: V3;
+  U: V3;
+  V: V3;
+  /** 排版坐标范围（em） */
+  e0: number;
+  e1: number;
+  /** 单位下标范围 [from, to) */
+  from: number;
+  to: number;
+}
+
+/** 截的落点：画面宽度的比例（在开唱距离时），y 向下；2 截 / 3 截各一套，镜像时上下翻 */
+const STAR_LAYOUT: Record<number, ReadonlyArray<readonly [number, number, number, number]>> = {
+  // [x, y, 深度偏移（世界）, 滚转（度）]
+  2: [
+    [-0.14, -0.07, -90, -5],
+    [0.13, 0.08, 70, 4],
+  ],
+  3: [
+    [-0.18, -0.09, -110, -6],
+    [0, 0.08, 80, 5],
+    [0.18, -0.04, -30, -3],
+  ],
+};
+
+export function buildStar(center: V3, units: ReadonlyArray<{ left: number; w: number }>, cuts: number[], fs: number, unit: number, side: number): StarPiece[] {
+  const bounds = [0, ...cuts, units.length];
+  const lay = STAR_LAYOUT[bounds.length - 1] ?? STAR_LAYOUT[3]!;
+  const out: StarPiece[] = [];
+  for (let j = 0; j + 1 < bounds.length; j++) {
+    const from = bounds[j]!;
+    const to = bounds[j + 1]!;
+    const a = units[from]!;
+    const z = units[to - 1]!;
+    const [fx, fy, dz, rd] = lay[Math.min(j, lay.length - 1)]!;
+    const r = side * rd * (Math.PI / 180);
+    out.push({
+      C: [center[0] + fx * unit, center[1] + side * fy * unit, center[2] + dz],
+      U: [Math.cos(r), Math.sin(r), 0],
+      V: [-Math.sin(r), Math.cos(r), 0],
+      e0: a.left,
+      e1: z.left + z.w,
+      from,
+      to,
+    });
+  }
+  void fs;
+  return out;
+}
+
+/** 字在第几截 */
+export function starPieceOf(pieces: StarPiece[], e: number): number {
+  let j = 0;
+  for (let k = 0; k < pieces.length; k++) if (e >= pieces[k]!.e0 - 0.3) j = k;
+  return j;
+}
+
+export function warpStar(pieces: StarPiece[], k: number, fs: number, e: number, p: V3, t: V3, d: V3): { p: V3; t: V3; d: V3; vis: number } {
+  const j = starPieceOf(pieces, e);
+  const pc = pieces[j]!;
+  const w = smooth(k * 1.3 - j * 0.15);
+  if (w <= 0) return { p, t, d, vis: 1 };
+  const x = (e - (pc.e0 + pc.e1) / 2) * fs;
+  const q: V3 = [pc.C[0] + pc.U[0] * x, pc.C[1] + pc.U[1] * x, pc.C[2] + pc.U[2] * x];
+  return { p: lerp3(p, q, w), t: norm3(lerp3(t, pc.U, w)), d: norm3(lerp3(d, pc.V, w)), vis: 1 };
+}
