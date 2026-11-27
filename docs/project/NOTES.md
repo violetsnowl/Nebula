@@ -64,6 +64,10 @@
   - `LyricsLayer` 仅在非穿行且聆听态写 `:root` `--sdep / --sopen`，穿行模式下固定漫游态排版（`lk = 0`）避免逐帧改 `blur()` 重绘与 16% 缩放漂移，且跳过 `el.offsetHeight` 强制重排；
   - `LsFly` 构造与 `attachBatch` 严格读写分离；穿行与漫游两端均经 `FlySide.place` 走零重排坐标（穿行读 3D 投影、漫游纯 JS 追踪 `srcHost.style.transform` 增量），`syncUnitClone` 用 `__tvRev` 脏戳 O(1) 跳过，穿行 → 漫游解弯直接改起点侧 `--cv` 避免每帧拷贝 40+ `.ch` `cssText`；
   - 3D 飞字切勿在旋转词上用屏幕轴非等比 `scale(sx, sy)`（会斜切），应拆 `.ch` 写 `--cx / --cy / --cr` 沿曲线贴齐，测量宿主 `.tv-fly-slot` 设 `--cv: 0` 免干扰探针；连续气流光带须用共享顶点三角形带（`emitRibbon`）而非逐段独立矩形（避免重叠火柴棍感），3D 三点须用抗锯齿实心圆点（`KIND_DOT`）而非纯高斯大光斑。
+- **穿行几何精修、去雾播放条与色带联动避坑**（2026-11-27，#318–#319）：
+  - 斜句或错落双行的后句让位与字后封面压暗不可只用单个轴对齐矩形 AABB（会把斜句空旷区背后的远句误压到 10%、并在封面挖出矩形暗洞），须用 `sampleCircles` 沿曲线采 6–10 个屏幕圆（兼容 `ring / star` 招式与飞入预估）；错落双行时 `emitAura` 第一行仅画上方柔雾、第二行仅画下方两股，避免气流丝从两行字之间横穿；
+  - 穿行聆听态隐藏 `.bp-haze` 须覆盖 `.app[data-listen-bar='dim'][data-lk]:not([data-listen-pin]) .player-surface > *` 的高权重 `opacity` 与 `backdrop-filter`；给 `.tv-fly-host` 动态写当前色带 `--lc-a` 时，须在 `.tv-fly-host` 上重声明 `--tv-ink / --lc-rest`（原值在父级 `.travel-stage` 求值，否则一镜到底替身拿不到动态色带色）；
+  - `pnpm qa` 的 `travelResize` 用固定 `450ms` 等待 `220ms` 防抖重建，若主机短时卡顿导致无头 Chrome 帧数掉到 ~30 帧可能偶现 `rebuilds: 0`（正常跑为 `n=240, rebuilds=1`），遇到时先看 `travelOn.frame.n` 区分环境抖动与真回归。
 - 项目已接入 git；远程为 `github.com/violetsnowl/Nebula`（2026-11-14 改名；旧地址 `violetsnowl/nebula`、`a161858970-ux/nebula` 自动重定向，本地 origin 已更新）；文档随提交维护（docs/）。
 
 ### 歌词署名行过滤（2026-11-21，#233）
