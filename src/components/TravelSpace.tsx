@@ -43,6 +43,14 @@ interface Props {
   onFail: () => void;
 }
 
+/** 0–1 的固定随机（浮尘的位置、速度、闪烁） */
+function hash01(i: number, salt: number): number {
+  let h = (i * 2654435761 + salt * 40503) | 0;
+  h = Math.imul(h ^ (h >>> 15), 2246822519);
+  h = Math.imul(h ^ (h >>> 13), 3266489917);
+  return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
+}
+
 const usable = (l: LyricLineUI | undefined) => !!l && (!!l.text?.trim() || !!l.words?.length);
 const clamp = (v: number, a: number, b: number) => (v < a ? a : v > b ? b : v);
 const smooth = (x: number) => {
@@ -589,40 +597,161 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
      * 光尾：飞行路线上 [u0, u1] 这一截（u1 是光点），越靠光点越亮越粗（画面上尾端约 1px → 光点处约 3.6px），
      * 不是常驻的线：光点飞到之后尾巴很快收拢消失。
      */
+    /**
+     * 一小段光：a → b，横向高斯、叠加（不遮东西）。半宽 hwPx 是画面像素（世界宽 = 像素 × 距离 / F），
+     * hwWorld > 0 时改用世界宽度（光雾这种要跟着字一起变大的）。离镜头 300–800 内淡掉；bias 让它排在同一深度的字前面画（字压在光上）。
+     */
+    const strokePiece = (a: V3, b: V3, hwPx: number, alpha: number, col: number[], bias = 0, hwWorld = 0) => {
+      const mx = (a[0] + b[0]) / 2;
+      const my = (a[1] + b[1]) / 2;
+      const mz = (a[2] + b[2]) / 2;
+      const dz = mz - pZ;
+      if (dz <= NEAR + 40) return;
+      const A = alpha * smooth((dz - 300) / 500);
+      if (A < 0.002) return;
+      const dx = b[0] - a[0];
+      const dy = b[1] - a[1];
+      const dzz = b[2] - a[2];
+      // 方向垂直于这一小段和视线
+      const vx = mx - pX;
+      const vy = my - pY;
+      let wx = dy * dz - dzz * vy;
+      let wy = dzz * vx - dx * dz;
+      let wz = dx * vy - dy * vx;
+      const wl = Math.hypot(wx, wy, wz) || 1;
+      const hw = hwWorld > 0 ? hwWorld : (hwPx * dz) / F;
+      wx = (wx / wl) * hw;
+      wy = (wy / wl) * hw;
+      wz = (wz / wl) * hw;
+      put(dz + bias, mx, my, mz, dx / 2, dy / 2, dzz / 2, wx, wy, wz, 0, 0, 1, 1, KIND_STROKE, 0, A, col[0]!, col[1]!, col[2]!, 0, 0, 0, 0, 0);
+    };
     const TRAIL_N = 24;
     const emitTrail = (curve: (u: number) => V3, u0: number, u1: number, alpha: number) => {
-      const col = pal.glow;
       const span = u1 - u0;
       let a = curve(u0);
       for (let q = 1; q <= TRAIL_N; q++) {
         const b = curve(u0 + (span * q) / TRAIL_N);
-        const mx = (a[0] + b[0]) / 2;
-        const my = (a[1] + b[1]) / 2;
-        const mz = (a[2] + b[2]) / 2;
-        const dz = mz - pZ;
-        if (dz > NEAR + 40) {
-          // 宽度按画面上约 1.6px：世界宽 = 像素 × 距离 / F；方向垂直于这一小段和视线
-          const dx = b[0] - a[0];
-          const dy = b[1] - a[1];
-          const dzz = b[2] - a[2];
-          const vx = mx - pX;
-          const vy = my - pY;
-          const vz = dz;
-          let wx = dy * vz - dzz * vy;
-          let wy = dzz * vx - dx * vz;
-          let wz = dx * vy - dy * vx;
-          const wl = Math.hypot(wx, wy, wz) || 1;
-          // r：0 = 尾端，1 = 光点
-          const r = (q - 0.5) / TRAIL_N;
-          const hw = ((0.5 + 1.3 * r) * dz) / F;
-          wx = (wx / wl) * hw;
-          wy = (wy / wl) * hw;
-          wz = (wz / wl) * hw;
-          const fade = smooth((dz - 300) / 500);
-          const A = alpha * Math.pow(r, 1.6) * fade;
-          if (A > 0.003) put(dz, mx, my, mz, dx / 2, dy / 2, dzz / 2, wx, wy, wz, 0, 0, 1, 1, KIND_STROKE, 0, A, col[0]!, col[1]!, col[2]!, 0, 0, 0, 0, 0);
-        }
+        // r：0 = 尾端，1 = 光点
+        const r = (q - 0.5) / TRAIL_N;
+        strokePiece(a, b, 0.5 + 1.3 * r, alpha * Math.pow(r, 1.6), pal.glow);
         a = b;
+      }
+    };
+
+    /**
+     * 衬托层（2026-11-27 用户：「每句都孤零零裸漂在空间里；五张 Demo 的字都有光效衬托，做一些淡淡的气流、光带，
+     * 不夺睛不吵闹的层次」）。不做实心带 / 玻璃板（§9.4 明确不做），只取 Demo 里衬托的「气」：
+     *   - 气流丝（Demo 1 / 5 光带的边缘光、Demo 4 的流线）：字上一根、字下两根极细的线顺着句形走，比句子长，
+     *     句尾那头继续往前流、慢慢散开；线身缓缓起伏，一段段亮暗往阅读方向流；
+     *   - 光雾（Demo 4 字周围的暖光）：当前句底下一层很宽很淡的柔光，像字把周围的空气照亮；
+     *   - 浮尘（Demo 2 / 4 沿带的微粒）：二三十粒极小的尘顺着气流飘、闪。
+     * 光有语义（§9.2）：平时都很淡，只有正在唱的位置把它们点亮——丝上滑过一道亮光、那一片雾和尘变亮。
+     * 颜色取封面色（pal.glow），全部叠加，不挡字也不挡封面。k = 强度：当前句 1，下一句约 0.35（告诉眼睛下一句在哪），唱完掠过时淡出。
+     */
+    const AURA_N = 36;
+    const DUST = 26;
+    const STRANDS = [
+      // off：离基线多远（字号，负 = 往上）；amp 起伏幅度；ph 相位；w 画面半宽（px，横向高斯，看上去是一股虚的气，不是一根线）；a 亮度
+      { off: -1.15, amp: 0.1, ph: 0, w: 2.2, a: 1 },
+      { off: 0.52, amp: 0.13, ph: 2.1, w: 3, a: 0.9 },
+      { off: 0.95, amp: 0.2, ph: 4.2, w: 6, a: 0.55 },
+    ];
+    const emitAura = (d: LS, segs: Seg[], k: number, S: number, t: number) => {
+      const fs = d.fs;
+      const col = pal.glow;
+      const trOff = d.g.tr && showTr ? 0.72 : 0;
+      const sing = S >= 0 ? locate(segs, S, fs) : null;
+      const last = segs.length - 1;
+      const seed = (d.i * 0.6180339) % 1;
+      for (let r = 0; r <= last; r++) {
+        const sg = segs[r]!;
+        const L = sg.half * 2;
+        // 句首那头只出一点、句尾那头继续往前流（拆两段时中间接上）
+        const s0 = -sg.half - (r === 0 ? 0.16 : 0.06) * L;
+        const s1 = sg.half + (r === last ? 0.46 : 0.06) * L;
+        const glintAt = sing && sing.sg === sg ? sing.s : null;
+        // —— 气流丝 ——
+        for (const st of STRANDS) {
+          const base = st.off > 0 ? st.off + trOff : st.off;
+          let prev: V3 | null = null;
+          for (let q = 0; q <= AURA_N; q++) {
+            const u = q / AURA_N;
+            const s = s0 + (s1 - s0) * u;
+            const { p, d: dn } = segAt(sg, s);
+            const out = Math.max(0, s - sg.half, -sg.half - s) / L;
+            // 线身缓缓起伏（往阅读方向流），出了句子的那段往外散开
+            const off = (base + st.amp * Math.sin((2 * Math.PI * s) / (1.3 * L) - 1.1 * t + st.ph + seed * 6.28) + Math.sign(base) * out * out * 5) * fs;
+            const cur: V3 = [p[0] + dn[0] * off, p[1] + dn[1] * off, p[2] + dn[2] * off];
+            if (prev) {
+              const um = (q - 0.5) / AURA_N;
+              const sm = s0 + (s1 - s0) * um;
+              const taper = smooth(um / 0.14) * smooth((1 - um) / 0.3);
+              const flow = 0.55 + 0.45 * Math.sin((2 * Math.PI * sm) / (0.45 * L) - 1.6 * t + st.ph);
+              const gx = glintAt !== null ? (sm - glintAt) / (1.4 * fs) : 9;
+              const g = Math.exp(-gx * gx);
+              const A = k * taper * st.a * (0.05 * flow + 0.22 * g);
+              if (A > 0.002) strokePiece(prev, cur, st.w * (0.7 + 0.5 * taper) * (1 + 0.6 * g), A, col, 1.5);
+            }
+            prev = cur;
+          }
+        }
+        // —— 光雾：沿字的中线排一串互相重叠的柔光椭圆（宽光段拼接在弯处会拼出放射状的条纹），唱到的地方亮一点 ——
+        if (k > 0.5) {
+          const hk = (k - 0.5) / 0.5;
+          const step = 0.55 * fs;
+          const n = Math.max(2, Math.ceil(L / step));
+          const ry = (0.95 + trOff * 0.5) * fs;
+          const rx = 1.3 * fs;
+          const m = -0.34 * fs + trOff * 0.4 * fs;
+          for (let q = 0; q <= n; q++) {
+            const um = q / n;
+            const s = -sg.half + L * um;
+            const { p, t: tg, d: dn } = segAt(sg, s);
+            const x = p[0] + dn[0] * m;
+            const y = p[1] + dn[1] * m;
+            const z = p[2] + dn[2] * m;
+            const dz = z - pZ;
+            if (dz < 300) continue;
+            const taper = smooth((um + 0.05) / 0.25) * smooth((1.05 - um) / 0.25);
+            const gx = glintAt !== null ? (s - glintAt) / (2.4 * fs) : 9;
+            const g = Math.exp(-gx * gx);
+            // 重叠的高斯叠加后约是单个的 rx / step 倍，这里除掉
+            const I = ((hk * taper * (0.014 + 0.03 * g) * step) / rx) * smooth((dz - 300) / 500);
+            if (I < 0.0015) continue;
+            put(dz + 2, x, y, z, tg[0] * rx, tg[1] * rx, tg[2] * rx, dn[0] * ry, dn[1] * ry, dn[2] * ry, 0, 0, 1, 1, KIND_LIGHT, 0, 1, col[0]! * I, col[1]! * I, col[2]! * I, 0, 0, 0, 0, 0);
+          }
+        }
+        // —— 浮尘 ——
+        const nd = Math.round((k > 0.5 ? DUST : 10) / segs.length);
+        const span = s1 - s0;
+        for (let m = 0; m < nd; m++) {
+          const key = d.i * 131 + r * 37 + m;
+          const h1 = hash01(key, 1);
+          const h2 = hash01(key, 2);
+          const h3 = hash01(key, 3);
+          const h4 = hash01(key, 4);
+          const s = s0 + ((h1 * span + t * 0.1 * L * (0.6 + 0.8 * h2)) % span);
+          const v = (s - s0) / span;
+          const edge = smooth(v / 0.12) * smooth((1 - v) / 0.2);
+          const { p, d: dn } = segAt(sg, s);
+          const off = (-1.7 + (3.2 + trOff) * h3 + 0.12 * Math.sin(t * 0.7 + h4 * 6.28)) * fs;
+          const x = p[0] + dn[0] * off;
+          const y = p[1] + dn[1] * off;
+          const z = p[2] + dn[2] * off;
+          const dz = z - pZ;
+          if (dz < 300) continue;
+          const tw = 0.5 + 0.5 * Math.sin(t * (1.2 + 1.8 * h2) + h4 * 6.28);
+          let lit = 0;
+          if (glintAt !== null) {
+            const lx2 = (s - glintAt) / (2.2 * fs);
+            const ly2 = (off + 0.34 * fs) / (1.6 * fs);
+            lit = Math.exp(-lx2 * lx2 - ly2 * ly2);
+          }
+          const I = k * edge * smooth((dz - 300) / 500) * (0.05 + 0.08 * tw + 0.5 * lit);
+          if (I < 0.004) continue;
+          const rad = ((1.3 + 1.5 * h4) * dz) / F;
+          put(dz + 1.4, x, y, z, rad, 0, 0, 0, rad, 0, 0, 0, 1, 1, KIND_LIGHT, 0, 1, col[0]! * I, col[1]! * I, col[2]! * I, 0, 0, 0, 0, 0);
+        }
       }
     };
 
@@ -799,6 +928,10 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
         const blur = done ? smooth((820 - dz) / 440) : 0;
         const trK = smooth((t - e.s + 0.05) / 0.45);
         const bd: Bound = { x0: Infinity, x1: -Infinity, y0: Infinity, y1: -Infinity };
+        // 衬托层强度：下一句约 0.35，开唱前后 0.6 秒升到 1，唱完掠过时随推开淡出；更远的句子不画
+        const auraK =
+          i === cur + 1 ? 0.35 * o : i <= cur && i >= cur - 1 ? (0.35 + 0.65 * smooth((t - e.s + 0.4) / 0.6)) * (1 - passK) * Math.min(1, o * 1.4) : 0;
+        if (auraK > 0.01) emitAura(d, segs, auraK, i === cur ? S : -1, t);
         if (o > 0.004) emitLine(d, segs, o, mode, blur, trK, bd);
         geos.push({ d, segs, op: o, dz, state, bd });
         if (S >= 0) lightPt = lineAt(segs, d.fs, S).p;
