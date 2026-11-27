@@ -80,8 +80,6 @@ declare global {
       zoom: () => number;
       /** 切换星云排法、读镜头状态（QA / 调试用） */
       stageMode: (m: StageLayout) => void;
-      /** 穿行第二版「空间歌词」实验开关（QA 用） */
-      travelGL: (on: boolean) => void;
       space: () => {
         mode: StageLayout;
         zoom: number;

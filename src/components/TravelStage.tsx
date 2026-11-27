@@ -95,14 +95,13 @@ type TravelProbe = {
 };
 
 /**
- * 穿行入口：舞台实验室开了「穿行 · 空间歌词（实验）」且显卡支持 WebGL2 时用第二版（TravelSpace），
- * 否则（或第二版初始化失败 / 上下文丢失）用 #287 的画布版本。
+ * 穿行入口（NEBULA_UI_SYSTEM §7.1c）：显卡支持 WebGL2 时默认运行三维「空间歌词」（TravelSpace），
+ * WebGL2 不可用或上下文丢失（webglcontextlost）时自动回退至 #287 平面画布版（TravelStageFlat）。
  */
 export function TravelStage(props: TravelStageProps) {
-  const lab = useSpaceLab();
   const [failed, setFailed] = useState(false);
-  const gl2 = useMemo(() => (lab.travelGL ? hasWebGL2() : false), [lab.travelGL]);
-  if (lab.travelGL && gl2 && !failed) return <TravelSpace {...props} onFail={() => setFailed(true)} />;
+  const gl2 = useMemo(() => hasWebGL2(), []);
+  if (gl2 && !failed) return <TravelSpace {...props} onFail={() => setFailed(true)} />;
   return <TravelStageFlat {...props} />;
 }
 

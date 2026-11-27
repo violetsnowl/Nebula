@@ -1747,16 +1747,22 @@ async function main() {
   await page.waitForFunction(() => !document.querySelector('.app[data-lk]'), null, { timeout: 3000 }).catch(() => {});
   await page.waitForFunction(() => !!document.querySelector('.app[data-lk-full]'), null, { timeout: 9000 }).catch(() => {});
   await page.waitForTimeout(1600);
+  // 穿行正式版「空间歌词」（NEBULA_UI_SYSTEM §7.1c）：选择「穿行」直接进入 WebGL2 三维舞台，
+  // 封面与路径歌词都画出来、没唱完的句子不出画面、帧耗时低、小曲库弹轻量提示、星云与漫游歌词退让隐藏
   const travelOn = await page.evaluate(() => {
     const p = window.__nebulaTravel ? window.__nebulaTravel.probe() : null;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
     const seen = p ? p.lines.filter((l) => l.op > 0.3) : [];
+    const cv = document.querySelector('.travel-space canvas');
     return {
       listening: !!document.querySelector('.app[data-listen]'),
       mode: document.documentElement.dataset.stageMode ?? null,
+      gl: p ? p.gl === true : false,
+      canvas: !!cv && cv.width > 0,
       op: p ? p.op : -1,
       covers: p ? p.covers : 0,
+      quads: p ? p.quads : 0,
       slots: p ? p.slots : 0,
       seen: seen.length,
       cur: seen.some((l) => l.state === 'cur' || l.state === 'past'),
@@ -1768,31 +1774,10 @@ async function main() {
       smallNotice: (document.querySelector('.mode-toast')?.textContent || '').includes('曲目较少'),
     };
   });
-  // 穿行第二版「空间歌词」（实验开关，TRAVEL_HANDOFF §9）：同一时刻打开开关，WebGL2 画布接管、封面与歌词都画出来、
-  // 没唱完的句子不出画面、帧耗时低；关掉后回到 #287 的画布版本
-  await page.evaluate(() => window.__nebula.travelGL(true));
-  await page.waitForTimeout(1800);
-  const travelGL = await page.evaluate(() => {
-    const p = window.__nebulaTravel ? window.__nebulaTravel.probe() : null;
-    const vw = window.innerWidth;
-    const vh = window.innerHeight;
-    const seen = p ? p.lines.filter((l) => l.op > 0.3) : [];
-    const cv = document.querySelector('.travel-space canvas');
-    return {
-      gl: p ? p.gl === true : false,
-      canvas: !!cv && cv.width > 0,
-      op: p ? p.op : -1,
-      covers: p ? p.covers : 0,
-      quads: p ? p.quads : 0,
-      seen: seen.length,
-      out: seen.filter((l) => !l.done).filter((l) => l.x < -2 || l.y < -2 || l.x + l.w > vw + 2 || l.y + l.h > vh + 2).length,
-      frame: p ? p.frameMs : null,
-    };
-  });
   // 改窗口大小超 15% 重排路线与封面槽位：1600×900 → 1024×640 → 还原，验证重建计数递增、字不出画幅
   await page.setViewportSize({ width: 1024, height: 640 });
   await page.waitForTimeout(450);
-  const travelGLResize = await page.evaluate(() => {
+  const travelResize = await page.evaluate(() => {
     const p = window.__nebulaTravel ? window.__nebulaTravel.probe() : null;
     const vw = window.innerWidth;
     const vh = window.innerHeight;
@@ -1805,9 +1790,6 @@ async function main() {
   });
   await page.setViewportSize({ width: 1600, height: 900 });
   await page.waitForTimeout(350);
-  await page.evaluate(() => window.__nebula.travelGL(false));
-  await page.waitForTimeout(600);
-  const travelGLOff = await page.evaluate(() => ({ space: !!document.querySelector('.travel-space'), flat: !!document.querySelector('.travel-stage:not(.travel-space)') }));
   await page.evaluate(() => document.querySelector('.bp-cover[data-np-cover]')?.click());
   await page.waitForTimeout(700);
   const travelLs = await page.evaluate(() => ({
@@ -1824,15 +1806,13 @@ async function main() {
   await page.waitForTimeout(300);
   const travelOff = await page.evaluate(() => ({ root: !!document.querySelector('.travel-stage'), mode: document.documentElement.dataset.stageMode ?? null }));
   const travelOk =
-    travelOn.listening && travelOn.mode === 'travel' && travelOn.op > 0.9 && travelOn.covers > 0 && travelOn.seen >= 1 && travelOn.cur && travelOn.out === 0 &&
+    travelOn.listening && travelOn.mode === 'travel' && travelOn.gl && travelOn.canvas && travelOn.op > 0.9 &&
+    travelOn.covers > 0 && travelOn.quads > travelOn.covers && travelOn.seen >= 1 && travelOn.cur && travelOn.out === 0 &&
     travelOn.smallNotice &&
     !!travelOn.frame && travelOn.frame.n > 30 && travelOn.frame.p95 < 6 && travelOn.stageHidden && travelOn.roamHidden &&
-    travelLs.ls && travelLs.op < 0.05 && !travelLs.roamFly && !travelOff.root && travelOff.mode === null &&
-    travelGL.gl && travelGL.canvas && travelGL.op > 0.9 && travelGL.covers > 0 && travelGL.quads > travelGL.covers && travelGL.seen >= 1 && travelGL.out === 0 &&
-    travelGLResize.rebuilds >= 1 && travelGLResize.seen >= 1 && travelGLResize.out === 0 &&
-    !!travelGL.frame && travelGL.frame.n > 30 && travelGL.frame.p95 < 6 && !travelGLOff.space && travelGLOff.flat;
-  log('穿行（初版：聆听中取代星云与漫游歌词）', JSON.stringify({ travelOn, travelLs, travelOff }));
-  log('穿行第二版·空间歌词（实验开关）', JSON.stringify({ travelGL, travelGLResize, travelGLOff }));
+    travelResize.rebuilds >= 1 && travelResize.seen >= 1 && travelResize.out === 0 &&
+    travelLs.ls && travelLs.op < 0.05 && !travelLs.roamFly && !travelOff.root && travelOff.mode === null;
+  log('穿行·空间歌词（聆听中取代星云与漫游歌词）', JSON.stringify({ travelOn, travelResize, travelLs, travelOff }));
 
   // 版面·英文占位歌（样张 M 的原创歌词，带中文翻译，有主歌 / 预副歌 / 副歌 / 间奏 / 桥段）：
   // 判定间奏三点（跳到间奏中段，三点出现且在亮、这时没有页）；设了 NEBULA_QA_SHOT 时另外跳到各段拍一张给开发目测
@@ -2097,10 +2077,9 @@ async function main() {
         flyLayer: !!document.querySelector('.lp-lsfly'),
         flyHide: document.querySelectorAll('.lyric-page [data-flyhide]').length,
       }));
-      // 4) 穿行第二版 3D 间奏三点与切歌取词三点回归（仍在常驻聆听下，省去重等静止）
+      // 4) 穿行正式版 3D 间奏三点、切歌取词三点与双向一镜到底回归（仍在常驻聆听下，省去重等静止）
       await page.evaluate(() => {
         document.querySelector('.sd-panel.sd-right [data-stage-tile="travel"]')?.click();
-        window.__nebula.travelGL(true);
       });
       await page.evaluate(
         ({ data, audio }) => {
@@ -2187,7 +2166,6 @@ async function main() {
       };
       // 还原默认状态，免影响后续 stageFlyExtra
       await page.evaluate(() => {
-        window.__nebula.travelGL(false);
         document.querySelector('.sd-panel.sd-right [data-stage-tile="page"]')?.click();
       });
       await page.waitForTimeout(250);

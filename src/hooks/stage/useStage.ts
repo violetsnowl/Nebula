@@ -639,7 +639,6 @@ export function useStage({
       },
       zoom: () => controllerRef.current?.zoom ?? 1,
       stageMode: (m: StageLayout) => setSpaceLab({ mode: m }),
-      travelGL: (on: boolean) => setSpaceLab({ travelGL: on }),
       space: () => {
         const c = controllerRef.current;
         const vw = window.innerWidth;

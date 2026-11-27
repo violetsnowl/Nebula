@@ -26,8 +26,6 @@ export interface SpaceLab {
   lyricShape: boolean;
   /** 聆听时的舞台（样张 M）：漫游歌词（默认）/ 版面 / 穿行。正式入口在「设置 › 聆听」，实验室保留快捷切换。 */
   stageMode: StageMode;
-  /** 穿行第二版「空间歌词」（实验，TRAVEL_HANDOFF §9）：开着时穿行用 WebGL2 的新版本，关着是 #287。验收前只在实验室里能开。 */
-  travelGL: boolean;
   /** 开发者面板是否打开（不持久化）。 */
   open: boolean;
 }
@@ -36,7 +34,7 @@ export interface SpaceLab {
 // 都不带过来，新星云从默认的「按颜色」开始（#137）。v3 里若还存着旧卡片墙的 classic 标记，读取时直接忽略
 const KEY = 'music-nebula.stage-space.v3';
 const LAYOUTS: StageLayout[] = ['cluster', 'chroma', 'random'];
-const DEFAULTS: SpaceLab = { layout: 'chroma', mode: 'chroma', lens: 0.8, tilt: 0, tint: true, lyricShape: true, stageMode: 'roam', travelGL: false, open: false };
+const DEFAULTS: SpaceLab = { layout: 'chroma', mode: 'chroma', lens: 0.8, tilt: 0, tint: true, lyricShape: true, stageMode: 'roam', open: false };
 
 function withMode(s: Omit<SpaceLab, 'mode'>): SpaceLab {
   return { ...s, mode: s.layout };
@@ -54,7 +52,6 @@ function load(): SpaceLab {
       tint: typeof v.tint === 'boolean' ? v.tint : DEFAULTS.tint,
       lyricShape: typeof v.lyricShape === 'boolean' ? v.lyricShape : DEFAULTS.lyricShape,
       stageMode: STAGE_MODES.includes(v.stageMode as StageMode) ? (v.stageMode as StageMode) : DEFAULTS.stageMode,
-      travelGL: typeof v.travelGL === 'boolean' ? v.travelGL : DEFAULTS.travelGL,
       open: false,
     });
   } catch {

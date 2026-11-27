@@ -6,6 +6,20 @@
 
 ---
 
+## #316 — 2026-11-27 — 穿行「空间歌词」正式收口：替换设置入口、移除实验开关、规格落档 §7.1c 并删除交接文档
+
+**目标**：用户桌面复验全部效果与流畅度通过并确认收口，完成「穿行」第四步最后两项（4.6 正式替换与清理开关 + 4.7 规格写入冻结真源并删除临时交接文档）。
+
+**改动点**
+- **正式替换与回退保留**（`src/components/TravelStage.tsx`）：「设置 › 聆听 › 聆听时的舞台 › 穿行」（及舞台实验室快捷切换）不再受实验开关控制，支持 WebGL2 时直接运行 `TravelSpace` 三维空间歌词，WebGL2 不可用或上下文丢失（`webglcontextlost`）时自动回退至 `#287` 平面画布版（`TravelStageFlat`）。
+- **清理实验开关与 QA 更新**（`src/lib/space/lab.ts`、`src/components/SpaceLabPanel.tsx`、`src/App.tsx`、`src/hooks/stage/useStage.ts`、`scripts/qa.cjs`）：移除 `lab.travelGL` 配置项、舞台实验室「穿行 · 空间歌词（实验）」开关以及 `window.__nebula.travelGL` 调试入口；`scripts/qa.cjs` 改为直接验收正式版穿行（WebGL2 渲染、窗口缩放重排、小曲库提示、间奏/取词三点、穿行 ↔ 漫游及穿行 ↔ 听音空间双向一镜到底）。
+- **规格落档与文档清理**（`docs/design/NEBULA_UI_SYSTEM.md`、`docs/README.md`、`docs/meta/CONTEXT_SNAPSHOT.md`、`docs/project/NOTES.md`、`docs/project/TRAVEL_HANDOFF.md`）：经用户确认将完整正式规格写入 `docs/design/NEBULA_UI_SYSTEM.md` §7.1c；删除已结项的临时交接文件 `docs/project/TRAVEL_HANDOFF.md`，同步清理 `README.md` / `NOTES.md` / `CONTEXT_SNAPSHOT.md` 过期指引。
+
+**验证**
+- `$env:pnpm_config_verify_deps_before_run='false'; pnpm build; pnpm qa` 全绿（0 控制台错误；`travelOn: { gl: true, canvas: true, op: 1, quads: 259, seen: 2, out: 0, frame: { avg: 0.23ms, p95: 0.40ms }, stageHidden: true, roamHidden: true, smallNotice: true }`；`travelResize: { rebuilds: 1, seen: 2, out: 0 }`；`travelLsFly: { inErr: 0, outErr: 0.02 }`；`travelRoamMorph: { dir: "out", n: 4, err: 0, clean: { layers: 0, hidden: 0 } }`）。
+
+**遗留与风险**：无；穿行「空间歌词」专项正式结项，默认体验保持「漫游歌词」，在「设置 › 聆听」切至「穿行」即可直接体验完整三维空间歌词。
+
 ## #315 — 2026-11-27 — 穿行 → 漫游专项性能优化与一镜到底节奏精修（760ms easeInOut、零全树样式风暴、零重排追踪）
 
 **目标**：解决用户桌面实测反馈的「其他转场已流畅，但穿行 → 漫游依旧掉帧明显，且一镜到底歌词转场几乎看不出来」问题。通过 CDP Timeline 与 DOM 变更追踪定位全部根因并一并根除。
