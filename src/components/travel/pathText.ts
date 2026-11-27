@@ -20,7 +20,14 @@ import type { GLine } from './glyphAtlas';
 
 export type V3 = [number, number, number];
 
-export type Kind = 'ramp' | 'wave' | 'swoop' | 'corner' | 'arc';
+export type Kind = 'still' | 'ramp' | 'wave' | 'swoop' | 'corner' | 'arc';
+
+export interface SegOpts {
+  /** 中日韩方块字：弯度与滚转收柔，避免字块互相倾轧 */
+  cjk?: boolean;
+  /** 立起（stand）招式：压平基底曲面，让逐词弹起更干脆不互相遮挡 */
+  flat?: boolean;
+}
 
 export interface LineShape {
   /** 第一段的句形 */
@@ -43,6 +50,7 @@ interface Amp {
 
 /** 远处：侧着、弯得厉害 */
 const FAR_AMP: Record<Kind, Amp> = {
+  still: { roll: 4, yaw: 8, bend: 0, depth: 0 },
   ramp: { roll: 20, yaw: 34, bend: 16, depth: 0 },
   wave: { roll: 6, yaw: 28, bend: 34, depth: 0 },
   swoop: { roll: 5, yaw: 26, bend: 58, depth: 0 },
@@ -51,9 +59,10 @@ const FAR_AMP: Record<Kind, Amp> = {
 };
 /**
  * 开唱：保留句形，但局部倾角有上限（正在读的字最多斜约 35°，只在扬尾的最后几个字）：
- * 斜坡整体 ≤ 约 15°；波最陡处约 20°；弧总共转 30°（拱高约句长 6%）；拐角句尾往远处转约 50°（字仍读得出、稍窄）。
+ * 静置极短词近乎平正；斜坡整体 ≤ 约 15°；波最陡处约 20°；弧总共转 30°（拱高约句长 6%）；拐角句尾往远处转约 50°（字仍读得出、稍窄）。
  */
 const SING_AMP: Record<Kind, Amp> = {
+  still: { roll: 0, yaw: 2, bend: 0, depth: 0 },
   ramp: { roll: 11, yaw: 16, bend: 8, depth: 0 },
   wave: { roll: 3, yaw: 12, bend: 17, depth: 0 },
   swoop: { roll: 2, yaw: 10, bend: 34, depth: 0 },
@@ -98,8 +107,9 @@ export function estEm(t: string): number {
   for (const ch of t) w += /[⺀-鿿가-힯぀-ヿ＀-￯]/.test(ch) ? 1 : ch === ' ' ? 0.28 : 0.5;
   return w;
 }
-/** 句形对句长的要求：太短的句子弯不起来，弯了像抖 */
+/** 句形对句长的要求：极短感叹词用静置平正，其余太短的退到斜坡 / 弧 */
 function fitKind(k: Kind, em: number): Kind {
+  if (em < 3.5) return 'still';
   if (k === 'wave' && em < 7) return 'arc';
   if (k === 'corner' && em < 5) return 'ramp';
   if (k === 'swoop' && em < 3.5) return 'ramp';
@@ -161,8 +171,8 @@ export function planShapes(els: EngineLine[], shape: SongShape | null, seed: num
       if (key) seen.set(key, kind);
     }
     const dir: 1 | -1 = BEATS[i % BEATS.length]![1] > 0 ? 1 : -1;
-    // 拆成两段时第二段：波 / 拐角的后半句换成弧 / 扬尾，其余同形（第二段本身已经拐了个弯）
-    const kind2 = fitKind(kind === 'wave' ? 'arc' : kind === 'corner' ? 'swoop' : kind, em / 2);
+    // 拆成错落双行时第二段与第一段保持平行流动（拐角后半段改为弧，免得两行纵深分叉）
+    const kind2 = fitKind(kind === 'corner' ? 'arc' : kind, em / 2);
     out.push({ kind, kind2, dir, j: h01(i, 7) });
     prev = kind;
   }
@@ -175,6 +185,8 @@ function anglesAt(kind: Kind, u: number, a: Amp, dir: number): [number, number] 
   const dp = a.depth * DEG;
   const v = u + 0.5;
   switch (kind) {
+    case 'still':
+      return [0, 0];
     case 'ramp':
       // 起头往中心陡一点、句尾放平：像抛出去的一道弧
       return [dir * b * u, 0];
@@ -381,23 +393,39 @@ function buildSeg(from: number, to: number, e0: number, w: number, kind: Kind, d
   return { from, to, e0, w, C: [0, 0, 0], half: L / 2, P, T, V };
 }
 
-function ampAt(kind: Kind, turnK: number, j: number): Amp {
+function ampAt(kind: Kind, turnK: number, j: number, opts?: SegOpts): Amp {
   const f = FAR_AMP[kind];
   const s = SING_AMP[kind];
   const k = 0.85 + 0.3 * j;
-  return { roll: lerp(f.roll, s.roll, turnK) * k, yaw: lerp(f.yaw, s.yaw, turnK) * k, bend: lerp(f.bend, s.bend, turnK) * k, depth: lerp(f.depth, s.depth, turnK) * k };
+  let roll = lerp(f.roll, s.roll, turnK) * k;
+  let yaw = lerp(f.yaw, s.yaw, turnK) * k;
+  let bend = lerp(f.bend, s.bend, turnK) * k;
+  let depth = lerp(f.depth, s.depth, turnK) * k;
+  if (opts?.cjk) {
+    roll *= 0.72;
+    bend *= 0.7;
+    yaw *= 0.85;
+    depth *= 0.82;
+  }
+  if (opts?.flat) {
+    roll *= 0.45;
+    yaw *= 0.55;
+    bend *= 0.32;
+    depth *= 0.32;
+  }
+  return { roll, yaw, bend, depth };
 }
 
-/** 拆成两段时，第二段相对第一段再往画面中心转一点（Demo 1：后半句换个角度走） */
+/** 错落双行时，第二行相对第一行仅带极轻微平行滚转差（开唱 ≤ 3°），消除折角断骨感 */
 function turnOf(k: number): { roll: number; yaw: number } {
-  return { roll: lerp(24, 12, k) * DEG, yaw: lerp(14, 6, k) * DEG };
+  return { roll: lerp(7, 2.5, k) * DEG, yaw: lerp(5, 2, k) * DEG };
 }
 
 /**
  * 一句的曲线段（世界坐标）。anchor 是锚点；fs 世界字号；split 第二段起点（0 = 不拆）；
  * turnK 0 远处 → 1 开唱。整组按外接框的中心对齐到锚点。
  */
-export function buildSegs(g: GLine, split: number, i: number, anchor: V3, fs: number, sh: LineShape, turnK: number): Seg[] {
+export function buildSegs(g: GLine, split: number, i: number, anchor: V3, fs: number, sh: LineShape, turnK: number, opts?: SegOpts): Seg[] {
   const us = g.units;
   const ranges = split > 0 ? [[0, split], [split, us.length]] : [[0, us.length]];
   const segs: Seg[] = [];
@@ -410,7 +438,7 @@ export function buildSegs(g: GLine, split: number, i: number, anchor: V3, fs: nu
     const e0 = a.left;
     const w = z.left + z.w - a.left;
     const kind = r === 0 ? sh.kind : sh.kind2;
-    const amp = ampAt(kind, turnK, sh.j);
+    const amp = ampAt(kind, turnK, sh.j, opts);
     // 滚转往画面中心：下方的句子句尾往上（负）、上方的往下（正）
     let roll = -sh.dir * amp.roll * DEG;
     let yaw = yawSign * amp.yaw * DEG;
@@ -421,15 +449,16 @@ export function buildSegs(g: GLine, split: number, i: number, anchor: V3, fs: nu
     }
     const sg = buildSeg(from, to, e0, w, kind, sh.dir, amp, yaw, roll, fs);
     if (r > 0) {
-      // 接在上一段末尾后面，空出约半个字宽；第二段往下错开一行的一半，读起来是「下一行」
+      // 错落双行（方案 A）：以第一段中点为视觉锚点下沉 1.24 字高、上行偏左下行偏右，两行近平行流动
       const prev = segs[r - 1]!;
-      const end = segAt(prev, prev.half);
-      const st = segAt(sg, -sg.half);
-      const gap = 0.45 * fs;
+      const mid = segAt(prev, 0);
+      const shift = Math.min(2.4, Math.max(1.0, 0.18 * Math.min(prev.w, sg.w)));
+      const dxEm = Math.abs(prev.w - sg.w) * 0.5 + shift;
+      const drop = 1.32 * fs;
       sg.C = [
-        end.p[0] + end.t[0] * gap + end.d[0] * 0.55 * fs - (st.p[0] - sg.C[0]),
-        end.p[1] + end.t[1] * gap + end.d[1] * 0.55 * fs - (st.p[1] - sg.C[1]),
-        end.p[2] + end.t[2] * gap + end.d[2] * 0.55 * fs - (st.p[2] - sg.C[2]),
+        mid.p[0] + mid.t[0] * dxEm * fs + mid.d[0] * drop,
+        mid.p[1] + mid.t[1] * dxEm * fs + mid.d[1] * drop,
+        mid.p[2] + mid.t[2] * dxEm * fs + mid.d[2] * drop,
       ];
     }
     segs.push(sg);
@@ -467,8 +496,8 @@ export function headOf(segs: Seg[], fs: number): V3 {
 }
 
 /** 已知开唱姿态的句首 H，只积分一次当前 turnK 的曲线段并把句首对齐到 H（避免每帧双算开唱姿态）。 */
-export function placeSegsWithHead(g: GLine, split: number, i: number, anchor: V3, fs: number, sh: LineShape, turnK: number, singHead: V3): Seg[] {
-  const segs = buildSegs(g, split, i, anchor, fs, sh, turnK);
+export function placeSegsWithHead(g: GLine, split: number, i: number, anchor: V3, fs: number, sh: LineShape, turnK: number, singHead: V3, opts?: SegOpts): Seg[] {
+  const segs = buildSegs(g, split, i, anchor, fs, sh, turnK, opts);
   const h = headOf(segs, fs);
   const dx = singHead[0] - h[0];
   const dy = singHead[1] - h[1];
@@ -483,10 +512,10 @@ export function placeSegsWithHead(g: GLine, split: number, i: number, anchor: V3
  * 光丝又钉在句首，光点沿丝到达时句子刚好转正，看上去像被线扯直。现在句首不动（读的人眼睛落在那里），
  * 句尾像一扇门慢慢合到面前；开唱时的落位仍按开唱姿态的外接框中心对齐锚点。
  */
-export function placeSegs(g: GLine, split: number, i: number, anchor: V3, fs: number, sh: LineShape, turnK: number): Seg[] {
-  const sing = buildSegs(g, split, i, anchor, fs, sh, 1);
+export function placeSegs(g: GLine, split: number, i: number, anchor: V3, fs: number, sh: LineShape, turnK: number, opts?: SegOpts): Seg[] {
+  const sing = buildSegs(g, split, i, anchor, fs, sh, 1, opts);
   if (turnK >= 1) return sing;
-  return placeSegsWithHead(g, split, i, anchor, fs, sh, turnK, headOf(sing, fs));
+  return placeSegsWithHead(g, split, i, anchor, fs, sh, turnK, headOf(sing, fs), opts);
 }
 
 /** 整句排版坐标 e（主字号 em，从句首起）在哪一段、段上 s 是多少（世界长度） */

@@ -6,6 +6,26 @@
 
 ---
 
+## #318 — 2026-11-27 — 穿行「空间歌词」视觉与几何精修：曲线包络圆、唱完即让位虚化、错落双行、短词静置、中日文曲率与气流丝收柔
+
+**目标**：结合四张真实截图审评与源码核对，并按用户拍板（保留唱完从底部液态玻璃播放条背后滑过的折射效果、暂不动封面内环与首句星座），精准修复穿行舞台的 6 项空间几何与节奏细节。
+
+**改动点**
+- **曲线采样包络圆替代单一 AABB**（`src/components/TravelSpace.tsx`）：新增 `sampleCircles` 沿当前句曲线（兼容 `ring / star` 招式与飞入预估）采样 6–10 个屏幕空间圆；后句让位（`useYield`）与字后封面压暗改按到最近采样圆的真实距离计算（保留 AABB 粗判加速），彻底消除斜句/双行矩形外接框误吞远处空旷区文字及挖出硬矩形暗洞的问题；前景封面避让 `frontOp` 改为唱完后 `0.4s` 平滑松开，消除 `done` 翻转单帧突然弹出遮字。
+- **唱完「时间 + 距离」双驱动让位与即时前焦散景**（`src/components/TravelSpace.tsx`）：唱完后不再在 `dz ∈ [800, 1000]` 保持 88% 满亮零虚化，停顿时微退、下一句开唱即在 `0.45s` 内平滑降亮至约 46% 并叠加 `0.42` 散景虚化，避免上一句压过新当前句抢戏；同时保留原有下沉与底边规则，唱完后柔和虚化着掠过底部液态玻璃播放条背后。
+- **长句拆段改为错落双行 + 极短词静置 + 中日文曲率 + `stand` 基底压平**（`src/components/travel/pathText.ts`、`src/components/TravelSpace.tsx`）：
+  - 长句拆两段改为下沉 `1.32 * fs`、上行偏左下行偏右的平行错落双行（`turnOf` 收敛至开唱 `≤ 2.5°` 滚转差），消除旧版接尾半行折角的「断骨感」与跨屏溢出；
+  - 新增 `'still'` 句形（`em < 3.5` 自动选用，开唱 `roll: 0 / yaw: 2° / bend: 0`，锚点横向收拢至 `45%` 同时保留上下交替），消除 `Woah` 等单字感叹词的歪贴纸感；
+  - `ampAt` 接入 `SegOpts`：非拉丁语（中/日/韩方块字）自动给弯度/滚转乘 `0.70 / 0.72`；`stand` 招式基底自动压平（`bend/depth × 0.32`、`roll × 0.45`），让 62° 躺平→弹起更干脆不互遮。
+- **气流丝去「平行轨道感」**（`src/components/TravelSpace.tsx`）：上方丝改作极淡宽光雾（`w: 6.2, a: 0.36`），下方两股下移避开 `y/g/p` 降部（`off: 0.68 / 1.06`），句尾发散收敛（`5 → 2.4`）；错落双行时第一行仅画上方柔雾、第二行仅画下方两股，合围整块而不穿过两行字之间。
+- **规格同步**：更新 `docs/design/NEBULA_UI_SYSTEM.md` §7.1c 与 `docs/meta/CONTEXT_SNAPSHOT.md`。
+
+**验证**
+- 无头 Chrome（D3D11 硬件渲染）抓拍复现场景与真实中文曲库验证帧（草稿目录，不进仓库）：错落双行、短词静置、曲线圆局部让位、唱完散景滑过播放条背后、柔化气流丝与中文曲率均符合预期。
+- `$env:pnpm_config_verify_deps_before_run='false'; pnpm build; pnpm qa` 全绿（0 控制台错误；`travelOn: { gl: true, op: 1, quads: 242, seen: 2, out: 0, frame: { avg: 0.21ms, p95: 0.30ms, n: 240 }, stageHidden: true, roamHidden: true, smallNotice: true }`；`travelResize: { rebuilds: 1, seen: 2, out: 0 }`；`travelLsFly: { inErr: 0, outErr: 0.01 }`；`travelRoamMorph: { dir: "out", n: 4, err: 0, clean: { layers: 0, hidden: 0 } }`）。
+
+**遗留与风险**：待用户桌面验收本轮穿行精修效果；另注一次 `pnpm qa` 期间因短时帧率抖动（`n=31`）偶现 `travelResize.rebuilds=0`，紧接着正常重跑恢复 `rebuilds=1`（`0.21ms / p95 0.30ms`）。
+
 ## #317 — 2026-11-27 — 会话结项交接文档刷新：清理过期待验收条目与沉淀穿行转场避坑
 
 **目标**：本窗口结束前做完整结项交接，清理 `CONTEXT_SNAPSHOT.md` 中残留的穿行实验期过期待验收/代码地图条目，并将本轮 `#311–#315` 排查沉淀的穿行转场性能与 3D 飞字避坑写入 `NOTES.md`。
