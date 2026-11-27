@@ -5,23 +5,23 @@ import { estEm, normText } from './pathText';
 /**
  * 编舞规划器（TRAVEL_HANDOFF §9.4 / §9.5）：给每句分一个招式，同一首歌每次一样。
  *
- * 招式：
- *   - 大招：穿针 needle（路从近处两张封面之间、从一张背后穿出）、环 ring（短句绕成环套在主角封面上）、
+ * 招式（四种；穿针已于 #319 移除）：
+ *   - 大招：环 ring（短句绕成环套在主角封面上）、
  *     卷起 swirl（进这句之前路打一个大螺旋，沿途封面被卷着转）；
  *   - 中招：立起 stand（句子先平躺在路面上，唱到哪个词哪个词立起来）、星座 constellation（按停顿拆成 2–3 截挂在封面边上）。
  * 其余句子只走「路」（句形见 pathText）。
  *
  * 规则（§9.5）：
  *   - 副歌入口不能只信段落识别（真实数据里会漏），同时看「重复句第一次成块出现」的位置；
- *   - 第一次副歌入口穿针，桥段后回到副歌的入口也穿针；最后一次副歌入口卷起（全曲最高能），其余副歌入口环 / 卷起交替；
+ *   - 最后一次副歌入口卷起（全曲最高能），其余副歌入口环 / 卷起交替；
  *   - 重复的短钩子句（拉丁 ≤ 28 字符 / 中日韩 ≤ 9 字，或句末长音的短句）用环；同一句每次出现用同一个招式、左右镜像交替，
  *     同一段里第 4 次以上退回普通的路；
  *   - 预算：任意连续 4 句最多 1 个大招、相邻两句不能都是大招、全曲最多 6 个；中招不超过全部句子的一半；
  *   - 短于 1.2 秒的句子不承担任何招式。
  */
 
-export type Move = 'none' | 'needle' | 'ring' | 'swirl' | 'stand' | 'constellation';
-export const BIG: ReadonlySet<Move> = new Set<Move>(['needle', 'ring', 'swirl']);
+export type Move = 'none' | 'ring' | 'swirl' | 'stand' | 'constellation';
+export const BIG: ReadonlySet<Move> = new Set<Move>(['ring', 'swirl']);
 
 export interface LineMove {
   move: Move;
@@ -158,28 +158,15 @@ export function planChoreo(els: EngineLine[], shape: SongShape | null): { moves:
     if (BIG.has(m)) bigs++;
   };
 
-  // —— 大招 1：副歌入口 ——
+  // —— 大招 1：副歌入口（已移除穿针：不再让半透明封面扫过歌词，改由卷起 / 环交替承担） ——
   const lastEntry = entries[entries.length - 1];
   let alt = 0;
-  let needles = 0;
   let swirls = 0;
   for (let k = 0; k < entries.length; k++) {
     const i = entries[k]!;
-    // 上一个入口到这个入口之间有桥段：桥段后回到副歌
-    const from = k > 0 ? entries[k - 1]! : 0;
-    // （只有一句的「桥段」多半是段落识别把过门句认错了，不算）
-    let afterBridge = false;
-    for (let j = from; j < i; j++) {
-      const sec = secOf(j);
-      if (sec?.kind === 'bridge' && sec.to > sec.from) afterBridge = true;
-    }
     const amp = Math.min(1, 0.45 + 0.18 * k);
     let m: Move;
-    // 穿针最费、最显眼：一首最多两次（第一次副歌、桥段后第一次回到副歌）
-    if ((k === 0 || afterBridge) && needles < 2) {
-      m = 'needle';
-      needles++;
-    } else if (i === lastEntry && entries.length >= 3) m = 'swirl';
+    if (i === lastEntry && entries.length >= 3) m = 'swirl';
     else m = alt++ % 2 === 0 ? 'swirl' : ringable(els[i]!) ? 'ring' : 'swirl';
     // 卷起一首最多 3 次（最后一次副歌入口优先），多了换成环（短句）或普通的路
     if (m === 'swirl' && swirls >= (i === lastEntry ? 3 : 2)) {

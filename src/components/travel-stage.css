@@ -38,10 +38,15 @@
   pointer-events: none;
   visibility: hidden;
   z-index: -1;
+  --tv-ink: var(--lc-a);
   font-family: var(--lc-font, 'Noto Serif SC', serif);
   font-weight: var(--lyric-weight, 600);
   letter-spacing: var(--lc-ls, 0.02em);
   line-height: 1.2;
+}
+.travel-stage[data-scheme='mono'] .tv-fly-host {
+  --lc-rest: color-mix(in srgb, color-mix(in srgb, var(--lc-a) 58%, #fff) 34%, transparent);
+  --tv-ink: color-mix(in srgb, var(--lc-a) 8%, #fff);
 }
 .tv-fly-tmp {
   position: fixed;
@@ -161,6 +166,14 @@
 :root[data-stage-mode='travel'] .app[data-lk] .lyrics-intro {
   opacity: calc(0.92 * (1 - var(--lk)));
   transition: none;
+}
+
+/* 穿行聆听态（非听音空间）去掉底部播放条中间雾层（.bp-haze），恢复全透通透液态玻璃，让背后掠过的专辑封面与歌词完整折射 */
+:root[data-stage-mode='travel'] .app[data-lk]:not([data-ls]) .player-surface .bp-haze {
+  opacity: 0 !important;
+  visibility: hidden;
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
 }
 
 @media (prefers-reduced-motion: reduce) {

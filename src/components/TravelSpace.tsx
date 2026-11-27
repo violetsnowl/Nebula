@@ -163,6 +163,8 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
   loadingRef.current = loading;
   const schemeRef = useRef(listen.scheme);
   schemeRef.current = listen.scheme;
+  const colorSourceRef = useRef(settings.lyricColorSource);
+  colorSourceRef.current = settings.lyricColorSource;
   const noticeRef = useRef(onNotice);
   noticeRef.current = onNotice;
   const pinRef = useRef(settings.listenPin);
@@ -508,33 +510,86 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
     };
     let lcCss = '';
     let lcScheme = '';
+    let lcMode = '';
+    let lcHue = Number.NaN;
     let lc = [0.93, 0.94, 0.96, 1];
     const pal: Palette = { sung: [1, 1, 1, 1], edge: [1, 1, 1, 1], un: [1, 1, 1, 0.34], rest: [1, 1, 1, 0.34], ink: [1, 1, 1, 1], tr: [1, 1, 1, 0.62], glow: [1, 1, 1] };
     const mix = (a: number[], b: number[], k: number) => [0, 1, 2].map((j) => a[j]! + (b[j]! - a[j]!) * k);
     const W1 = [1, 1, 1];
-    const syncPalette = () => {
-      const css = getComputedStyle(root).getPropertyValue('--lc-a').trim();
-      const scheme = schemeRef.current;
-      if (css === lcCss && scheme === lcScheme) return;
-      lcCss = css;
-      lcScheme = scheme;
-      if (css) lc = cssRgba(css);
+    const applyPal = (c: number[], scheme: 'accent' | 'mono') => {
       if (scheme === 'mono') {
         // 同色系：唱过的近白（主色 8%），波前主色 35%，没唱的是主色 58% 的淡色 34%（同 wordColors / travel-stage.css）
-        pal.sung = [...mix(lc, W1, 0.92), 1];
-        pal.edge = [...mix(lc, W1, 0.65), 1];
-        pal.un = [...mix(lc, W1, 0.42), 0.34];
-        pal.rest = [...mix(lc, W1, 0.42), 0.46];
+        pal.sung = [...mix(c, W1, 0.92), 1];
+        pal.edge = [...mix(c, W1, 0.65), 1];
+        pal.un = [...mix(c, W1, 0.42), 0.34];
+        pal.rest = [...mix(c, W1, 0.42), 0.46];
         pal.ink = pal.sung;
       } else {
         // 封面色：唱过的是主色，波前主色 30%，没唱的白 34%（穿行把 --un 换成 GHOST）
-        pal.sung = [lc[0]!, lc[1]!, lc[2]!, 1];
-        pal.edge = [...mix(lc, W1, 0.7), 1];
+        pal.sung = [c[0]!, c[1]!, c[2]!, 1];
+        pal.edge = [...mix(c, W1, 0.7), 1];
         pal.un = [1, 1, 1, 0.34];
         pal.rest = [1, 1, 1, 0.46];
         pal.ink = pal.sung;
       }
-      pal.glow = mix(lc, W1, 0.72);
+      pal.glow = mix(c, W1, 0.72);
+    };
+    /** 按穿行当前所在色带（OKLab 色相 h）生成等明度、sRGB 色域内的歌词主色（Y ≈ 0.50，任意色相都清亮不发灰不刺眼） */
+    const journeyLc = (h: number): number[] => {
+      const L = 0.8;
+      const cosH = Math.cos(h);
+      const sinH = Math.sin(h);
+      const inGamut = (C: number) => {
+        const a = C * cosH;
+        const b = C * sinH;
+        const l = (L + 0.3963377774 * a + 0.2158037573 * b) ** 3;
+        const m = (L - 0.1055613458 * a - 0.0638541728 * b) ** 3;
+        const s = (L - 0.0894841775 * a - 1.291485548 * b) ** 3;
+        const r = 4.0767416621 * l - 3.3077115913 * m + 0.2309699292 * s;
+        const g = -1.2684380046 * l + 2.6097574011 * m - 0.3413193965 * s;
+        const bl = -0.0041960863 * l - 0.7034186147 * m + 1.707614701 * s;
+        return r >= 0 && r <= 1 && g >= 0 && g <= 1 && bl >= 0 && bl <= 1;
+      };
+      let lo = 0;
+      let hi = 0.125;
+      if (inGamut(hi)) lo = hi;
+      else {
+        for (let k = 0; k < 10; k++) {
+          const mid = (lo + hi) * 0.5;
+          if (inGamut(mid)) lo = mid;
+          else hi = mid;
+        }
+      }
+      const [r, g, b] = oklabToRgb(L, lo * cosH, lo * sinH);
+      return [r / 255, g / 255, b / 255, 1];
+    };
+    const syncPalette = (hueOverride?: number) => {
+      const scheme = schemeRef.current;
+      const src = colorSourceRef.current;
+      if (src !== 'custom' && hueOverride !== undefined) {
+        if (lcMode === 'journey' && scheme === lcScheme && Math.abs(hueOverride - lcHue) < 0.003) return;
+        lcMode = 'journey';
+        lcScheme = scheme;
+        lcHue = hueOverride;
+        lc = journeyLc(hueOverride);
+        applyPal(lc, scheme);
+        return;
+      }
+      const css = getComputedStyle(root).getPropertyValue('--lc-a').trim();
+      if (lcMode === 'css' && css === lcCss && scheme === lcScheme) return;
+      lcMode = 'css';
+      lcCss = css;
+      lcScheme = scheme;
+      if (css) lc = cssRgba(css);
+      applyPal(lc, scheme);
+    };
+    const syncFlyHostColor = () => {
+      if (!flyHost) return;
+      if (colorSourceRef.current !== 'custom' && lcMode === 'journey') {
+        flyHost.style.setProperty('--lc-a', `rgb(${Math.round(lc[0]! * 255)} ${Math.round(lc[1]! * 255)} ${Math.round(lc[2]! * 255)})`);
+      } else {
+        flyHost.style.removeProperty('--lc-a');
+      }
     };
 
     // —— 小平面缓冲：先按任意顺序写进 scratch，再按离镜头从远到近排序拷进 out ——
@@ -1015,71 +1070,6 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       }
     };
 
-    /** 穿针那一句唱到的位置（em）：S 只在当前句有，其余时候按时间估 */
-    const needleS = (d: LS, e: EngineLine, t: number): number => {
-      const us = d.g.units;
-      const eu = e.units;
-      if (!eu?.length) return ((t - e.s) / Math.max(0.1, e.e - e.s)) * d.g.width;
-      let k = 0;
-      for (let q = 0; q < eu.length; q++) if (t >= eu[q]!.s) k = q;
-      const u = us[k];
-      return u ? u.left + u.w * clamp((t - eu[k]!.s) / Math.max(0.05, eu[k]!.e - eu[k]!.s), 0, 1) : d.g.width;
-    };
-    const glassUrl = (i: number, j: number) => (tracks.length ? tracks[(i * 11 + j * 5 + 3) % tracks.length]?.cover ?? '' : '');
-    const emitNeedle = (nd: { d: LS; segs: Seg[]; k: number; S: number; side: number }, t: number) => {
-      const { d, segs, k } = nd;
-      const fs = d.fs;
-      const w = d.g.width;
-      // 玻璃封面：左边缘贴在唱到的字右边 1.1em 处，盖住后半截；唱完往右滑出、淡掉
-      const leftEm = clamp(nd.S + 1.1, 1.2, w + 3);
-      const half = 1.45 * fs;
-      const a = pointOn(d, segs, Math.min(w, leftEm));
-      const extra = Math.max(0, leftEm - w) * fs;
-      const gx = a.p[0] + a.t[0] * (half + extra);
-      const gy = a.p[1] + a.t[1] * (half + extra);
-      const gz = a.p[2] + a.t[2] * (half + extra) - 0.9 * fs;
-      const dzA = gz - pZ;
-      void t;
-      if (dzA > NEAR * 2) {
-        const url = glassUrl(d.i, 0);
-        const layer = url ? covers.layerOf(url, frameNo) : -1;
-        const ch = layer < 0 ? chipOf(d.i) : null;
-        // 玻璃：整体很透（0.34）、内侧亮边加强（0.9）、稍提亮；后面的字透出来（液态玻璃的「透 + 边缘光」）
-        put(
-          dzA,
-          gx, gy, gz,
-          a.t[0] * half, a.t[1] * half, 0,
-          -a.t[1] * half, a.t[0] * half, 0,
-          0, 0, 1, 1,
-          layer < 0 ? KIND_CHIP : KIND_COVER, Math.max(0, layer), k * 0.34 * (1 - smooth(leftEm - w - 1.5)),
-          0.4, 0.6, 0.9, 0,
-          ch ? ch[0]! : 0, ch ? ch[1]! : 0, ch ? ch[2]! : 0, 0,
-        );
-      }
-      // 针眼的另一边：句首左后方一张实的封面
-      const h = pointOn(d, segs, 0);
-      const bh = 1.25 * fs;
-      const bx = h.p[0] - h.t[0] * 1.6 * fs;
-      const by = h.p[1] - h.t[1] * 1.6 * fs - nd.side * 0.5 * fs;
-      const bz = h.p[2] + 320;
-      const dzB = bz - pZ;
-      if (dzB > NEAR * 2) {
-        const url = glassUrl(d.i, 1);
-        const layer = url ? covers.layerOf(url, frameNo) : -1;
-        const ch = layer < 0 ? chipOf(d.i + 1) : null;
-        put(
-          dzB,
-          bx, by, bz,
-          bh, 0, 0,
-          0, bh, 0,
-          0, 0, 1, 1,
-          layer < 0 ? KIND_CHIP : KIND_COVER, Math.max(0, layer), k * 0.8,
-          0, 0, 0.3, 0,
-          ch ? ch[0]! : 0, ch ? ch[1]! : 0, ch ? ch[2]! : 0, 0,
-        );
-      }
-    };
-
     /** 一句在整句排版坐标 e（em）处、字母中线（基线往上约 0.36em）的世界位置与切向；按这句这一帧的招式变形（环会把字挪到环上） */
     const pointOn = (d: LS, segs: Seg[], e: number): { p: V3; t: V3 } => {
       const { sg, s } = locate(segs, e, d.fs);
@@ -1486,7 +1476,8 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       if (!host) return false;
       const src = [...host.querySelectorAll<HTMLElement>(':scope > .u, :scope > .fl-whole')];
       if (!src.length) return false;
-      syncPalette();
+      syncPalette(baseHue + hueOffsetAt(route, camZ + DREST));
+      syncFlyHostColor();
       const dir: 'in' | 'out' = listenBus.target === 1 ? 'in' : 'out';
       const slots0 = createTravelFlySession(flyHost, i, e, d.g, d.fs, segs, d.warp, camNow(), t, schemeRef.current, state, dir === 'in' ? 0 : 1);
       if (!slots0) return false;
@@ -1592,6 +1583,8 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       endMorph();
       const gCur = lastGeos.find((g) => g.d.i === lastCur && g.op > 0.12 && !g.d.done);
       if (!gCur) return;
+      syncPalette(baseHue + hueOffsetAt(route, camZ + DREST));
+      syncFlyHostColor();
       const slots0 = createTravelFlySession(flyHost, gCur.d.i, els[gCur.d.i]!, gCur.d.g, gCur.d.fs, gCur.segs, gCur.d.warp, camNow(), t, schemeRef.current, gCur.state);
       if (!slots0) return;
       const fly = launchStageToListenFly(
@@ -1651,7 +1644,8 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       const passK = smooth((t - e.e - 0.05) / 1.2);
       const segs = segsOf(d, turnK, passK);
       const state: LS['state'] = t > e.e + 0.9 ? 'past' : t >= e.s - 0.05 ? 'cur' : 'future';
-      syncPalette();
+      syncPalette(baseHue + hueOffsetAt(route, camZ + DREST));
+      syncFlyHostColor();
       const slots0 = createTravelFlySession(flyHost, cur0, e, d.g, d.fs, segs, d.warp, camNow(), t, schemeRef.current, state, 0);
       if (!slots0) return;
       const cols = matchColumnLines([{ text: slots0.text, offsetFromCur: 0 }]);
@@ -1771,12 +1765,13 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
         canvas.width = Math.max(1, Math.round(vw * dpr));
         canvas.height = Math.max(1, Math.round(vh * dpr));
       }
-      if (frameNo % 20 === 1) syncPalette();
       const cx = vw / 2;
       const cy = vh * 0.47;
       // 漫游 ↔ 穿行轻纵深推入（方案 1A）：进入时镜头从后方 420 单位平滑滑入，k=1 时归零无折角
       const enterPull = reduceMotion || boost > 0 ? 0 : -420 * (1 - k) * (1 - k);
       camZ = camAt(route, t) + enterPull;
+      const bgHue = baseHue + hueOffsetAt(route, camZ + DREST);
+      if (colorSourceRef.current !== 'custom' || frameNo % 20 === 1) syncPalette(bgHue);
       const camX = pathX(camZ);
       const camY = pathY(camZ);
       pcx = cx;
@@ -1876,8 +1871,6 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       let curCircles: Circle[] | null = null;
       /** 卷起：这一帧的螺旋（封面转角、螺旋光） */
       let swirl: { zMid: number; zHalf: number; ang: number; sw: number; side: number; zEnd: number } | null = null;
-      /** 穿针：这一帧的那一句 */
-      let needle: { d: LS; segs: Seg[]; k: number; S: number; side: number } | null = null;
       probeLines = [];
       let lightPt: V3 | null = null;
       for (const i of [...want].sort((a, b) => a - b)) {
@@ -1986,11 +1979,6 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
               d.trWarp = d.warp;
             }
           }
-        } else if (mv.move === 'needle') {
-          // —— 穿针（§9.4）：一张玻璃化的封面盖在还没唱的后半截上，随演唱往右滑开、字从它背后露出来；
-          //    另一张封面在句首左后方，两张一起像针眼。开唱的词始终在玻璃左边（不被挡）——
-          const nk = smooth((t - (e.s - 2.2)) / 1.4) * (1 - smooth((t - e.e - 0.1) / 0.8));
-          if (nk > 0.001) needle = { d, segs, k: nk, S: S >= 0 ? S : t >= e.e ? d.g.width : t >= e.s ? needleS(d, e, t) : 0, side: mv.side };
         } else if (mv.move === 'constellation' && mv.cuts?.length) {
           // —— 星座（§9.4）：开唱前 2.4–0.8 秒散开挂到各自的星上，之后一直挂着、随镜头掠过 ——
           const sk = smooth((t - (e.s - 2.4)) / 1.6);
@@ -2163,7 +2151,6 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       lightMode = !lightPt || lightK < 0.02 ? 'off' : flying ? 'fly' : lingering ? 'wait' : 'sing';
 
       if (swirl) emitHelix(swirl, t);
-      if (needle) emitNeedle(needle, t);
 
       // —— 封面：隧道壁；字后面的按沿曲线包络圆有机压暗、挡在字前面的平滑让开（飞入句提前平滑就位不瞬暗） ——
       const boxes = geos
@@ -2360,7 +2347,6 @@ export function TravelSpace({ lines, loading = false, songKey, lsOpen, song, car
       }
 
       // —— 背景：径向渐变，色相随颜色旅程从反差色走到封面色，段落开合越大越亮（同 #287） ——
-      const bgHue = baseHue + hueOffsetAt(route, camZ + DREST);
       renderer.draw({
         vw,
         vh,

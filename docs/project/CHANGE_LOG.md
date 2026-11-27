@@ -6,6 +6,24 @@
 
 ---
 
+## #319 — 2026-11-27 — 穿行移除「穿针」招式 + 穿行聆听态全透玻璃播放条 + 穿行歌词色带联动（用户桌面验收通过）
+
+**目标**：`#318` 桌面验收通过后，按用户要求移除半透明封面扫过歌词的「穿针（`needle`）」招式，并经桌面实测确认保留两项体验升级：① 仅在穿行聆听态去掉底部播放条中间雾层，还原全透液态玻璃折射；② 穿行歌词主题色跟随当前路段的 OKLab 颜色旅程动态过渡。
+
+**改动点**
+- **移除「穿针（`needle`）」招式**（`src/components/travel/choreo.ts`、`src/components/TravelSpace.tsx`）：不再在副歌入口调度 `needle`（改由 `swirl / ring` 交替承担），移除 `Move` / `BIG` 中的 `needle` 以及 `TravelSpace.tsx` 的 `emitNeedle / needleS / glassUrl` 实现。
+- **穿行聆听态全透玻璃播放条**（`src/components/travel-stage.css`）：仅在 `:root[data-stage-mode='travel'] .app[data-lk]:not([data-ls])` 下隐藏 `.player-surface .bp-haze`（关闭 9px 中间雾层），使专辑封面与唱完虚化歌词掠过底部播放条背后时呈现完整通透的 G1 液态玻璃折射；漫游主舞台与听音空间保持原样不变。
+- **穿行歌词扫光主题色跟随当前颜色旅程**（`src/components/TravelSpace.tsx`、`src/components/travel-stage.css`）：
+  - 新增 `journeyLc(bgHue)`：在默认「封面色」模式下，按当前镜头前方所在路段的 OKLab 色相 `bgHue = baseHue + hueOffsetAt(route, camZ + DREST)`，计算等明度（`L = 0.80`）、sRGB 色域内（`C ≤ 0.125`）的清亮歌词主色（各色相均保持 `Y ≈ 0.50`），实时驱动歌词扫光、气流与光点；副歌处自然汇回本曲封面色，全程场景与歌词色系统一；手动「自定义颜色」仍保持固定不变；
+  - 一镜到底替身宿主 `.tv-fly-host` 在起飞前通过 `syncFlyHostColor()` 同步当前路段 `--lc-a`（并重声明 `--tv-ink / --lc-rest` 适配封面色 / 同色系），确保穿行 ↔ 漫游 / 听音空间颜色无缝衔接。
+- **文档同步**：更新冻结规格 `docs/design/NEBULA_UI_SYSTEM.md`（§7.1c 与 §9.1）与 `docs/meta/CONTEXT_SNAPSHOT.md`（刷新至 `#319`）。
+
+**验证**
+- 用户桌面实测验收通过，确认移除穿针并保留两项实验改动。
+- `$env:pnpm_config_verify_deps_before_run='false'; pnpm build; pnpm qa` 全绿（0 控制台错误；`travelOn: { gl: true, op: 1, quads: 243, seen: 2, out: 0, frame: { avg: 0.23ms, p95: 0.40ms, n: 240 } }`；`travelResize: { rebuilds: 1, out: 0 }`；`travelLsFly: { inErr: 0, outErr: 0.02 }`；`travelRoamMorph: { dir: "out", n: 4, err: 0 }`）。
+
+**遗留与风险**：无；本轮穿行细打磨（`#318–#319`）已全部经桌面验收并收口。
+
 ## #318 — 2026-11-27 — 穿行「空间歌词」视觉与几何精修：曲线包络圆、唱完即让位虚化、错落双行、短词静置、中日文曲率与气流丝收柔
 
 **目标**：结合四张真实截图审评与源码核对，并按用户拍板（保留唱完从底部液态玻璃播放条背后滑过的折射效果、暂不动封面内环与首句星座），精准修复穿行舞台的 6 项空间几何与节奏细节。
