@@ -1767,6 +1767,30 @@ async function main() {
       roamHidden: getComputedStyle(document.querySelector('.lyrics-layer')).visibility === 'hidden',
     };
   });
+  // 穿行第二版「空间歌词」（实验开关，TRAVEL_HANDOFF §9）：同一时刻打开开关，WebGL2 画布接管、封面与歌词都画出来、
+  // 没唱完的句子不出画面、帧耗时低；关掉后回到 #287 的画布版本
+  await page.evaluate(() => window.__nebula.travelGL(true));
+  await page.waitForTimeout(1800);
+  const travelGL = await page.evaluate(() => {
+    const p = window.__nebulaTravel ? window.__nebulaTravel.probe() : null;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const seen = p ? p.lines.filter((l) => l.op > 0.3) : [];
+    const cv = document.querySelector('.travel-space canvas');
+    return {
+      gl: p ? p.gl === true : false,
+      canvas: !!cv && cv.width > 0,
+      op: p ? p.op : -1,
+      covers: p ? p.covers : 0,
+      quads: p ? p.quads : 0,
+      seen: seen.length,
+      out: seen.filter((l) => !l.done).filter((l) => l.x < -2 || l.y < -2 || l.x + l.w > vw + 2 || l.y + l.h > vh + 2).length,
+      frame: p ? p.frameMs : null,
+    };
+  });
+  await page.evaluate(() => window.__nebula.travelGL(false));
+  await page.waitForTimeout(600);
+  const travelGLOff = await page.evaluate(() => ({ space: !!document.querySelector('.travel-space'), flat: !!document.querySelector('.travel-stage:not(.travel-space)') }));
   await page.evaluate(() => document.querySelector('.bp-cover[data-np-cover]')?.click());
   await page.waitForTimeout(700);
   const travelLs = await page.evaluate(() => ({
@@ -1785,8 +1809,11 @@ async function main() {
   const travelOk =
     travelOn.listening && travelOn.mode === 'travel' && travelOn.op > 0.9 && travelOn.covers > 0 && travelOn.seen >= 1 && travelOn.cur && travelOn.out === 0 &&
     !!travelOn.frame && travelOn.frame.n > 30 && travelOn.frame.p95 < 6 && travelOn.stageHidden && travelOn.roamHidden &&
-    travelLs.ls && travelLs.op < 0.05 && !travelLs.roamFly && !travelOff.root && travelOff.mode === null;
+    travelLs.ls && travelLs.op < 0.05 && !travelLs.roamFly && !travelOff.root && travelOff.mode === null &&
+    travelGL.gl && travelGL.canvas && travelGL.op > 0.9 && travelGL.covers > 0 && travelGL.quads > travelGL.covers && travelGL.seen >= 1 && travelGL.out === 0 &&
+    !!travelGL.frame && travelGL.frame.n > 30 && travelGL.frame.p95 < 6 && !travelGLOff.space && travelGLOff.flat;
   log('穿行（初版：聆听中取代星云与漫游歌词）', JSON.stringify({ travelOn, travelLs, travelOff }));
+  log('穿行第二版·空间歌词（实验开关）', JSON.stringify({ travelGL, travelGLOff }));
 
   // 版面·英文占位歌（样张 M 的原创歌词，带中文翻译，有主歌 / 预副歌 / 副歌 / 间奏 / 桥段）：
   // 判定间奏三点（跳到间奏中段，三点出现且在亮、这时没有页）；设了 NEBULA_QA_SHOT 时另外跳到各段拍一张给开发目测

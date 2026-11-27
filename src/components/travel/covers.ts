@@ -19,6 +19,7 @@ const cache = new Map<string, Entry>();
 const queue: string[] = [];
 let running = 0;
 
+/** 较大的封面图地址（约 300px）。穿行第二版（coverTex.ts）也用它。 */
 export function bigUrl(url: string): string {
   if (/y\.gtimg\.cn\//.test(url) && /R\d+x\d+/.test(url)) return url.replace(/R\d+x\d+/, 'R300x300');
   if (/\.music\.126\.net\//.test(url)) return `${url.split('?')[0]}?param=200y200`;

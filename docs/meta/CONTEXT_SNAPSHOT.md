@@ -41,7 +41,7 @@
 - 验收结论：用户已拍板保留穿行，上述待深入讨论的改法与补全项将按轮次推进。
 - 待与用户继续讨论及补全项：进出穿行的转场方案（保留淡入淡出 / 纵深滑入+飞字 / 从真实星云长出纵深）、小曲库退路（继续补偿还是低于阈值回退）、观感融入想法与改法；以及与听音空间的双向一镜到底、间奏 / 取词加载三点、改窗口大小时重排路线。完成后将正式规格写入 `NEBULA_UI_SYSTEM.md` §7.1c 并删掉 `TRAVEL_HANDOFF.md`。
 - 看录屏的方法：本机有 ffmpeg（WinGet 装的，在 PATH 上），用户给录屏路径后按每秒 1 帧拼联络表、关键段每秒 6 帧看；无法直接读视频。
-- **第二版「空间歌词」（2026-11-27 起，#290 设计稿）**：用户五张 Demo 图 → 歌词在封面之间穿行、缠绕。Gemini 仓库外两版样张用户不满意，改由 Claude 在 `main` 原生实现（WebGL2 真 3D，挂舞台实验室隐藏开关，设置里的穿行保持 #287 直到验收）。设计稿在 `TRAVEL_HANDOFF.md` §9，四步：3D 底座 → 歌词之路 → 招式与编舞 → 收尾。**歌单整合**（多歌单 / 跨平台去重合并）交给 Gemini，写代码时在多一层目录的短命工作树做，合回 main 时再取 CHANGE_LOG 号；两边不同时跑 `pnpm qa`。
+- **第二版「空间歌词」（2026-11-27 起，#290 设计稿）**：用户五张 Demo 图 → 歌词在封面之间穿行、缠绕。Gemini 仓库外两版样张用户不满意，改由 Claude 在 `main` 原生实现（WebGL2 真 3D，挂舞台实验室隐藏开关，设置里的穿行保持 #287 直到验收）。设计稿在 `TRAVEL_HANDOFF.md` §9，四步：3D 底座（#291 已完成，舞台实验室「穿行 · 空间歌词（实验）」开关）→ 歌词之路 → 招式与编舞 → 收尾。**歌单整合**（多歌单 / 跨平台去重合并）交给 Gemini，写代码时在多一层目录的短命工作树做，合回 main 时再取 CHANGE_LOG 号；两边不同时跑 `pnpm qa`。
 
 ### 2026-11-22 ~ 26 前端主舞台、版面与一镜到底精修（#235–#286，全部桌面验收通过）
 
@@ -177,7 +177,7 @@
 | 主舞台星云 | `src/lib/space/`、`src/hooks/stage/useStage.ts` | NEBULA_UI_SYSTEM §8.0 |
 | 听音空间 / 歌词阅读栏 | `src/components/listen/`、`src/lib/listen/`（`engine.ts`、`words.ts`、`bigCover.ts`、`flyTransition.ts`） | §9.9、§7.2 |
 | 星云漫游歌词（Z1）与版面舞台 | `src/components/LyricsLayer.tsx`、`src/components/LyricPage.tsx`、`src/components/lyric-page/` | §7.1、§7.1b、LYRICS_SYSTEM |
-| 穿行舞台（#287，待验收） | `src/components/TravelStage.tsx`、`src/components/travel/`（`route.ts` 镜头与摆位参数集中在顶部）、`travel-stage.css` | `docs/project/TRAVEL_HANDOFF.md` §8（验收后写进 §7.1c） |
+| 穿行舞台（#287 定为留；第二版空间歌词 #291 起在实验开关后） | `src/components/TravelStage.tsx`（入口 + #287 画布版）、`src/components/TravelSpace.tsx`（第二版 WebGL2）、`src/components/travel/`（`route.ts` 镜头与摆位；`renderer.ts` / `glyphAtlas.ts` / `coverTex.ts` / `tunnel.ts` / `wordState.ts` 第二版）、`travel-stage.css` | `docs/project/TRAVEL_HANDOFF.md` §8 / §9（验收后写进 §7.1c） |
 | 歌词解析 / 读音 | `src/lib/lyrics.ts`、`src/lib/furigana.ts`、`src/hooks/lyrics/useLyrics.ts` | §7.2 |
 | 账号 / 设置面板（登录页版式 `LoginSteps` / `ScanFlow`，文案 `platforms.ts` 的 `LOGIN_HOW`） | `src/components/AccountDock.tsx`、`src/hooks/accounts/useAccounts.ts` | §9.5 |
 | 长音判定 | `src/lib/listen/model.ts`（`songPace`、`markEmph`） | §7.2 |

@@ -101,6 +101,10 @@ export const SpaceLabPanel = memo(function SpaceLabPanel({ songCount }: { songCo
             </button>
           ))}
         </div>
+        <button type="button" className="sl-row sl-tg" aria-pressed={lab.travelGL} onClick={() => setSpaceLab({ travelGL: !lab.travelGL })}>
+          <span>穿行 · 空间歌词（实验）</span>
+          <i aria-hidden="true" />
+        </button>
         <div className="sl-actions">
           <button type="button" onClick={() => runSpaceCommand('focusCurrent')}>
             回到正在播放
