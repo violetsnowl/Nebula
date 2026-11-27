@@ -669,6 +669,101 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
       });
     };
 
+    /**
+     * 卷起的螺旋光（Demo 4 的螺旋带，只取光）：两股，绕走廊中轴、在这句前方约 1800 → 150 的路段上转 1.6 圈，
+     * 半径约画面宽 0.3（开唱距离时），镜头从里面穿过去：近处的一圈扫过画面边缘，远处收向这句。很淡、虚，亮暗往前流。
+     */
+    const emitHelix = (sw: { sw: number; side: number; zEnd: number }, t: number) => {
+      const col = pal.glow;
+      const R = 0.3 * (((vw || window.innerWidth) * DSING) / F);
+      const z0 = sw.zEnd - 1800;
+      const z1 = sw.zEnd - 150;
+      const N2 = 110;
+      for (const ph of [0, Math.PI]) {
+        let prev: V3 | null = null;
+        for (let q = 0; q <= N2; q++) {
+          const u = q / N2;
+          const z = z0 + (z1 - z0) * u;
+          const th = sw.side * u * 1.6 * 2 * Math.PI + ph + t * 0.5 * sw.side;
+          // 越靠近这句半径越收，像气流收进句子
+          const r = R * (1 - 0.45 * u);
+          const cur: V3 = [pathX(z) + r * Math.cos(th), pathY(z) + r * Math.sin(th) * 0.8, z];
+          if (prev) {
+            const um = (q - 0.5) / N2;
+            const taper = smooth(um / 0.15) * smooth((1 - um) / 0.2);
+            const flow = 0.5 + 0.5 * Math.sin(um * 18 - t * 2.2 + ph);
+            strokePiece(prev, cur, 7, sw.sw * taper * (0.03 + 0.05 * flow), col, 0);
+          }
+          prev = cur;
+        }
+      }
+    };
+
+    /** 穿针那一句唱到的位置（em）：S 只在当前句有，其余时候按时间估 */
+    const needleS = (d: LS, e: EngineLine, t: number): number => {
+      const us = d.g.units;
+      const eu = e.units;
+      if (!eu?.length) return ((t - e.s) / Math.max(0.1, e.e - e.s)) * d.g.width;
+      let k = 0;
+      for (let q = 0; q < eu.length; q++) if (t >= eu[q]!.s) k = q;
+      const u = us[k];
+      return u ? u.left + u.w * clamp((t - eu[k]!.s) / Math.max(0.05, eu[k]!.e - eu[k]!.s), 0, 1) : d.g.width;
+    };
+    const glassUrl = (i: number, j: number) => (tracks.length ? tracks[(i * 11 + j * 5 + 3) % tracks.length]?.cover ?? '' : '');
+    const emitNeedle = (nd: { d: LS; segs: Seg[]; k: number; S: number; side: number }, t: number) => {
+      const { d, segs, k } = nd;
+      const fs = d.fs;
+      const w = d.g.width;
+      // 玻璃封面：左边缘贴在唱到的字右边 1.1em 处，盖住后半截；唱完往右滑出、淡掉
+      const leftEm = clamp(nd.S + 1.1, 1.2, w + 3);
+      const half = 1.45 * fs;
+      const a = pointOn(d, segs, Math.min(w, leftEm));
+      const extra = Math.max(0, leftEm - w) * fs;
+      const gx = a.p[0] + a.t[0] * (half + extra);
+      const gy = a.p[1] + a.t[1] * (half + extra);
+      const gz = a.p[2] + a.t[2] * (half + extra) - 0.9 * fs;
+      const dzA = gz - pZ;
+      void t;
+      if (dzA > NEAR * 2) {
+        const url = glassUrl(d.i, 0);
+        const layer = url ? covers.layerOf(url, frameNo) : -1;
+        const ch = layer < 0 ? chipOf(d.i) : null;
+        // 玻璃：整体很透（0.34）、内侧亮边加强（0.9）、稍提亮；后面的字透出来（液态玻璃的「透 + 边缘光」）
+        put(
+          dzA,
+          gx, gy, gz,
+          a.t[0] * half, a.t[1] * half, 0,
+          -a.t[1] * half, a.t[0] * half, 0,
+          0, 0, 1, 1,
+          layer < 0 ? KIND_CHIP : KIND_COVER, Math.max(0, layer), k * 0.34 * (1 - smooth(leftEm - w - 1.5)),
+          0.4, 0.6, 0.9, 0,
+          ch ? ch[0]! : 0, ch ? ch[1]! : 0, ch ? ch[2]! : 0, 0,
+        );
+      }
+      // 针眼的另一边：句首左后方一张实的封面
+      const h = pointOn(d, segs, 0);
+      const bh = 1.25 * fs;
+      const bx = h.p[0] - h.t[0] * 1.6 * fs;
+      const by = h.p[1] - h.t[1] * 1.6 * fs - nd.side * 0.5 * fs;
+      const bz = h.p[2] + 320;
+      const dzB = bz - pZ;
+      if (dzB > NEAR * 2) {
+        const url = glassUrl(d.i, 1);
+        const layer = url ? covers.layerOf(url, frameNo) : -1;
+        const ch = layer < 0 ? chipOf(d.i + 1) : null;
+        put(
+          dzB,
+          bx, by, bz,
+          bh, 0, 0,
+          0, bh, 0,
+          0, 0, 1, 1,
+          layer < 0 ? KIND_CHIP : KIND_COVER, Math.max(0, layer), k * 0.8,
+          0, 0, 0.3, 0,
+          ch ? ch[0]! : 0, ch ? ch[1]! : 0, ch ? ch[2]! : 0, 0,
+        );
+      }
+    };
+
     /** 一句在整句排版坐标 e（em）处、字母中线（基线往上约 0.36em）的世界位置与切向；按这句这一帧的招式变形（环会把字挪到环上） */
     const pointOn = (d: LS, segs: Seg[], e: number): { p: V3; t: V3 } => {
       const { sg, s } = locate(segs, e, d.fs);
@@ -1024,6 +1119,10 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
       const geos: Geo[] = [];
       /** 当前句这一帧在画面上的外接框（后面的句子落进来时让开） */
       let curBox: Bound | null = null;
+      /** 卷起：这一帧的螺旋（封面转角、螺旋光） */
+      let swirl: { zMid: number; zHalf: number; ang: number; sw: number; side: number; zEnd: number } | null = null;
+      /** 穿针：这一帧的那一句 */
+      let needle: { d: LS; segs: Seg[]; k: number; S: number; side: number } | null = null;
       probeLines = [];
       let lightPt: V3 | null = null;
       for (const i of [...want].sort((a, b) => a - b)) {
@@ -1105,6 +1204,32 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
             d.warp = (em, u, p, tg, dn) => warpRing(ring, em, u, p, tg, dn, cam3());
             emitHero(ring, rk * o);
           }
+        } else if (mv.move === 'swirl') {
+          // —— 卷起（§9.4）：进这句之前，路段上一道双股螺旋光、沿途封面被卷着转；句子从螺旋里转着停到出口，开唱时是正的 ——
+          const sw = smooth((t - (e.s - 2.8)) / 1.6) * (1 - smooth((t - e.e) / 1.0));
+          if (sw > 0.001) {
+            const amp = 0.7 + 0.3 * mv.amp;
+            swirl = { zMid: L.z - 950, zHalf: 650, ang: mv.side * sw * 150 * DEG * amp, sw, side: mv.side, zEnd: L.z };
+            const spin = smooth((t - (e.s - 2.6)) / 2.2);
+            const phi = (1 - spin) * mv.side * 140 * DEG;
+            if (Math.abs(phi) > 0.001) {
+              const ax = pathX(L.z);
+              const ay = pathY(L.z);
+              const c = Math.cos(phi);
+              const sn = Math.sin(phi);
+              const rot = (v: V3): V3 => [v[0] * c - v[1] * sn, v[0] * sn + v[1] * c, v[2]];
+              d.warp = (_em, _u, p, tg, dn) => {
+                const o2 = rot([p[0] - ax, p[1] - ay, 0]);
+                return { p: [ax + o2[0], ay + o2[1], p[2]], t: rot(tg), d: rot(dn), vis: 1 };
+              };
+              d.trWarp = d.warp;
+            }
+          }
+        } else if (mv.move === 'needle') {
+          // —— 穿针（§9.4）：一张玻璃化的封面盖在还没唱的后半截上，随演唱往右滑开、字从它背后露出来；
+          //    另一张封面在句首左后方，两张一起像针眼。开唱的词始终在玻璃左边（不被挡）——
+          const nk = smooth((t - (e.s - 2.2)) / 1.4) * (1 - smooth((t - e.e - 0.1) / 0.8));
+          if (nk > 0.001) needle = { d, segs, k: nk, S: S >= 0 ? S : t >= e.e ? d.g.width : t >= e.s ? needleS(d, e, t) : 0, side: mv.side };
         } else if (mv.move === 'constellation' && mv.cuts?.length) {
           // —— 星座（§9.4）：开唱前 2.4–0.8 秒散开挂到各自的星上，之后一直挂着、随镜头掠过 ——
           const sk = smooth((t - (e.s - 2.4)) / 1.6);
@@ -1200,6 +1325,9 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
       lightI += ((lingering ? 0.55 : 1) - lightI) * (1 - Math.exp(-dt * 4));
       lightMode = !lightPt || lightK < 0.02 ? 'off' : flying ? 'fly' : lingering ? 'wait' : 'sing';
 
+      if (swirl) emitHelix(swirl, t);
+      if (needle) emitNeedle(needle, t);
+
       // —— 封面：隧道壁；字后面的压暗、挡在字前面的让开（按画面上的字框） ——
       const boxes = geos
         .filter((g) => g.op > 0.05 && g.bd.x1 > g.bd.x0)
@@ -1227,8 +1355,27 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
         const s = F / dz;
         const size = sl.size * s;
         if (size < 1.2) continue;
-        const px = cx + (sl.x - camX) * s;
-        const py = cy + (sl.y - camY) * s;
+        // 卷起：这一段路上的封面绕走廊中轴转一段（像被气流卷起），转角按离螺旋中段的远近衰减
+        let sx = sl.x;
+        let sy = sl.y;
+        let rc = 1;
+        let rs = 0;
+        if (swirl) {
+          const bump = Math.exp(-(((sl.z - swirl.zMid) / swirl.zHalf) ** 2));
+          const th = swirl.ang * bump;
+          if (Math.abs(th) > 0.002) {
+            rc = Math.cos(th);
+            rs = Math.sin(th);
+            const ax = pathX(sl.z);
+            const ay = pathY(sl.z);
+            const ox = sl.x - ax;
+            const oy = sl.y - ay;
+            sx = ax + ox * rc - oy * rs;
+            sy = ay + ox * rs + oy * rc;
+          }
+        }
+        const px = cx + (sx - camX) * s;
+        const py = cy + (sy - camY) * s;
         const m = size * 0.75;
         if (px + m < 0 || px - m > vw || py + m < 0 || py - m > vh) continue;
         const cd = Math.hypot(px - cx, py - cy) / halfDiag;
@@ -1250,18 +1397,22 @@ export function TravelSpace({ lines, songKey, lsOpen, song, cards, onFail }: Pro
         const layer = url ? covers.layerOf(url, frameNo) : -1;
         let light = 0;
         if (lightK > 0.02) {
-          const d3 = Math.hypot(sl.x - lx, sl.y - ly, (sl.z - lz) * 0.6);
+          const d3 = Math.hypot(sx - lx, sy - ly, (sl.z - lz) * 0.6);
           light = Math.exp(-d3 / 1000) * lightK;
           if (light < 0.06) light = 0;
         }
         const blur = 2.4 * smooth((760 - dz) / 460);
         const b = j * 6;
         const chip = layer < 0 ? chipOf(sl.ci) : null;
+        const bx0 = basis[b]!;
+        const by0 = basis[b + 1]!;
+        const bx1 = basis[b + 3]!;
+        const by1 = basis[b + 4]!;
         put(
           dz,
-          sl.x, sl.y, sl.z,
-          basis[b]!, basis[b + 1]!, basis[b + 2]!,
-          basis[b + 3]!, basis[b + 4]!, basis[b + 5]!,
+          sx, sy, sl.z,
+          bx0 * rc - by0 * rs, bx0 * rs + by0 * rc, basis[b + 2]!,
+          bx1 * rc - by1 * rs, bx1 * rs + by1 * rc, basis[b + 5]!,
           0, 0, 1, 1,
           layer < 0 ? KIND_CHIP : KIND_COVER, Math.max(0, layer), a,
           light, blur, 0.22, 0,
