@@ -479,6 +479,10 @@ function platformLabel(platform: string): string {
       return '酷我音乐';
     case 'bodian':
       return '波点音乐';
+    case 'qishui':
+      return '汽水音乐';
+    case 'spotify':
+      return 'Spotify';
     case 'ytmusic':
       return 'YouTube Music';
     case 'applemusic':

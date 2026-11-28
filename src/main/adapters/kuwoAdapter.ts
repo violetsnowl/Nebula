@@ -1,6 +1,6 @@
 import type { HttpClient } from '../http';
 import type { CookieStore } from '../cookieStore';
-import type { Lyric, Playlist, PlaylistSummary, PlatformAdapter, QualityOption, SongUrl, Track } from '../types';
+import type { ArtistSearchHit, Lyric, Playlist, PlaylistSummary, PlatformAdapter, QualityOption, SongUrl, Track } from '../types';
 import { cleanMetadataText } from '../parsers/metadataText';
 import { decodeKuwoLyric, kuwoLyricUrl, parseKuwoLyric } from '../parsers/kuwoLyric';
 
@@ -54,6 +54,14 @@ export function kuwoCoverUrl(raw: unknown): string {
   const url = String(raw ?? '').trim();
   if (!url) return '';
   return url.replace(/\/albumcover\/\d+\//, '/albumcover/500/').replace(/_(?:\d+)\.(jpg|png|webp)$/i, '_500.$1');
+}
+
+/** 酷我歌手头像：支持完整地址与 `120/s4s56/...` 短路径，放大到 300。 */
+export function kuwoArtistAvatarUrl(raw: unknown): string {
+  const s = String(raw ?? '').trim();
+  if (!s) return '';
+  const full = /^https?:\/\//i.test(s) ? s : `http://img4.kuwo.cn/star/starheads/${s.replace(/^\/+/, '')}`;
+  return full.replace(/\/starheads\/\d+\//, '/starheads/300/');
 }
 
 function mapKuwoTrack(item: Record<string, any>): Track | null {
@@ -257,6 +265,36 @@ export class KuwoAdapter implements PlatformAdapter {
       return (Array.isArray(data?.abslist) ? data.abslist : []).map(mapKuwoSearchRow).filter((t): t is Track => !!t);
     } catch (err) {
       console.warn('[KuwoAdapter] 搜索失败:', err instanceof Error ? err.message : '');
+      return [];
+    }
+  }
+
+  /** 关键词搜歌手（匿名网页接口 ft=artist，返回 ID / 歌手名 / 头像）。 */
+  async searchArtists(keyword: string, pageSize = 5): Promise<ArtistSearchHit[]> {
+    const word = String(keyword ?? '').trim();
+    if (!word) return [];
+    const rn = Math.max(1, Math.min(20, Math.floor(pageSize) || 5));
+    try {
+      const q = SEARCH_QUERY.replace('ft=music', 'ft=artist');
+      const data = await this.http.requestJson<{ abslist?: Array<Record<string, any>> }>(
+        `${SEARCH_API}?${q}&pn=0&rn=${rn}&all=${encodeURIComponent(word)}`,
+        { platform: 'kuwo', cookie: '', timeoutMs: 6000 },
+      );
+      return (Array.isArray(data?.abslist) ? data.abslist : [])
+        .map((r): ArtistSearchHit | null => {
+          const id = String(r?.ARTISTID || r?.DC_TARGETID || '').trim();
+          const name = cleanMetadataText(r?.ARTIST || r?.FARTIST);
+          if (!/^\d+$/.test(id) || !name) return null;
+          return {
+            platform: 'kuwo',
+            id,
+            name,
+            avatar: kuwoArtistAvatarUrl(r?.hts_PICPATH || r?.PICPATH || r?.pic),
+          };
+        })
+        .filter((x): x is ArtistSearchHit => !!x);
+    } catch (err) {
+      console.warn('[KuwoAdapter] 搜歌手失败:', err instanceof Error ? err.message : '');
       return [];
     }
   }

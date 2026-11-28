@@ -51,6 +51,10 @@ export interface AlbumCandidateRank {
   artistHit: boolean;
 }
 
+/** 豪华版 / 加值版 / 精选 / 现场等版本词：原专辑名没要求时，同名标准版优先。 */
+const EDITION_RE =
+  /(?:deluxe|expanded|remaster(?:ed)?|anniversary|special\s+edition|collector|complete\s+edition|bonus\s+track|live|tour|soundtrack|精选|精選|豪华|豪華|特别版|特別版|纪念版|紀念版|加值|典藏|演唱会|演唱會)/i;
+
 /**
  * 给一批专辑候选打分排序。`preferred` 是同一张专辑更可信的平台（默认网易云，和详情链路一致）。
  * 返回按分数降序；`titleScore` 为 0 的候选一律不进结果。
@@ -62,6 +66,7 @@ export function rankAlbumCandidates(
 ): AlbumCandidateRank[] {
   const wantName = String(wanted.name || '').trim();
   if (!wantName) return [];
+  const wantHasEdition = EDITION_RE.test(wantName);
   const seen = new Set<string>();
   const out: AlbumCandidateRank[] = [];
   for (const album of albums) {
@@ -77,6 +82,11 @@ export function rankAlbumCandidates(
     // 基础分：专辑名完全一致 1、包含 0.85；歌手对上加 0.35，对不上只留 0.15（仍有资格，排后面）
     let score = titleScore + (artistHit ? 0.35 : 0.05);
     if (artistHit && albumTitleKey(album.name) === albumTitleKey(wantName)) score += 0.1;
+    // 原专辑名没带豪华版 / 精选等后缀时，优先无版本后缀的原版（避免 1989 总是优先选到 1989 (Deluxe)）
+    if (!wantHasEdition) {
+      if (EDITION_RE.test(album.name)) score -= 0.04;
+      else score += 0.03;
+    }
     // 年份接近：用来区分「同名」的原版与 N 年后的精选 / 翻唱合集
     if (wanted.year && album.year && Math.abs(album.year - wanted.year) <= 1) score += 0.08;
     // 曲目数接近：同名不同版里挑更像的（差值按比例，最多 0.06）

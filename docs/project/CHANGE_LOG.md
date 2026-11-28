@@ -6,6 +6,32 @@
 
 ---
 
+## #322 — 2026-11-28 — 后端清算第二批：Spotify 搜索/专辑/歌手页迁 pathfinder 防 429、YouTube Music 搜歌、Apple Music 歌手/专辑页、酷我搜歌手与账号副本矩阵清零
+
+**目标**：按后端清算第二批计划，横向补齐九大平台在线搜索与内容页（让九平台全网搜歌全部点亮、补齐 Spotify / Apple Music 歌手页与专辑页及酷我搜歌手），并用账号副本核验矩阵中悬而未决的 ☑️/⚠️ 项，收紧专辑兜底对豪华版的误优先。
+
+**改动点**
+- **Spotify 迁 pathfinder 绕开公开 Web API 429**（`src/main/adapters/spotifyAdapter.ts`）：
+  - 副本只读实测确认 `api.spotify.com/v1/search`（track / album）对桌面客户端令牌返回 `HTTP 429`，而 `api-partner.spotify.com/pathfinder/v2/query` 同令牌稳定返回 `HTTP 200`；
+  - 新增 `searchTracks / searchAlbums / searchArtists / getAlbum / queryArtistOverview` 持久化查询；`searchSongs`、`searchAlbums`、`fetchAlbumDetail` 全部优先走 pathfinder（未登录直接返回空，失败降级公开接口）；新增 `searchArtists`、`fetchArtistInfo / Songs / Albums`（带 60 秒进程内总览缓存，打开歌手页并行三请求合并为一次网络请求）。
+- **YouTube Music 接入全网搜歌**（`src/main/adapters/ytmusicAdapter.ts`、`src/main/services/lyricService.ts`）：新增 `mapYtmusicLockup` 与 `searchSongs`（复用 TVHTML5 `youtubei/v1/search`，免登录可用，自动清洗标题与跳过合辑及超 15 分钟视频），接入 `LyricService.searchSongs` 后九大平台全网搜歌全部点亮。
+- **Apple Music 补搜歌手 / 歌手页 / 本平台专辑页**（`electron/appleMusicEngine.cjs`、`src/main/adapters/applemusicAdapter.ts`、`src/main/services/lyricService.ts`）：
+  - 页面引擎 `readInPage` 白名单放行 `results.artists.data / results.albums.data`、`releaseDate`、以及仅限 `artists / albums` 的 `editorialNotes` 与单层 `relationships.tracks.data`（资料库曲目仍严格剥离，不透出任何令牌）；
+  - 适配器新增 `searchArtists / searchAlbums / fetchAlbumDetail / fetchArtistInfo / fetchArtistSongs / fetchArtistAlbums`（未登录直接返回空），并接入全网搜歌手与专辑页兜底目标。
+- **酷我接入全网搜歌手**（`src/main/adapters/kuwoAdapter.ts`、`src/main/services/lyricService.ts`）：新增匿名 `ft=artist` 搜歌手（`kuwoArtistAvatarUrl` 放大至 300px）并接入 `LyricService.searchArtists`。
+- **前端路由与标签补齐**（`src/hooks/overlays/useOverlays.ts`、`src/components/SearchBar.tsx`）：`openArtistFromChip` 与 `openAlbum` 放行 `spotify`、`applemusic` 直接打开本平台歌手/专辑页；`SearchBar` 的 `platformLabel` 补齐 `qishui`（「汽水音乐」）与 `spotify`（「Spotify」）。
+- **专辑兜底标准版优先**（`src/main/services/albumMatch.ts`）：`rankAlbumCandidates` 在原专辑名不含 `Deluxe / Expanded / Remaster / Live / 精选 / 豪华` 等版本词时，优先无后缀原版（仅剩豪华版时仍照常兜底）。
+- **账号副本矩阵清零与探测结论落档**（`docs/project/PLATFORM_MATRIX.md`）：
+  - 副本实测通过：波点真实登录核验（`valid`）与假 token `-101` 过期提示、汽水真实登录核验（`valid`）与假 Cookie `1000016` 过期提示（`#230`）、酷狗《Lemon》KRC 内嵌罗马音真实可用；
+  - 汽水登录后本平台评论（`/luna/pc/comments` 带 `pcParams` 仍 `count: 0`）与 `/luna/pc/track_v2` / `/luna/pc/search/track`（无 `a_bogus` 签名回空体）已实测封板，继续走网易云 / QQ 兜底与汽水公开搜歌。
+- **回归测试**：扩充 `spotify-auth-regression.mjs`、`ytmusic-regression.mjs`、`applemusic-regression.mjs`、`applemusic-engine-regression.mjs`、`kuwo-regression.mjs`、`album-regression.mjs`、`search-regression.mjs`。
+
+**验证**
+- 实网只读抽验：Spotify pathfinder 5 项查询均 `HTTP 200` 无错；YouTube Music `searchSongs('Cruel Summer Taylor Swift')` 返回 5 条清洗曲目；酷我 `searchArtists('周杰伦')` 返回 3 位带 300px 头像歌手。
+- `$env:pnpm_config_verify_deps_before_run='false'; pnpm build` + `pnpm qa:backend`（全套通过）+ `pnpm qa`（全部通过，0 控制台错误）。
+
+**遗留与风险**：Spotify pathfinder 持久化查询哈希随网页端改版可能轮换（遇报错按日志更新 `QUERY_HASH`）；下一步进入第三批（播放条音质弹层内支持手动切换音源平台，让用户用自己已登录的高权限 VIP 播放高音质）。
+
 ## #321 — 2026-11-28 — 后端清算第一批：补接汽水全网搜歌、同平台来源去重、酷我档位透传、酷狗专辑真封面、本地搜歌简繁折叠与第三方名残留清理
 
 **目标**：根据 `#223–#233` 桌面验收反馈与源码自查，一次性修复 5 个明确缺陷并清理运行时代码与注释里残留的第三方参考项目名（`Mineradio` / `folia`）。

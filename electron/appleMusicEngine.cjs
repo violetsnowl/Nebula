@@ -113,16 +113,16 @@ async function readInPage(req) {
     if (thrown && !errors.length) errors.push({ code: 'request-failed', status: status ? String(status) : '' });
 
     const str = (v, max) => (typeof v === 'string' ? v.slice(0, max || 500) : '');
-    const thin = (item) => {
+    const thin = (item, depth) => {
       if (!item || typeof item !== 'object') return null;
       const out = { id: str(item.id, 200), type: str(item.type, 60), href: str(item.href, 500) };
       const a = item.attributes;
       if (a && typeof a === 'object') {
         const at = {};
-        for (const k of ['name', 'artistName', 'albumName', 'curatorName', 'isrc', 'lastModifiedDate']) {
+        for (const k of ['name', 'artistName', 'albumName', 'curatorName', 'isrc', 'lastModifiedDate', 'releaseDate']) {
           if (typeof a[k] === 'string') at[k] = a[k].slice(0, 500);
         }
-        // 逐字歌词 TTML（syllable-lyrics）：只收字符串，单个上限 2MB，超了丢弃
+        // 逐字歌词 TTML（syllable-lyrics）：只收字符串，单个上限 2MB，页面里超了丢弃
         for (const k of ['ttml', 'ttmlLocalizations']) if (typeof a[k] === 'string' && a[k].length <= 2097152) at[k] = a[k];
         for (const k of ['durationInMillis', 'trackCount']) if (typeof a[k] === 'number' && isFinite(a[k])) at[k] = a[k];
         for (const k of ['canEdit', 'isPublic']) if (typeof a[k] === 'boolean') at[k] = a[k];
@@ -137,26 +137,43 @@ async function readInPage(req) {
         if (a.description && typeof a.description === 'object' && typeof a.description.standard === 'string') {
           at.description = { standard: a.description.standard.slice(0, 2000) };
         }
+        // 目录歌手 / 专辑简介（editorialNotes）：只对 artists / albums 放行，资料库曲目仍剥离
+        if ((out.type === 'artists' || out.type === 'albums') && a.editorialNotes && typeof a.editorialNotes === 'object') {
+          const en = {};
+          if (typeof a.editorialNotes.standard === 'string') en.standard = a.editorialNotes.standard.slice(0, 2000);
+          if (typeof a.editorialNotes.short === 'string') en.short = a.editorialNotes.short.slice(0, 500);
+          if (en.standard || en.short) at.editorialNotes = en;
+        }
         out.attributes = at;
       }
+      const rel = {};
       const cat = item.relationships && item.relationships.catalog && item.relationships.catalog.data;
       if (Array.isArray(cat) && cat[0] && typeof cat[0].id === 'string') {
         // 只留目录曲目的 id 和 isrc（资料库曲目自己没有 isrc，要 include=catalog 才能从这里拿到）
         const entry = { id: cat[0].id.slice(0, 200) };
         if (cat[0].attributes && typeof cat[0].attributes.isrc === 'string') entry.attributes = { isrc: cat[0].attributes.isrc.slice(0, 40) };
-        out.relationships = { catalog: { data: [entry] } };
+        rel.catalog = { data: [entry] };
       }
+      // 目录专辑曲目列表（relationships.tracks.data）：只展开一层，上限 200 首
+      if (!depth && out.type === 'albums' && item.relationships && item.relationships.tracks && Array.isArray(item.relationships.tracks.data)) {
+        rel.tracks = { data: item.relationships.tracks.data.slice(0, 200).map((t) => thin(t, 1)).filter(Boolean) };
+      }
+      if (Object.keys(rel).length) out.relationships = rel;
       return out;
     };
 
     const result = { status };
-    // 普通响应是 body.data；目录搜索的歌曲在 body.results.songs.data，同样按 thin 精简后放进 data
+    // 普通响应是 body.data；目录搜索的歌曲 / 歌手 / 专辑在 body.results.{songs,artists,albums}.data，同样按 thin 精简后放进 data
     const rows = Array.isArray(body.data)
       ? body.data
       : body.results && body.results.songs && Array.isArray(body.results.songs.data)
         ? body.results.songs.data
-        : null;
-    if (rows) result.data = rows.slice(0, 300).map(thin).filter(Boolean);
+        : body.results && body.results.artists && Array.isArray(body.results.artists.data)
+          ? body.results.artists.data
+          : body.results && body.results.albums && Array.isArray(body.results.albums.data)
+            ? body.results.albums.data
+            : null;
+    if (rows) result.data = rows.slice(0, 300).map((r) => thin(r, 0)).filter(Boolean);
     if (typeof body.next === 'string' && body.next.length <= 500) result.next = body.next;
     const meta = body.meta && typeof body.meta === 'object' ? body.meta : null;
     const rawTotal =

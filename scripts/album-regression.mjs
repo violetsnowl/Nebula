@@ -195,4 +195,17 @@ await test('专辑详情：只有 searchAlbums 没有 fetchAlbumDetail 的平台
   assert.equal(d, null, '只能开详情的平台才配当兜底目标，否则给了 id 也打不开');
 });
 
+await test('专辑候选打分：原专辑名未带版本后缀时，标准版优先于 Deluxe 豪华版（#322）', () => {
+  const albums = [
+    { platform: 'netease', id: 'deluxe', name: '1989 (Deluxe)', cover: '', artist: 'Taylor Swift', year: 2014 },
+    { platform: 'netease', id: 'std', name: '1989', cover: '', artist: 'Taylor Swift', year: 2014 },
+  ];
+  const ranked = b.rankAlbumCandidates(albums, { name: '1989', artist: 'Taylor Swift', year: 2014 });
+  assert.equal(ranked[0].album.id, 'std', '未指定豪华版时标准版应排第一');
+  // 只有豪华版时仍可兜底
+  const onlyDeluxe = b.rankAlbumCandidates([albums[0]], { name: '1989', artist: 'Taylor Swift' });
+  assert.equal(onlyDeluxe.length, 1);
+  assert.equal(onlyDeluxe[0].album.id, 'deluxe');
+});
+
 console.log(`专辑页兜底回归 ${n}/${n}`);

@@ -1,6 +1,6 @@
 import type { CookieStore } from '../cookieStore';
 import type { HttpClient } from '../http';
-import type { Lyric, Playlist, PlaylistSummary, PlatformAdapter, SongUrl, Track } from '../types';
+import type { AlbumDetail, AlbumSummary, ArtistInfo, ArtistSearchHit, Lyric, Playlist, PlaylistSummary, PlatformAdapter, SongUrl, Track } from '../types';
 import { withRequestScope } from '../requestScope';
 
 /*
@@ -78,6 +78,8 @@ export interface AppleMusicResource {
     playParams?: { id?: string; kind?: string; catalogId?: string; isLibrary?: boolean };
     tags?: string[];
     description?: { standard?: string };
+    editorialNotes?: { standard?: string; short?: string };
+    releaseDate?: string;
     trackCount?: number;
     canEdit?: boolean;
     isPublic?: boolean;
@@ -87,8 +89,11 @@ export interface AppleMusicResource {
     /** 带翻译 / 罗马音的 TTML（请求带 extend=ttmlLocalizations 且带 l= 语言时才有）。 */
     ttmlLocalizations?: string;
   };
-  /** 资料库曲目带 include=catalog 时，对应的目录曲目（页面里只留 id 和 isrc）。 */
-  relationships?: { catalog?: { data?: Array<{ id?: string; attributes?: { isrc?: string } }> } };
+  /** 资料库曲目带 include=catalog 时对应的目录曲目；目录专辑附带的曲目列表。 */
+  relationships?: {
+    catalog?: { data?: Array<{ id?: string; attributes?: { isrc?: string } }> };
+    tracks?: { data?: AppleMusicResource[] };
+  };
 }
 export interface AppleMusicResponse {
   status: number;
@@ -317,6 +322,52 @@ export class AppleMusicClient {
     return res.data ?? [];
   }
 
+  /** 目录搜歌手：结果在 results.artists.data，页面里已放进 data。 */
+  async searchCatalogArtists(storefront: string, term: string, limit = 5): Promise<AppleMusicResource[]> {
+    const q = String(term ?? '').trim().slice(0, 150);
+    if (!q) return [];
+    const res = await this.request(`/v1/catalog/${catalogStorefront(storefront)}/search`, {
+      term: q,
+      types: 'artists',
+      limit: Math.max(1, Math.min(25, Math.floor(limit) || 5)),
+    });
+    return res.data ?? [];
+  }
+
+  /** 目录搜专辑：结果在 results.albums.data，页面里已放进 data。 */
+  async searchCatalogAlbums(storefront: string, term: string, limit = 8): Promise<AppleMusicResource[]> {
+    const q = String(term ?? '').trim().slice(0, 150);
+    if (!q) return [];
+    const res = await this.request(`/v1/catalog/${catalogStorefront(storefront)}/search`, {
+      term: q,
+      types: 'albums',
+      limit: Math.max(1, Math.min(25, Math.floor(limit) || 8)),
+    });
+    return res.data ?? [];
+  }
+
+  async catalogAlbum(storefront: string, albumId: string): Promise<AppleMusicResource | undefined> {
+    return (await this.request(`/v1/catalog/${catalogStorefront(storefront)}/albums/${segment(albumId, '专辑 ID')}`)).data?.[0];
+  }
+
+  async catalogArtist(storefront: string, artistId: string): Promise<AppleMusicResource | undefined> {
+    return (await this.request(`/v1/catalog/${catalogStorefront(storefront)}/artists/${segment(artistId, '歌手 ID')}`)).data?.[0];
+  }
+
+  async catalogArtistTopSongs(storefront: string, artistId: string, limit = 25): Promise<AppleMusicResource[]> {
+    const res = await this.request(`/v1/catalog/${catalogStorefront(storefront)}/artists/${segment(artistId, '歌手 ID')}/view/top-songs`, {
+      limit: Math.max(1, Math.min(25, Math.floor(limit) || 25)),
+    });
+    return res.data ?? [];
+  }
+
+  async catalogArtistAlbums(storefront: string, artistId: string, limit = 25): Promise<AppleMusicResource[]> {
+    const res = await this.request(`/v1/catalog/${catalogStorefront(storefront)}/artists/${segment(artistId, '歌手 ID')}/albums`, {
+      limit: Math.max(1, Math.min(25, Math.floor(limit) || 25)),
+    });
+    return res.data ?? [];
+  }
+
   /** 资料库歌单的第一页第一首（补封面用）。 */
   async libraryPlaylistFirstTrack(id: string): Promise<AppleMusicResource | undefined> {
     return (await this.request(`/v1/me/library/playlists/${segment(id, '歌单 ID')}/tracks`, { limit: 1 })).data?.[0];
@@ -403,6 +454,146 @@ export class AppleMusicAdapter implements PlatformAdapter {
       .map((r) => mapAppleTrack(r, storefront || 'cn'))
       .filter((t): t is Track => !!t)
       .slice(0, pageSize);
+  }
+
+  /** 关键词搜歌手（目录搜索）；未登录直接返回空。 */
+  async searchArtists(keyword: string, pageSize = 5): Promise<ArtistSearchHit[]> {
+    const term = String(keyword ?? '').trim();
+    if (!term || !this.cookies?.get('applemusic')?.cookies) return [];
+    try {
+      const storefront = (await this.accountStorefront()) || 'cn';
+      const rows = await this.client.searchCatalogArtists(storefront, term, Math.min(25, pageSize));
+      return rows
+        .map((r): ArtistSearchHit | null => {
+          const id = String(r?.id ?? '').trim();
+          const name = String(r?.attributes?.name ?? '').trim();
+          if (!id || !name) return null;
+          return {
+            platform: 'applemusic',
+            id,
+            name,
+            avatar: appleArtworkUrl(r.attributes?.artwork?.url, 300),
+          };
+        })
+        .filter((x): x is ArtistSearchHit => !!x)
+        .slice(0, pageSize);
+    } catch {
+      return [];
+    }
+  }
+
+  /** 关键词搜专辑（目录搜索，供专辑页兜底）；未登录直接返回空。 */
+  async searchAlbums(keyword: string, pageSize = 8): Promise<AlbumSummary[]> {
+    const term = String(keyword ?? '').trim();
+    if (!term || !this.cookies?.get('applemusic')?.cookies) return [];
+    try {
+      const storefront = (await this.accountStorefront()) || 'cn';
+      const rows = await this.client.searchCatalogAlbums(storefront, term, Math.min(25, pageSize));
+      return rows
+        .map((r): AlbumSummary | null => {
+          const id = String(r?.id ?? '').trim();
+          const a = r?.attributes;
+          if (!id || !a?.name) return null;
+          return {
+            platform: 'applemusic',
+            id,
+            name: a.name,
+            cover: appleArtworkUrl(a.artwork?.url, 600),
+            artist: a.artistName || undefined,
+            year: a.releaseDate ? Number(a.releaseDate.slice(0, 4)) || undefined : undefined,
+            songCount: Number(a.trackCount) || undefined,
+          };
+        })
+        .filter((x): x is AlbumSummary => !!x)
+        .slice(0, pageSize);
+    } catch {
+      return [];
+    }
+  }
+
+  /** 目录专辑详情；未登录或取不到返回 null（交由 LyricService 兜底）。 */
+  async fetchAlbumDetail(albumId: string): Promise<AlbumDetail | null> {
+    const id = String(albumId ?? '').trim();
+    if (!id || !this.cookies?.get('applemusic')?.cookies) return null;
+    try {
+      const storefront = (await this.accountStorefront()) || 'cn';
+      const item = await this.client.catalogAlbum(storefront, id);
+      const a = item?.attributes;
+      if (!item?.id || !a?.name) return null;
+      const tracks = (item.relationships?.tracks?.data ?? [])
+        .map((t) => mapAppleTrack(t, storefront))
+        .filter((t): t is Track => !!t);
+      return {
+        platform: 'applemusic',
+        id: String(item.id),
+        name: a.name,
+        cover: appleArtworkUrl(a.artwork?.url, 600),
+        artist: a.artistName || undefined,
+        year: a.releaseDate ? Number(a.releaseDate.slice(0, 4)) || undefined : undefined,
+        tracks,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async fetchArtistInfo(artistId: string): Promise<ArtistInfo | null> {
+    const id = String(artistId ?? '').trim();
+    if (!id || !this.cookies?.get('applemusic')?.cookies) return null;
+    try {
+      const storefront = (await this.accountStorefront()) || 'cn';
+      const item = await this.client.catalogArtist(storefront, id);
+      const a = item?.attributes;
+      if (!item?.id || !a?.name) return null;
+      return {
+        platform: 'applemusic',
+        id: String(item.id),
+        name: a.name,
+        avatar: appleArtworkUrl(a.artwork?.url, 300),
+        description: (a.editorialNotes?.standard || a.editorialNotes?.short || '').replace(/<[^>]+>/g, '').trim() || undefined,
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  async fetchArtistSongs(artistId: string): Promise<Track[]> {
+    const id = String(artistId ?? '').trim();
+    if (!id || !this.cookies?.get('applemusic')?.cookies) return [];
+    try {
+      const storefront = (await this.accountStorefront()) || 'cn';
+      const rows = await this.client.catalogArtistTopSongs(storefront, id, 25);
+      return rows.map((r) => mapAppleTrack(r, storefront)).filter((t): t is Track => !!t);
+    } catch {
+      return [];
+    }
+  }
+
+  async fetchArtistAlbums(artistId: string): Promise<AlbumSummary[]> {
+    const id = String(artistId ?? '').trim();
+    if (!id || !this.cookies?.get('applemusic')?.cookies) return [];
+    try {
+      const storefront = (await this.accountStorefront()) || 'cn';
+      const rows = await this.client.catalogArtistAlbums(storefront, id, 25);
+      return rows
+        .map((r): AlbumSummary | null => {
+          const aid = String(r?.id ?? '').trim();
+          const a = r?.attributes;
+          if (!aid || !a?.name) return null;
+          return {
+            platform: 'applemusic',
+            id: aid,
+            name: a.name,
+            cover: appleArtworkUrl(a.artwork?.url, 600),
+            artist: a.artistName || undefined,
+            year: a.releaseDate ? Number(a.releaseDate.slice(0, 4)) || undefined : undefined,
+            songCount: Number(a.trackCount) || undefined,
+          };
+        })
+        .filter((x): x is AlbumSummary => !!x);
+    } catch {
+      return [];
+    }
   }
 
   /** 账号地区：读不到不影响主流程（分享链接退回 cn）。 */

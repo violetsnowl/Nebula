@@ -701,6 +701,59 @@ await test('退出登录：撤销续期令牌（尽力而为，失败忽略）�
   assert.deepEqual(cleared, [['ytmusic', 'ref-9', false]]);
 });
 
+await test('全网搜歌：解析 TVHTML5 lockupViewModel，跳过合辑与超过 15 分钟视频（#322）', async () => {
+  const lockup = (id, title, channel, dur, ctype = 'LOCKUP_CONTENT_TYPE_MUSIC') => ({
+    lockupViewModel: {
+      contentId: id,
+      contentType: ctype,
+      contentImage: {
+        thumbnailViewModel: {
+          image: { sources: [{ url: `https://i.ytimg.com/vi/${id}/hqdefault.jpg`, width: 320, height: 180 }] },
+          overlays: [{ thumbnailBottomOverlayViewModel: { badges: [{ thumbnailBadgeViewModel: { text: dur } }] } }],
+        },
+      },
+      metadata: {
+        lockupMetadataViewModel: {
+          title: { content: title },
+          metadata: { contentMetadataViewModel: { metadataRows: [{ metadataParts: [{ text: { content: channel } }] }] } },
+        },
+      },
+    },
+  });
+  const adapter = new YtmusicAdapter({}, newStore(), async (req) => {
+    assert.ok(req.url.includes('/youtubei/v1/search'));
+    return {
+      status: 200,
+      text: JSON.stringify({
+        contents: {
+          sectionListRenderer: {
+            contents: [{
+              shelfRenderer: {
+                content: {
+                  horizontalListRenderer: {
+                    items: [
+                      lockup('ic8j13piAhQ', 'Taylor Swift - Cruel Summer (Official Audio)', 'Taylor Swift', '3:00'),
+                      lockup('RDic8j13piAhQ', 'Mix', 'Various', '3:00', 'LOCKUP_CONTENT_TYPE_PLAYLIST'),
+                      lockup('longPodcast1', '1 Hour Podcast', 'TalkShow', '45:00'),
+                    ],
+                  },
+                },
+              },
+            }],
+          },
+        },
+      }),
+    };
+  });
+  const hits = await adapter.searchSongs('Cruel Summer', 5);
+  assert.equal(hits.length, 1);
+  assert.equal(hits[0].platform, 'ytmusic');
+  assert.equal(hits[0].sourceId, 'ic8j13piAhQ');
+  assert.equal(hits[0].title, 'Cruel Summer');
+  assert.equal(hits[0].artist, 'Taylor Swift');
+  assert.equal(hits[0].duration, 180);
+});
+
 await test('日志里没有访问令牌 / 续期令牌 / 设备码 / 客户端身份', async () => {
   const text = logs.join('\n');
   for (const [name, secret] of Object.entries(SECRETS)) assert.ok(!text.includes(secret), '日志泄露了 ' + name);

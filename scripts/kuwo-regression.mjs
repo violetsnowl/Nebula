@@ -292,4 +292,18 @@ await test('SongResolver 酷我档位透传：不再把 flac / 320 压死成 128
  assert.equal(r2.quality,'320');
  assert.deepEqual(seen,['flac','320']);
 });
+await test('搜歌手：匿名 ft=artist 映射 ID / 歌手名 / 300px 头像（#322）',async()=>{
+ const calls=[];
+ const http={requestJson:async(u,o)=>{calls.push({u,o});return {abslist:[
+  {ARTISTID:'336',ARTIST:'周杰伦',hts_PICPATH:'120/s4s56/58/291211030.jpg'},
+  {ARTISTID:'bad',ARTIST:'无效'},
+ ]};}};
+ const hits=await new KuwoAdapter(http,newStore()).searchArtists('周杰伦',5);
+ assert.equal(hits.length,1);
+ assert.equal(hits[0].platform,'kuwo');
+ assert.equal(hits[0].id,'336');
+ assert.equal(hits[0].avatar,'http://img4.kuwo.cn/star/starheads/300/s4s56/58/291211030.jpg');
+ assert.match(calls[0].u,/ft=artist/);
+ assert.equal(calls[0].o.cookie,'');
+});
 console.log(`酷我回归 ${passed}/${passed}`);

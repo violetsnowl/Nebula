@@ -1,6 +1,6 @@
 import type { CookieStore } from '../cookieStore';
 import type { HttpClient } from '../http';
-import type { AlbumDetail, AlbumSummary, Lyric, Playlist, PlatformAdapter, SongUrl, Track } from '../types';
+import type { AlbumDetail, AlbumSummary, ArtistInfo, ArtistSearchHit, Lyric, Playlist, PlatformAdapter, SongUrl, Track } from '../types';
 import { withRequestScope } from '../requestScope';
 import { mergeLyric } from '../parsers/lyricParser';
 import { lrcAt } from '../parsers/timedLyrics';
@@ -67,7 +67,32 @@ const QUERY_HASH = {
   libraryV3: '390c78e5b951029bad359785e69b07b536a509c581cbcd0aded5e5067f187455',
   fetchLibraryTracks: '087278b20b743578a6262c2b0b4bcd20d879c503cc359a2285baf083ef944240',
   fetchPlaylist: 'cd2275433b29f7316176e7b5b5e098ae7744724e1a52d63549c76636b3257749',
+  searchTracks: 'b02683192a98dde7966b5e6655a79eeb62713eab703eda9902c932818dd52751',
+  searchAlbums: '202cb3305e31e5a0767ba7925f28bd728cf8f8b0217e6da43909056071cd70e9',
+  searchArtists: '7bf95d754fdbe32c8b161fbbe54d1ae50974900df4dce4c8f1afcbcad153224d',
+  getAlbum: '0b6ce3511e1b02e4a40fa95440f992acbe85080eb308af9194322d708fc1914f',
+  queryArtistOverview: 'eafb1620d783ece118e72fbfede2b0064483e029d3c1aafafa1c2de0e25a89e7',
 } as const;
+
+const SEARCH_VARS_BASE = {
+  offset: 0,
+  numberOfTopResults: 5,
+  includeAudiobooks: false,
+  includeArtistHasConcertsField: false,
+  includePreReleases: false,
+  includeAuthors: false,
+};
+
+function spotifyIdFromUri(uri: unknown, kind: string): string {
+  const s = String(uri ?? '');
+  const prefix = `spotify:${kind}:`;
+  const id = s.startsWith(prefix) ? s.slice(prefix.length) : s.split(':').pop() || '';
+  return /^[0-9A-Za-z]{22}$/.test(id) ? id : '';
+}
+
+function stripHtmlTags(raw: unknown): string {
+  return String(raw ?? '').replace(/<[^>]+>/g, '').trim();
+}
 /** 「已点赞的歌曲」在我们这里的歌单 id（Spotify 里它不是普通歌单）。 */
 export const SPOTIFY_LIKED_ID = 'liked';
 const IMPORT_LIMIT = 5000;
@@ -231,15 +256,121 @@ export class SpotifyAdapter implements PlatformAdapter {
     }
   }
 
+  /** 全网搜歌：优先走 pathfinder searchTracks（绕开公开 /v1/search 429），失败时回退公开接口；未登录直接返回空。 */
   async searchSongs(keyword: string, pageSize = 10): Promise<Track[]> {
+    const q = String(keyword ?? '').trim();
+    if (!q || !this.cookies.get('spotify')?.cookies) return [];
+    const limit = Math.max(1, Math.min(25, Math.floor(pageSize) || 10));
+    try {
+      const res = await this.query<any>('searchTracks', { ...SEARCH_VARS_BASE, searchTerm: q, limit });
+      const items: any[] = res?.data?.searchV2?.tracksV2?.items ?? [];
+      if (items.length) {
+        return items.map((it) => mapPathfinderTrack(it?.item?.data)).filter((t): t is Track => !!t).slice(0, limit);
+      }
+    } catch {
+      /* pathfinder 失败时降级公开 Web API */
+    }
     try {
       const data = await this.authedRequest<{ tracks?: { items?: Array<Record<string, any>> } }>(
-        `${API}/search?q=${encodeURIComponent(keyword)}&type=track&limit=${pageSize}`,
+        `${API}/search?q=${encodeURIComponent(q)}&type=track&limit=${limit}`,
       );
       return (data?.tracks?.items ?? []).map(mapSpotifyTrack).filter((t): t is Track => !!t);
     } catch {
       return [];
     }
+  }
+
+  /** 全网搜歌手（pathfinder searchArtists）；未登录返回空。 */
+  async searchArtists(keyword: string, pageSize = 5): Promise<ArtistSearchHit[]> {
+    const q = String(keyword ?? '').trim();
+    if (!q || !this.cookies.get('spotify')?.cookies) return [];
+    const limit = Math.max(1, Math.min(20, Math.floor(pageSize) || 5));
+    try {
+      const res = await this.query<any>('searchArtists', { ...SEARCH_VARS_BASE, searchTerm: q, limit });
+      const items: any[] = res?.data?.searchV2?.artists?.items ?? [];
+      return items
+        .map((it): ArtistSearchHit | null => {
+          const d = it?.data;
+          const id = spotifyIdFromUri(d?.uri, 'artist');
+          const name = String(d?.profile?.name ?? '').trim();
+          if (!id || !name) return null;
+          const avatar = largest(d?.visuals?.avatarImage?.sources)?.url ?? '';
+          return { platform: 'spotify', id, name, avatar };
+        })
+        .filter((x): x is ArtistSearchHit => !!x)
+        .slice(0, limit);
+    } catch {
+      return [];
+    }
+  }
+
+  private artistCache = new Map<string, { at: number; data: Record<string, any> }>();
+
+  /** 歌手总览（60 秒进程内缓存：打开歌手页并行调 info / songs / albums 只发一次请求）。 */
+  private async artistOverview(artistId: string): Promise<Record<string, any> | null> {
+    const id = String(artistId ?? '').trim();
+    if (!/^[0-9A-Za-z]{22}$/.test(id) || !this.cookies.get('spotify')?.cookies) return null;
+    const hit = this.artistCache.get(id);
+    if (hit && Date.now() - hit.at < 60_000) return hit.data;
+    try {
+      const res = await this.query<any>('queryArtistOverview', { uri: `spotify:artist:${id}`, locale: '' });
+      const u = res?.data?.artistUnion;
+      if (!u?.profile?.name) return null;
+      this.artistCache.set(id, { at: Date.now(), data: u });
+      if (this.artistCache.size > 32) this.artistCache.delete(this.artistCache.keys().next().value!);
+      return u;
+    } catch {
+      return null;
+    }
+  }
+
+  async fetchArtistInfo(artistId: string): Promise<ArtistInfo | null> {
+    const u = await this.artistOverview(artistId);
+    if (!u) return null;
+    return {
+      platform: 'spotify',
+      id: artistId,
+      name: String(u.profile?.name ?? ''),
+      avatar: largest(u.visuals?.avatarImage?.sources)?.url ?? '',
+      description: stripHtmlTags(u.profile?.biography?.text) || undefined,
+    };
+  }
+
+  async fetchArtistSongs(artistId: string): Promise<Track[]> {
+    const u = await this.artistOverview(artistId);
+    const items: any[] = u?.discography?.topTracks?.items ?? [];
+    return items.map((it) => mapPathfinderTrack(it?.track)).filter((t): t is Track => !!t);
+  }
+
+  async fetchArtistAlbums(artistId: string): Promise<AlbumSummary[]> {
+    const u = await this.artistOverview(artistId);
+    if (!u) return [];
+    const groups: any[] = [
+      ...(u.discography?.albums?.items ?? []),
+      ...(u.discography?.singles?.items ?? []),
+    ];
+    const seen = new Set<string>();
+    const out: AlbumSummary[] = [];
+    const artistName = String(u.profile?.name ?? '');
+    for (const g of groups) {
+      for (const rel of g?.releases?.items ?? []) {
+        const id = spotifyIdFromUri(rel?.uri, 'album');
+        const name = String(rel?.name ?? '').trim();
+        if (!id || !name || seen.has(id)) continue;
+        seen.add(id);
+        out.push({
+          platform: 'spotify',
+          id,
+          name,
+          cover: largest(rel?.coverArt?.sources)?.url ?? '',
+          artist: artistName,
+          year: Number(rel?.date?.year) || undefined,
+          songCount: Number(rel?.tracks?.totalCount) || undefined,
+        });
+        if (out.length >= 25) return out;
+      }
+    }
+    return out;
   }
 
   /** 我的歌单：「已点赞的歌曲」+ 资料库里的歌单（pathfinder）；歌单数各取一次总数。 */
@@ -287,14 +418,42 @@ export class SpotifyAdapter implements PlatformAdapter {
   }
 
   /**
-   * 关键词搜专辑（#226）：走 Web API 的 /search?type=album。
-   * 需要登录令牌，和 searchSongs 同一个前提；未登录时回空，交给调用方。
+   * 关键词搜专辑（#226 / #322）：优先走 pathfinder searchAlbums（绕开公开 /v1/search 429），
+   * 失败时回退公开 Web API；未登录直接返回空。
    */
   async searchAlbums(keyword: string, pageSize = 8): Promise<AlbumSummary[]> {
+    const q = String(keyword ?? '').trim();
+    if (!q || !this.cookies.get('spotify')?.cookies) return [];
+    const limit = Math.max(1, Math.min(20, Math.floor(pageSize) || 8));
+    try {
+      const res = await this.query<any>('searchAlbums', { ...SEARCH_VARS_BASE, searchTerm: q, limit });
+      const items: any[] = res?.data?.searchV2?.albumsV2?.items ?? [];
+      if (items.length) {
+        return items
+          .map((it): AlbumSummary | null => {
+            const d = it?.data;
+            const id = spotifyIdFromUri(d?.uri, 'album');
+            const name = String(d?.name ?? '').trim();
+            if (!id || !name) return null;
+            return {
+              platform: 'spotify',
+              id,
+              name,
+              cover: largest(d?.coverArt?.sources)?.url ?? '',
+              artist: (d?.artists?.items ?? []).map((x: any) => String(x?.profile?.name ?? '')).filter(Boolean).join('/'),
+              year: Number(d?.date?.year) || undefined,
+            };
+          })
+          .filter((a): a is AlbumSummary => !!a)
+          .slice(0, limit);
+      }
+    } catch {
+      /* pathfinder 失败时降级公开 Web API */
+    }
     try {
       const data = await this.authedRequest<{
         albums?: { items?: Array<Record<string, any>> };
-      }>(`${API}/search?q=${encodeURIComponent(keyword)}&type=album&limit=${pageSize}`);
+      }>(`${API}/search?q=${encodeURIComponent(q)}&type=album&limit=${limit}`);
       return (data?.albums?.items ?? [])
         .map((a) => ({
           platform: 'spotify' as const,
@@ -311,8 +470,47 @@ export class SpotifyAdapter implements PlatformAdapter {
     }
   }
 
-  /** 专辑详情：官方 /albums/{id} + /albums/{id}/tracks。 */
+  /** 专辑详情：优先走 pathfinder getAlbum（绕开公开 /v1/albums 429），失败时回退公开接口。 */
   async fetchAlbumDetail(albumId: string): Promise<AlbumDetail | null> {
+    const id = String(albumId ?? '').trim();
+    if (!id || !this.cookies.get('spotify')?.cookies) return null;
+    if (/^[0-9A-Za-z]{22}$/.test(id)) {
+      try {
+        const res = await this.query<any>('getAlbum', { uri: `spotify:album:${id}`, locale: '', offset: 0, limit: 300 });
+        const alb = res?.data?.albumUnion;
+        if (alb?.name) {
+          const coverObj = largest(alb.coverArt?.sources);
+          const cover = coverObj?.url ?? '';
+          const albumName = String(alb.name);
+          const yearRaw = alb.date?.year ?? (alb.date?.isoString ? Number(String(alb.date.isoString).slice(0, 4)) : undefined);
+          const artist = (alb.artists?.items ?? []).map((x: any) => String(x?.profile?.name ?? '')).filter(Boolean).join(' / ') || undefined;
+          const rows: any[] = alb.tracksV2?.items ?? alb.tracks?.items ?? [];
+          const tracks = rows
+            .map((r) => {
+              const t = mapPathfinderTrack(r?.track);
+              if (!t) return null;
+              if (!t.album) t.album = albumName;
+              if (!t.cover && cover) {
+                t.cover = cover;
+                t.coverInfo = { url: cover, width: coverObj?.width, height: coverObj?.height, verified: false };
+              }
+              return t;
+            })
+            .filter((t): t is Track => !!t);
+          return {
+            platform: 'spotify',
+            id,
+            name: albumName,
+            cover,
+            year: Number(yearRaw) || undefined,
+            artist,
+            tracks,
+          };
+        }
+      } catch {
+        /* pathfinder 失败时降级公开 Web API */
+      }
+    }
     try {
       const [album, tracksData] = await Promise.all([
         this.authedRequest<{
@@ -322,9 +520,9 @@ export class SpotifyAdapter implements PlatformAdapter {
           artists?: Array<{ name?: string }>;
           release_date?: string;
           tracks?: { items?: Array<{ track?: Record<string, any> }> };
-        }>(`${API}/albums/${encodeURIComponent(albumId)}`),
+        }>(`${API}/albums/${encodeURIComponent(id)}`),
         this.authedRequest<{ items?: Array<Record<string, any>> }>(
-          `${API}/albums/${encodeURIComponent(albumId)}/tracks?limit=50`,
+          `${API}/albums/${encodeURIComponent(id)}/tracks?limit=50`,
         ),
       ]);
       if (!album?.id) return null;
@@ -339,7 +537,7 @@ export class SpotifyAdapter implements PlatformAdapter {
         tracks,
       };
     } catch (err) {
-      console.warn("[SpotifyAdapter] 专辑详情失败:");
+      console.warn('[SpotifyAdapter] 专辑详情失败:');
       return null;
     }
   }

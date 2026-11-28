@@ -123,6 +123,71 @@ function largestThumb(thumbs: unknown): string {
   return best.url.startsWith('//') ? `https:${best.url}` : best.url;
 }
 
+/** 递归收集搜索结果里的 lockupViewModel（不钻进内部）。 */
+function collectLockups(node: unknown, out: Record<string, any>[] = [], depth = 0): Record<string, any>[] {
+  if (!node || typeof node !== 'object' || depth > 40) return out;
+  if (Array.isArray(node)) {
+    for (const x of node) collectLockups(x, out, depth + 1);
+    return out;
+  }
+  const o = node as Record<string, any>;
+  if (o.lockupViewModel && typeof o.lockupViewModel === 'object') out.push(o.lockupViewModel);
+  for (const [k, v] of Object.entries(o)) if (k !== 'lockupViewModel') collectLockups(v, out, depth + 1);
+  return out;
+}
+
+/** TVHTML5 搜索磁贴（lockupViewModel）→ Track；跳过合辑/歌单/超过 15 分钟的非歌曲视频。 */
+export function mapYtmusicLockup(item: Record<string, any> | undefined | null): Track | null {
+  try {
+    if (!item || typeof item !== 'object') return null;
+    const ctype = String(item.contentType || '');
+    if (ctype && !/MUSIC|VIDEO/i.test(ctype)) return null;
+    const id = String(
+      item.contentId || item.rendererContext?.commandContext?.onTap?.innertubeCommand?.watchEndpoint?.videoId || '',
+    ).trim();
+    if (!/^[A-Za-z0-9_-]{6,20}$/.test(id)) return null;
+    const meta = item.metadata?.lockupMetadataViewModel;
+    const rawTitle = cleanMetadataText(meta?.title?.content || textOf(meta?.title));
+    if (!rawTitle) return null;
+    const rows: any[] = meta?.metadata?.contentMetadataViewModel?.metadataRows || [];
+    const channel = cleanMetadataText(rows[0]?.metadataParts?.[0]?.text?.content || '');
+    const { title, artist } = splitYtmusicTitle(cleanYtmusicTitle(rawTitle), channel);
+    let duration = 0;
+    const overlays: any[] = item.contentImage?.thumbnailViewModel?.overlays || [];
+    for (const ov of overlays) {
+      const badges: any[] =
+        ov?.thumbnailBottomOverlayViewModel?.badges || ov?.thumbnailOverlayBadgeViewModel?.thumbnailBadges || [];
+      for (const b of badges) {
+        const t = b?.thumbnailBadgeViewModel?.text;
+        const d = parseYtmusicDuration(typeof t === 'string' ? t : textOf(t));
+        if (d > 0) {
+          duration = d;
+          break;
+        }
+      }
+      if (duration > 0) break;
+    }
+    if (duration > YTMUSIC_LIKED_MAX_SEC) return null;
+    const cover = largestThumb(item.contentImage?.thumbnailViewModel?.image?.sources);
+    return {
+      id: `ytmusic:${id}`,
+      title,
+      artist,
+      artists: [artist],
+      album: '',
+      cover,
+      coverInfo: cover ? { url: cover, verified: false } : undefined,
+      duration,
+      platform: 'ytmusic',
+      sourceId: id,
+      originalUrl: '',
+      fallbackUrl: '',
+    };
+  } catch {
+    return null;
+  }
+}
+
 /** 递归收集 tileRenderer（不钻进磁贴内部）。 */
 function collectTiles(node: unknown, out: Record<string, any>[] = [], depth = 0): Record<string, any>[] {
   if (!node || typeof node !== 'object' || depth > 40) return out;
@@ -646,6 +711,38 @@ export class YtmusicAdapter implements PlatformAdapter {
 
   async fetchLyric(): Promise<Lyric | null> {
     return null;
+  }
+
+  /** 全网搜歌：复用 TVHTML5 的 youtubei/v1/search（免登录也可搜，已登录时附带令牌）。 */
+  async searchSongs(keyword: string, pageSize = 10): Promise<Track[]> {
+    const q = String(keyword ?? '').trim();
+    if (!q) return [];
+    const limit = Math.max(1, Math.min(20, Math.floor(pageSize) || 10));
+    try {
+      const data = await this.client.call('search', { query: q }, { anonymousOk: true });
+      const seen = new Set<string>();
+      const out: Track[] = [];
+      for (const lockup of collectLockups(data)) {
+        const t = mapYtmusicLockup(lockup);
+        if (!t || seen.has(t.sourceId)) continue;
+        seen.add(t.sourceId);
+        out.push(t);
+        if (out.length >= limit) break;
+      }
+      // 兼容旧版或测试里返回 tileRenderer 的情况
+      if (out.length < limit) {
+        for (const tile of collectTiles(data)) {
+          const t = mapYtmusicTrack(tile);
+          if (!t || seen.has(t.sourceId) || t.duration > YTMUSIC_LIKED_MAX_SEC) continue;
+          seen.add(t.sourceId);
+          out.push(t);
+          if (out.length >= limit) break;
+        }
+      }
+      return out;
+    } catch {
+      return [];
+    }
   }
 
   /**

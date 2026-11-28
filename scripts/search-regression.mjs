@@ -288,4 +288,19 @@ await test('酷狗歌手专辑：封面读取真实 imgurl 替换 {size} 并升�
   assert.equal(albums[1].cover, '');
 });
 
+await test('搜歌与搜歌手：YouTube Music 参与全网搜歌，酷我 / Spotify / Apple Music 参与全网搜歌手（#322）', async () => {
+  const svc = new b.LyricService({
+    netease: { ...songAdapter('netease', ['N1']), ...artistAdapter('netease', ['网易歌手']) },
+    ytmusic: songAdapter('ytmusic', ['YT1']),
+    kuwo: artistAdapter('kuwo', ['酷我歌手']),
+    spotify: artistAdapter('spotify', ['Spotify歌手']),
+    applemusic: artistAdapter('applemusic', ['Apple歌手']),
+  });
+  const songs = await svc.searchSongs('测试', 6);
+  assert.ok(songs.some((g) => g.sources.some((s) => s.platform === 'ytmusic')), 'YouTube Music 应参与全网搜歌');
+  const arts = await svc.searchArtists('测试', 8);
+  const plats = new Set(arts.map((a) => a.platform));
+  assert.ok(plats.has('kuwo') && plats.has('spotify') && plats.has('applemusic'), '酷我 / Spotify / Apple Music 应参与全网搜歌手');
+});
+
 console.log(`在线搜索回归 ${n}/${n}`);

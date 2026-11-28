@@ -483,4 +483,49 @@ await test('搜索（#232）：未登录时立即返回空，不调用页面引�
   assert.ok(seen.some((r) => String(r.path).includes('/search')), '走的是目录搜索');
 });
 
+await test('目录搜索（歌手 / 专辑）与歌手页 / 专辑详情（#322）：未登录不发请求，登录后正确映射', async () => {
+  let anonCalls = 0;
+  const anon = new AppleMusicAdapter({}, { get: () => null });
+  anon.client.setBridge({ call: async () => { anonCalls++; return { status: 200, data: [] }; } });
+  assert.deepEqual(await anon.searchArtists('周杰伦', 5), []);
+  assert.deepEqual(await anon.searchAlbums('范特西', 5), []);
+  assert.equal(await anon.fetchAlbumDetail('123'), null);
+  assert.equal(await anon.fetchArtistInfo('456'), null);
+  assert.equal(anonCalls, 0);
+
+  const logged = new AppleMusicAdapter({}, { get: () => ({ cookies: 'page-session' }) });
+  logged.client.setBridge({
+    call: async (req) => {
+      if (req.path === '/v1/me/storefront') return ok([{ id: 'cn', type: 'storefronts' }]);
+      if (req.path.endsWith('/search') && req.query?.types === 'artists') {
+        return ok([{ id: '3001', type: 'artists', attributes: { name: '周杰伦', artwork: { url: ART('ar1') } } }]);
+      }
+      if (req.path.endsWith('/search') && req.query?.types === 'albums') {
+        return ok([{ id: '2001', type: 'albums', attributes: { name: '范特西', artistName: '周杰伦', releaseDate: '2001-09-14', trackCount: 10, artwork: { url: ART('al1') } } }]);
+      }
+      if (req.path.endsWith('/albums/2001')) {
+        return ok([{ id: '2001', type: 'albums', attributes: { name: '范特西', artistName: '周杰伦', releaseDate: '2001-09-14', artwork: { url: ART('al1') }, editorialNotes: { standard: '<i>经典</i>' } }, relationships: { tracks: { data: [catSong('9001')] } } }]);
+      }
+      if (req.path.endsWith('/artists/3001')) {
+        return ok([{ id: '3001', type: 'artists', attributes: { name: '周杰伦', artwork: { url: ART('ar1') }, editorialNotes: { short: '华语天王' } } }]);
+      }
+      if (req.path.endsWith('/artists/3001/view/top-songs')) return ok([catSong('9001')]);
+      if (req.path.endsWith('/artists/3001/albums')) {
+        return ok([{ id: '2001', type: 'albums', attributes: { name: '范特西', artistName: '周杰伦', releaseDate: '2001-09-14', trackCount: 10, artwork: { url: ART('al1') } } }]);
+      }
+      return ok([]);
+    },
+  });
+  const arts = await logged.searchArtists('周杰伦', 5);
+  assert.equal(arts.length, 1); assert.equal(arts[0].id, '3001'); assert.ok(arts[0].avatar.includes('300x300'));
+  const albs = await logged.searchAlbums('范特西', 5);
+  assert.equal(albs.length, 1); assert.equal(albs[0].year, 2001);
+  const det = await logged.fetchAlbumDetail('2001');
+  assert.equal(det.tracks.length, 1); assert.equal(det.year, 2001);
+  const info = await logged.fetchArtistInfo('3001');
+  assert.equal(info.description, '华语天王');
+  assert.equal((await logged.fetchArtistSongs('3001')).length, 1);
+  assert.equal((await logged.fetchArtistAlbums('3001')).length, 1);
+});
+
 say(`Apple Music 适配器回归 ${passed}/${passed}`);

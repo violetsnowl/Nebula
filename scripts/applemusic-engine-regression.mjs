@@ -529,4 +529,20 @@ await test('callMany：单项卡住只令该项返回 timeout 错误，其余项
   assert.equal(rs[3].total, 15);
 });
 
+await test('目录搜索歌手 / 专辑与专辑曲目白名单放行，同时不泄漏令牌且资料库曲目仍剥离 editorialNotes（#322）', async () => {
+  const { engine, state } = makeEnv();
+  state.music = async (p, q) => {
+    if (q?.types === 'artists') return { status: 200, data: { results: { artists: { data: [{ id: 'a1', type: 'artists', attributes: { name: '歌手', artwork: { url: 'https://x/{w}x{h}bb.{f}' }, editorialNotes: { short: '简介' }, musicUserToken: 'USER-TOKEN-SECRET' } }] } } } };
+    if (q?.types === 'albums') return { status: 200, data: { results: { albums: { data: [{ id: 'al1', type: 'albums', attributes: { name: '专辑', releaseDate: '2020-01-01', trackCount: 10 } }] } } } };
+    return { status: 200, data: { data: [{ id: 'al1', type: 'albums', attributes: { name: '专辑', releaseDate: '2020-01-01', editorialNotes: { standard: '说明' } }, relationships: { tracks: { data: [{ id: 's1', type: 'songs', attributes: { name: '歌1', durationInMillis: 180000, developerToken: 'DEV-TOKEN-SECRET' } }] } } }] } };
+  };
+  const rAr = await engine.call({ path: '/v1/catalog/cn/search', query: { term: 'x', types: 'artists' } });
+  assert.equal(rAr.data[0].id, 'a1'); assert.equal(rAr.data[0].attributes.editorialNotes.short, '简介');
+  const rAl = await engine.call({ path: '/v1/catalog/cn/search', query: { term: 'x', types: 'albums' } });
+  assert.equal(rAl.data[0].attributes.releaseDate, '2020-01-01');
+  const rDet = await engine.call({ path: '/v1/catalog/cn/albums/al1' });
+  assert.equal(rDet.data[0].relationships.tracks.data[0].attributes.name, '歌1');
+  assert.ok(!/SECRET|developerToken|musicUserToken/i.test(JSON.stringify([rAr, rAl, rDet])));
+});
+
 say(`Apple Music 页面引擎回归 ${passed}/${passed}`);

@@ -168,7 +168,7 @@ export function useOverlays() {
    * 所以这里只要把专辑名和歌手一起交下去。
    */
   const openAlbum = useCallback((platform: string, albumId: string, albumName: string, artistName?: string) => {
-    if (albumId && (platform === 'netease' || platform === 'qq')) {
+    if (albumId && (platform === 'netease' || platform === 'qq' || platform === 'spotify' || platform === 'applemusic')) {
       showInfo({ kind: 'album', platform, albumId, albumName, albumArtist: artistName });
       return;
     }
@@ -196,7 +196,7 @@ export function useOverlays() {
    * 其他平台（汽水 / Spotify 等）或 id 缺失时按歌手名转译到网易云 / QQ 歌手页。
    */
   const openArtistFromChip = useCallback((platform: string, artistId: string, name: string) => {
-    if (artistId && (platform === 'netease' || platform === 'qq' || platform === 'kugou')) {
+    if (artistId && (platform === 'netease' || platform === 'qq' || platform === 'kugou' || platform === 'spotify' || platform === 'applemusic')) {
       showInfo({ kind: 'artist', platform, artistId, artistName: name });
       return;
     }
