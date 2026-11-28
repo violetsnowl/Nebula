@@ -96,6 +96,11 @@ pair('频道名去后缀后主唱仍不在','The Monster','EminemMusic',{artist:
 pair('同样多的歌手、有一位对不上','合唱作品','甲 / 乙',{artist:'甲 / 丙',artists:['甲','丙']},false);
 pair('Original Mix 是原版（#211）','Collapsing World (Original Mix)','Lightscape',{title:'Collapsing World'});
 pair('Extended Mix 仍是版本','Collapsing World (Extended Mix)','Lightscape',{title:'Collapsing World'},false);
+// #325：演唱会/巡演/晚会/音乐节等演出场次括注（即使末尾是「上海站」而非「演唱会」）不得顶替录音室原版
+pair('巡回演唱会上海站不得顶替原版','孤勇者','陈奕迅',{title:'孤勇者 (2023 FEAR and DREAMS世界巡回演唱会上海站)',duration:220},false);
+pair('跨年晚会现场不得顶替原版','孤勇者','陈奕迅',{title:'孤勇者 (2024跨年晚会)',duration:220},false);
+pair('音乐节演出不得顶替原版','晴天','周杰伦',{title:'晴天 (草莓音乐节北京站)',duration:220},false);
+pair('Unplugged不得顶替原版','Hello','Adele',{title:'Hello (Unplugged)',duration:220},false);
 cases.push(...round2);
 for(const c of cases)assert.equal(api.recordingMatch(c.candidate,c.target).ok,c.expected,c.kind);
 {

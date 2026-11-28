@@ -390,7 +390,10 @@ export default function App() {
     audioPlayer.emptyResolver = resolveTrackForPlay;
   }, []);
 
-  const handleQualitySelect = selectQuality;
+  const handleQualitySelect = useCallback(
+    (level: string) => selectQuality(level, setModeToast),
+    [setModeToast],
+  );
   const handleSelectSource = useCallback(
     (platform: string) => selectPlaybackSource(platform, setModeToast),
     [setModeToast],

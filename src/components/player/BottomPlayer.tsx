@@ -6,7 +6,7 @@ import { VolumeControl } from './VolumeControl';
 import { QueueControl } from './QueueControl';
 import { QualityControl } from './QualityControl';
 import type { DesktopPlaybackSourceOption } from '../../lib/playlist/ipcClient';
-import type { PlaybackSourceSwitchResult } from '../../lib/audio/desktopPlayback';
+import type { PlaybackSourceSwitchResult, QualitySwitchResult } from '../../lib/audio/desktopPlayback';
 import { platformName } from '../../lib/quality';
 import { placeholderBg } from '../../lib/coverPlaceholder';
 import {
@@ -25,7 +25,7 @@ interface BottomPlayerProps {
   qualities: { level: string; label: string; needsVip?: boolean; needsSvip?: boolean }[];
   quality: string;
   onCycleMode: () => void;
-  onSelectQuality: (level: string) => void;
+  onSelectQuality: (level: string) => Promise<QualitySwitchResult> | void;
   onLoadSources?: () => Promise<DesktopPlaybackSourceOption[]>;
   onSelectSource?: (platform: string) => Promise<PlaybackSourceSwitchResult> | void;
   onOpenNowPlaying: () => void;

@@ -49,35 +49,81 @@ export async function resolveTrackForPlay(track: Track, _reason: 'empty' | 'erro
   });
 }
 
+export interface QualitySwitchResult {
+  ok: boolean;
+  status: 'switched' | 'downgraded' | 'kept' | 'noop' | 'cancelled' | 'auth_expired' | 'unavailable' | 'error';
+  message?: string;
+  quality?: string;
+}
+
 let qualitySequence = 0;
 let qualityRequest: AbortController | null = null;
-export function selectQuality(level: string): void {
+export function selectQuality(
+  level: string,
+  onNotify?: (message: string) => void,
+): Promise<QualitySwitchResult> {
   try { localStorage.setItem('music-nebula.quality', level); } catch { /* 私密模式 */ }
-  const song = audioPlayer.getState().song;
-  if (!song || !hasDesktopAPI() || !song.sourceId || song.quality === level) return;
+  const state = audioPlayer.getState();
+  const song = state.song;
+  if (!song || !hasDesktopAPI() || !song.sourceId || song.quality === level) {
+    return Promise.resolve({ ok: true, status: 'noop' });
+  }
+  const prevQuality = song.quality || '';
+  const labelOf = (lv: string) => state.qualities.find((q) => q.level === lv)?.label || qualityName(lv) || lv;
+  const reqLabel = labelOf(level);
   const generation = audioPlayer.getGeneration(), seq = ++qualitySequence;
   qualityRequest?.abort();
   const control = new AbortController(); qualityRequest = control;
   const unsubscribe = audioPlayer.subscribe(() => { if (generation !== audioPlayer.getGeneration()) control.abort(); });
   const current = () => seq === qualitySequence && generation === audioPlayer.getGeneration();
-  void resolveDesktop(streamTrack(song), level, control.signal, true).then(res => {
+  const flash = (msg: string, ms = 3600) => {
+    const installed = audioPlayer.getGeneration();
+    audioPlayer.setError(msg);
+    window.setTimeout(() => {
+      if (installed === audioPlayer.getGeneration() && audioPlayer.getState().error === msg) audioPlayer.setError(null);
+    }, ms);
+  };
+  return resolveDesktop(streamTrack(song), level, control.signal, true).then((res): QualitySwitchResult => {
     unsubscribe();
-    if (!current()) return;
+    if (!current()) return { ok: false, status: 'cancelled' };
     if (!res.ok || !res.data?.url || res.data.playable === false) {
-      if(res.ok && res.data?.code==='AUTH_EXPIRED'){audioPlayer.setError(res.data.error || 'QQ 登录已过期，请重新登录');return;}
-      audioPlayer.setError('该音质暂不可用，已保持当前音质'); return;
+      if (res.ok && res.data?.code === 'AUTH_EXPIRED') {
+        const msg = res.data.error || 'QQ 登录已过期，请重新登录';
+        audioPlayer.setError(msg);
+        onNotify?.(msg);
+        return { ok: false, status: 'auth_expired', message: msg };
+      }
+      const msg = `「${reqLabel}」暂不可用，已保持当前音质`;
+      flash(msg, 3200);
+      onNotify?.(msg);
+      return { ok: false, status: 'unavailable', message: msg };
     }
     const got = res.data.quality || '';
-    audioPlayer.switchSource(res.data.url, { quality: got, keepTime: true, via: res.data.fallback ? viaOf(res.data) : song.via, resolvedAt:res.data.resolvedAt, expiresAt:res.data.expiresAt });
-    if (got && got !== level && qualityName(got) && qualityName(level)) {
-      const msg = `这首歌没有「${qualityName(level)}」，已切到「${qualityName(got)}」`;
-      const installed = audioPlayer.getGeneration();
-      audioPlayer.setError(msg);
-      window.setTimeout(() => {
-        if (installed === audioPlayer.getGeneration() && audioPlayer.getState().error === msg) audioPlayer.setError(null);
-      }, 3200);
+    const gotLabel = got ? labelOf(got) : '';
+    if (got && got !== level && got === prevQuality) {
+      // 平台降回原档位（如酷狗/酷我无 VIP 点高品 320k 仍回 128k）：不打断重载同档位音频，清晰告知原因
+      const msg = `无法切换「${reqLabel}」（可能需要该平台会员），已保持「${gotLabel}」`;
+      flash(msg, 3600);
+      onNotify?.(msg);
+      return { ok: false, status: 'kept', message: msg, quality: got };
     }
-  }).catch(() => { if (current()) audioPlayer.setError('音质切换失败'); }).finally(unsubscribe);
+    audioPlayer.switchSource(res.data.url, { quality: got, keepTime: true, via: res.data.fallback ? viaOf(res.data) : song.via, resolvedAt:res.data.resolvedAt, expiresAt:res.data.expiresAt });
+    if (got && got !== level && gotLabel && reqLabel) {
+      const msg = `无法获取「${reqLabel}」，已切到「${gotLabel}」`;
+      flash(msg, 3600);
+      onNotify?.(msg);
+      return { ok: true, status: 'downgraded', message: msg, quality: got };
+    }
+    const okMsg = `已切换至「${gotLabel || reqLabel}」`;
+    onNotify?.(okMsg);
+    return { ok: true, status: 'switched', message: okMsg, quality: got };
+  }).catch((): QualitySwitchResult => {
+    if (!current()) return { ok: false, status: 'cancelled' };
+    const msg = `音质切换失败，已保持当前音质`;
+    flash(msg, 3200);
+    onNotify?.(msg);
+    return { ok: false, status: 'error', message: msg };
+  }).finally(unsubscribe);
 }
 
 /** 音质弹层打开时按需拉取当前曲目可手动切换的平台列表。 */

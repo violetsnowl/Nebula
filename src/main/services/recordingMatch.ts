@@ -51,16 +51,18 @@ function artistForms(piece:string):string[] {
   return [...forms];
 }
 // 「版」和伴奏 / 语种 / 器乐 / 剪辑类词都算版本：国语版≠粤语版，Off Vocal 与原曲同长也不能顶替。
-const VERSION=/\b(live|remix|mix|remaster(?:ed)?|acoustic|instrumental|inst\.?|off\s*vocal|karaoke|cover|demo|edit|ver\.?|version|dj|the\s+first\s+take|tv\s*size|short|extended|clean|piano|guitar|orchestral?|sped\s*up|slowed|mono|stereo|\d+(?:\.\d+)?x)\b|版|现场|現場|演唱会|演唱會|伴奏|纯音乐|純音樂|翻唱|混音|重制|重製|重录|重錄|不插电|不插電|加速|降速|改编|改編|钢琴|鋼琴|吉他|女声|女聲|男声|男聲|片段|铃声|鈴聲|抖音/i;
+const VERSION=/\b(live|unplugged|remix|mix|remaster(?:ed)?|acoustic|instrumental|inst\.?|off\s*vocal|karaoke|cover|demo|edit|ver\.?|version|dj|the\s+first\s+take|tv\s*size|short|extended|clean|piano|guitar|orchestral?|sped\s*up|slowed|mono|stereo|\d+(?:\.\d+)?x)\b|版|现场|現場|演唱会|演唱會|伴奏|纯音乐|純音樂|翻唱|混音|重制|重製|重录|重錄|不插电|不插電|加速|降速|改编|改編|钢琴|鋼琴|吉他|女声|女聲|男声|男聲|片段|铃声|鈴聲|抖音/i;
 // #205：卡拉 OK、翻唱说明也算版本（以前「（カラオケ）」「（翻自 某某）」这类中日文括注被当成译名，只靠歌手不同挡住）
 const EXTRA_VERSION=/カラオケ|翻自|歌ってみた|弾いてみた|原曲歌手|\bcovered\s+by\b/i;
+// #325：演出 / 演唱会 / 巡演 / 晚会等场次说明无论是否在括注末尾都属于非录音室版本（如「2023 FEAR and DREAMS世界巡回演唱会上海站」）
+const CJK_LIVE_EVENT=/演唱会|演唱會|巡演|巡回|巡迴|音乐节|音樂節|音乐会|音樂會|联欢晚会|聯歡晚會|跨年晚会|跨年晚會|春晚|现场版|現場版|纯享|純享|消音|饭拍|飯拍|直拍/;
 // #205：只说「原版 / 专辑版」的不算版本（网易云「前前前世 [original ver.]」就是原曲）
 // （Single Version 常是剪短的单曲版，仍算版本）
 // （「Original Mix」是电子乐的原版，#211 起也不算版本；Radio Edit / Extended Mix 仍算）
 const PLAIN_VERSION=/^\s*(?:(?:original|album)\s*(?:ver\.?|version|mix)?|原版|原曲|专辑版|專輯版)\s*$/i;
 // #205：出处说明不算版本（「 - From "La La Land" Soundtrack」「（Music from the FIFA World Cup …）」）
 const SOURCE_NOTE=/^\s*(?:from\b|theme\s+(?:song\s+)?(?:from|of)\b|(?:original\s+)?(?:motion\s+picture\s+)?soundtrack|ost\b|music\s+from\b|电影|電影|电视剧|電視劇|动画|動畫|《)/i;
-const HARD_VERSION=/\b(?:live|remix|mix|instrumental|inst\.?|karaoke|acoustic|cover|off\s*vocal)\b|现场|現場|伴奏|翻唱|カラオケ/i;
+const HARD_VERSION=/\b(?:live|unplugged|remix|mix|instrumental|inst\.?|karaoke|acoustic|cover|off\s*vocal)\b|现场|現場|伴奏|翻唱|カラオケ|演唱会|演唱會|巡演|巡回|巡迴|音乐节|音樂節|音乐会|音樂會|春晚|跨年晚会|跨年晚會/i;
 const notVersion=(s:string):boolean=>PLAIN_VERSION.test(s) || (SOURCE_NOTE.test(s) && !HARD_VERSION.test(s));
 function versionText(s:string):string {
   return identityText(s.replace(/现场(?:版)?|現場(?:版)?|演唱[会會](?:版)?/g,'live').replace(/remastered/gi,'remaster').replace(/伴奏(?:版)?/g,'instrumental'));
@@ -69,7 +71,7 @@ const CJK=/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul
 const CJK_ALL=/[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Hangul}]+/gu;
 // 中日文括注里的版本词要在末尾（「钢琴版」「2014 某某现场」），整句译名里碰巧含「伴奏」等字的不算（「任命友人A为我的伴奏者」，#211）
 const CJK_VERSION_END=/(?:版|现场|現場|演唱会|演唱會|伴奏|纯音乐|純音樂|翻唱|混音|重制|重製|重录|重錄|不插电|不插電|加速|降速|改编|改編|钢琴|鋼琴|吉他|女声|女聲|男声|男聲|片段|铃声|鈴聲)\s*$/;
-const VERSION_LATIN=/\b(live|remix|mix|remaster(?:ed)?|acoustic|instrumental|inst\.?|off\s*vocal|karaoke|cover|demo|edit|ver\.?|version|dj|the\s+first\s+take|tv\s*size|short|extended|clean|piano|guitar|orchestral?|sped\s*up|slowed|mono|stereo|\d+(?:\.\d+)?x)\b/i;
+const VERSION_LATIN=/\b(live|unplugged|remix|mix|remaster(?:ed)?|acoustic|instrumental|inst\.?|off\s*vocal|karaoke|cover|demo|edit|ver\.?|version|dj|the\s+first\s+take|tv\s*size|short|extended|clean|piano|guitar|orchestral?|sped\s*up|slowed|mono|stereo|\d+(?:\.\d+)?x)\b/i;
 const NOTES=/\(([^()]*)\)|\[([^\[\]]*)\]|【([^【】]*)】/g;
 /**
  * 括注是否构成版本约束：版本词一定算；feat / Explicit 不算；
@@ -80,7 +82,7 @@ function versionNote(note:string,full:string):boolean {
   const s=note.trim();
   if (!s || /^(?:feat\.?|featuring|with)\s/i.test(s) || /^explicit$/i.test(s)) return false;
   if (notVersion(s)) return false;
-  if (EXTRA_VERSION.test(s)) return true;
+  if (EXTRA_VERSION.test(s) || CJK_LIVE_EVENT.test(s)) return true;
   if (CJK.test(s)) return VERSION_LATIN.test(s.replace(CJK_ALL,' ')) || CJK_VERSION_END.test(s) || (s.length<=4 && VERSION.test(s));
   if (VERSION.test(s)) return true;
   return !CJK.test(full.replace(NOTES,''));
@@ -100,7 +102,7 @@ function title(t:Track):{names:Set<string>;version:string;cjk:boolean} {
   // 「 - 副标题」：是版本就记版本；不是（出处、feat、副标题）就当说明去掉，和「（副标题）」写法同等对待（#205）
   if (suffix) {
     const note=suffix[1]!;
-    if (!notVersion(note) && (VERSION.test(note) || EXTRA_VERSION.test(note))) versions.push(versionText(note));
+    if (!notVersion(note) && (VERSION.test(note) || EXTRA_VERSION.test(note) || CJK_LIVE_EVENT.test(note))) versions.push(versionText(note));
     base=base.slice(0,suffix.index);
   }
   const bare=base.match(/\s+(live|remix|remaster(?:ed)?|instrumental|karaoke|acoustic|demo|the\s+first\s+take|dj(?:\s*版)?|网友改编|純音樂|纯音乐|伴奏|\d{4}\s+mix)\s*$/i);

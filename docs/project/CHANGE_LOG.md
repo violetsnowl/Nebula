@@ -6,6 +6,28 @@
 
 ---
 
+## #325 — 2026-11-28 — 验收修补：拦截巡演/演唱会场次 Live 顶替原版 + 音质切不上去时原地标注与居中提示
+
+**目标**：解决桌面验收发现的两个问题：① 播放《孤勇者》切到波点音乐时播成演唱会 Live 版——根因是波点原版需会员（仅试听），第二候选 `孤勇者 (2023 FEAR and DREAMS世界巡回演唱会上海站)` 的括注因以「上海站」而非「演唱会」结尾，绕过了 `recordingMatch` 的 `CJK_VERSION_END` 末尾锚定检查，且恰好同长 256 秒，被误当成录音室原版放行；② 在无会员平台（如酷狗无 VIP）点更高音质（如「高品 320k」）降回原档位时，旧逻辑只在播放条最左侧闪一句弱提示、且无谓重载同一档位音频，右侧弹层直接关闭，观感像「选不了却无提示」。
+
+**改动点**
+- **录音版本门禁拦截演出场次**（`src/main/services/recordingMatch.ts`、`scripts/matching-regression.mjs`）：
+  - 新增 `CJK_LIVE_EVENT`（`演唱会/巡演/巡回/音乐节/音乐会/联欢晚会/跨年晚会/春晚/现场版/纯享/消音/饭拍/直拍`）与英文 `unplugged`，无论是否位于括注末尾（如「世界巡回演唱会上海站」）都一律判定为非录音室版本，不再顶替原版；保留 `#211` 对「任命友人A为我的伴奏者」等译名括注的放行；
+  - `matching-regression.mjs` 新增 4 项回归（世界巡回演唱会上海站 / 跨年晚会 / 音乐节 / Unplugged 均拒绝顶替原版）。
+- **音质切换失败/降级统一反馈**（`src/lib/audio/desktopPlayback.ts`、`src/components/player/QualityControl.tsx`、`src/components/player/BottomPlayer.tsx`、`src/App.tsx`、`src/styles.css`）：
+  - `selectQuality` 改为返回 `Promise<QualitySwitchResult>` 并接入居中 G3 轻提示（`setModeToast`）；使用弹层真实档位名（如「高品 320k」「标准 128k」）；若目标平台实际返回与当前相同的档位（无权限切不上去），不再无谓中断重载当前音频，直接提示 `无法切换「高品 320k」（可能需要该平台会员），已保持「标准 128k」`；
+  - `QualityControl` 音质列表与播放来源统一交互：点击后原地显示 `切换中…`，成功自动收起弹层 + 居中提示；无法切换时保留弹层并在该行右侧弱化标注 `不可用`（切歌或切换播放来源自动清空）。
+
+**验证方式**
+- `pnpm build` 通过；
+- `pnpm qa:backend`（含 `matching-regression` 新 4 项与 `router-regression`）全套离线回归通过；
+- `pnpm qa`（架构约束 + UI 播放回归 + 分段回归 + 无头 Chrome 全量验收，0 console error）通过。
+
+**遗留与风险**
+- 搜「起风了」展开「周深」分组不含汽水属正常（汽水收录的是买辣椒也用券原唱版；搜「爱错 - 王力宏」已实测 7 源含汽水 / YouTube Music / Apple Music 全齐）。
+
+---
+
 ## #324 — 2026-11-28 — 手动切源超时与交互反馈修补（单平台放宽预算/重搜/绕熔断 + 弹层原地状态与居中提示）
 
 **目标**：解决桌面验收反馈的「音质弹层里手动切换播放来源时，后面三项（QQ / 酷狗 / 波点）点不动」问题。经 Playwright 命中测试与账号副本实测定位，点击事件本身无 CSS 遮挡，问题由三层原因叠加造成：① `SongResolver.resolveOnPlatform` 直接复用了后台 5 平台兜底的紧超时（`searchMs: 1600ms` 且不重搜）与后台熔断器，QQ 搜索（实测常在 1.3–2.5s）频发超时且返回 `NO_SOURCE`；② 酷狗 / 波点无会员号对 VIP 歌按规则仅能拿到试听或无权限（波点 `checkRight status=3` 为 29 秒试听）；③ 点击任意来源后弹层立刻关闭，失败提示只闪在播放条最左侧（远离右侧弹层），观感等同于「点不动」。

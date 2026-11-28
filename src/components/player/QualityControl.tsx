@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { platformName, qualityCode, qualityName } from '../../lib/quality';
 import type { DesktopPlaybackSourceOption } from '../../lib/playlist/ipcClient';
-import type { PlaybackSourceSwitchResult } from '../../lib/audio/desktopPlayback';
+import type { PlaybackSourceSwitchResult, QualitySwitchResult } from '../../lib/audio/desktopPlayback';
 
 interface QualityControlProps {
   qualities: { level: string; label: string; needsVip?: boolean; needsSvip?: boolean }[];
@@ -12,7 +12,7 @@ interface QualityControlProps {
   source?: string;
   /** 当前实际出声的平台标识（用于高亮「播放来源」列表里的当前项） */
   activePlatform?: string;
-  onSelectQuality: (level: string) => void;
+  onSelectQuality: (level: string) => Promise<QualitySwitchResult> | void;
   /** 弹层打开时按需读取可切换的播放平台列表（#323） */
   onLoadSources?: () => Promise<DesktopPlaybackSourceOption[]>;
   onSelectSource?: (platform: string) => Promise<PlaybackSourceSwitchResult> | void;
@@ -49,6 +49,8 @@ export const QualityControl = memo(function QualityControl({
   const [sources, setSources] = useState<DesktopPlaybackSourceOption[]>([]);
   const [pendingPlatform, setPendingPlatform] = useState<string | null>(null);
   const [failedTags, setFailedTags] = useState<Record<string, string>>({});
+  const [pendingQuality, setPendingQuality] = useState<string | null>(null);
+  const [failedQualities, setFailedQualities] = useState<Record<string, string>>({});
   const rootRef = useRef<HTMLDivElement>(null);
   // 列表里没有当前档位（没有歌曲、或平台给了列表外的一档）时用通用中文名兜底，绝不把原始英文标识露给用户
   const qualityLabel = qualities.find((o) => o.level === quality)?.label ?? (qualityName(quality) || '音质');
@@ -57,7 +59,15 @@ export const QualityControl = memo(function QualityControl({
   useEffect(() => {
     setPendingPlatform(null);
     setFailedTags({});
+    setPendingQuality(null);
+    setFailedQualities({});
   }, [songKey]);
+
+  // 切换播放来源后清空旧平台的音质不可用标记
+  useEffect(() => {
+    setPendingQuality(null);
+    setFailedQualities({});
+  }, [activePlatform]);
 
   useEffect(() => {
     if (!open || !onLoadSources) {
@@ -88,6 +98,36 @@ export const QualityControl = memo(function QualityControl({
       document.removeEventListener('keydown', onKey);
     };
   }, [open]);
+
+  const handleQualityClick = (level: string) => {
+    setPendingQuality(level);
+    setFailedQualities((prev) => {
+      if (!prev[level]) return prev;
+      const next = { ...prev };
+      delete next[level];
+      return next;
+    });
+    const ret = onSelectQuality(level);
+    if (!ret || typeof (ret as Promise<QualitySwitchResult>).then !== 'function') {
+      setPendingQuality(null);
+      setOpen(false);
+      return;
+    }
+    void (ret as Promise<QualitySwitchResult>).then((res) => {
+      setPendingQuality((cur) => (cur === level ? null : cur));
+      if (!res || res.status === 'cancelled') return;
+      if (res.ok) {
+        setOpen(false);
+        return;
+      }
+      if (res.status !== 'noop') {
+        setFailedQualities((prev) => ({
+          ...prev,
+          [level]: res.status === 'auth_expired' ? '需重登' : '不可用',
+        }));
+      }
+    });
+  };
 
   const handleSourceClick = (platform: string) => {
     if (!onSelectSource) return;
@@ -138,18 +178,22 @@ export const QualityControl = memo(function QualityControl({
             音质
             {source && <span className="quality-src">{source}音源</span>}
           </div>
-          {qualities.map((o) => (
-            <button
-              key={o.level}
-              className={`quality-item${o.level === quality ? ' is-current' : ''}`}
-              onClick={() => {
-                onSelectQuality(o.level);
-                setOpen(false);
-              }}
-            >
-              {o.label}
-            </button>
-          ))}
+          {qualities.map((o) => {
+            const isCur = o.level === quality;
+            const isBusy = pendingQuality === o.level;
+            const fail = failedQualities[o.level];
+            const tag = isBusy ? '切换中…' : fail || '';
+            return (
+              <button
+                key={o.level}
+                className={`quality-item${isCur ? ' is-current' : ''}${isBusy ? ' is-busy' : ''}${fail ? ' is-unavailable' : ''}`}
+                onClick={() => handleQualityClick(o.level)}
+              >
+                <span>{o.label}</span>
+                {tag && <span className="quality-src-tag">{tag}</span>}
+              </button>
+            );
+          })}
           {onSelectSource && sources.length > 1 && (
             <>
               <div className="quality-sep" />

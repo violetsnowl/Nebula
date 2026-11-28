@@ -2521,6 +2521,8 @@ body {
 .quality-pop .quality-item {
   display: flex;
   align-items: center;
+  justify-content: space-between;
+  gap: 12px;
   min-height: 36px;
   text-align: left;
   font-size: 13px;
@@ -2530,6 +2532,7 @@ body {
   background: transparent;
   color: var(--fg-2);
   cursor: pointer;
+  white-space: nowrap;
   transition: color 0.12s ease, background 0.12s ease;
 }
 
@@ -2542,6 +2545,14 @@ body {
 .quality-pop .quality-item.is-current {
   color: var(--acc);
   font-weight: 500;
+}
+
+.quality-pop .quality-item.is-busy {
+  opacity: 0.72;
+}
+
+.quality-pop .quality-item.is-unavailable {
+  opacity: 0.56;
 }
 
 .quality-pop .quality-sep {
