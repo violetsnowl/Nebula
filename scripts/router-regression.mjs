@@ -174,4 +174,46 @@ await test('汽水取音频不带 Referer / Origin（#215：车机 CDN 带 qishu
  assert.deepEqual(api.mediaHeaders('netease'),api.PLATFORM_HEADERS.netease);
  assert.equal(api.PLATFORM_HEADERS.qishui.Referer,'https://www.qishui.com/','接口请求的头不动');
 });
+await test('手动切换播放来源（#323）：列出可选平台按原平台+VIP排序；指定平台严格单平台解析；preferPlatform 优先并在失败时无缝回落',async()=>{
+ const a=adapters();
+ a.kuwo={fetchSongUrl:async(id,_al,q)=>({url:'https://kw/128.mp3',quality:'128'}),searchSongs:async()=>[]};
+ a.qq.searchSongs=async()=>[{...song,id:'qq:77',platform:'qq',sourceId:'77',title:'PROVE',artist:'Nil',duration:156}];
+ a.qq.fetchSongUrl=async(id,_al,q)=>id==='77'?{url:'https://qq/flac.flac',quality:q||'flac'}:null;
+ a.netease.searchSongs=async()=>[];
+ a.netease.fetchSongUrl=async()=>null;
+ a.bodian={fetchSongUrl:async()=>null,searchSongs:async()=>[]};
+ const r=make(a);
+ r.setFallbackTargets(async()=>[
+  {platform:'qq',tier:'vip'},
+  {platform:'netease',tier:'svip'},
+  {platform:'kugou',tier:'free'},
+  {platform:'kuwo',tier:'free'},
+  {platform:'bodian',tier:'guest'},
+ ]);
+ const kuwoSong={id:'kuwo:55',platform:'kuwo',sourceId:'55',title:'PROVE',artist:'Nil',album:'',cover:'',duration:156,originalUrl:'',fallbackUrl:''};
+ const list=await r.listPlayableSources(kuwoSong);
+ assert.equal(list[0].platform,'kuwo','原平台排第一');
+ assert.equal(list[0].isOriginal,true);
+ assert.equal(list[1].platform,'netease','SVIP 排在 VIP 前');
+ assert.equal(list[2].platform,'qq','VIP 排在普通前');
+ assert.ok(!list.some(x=>x.platform==='bodian'),'波点游客不列');
+ // 严格单平台解析到 QQ 拿到无损
+ const switched=await r.resolveOnPlatform(kuwoSong,'qq','flac');
+ assert.equal(switched.platform,'qq');
+ assert.equal(switched.sourceId,'77');
+ assert.equal(switched.quality,'flac');
+ assert.equal(switched.fallback,true);
+ // 严格单平台解析到网易云（无匹配）必须明确失败，不能静默落回酷我
+ const miss=await r.resolveOnPlatform(kuwoSong,'netease','lossless');
+ assert.equal(miss.playable,false);
+ assert.equal(miss.platform,'netease');
+ // preferPlatform=qq 时直接命中 QQ 无损
+ const prefHit=await r.resolve(kuwoSong,'flac',{preferPlatform:'qq'});
+ assert.equal(prefHit.platform,'qq');
+ assert.equal(prefHit.quality,'flac');
+ // preferPlatform=netease（失败）时无缝回落回酷我原平台，不中断播放
+ const prefFallback=await r.resolve(kuwoSong,'flac',{preferPlatform:'netease'});
+ assert.equal(prefFallback.platform,'kuwo');
+ assert.equal(prefFallback.playable,true);
+});
 console.log(`路由与代理回归 ${passed}/${passed}`);

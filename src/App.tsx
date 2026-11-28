@@ -27,7 +27,7 @@ import type { Track } from './lib/catalog';
 import { EmptyNebula, useEmptyPhase } from './components/EmptyNebula';
 import { mulberry32 } from './lib/rng';
 import { hasDesktopAPI, streamTrack, toBackendTrack, type DesktopTrack } from './lib/playlist/ipcClient';
-import { resolveTrackForPlay, selectQuality } from './lib/audio/desktopPlayback';
+import { loadPlaybackSources, resolveTrackForPlay, selectPlaybackSource, selectQuality } from './lib/audio/desktopPlayback';
 import type { DesktopWallpaperItem, DesktopWallpaperSetResult } from './lib/playlist/ipcClient';
 import { preferredQuality } from './lib/preferences';
 import { useAccounts } from './hooks/accounts/useAccounts';
@@ -741,6 +741,8 @@ export default function App() {
           quality={playerState.quality || preferredQuality()}
           mode={playerState.mode}
           onSelectQuality={handleQualitySelect}
+          onLoadSources={loadPlaybackSources}
+          onSelectSource={selectPlaybackSource}
           onCycleMode={cycleModeWithToast}
           onOpenNowPlaying={openNowPlaying}
           onOpenComments={openCommentsModal}

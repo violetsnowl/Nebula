@@ -123,7 +123,7 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
     };
   });
 
-  safe('nebula:resolve-song', async ({ track, quality, requestId, forceRefresh }: { track: Track; quality?: string; requestId?: string; forceRefresh?: boolean }, event) => {
+  safe('nebula:resolve-song', async ({ track, quality, requestId, forceRefresh, preferPlatform }: { track: Track; quality?: string; requestId?: string; forceRefresh?: boolean; preferPlatform?: Platform }, event) => {
     const requests = requestsFor(event), control = new AbortController();
     const key = typeof requestId === 'string' ? requestId.slice(0,96) : '';
     if (key) {
@@ -132,7 +132,24 @@ export function registerIpcHandlers(ipcMain: IpcLike, deps: IpcDeps): void {
       requests.set(key,control);
     }
     try {
-      const result = await deps.resolver.resolve(track, quality, {signal:control.signal,forceRefresh:!!forceRefresh});
+      const result = await deps.resolver.resolve(track, quality, { signal: control.signal, forceRefresh: !!forceRefresh, preferPlatform });
+      if (!result) return null;
+      return { ...result, url: deps.audioProxy.urlFor(result.url) };
+    } finally { if (key && requests.get(key) === control) requests.delete(key); }
+  });
+  safe('nebula:song-sources', async ({ track }: { track: Track }) =>
+    deps.resolver.listPlayableSources(track),
+  );
+  safe('nebula:resolve-on-platform', async ({ track, platform, quality, requestId }: { track: Track; platform: Platform; quality?: string; requestId?: string }, event) => {
+    const requests = requestsFor(event), control = new AbortController();
+    const key = typeof requestId === 'string' ? requestId.slice(0,96) : '';
+    if (key) {
+      requests.get(key)?.abort();
+      if (requests.size >= 16) { const first=requests.keys().next().value!; requests.get(first)?.abort(); requests.delete(first); }
+      requests.set(key,control);
+    }
+    try {
+      const result = await deps.resolver.resolveOnPlatform(track, platform, quality, { signal: control.signal, forceRefresh: true });
       if (!result) return null;
       return { ...result, url: deps.audioProxy.urlFor(result.url) };
     } finally { if (key && requests.get(key) === control) requests.delete(key); }

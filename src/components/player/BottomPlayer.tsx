@@ -5,6 +5,7 @@ import { ProgressLine } from './ProgressLine';
 import { VolumeControl } from './VolumeControl';
 import { QueueControl } from './QueueControl';
 import { QualityControl } from './QualityControl';
+import type { DesktopPlaybackSourceOption } from '../../lib/playlist/ipcClient';
 import { platformName } from '../../lib/quality';
 import { placeholderBg } from '../../lib/coverPlaceholder';
 import {
@@ -24,6 +25,8 @@ interface BottomPlayerProps {
   quality: string;
   onCycleMode: () => void;
   onSelectQuality: (level: string) => void;
+  onLoadSources?: () => Promise<DesktopPlaybackSourceOption[]>;
+  onSelectSource?: (platform: string) => void;
   onOpenNowPlaying: () => void;
   onOpenComments: () => void;
   onOpenSongDetail: () => void;
@@ -55,6 +58,8 @@ export const BottomPlayer = memo(function BottomPlayer({
   quality,
   onCycleMode,
   onSelectQuality,
+  onLoadSources,
+  onSelectSource,
   onOpenNowPlaying,
   onOpenComments,
   onOpenSongDetail,
@@ -161,7 +166,10 @@ export const BottomPlayer = memo(function BottomPlayer({
             qualities={qualities}
             quality={quality}
             source={state.song?.via ? platformName(state.song.via.platform) : undefined}
+            activePlatform={state.song?.via?.platform ?? state.song?.source}
             onSelectQuality={onSelectQuality}
+            onLoadSources={onLoadSources}
+            onSelectSource={onSelectSource}
           />
           <button className="bp-ctrl" aria-label="评论" data-tip="查看评论" disabled={!hasSong} onClick={onOpenComments}>
             <IconComments />

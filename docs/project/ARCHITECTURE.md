@@ -130,6 +130,7 @@ view blocks（同层互不依赖，组合只由 App 完成）
 | 音量、静音、播放顺序 | `music-nebula.player` | AudioPlayer（构造时读，`volumechange` / `setMode` 写） |
 | 播放位置（当前这首 + 秒数） | `music-nebula.position` | AudioPlayer（播放中每 2 秒、暂停、`pagehide` 写；`restore` 同一首时读，开头 3 秒内、结尾 5 秒内不恢复） |
 | 音质档位 | `music-nebula.quality` | preferences / desktopPlayback |
+| 手动切换的播放平台（按曲记忆，最多 500 首） | `music-nebula.source-overrides` | preferences / desktopPlayback |
 | 歌词设置、翻译开关 | `music-nebula.lyric-settings`、`music-nebula.lyric-translate` | useLyrics |
 | 听音空间设置（字体、视觉模式、读音等） | lib/listen/settings | 同左 |
 | 星云排法、背景、材质、界面开关 | lib/space/lab、lib/backgrounds、lib/glass/materials、useInterfaceSettings | 同左 |

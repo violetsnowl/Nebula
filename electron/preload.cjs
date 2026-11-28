@@ -4,6 +4,8 @@ const { contextBridge, ipcRenderer } = require('electron');
 contextBridge.exposeInMainWorld('nebulaAPI', {
   importPlaylist: (url) => ipcRenderer.invoke('nebula:import-playlist', { url }),
   resolveSong: (track, quality, options) => ipcRenderer.invoke('nebula:resolve-song', { track, quality, ...options }),
+  songSources: (track) => ipcRenderer.invoke('nebula:song-sources', { track }),
+  resolveOnPlatform: (track, platform, quality, options) => ipcRenderer.invoke('nebula:resolve-on-platform', { track, platform, quality, ...options }),
   cancelResolve: (requestId) => ipcRenderer.invoke('nebula:cancel-resolve', { requestId }),
   songQualities: (track) => ipcRenderer.invoke('nebula:song-qualities', { track }),
   fallbackSong: (track) => ipcRenderer.invoke('nebula:fallback-song', { track }),

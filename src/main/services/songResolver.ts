@@ -1,5 +1,5 @@
 import type { AdapterMap } from '../adapters/index';
-import type { Platform, ResolveResult, Track } from '../types';
+import type { Platform, PlaybackSourceOption, ResolveResult, Track } from '../types';
 import type { FallbackTarget } from './platformRouter';
 import { matchScore, recordingMatch as filterCandidate, searchKeyword } from './recordingMatch';
 export { matchScore } from './recordingMatch';
@@ -18,7 +18,7 @@ const LEVELS: Record<string, string[]> = {
   qishui: ['standard'], // 车机协议只给未加密的标准音质 // 对应 flac/2000kflac、mp3/320kmp3、mp3/128kmp3；取不到时适配器自己依次降档
 };
 export type UrlProbe = (url: string, platform: Platform, signal?: AbortSignal) => Promise<boolean>;
-export interface ResolveOptions { signal?: AbortSignal; forceRefresh?: boolean }
+export interface ResolveOptions { signal?: AbortSignal; forceRefresh?: boolean; preferPlatform?: Platform }
 export interface ResolverPolicy { totalMs: number; primaryMs: number; searchMs: number; candidateMs: number; probeMs: number; cacheMs: number }
 const POLICY: ResolverPolicy = { totalMs: 6000, primaryMs: 3500, searchMs: 1600, candidateMs: 2300, probeMs: 1600, cacheMs: 120000 };
 type Job = { control: AbortController; users: number; done: boolean; promise: Promise<ResolveResult> };
@@ -70,6 +70,13 @@ export class SongResolver {
   }
   resolve(track: Track, quality?: string, options: ResolveOptions = {}): Promise<ResolveResult> {
     if (options.signal?.aborted) return Promise.resolve(failure(track, 'CANCELLED'));
+    // 用户为这首歌手动选过优先播放平台（#323）：先在指定平台按同录音取链，拿不到整曲再无缝回落正常路由。
+    if (options.preferPlatform && options.preferPlatform !== track.platform && PRIMARY.includes(options.preferPlatform)) {
+      const target = options.preferPlatform;
+      return this.resolveOnPlatform(track, target, quality, { signal: options.signal, forceRefresh: options.forceRefresh }).then(
+        (hit) => (hit.url && !hit.trial ? hit : this.resolve(track, quality, { signal: options.signal, forceRefresh: options.forceRefresh })),
+      );
+    }
     const primaryExpired = this.adapters[track.platform]?.getAuthStatus?.() === 'expired';
     if (primaryExpired && !this.hasLiveAltSource(track)) {
       const result={...failure(track,'AUTH_EXPIRED'),traceId:`play-${++sequence}`,timings:[{stage:'auth',platform:track.platform,ms:0,outcome:'AUTH_EXPIRED'}]};
@@ -300,5 +307,124 @@ export class SongResolver {
   async enrichFallback(track: Track): Promise<Track> {
     const result=await this.resolveFallback(track);
     return {...track,originalUrl:'',fallbackUrl:result?.url || ''};
+  }
+
+  /**
+   * 列出当前曲目可手动切换的播放平台（#323）：原平台（若可直取）排第一，其余按用户已登录 VIP 档位排序。
+   * 读取的是 platformRouter 的 5 分钟内存快照，零额外网络等待。
+   */
+  async listPlayableSources(track: Track): Promise<PlaybackSourceOption[]> {
+    let targets: FallbackTarget[] = [];
+    if (this.fallbackTargets) {
+      try { targets = await withRequestScope(150, () => this.fallbackTargets!()); } catch { /* 沿用默认 */ }
+    }
+    const tierBy = new Map<string, FallbackTarget['tier']>();
+    for (const t of targets) tierBy.set(t.platform, t.tier);
+    const rank: Record<FallbackTarget['tier'], number> = { svip: 0, vip: 1, free: 2, guest: 3 };
+    const candidates: Platform[] = [];
+    if (PRIMARY.includes(track.platform) && typeof this.adapters[track.platform]?.fetchSongUrl === 'function') {
+      candidates.push(track.platform);
+    }
+    for (const p of PLAYABLE) {
+      if (p === track.platform || typeof this.adapters[p]?.fetchSongUrl !== 'function') continue;
+      if (this.adapters[p]?.getAuthStatus?.() === 'expired') continue;
+      // 波点游客无整曲权限，仅登录后列出
+      if (p === 'bodian' && (tierBy.get(p) ?? 'guest') === 'guest') continue;
+      candidates.push(p);
+    }
+    const rest = candidates
+      .filter((p) => p !== track.platform)
+      .sort((a, b) => rank[tierBy.get(a) ?? 'guest'] - rank[tierBy.get(b) ?? 'guest']);
+    const ordered = candidates.includes(track.platform) ? [track.platform, ...rest] : rest;
+    return ordered.map((platform) => {
+      const isOriginal = platform === track.platform;
+      const alt = track.altSources?.find((a) => a.platform === platform);
+      const cached = this.matches.get(`${this.key(track)}:${platform}`)?.tracks?.[0];
+      return {
+        platform,
+        tier: tierBy.get(platform) ?? 'guest',
+        isOriginal,
+        sourceId: isOriginal ? track.sourceId : (alt?.sourceId ?? cached?.sourceId),
+      };
+    });
+  }
+
+  /**
+   * 严格在用户指定的单一平台上解析同一录音（#323）：不静默跳回其他平台，
+   * 找不到同录音或无可用整曲时返回明确失败，由前端保持当前播放并提示用户。
+   */
+  async resolveOnPlatform(track: Track, targetPlatform: Platform, quality?: string, options: ResolveOptions = {}): Promise<ResolveResult> {
+    if (options.signal?.aborted) return failure(track, 'CANCELLED');
+    const adapter = this.adapters[targetPlatform];
+    if (!adapter?.fetchSongUrl || !PRIMARY.includes(targetPlatform)) {
+      return { ...failure(track, 'NO_SOURCE'), platform: targetPlatform, error: '该平台不支持直接播放' };
+    }
+    if (adapter.getAuthStatus?.() === 'expired') {
+      return { ...failure(track, 'AUTH_EXPIRED'), platform: targetPlatform };
+    }
+    const start = Date.now();
+    const traceId = `play-${++sequence}`;
+    const timings: Timings = [];
+    const fallback = targetPlatform !== track.platform;
+    try {
+      const res = await withRequestScope(
+        this.policy.totalMs,
+        async (): Promise<ResolveResult> => {
+          let candidates: Track[] = [];
+          if (!fallback) {
+            candidates = [track];
+          } else {
+            const alt = track.altSources?.find((a) => a.platform === targetPlatform && a.sourceId);
+            if (alt) {
+              candidates = [{
+                ...track,
+                platform: targetPlatform,
+                sourceId: alt.sourceId,
+                album: alt.album ?? track.album,
+                duration: alt.duration ?? track.duration,
+                extra: alt.extra ?? (alt.albumId ? { albumId: alt.albumId } : undefined),
+              }];
+            } else {
+              const matchKey = `${this.key(track)}:${targetPlatform}`;
+              const hit = this.matches.get(matchKey);
+              if (hit && Date.now() - hit.at < 24 * 3600_000) {
+                candidates = hit.tracks;
+              } else if (adapter.searchSongs) {
+                const rows = await this.stage(timings, 'search', targetPlatform, this.policy.searchMs, () =>
+                  adapter.searchSongs!(searchKeyword(track), 12),
+                ).catch(() => {
+                  throwIfCancelled();
+                  return [] as Track[];
+                });
+                candidates = rows
+                  .map((c) => ({ c, score: matchScore(c, track), guard: filterCandidate(c, track) }))
+                  .filter((x) => x.guard.ok && x.score >= 0.55)
+                  .sort((a, b) => a.guard.rank - b.guard.rank || b.score - a.score)
+                  .slice(0, 2)
+                  .map((x) => x.c);
+                if (candidates.length) remember(this.matches, matchKey, { at: Date.now(), tracks: candidates }, 512);
+              }
+            }
+          }
+          let trial: ResolveResult | null = null;
+          for (const c of candidates) {
+            throwIfCancelled();
+            const got = await this.source(c, targetPlatform, quality, fallback, timings);
+            if (got?.code === 'AUTH_EXPIRED') return { ...got, platform: targetPlatform };
+            if (got?.url && !got.trial) return got;
+            if (got?.url) trial ??= got;
+          }
+          return trial ?? { ...failure(track, 'NO_SOURCE'), platform: targetPlatform, error: '该平台暂无此录音的可用音源' };
+        },
+        { signal: options.signal, forceRefresh: true },
+      );
+      const complete = { ...res, traceId, timings };
+      this.report(complete, start);
+      return complete;
+    } catch (e) {
+      const complete = { ...failure(track, codeOf(e)), platform: targetPlatform, traceId, timings };
+      this.report(complete, start);
+      return complete;
+    }
   }
 }

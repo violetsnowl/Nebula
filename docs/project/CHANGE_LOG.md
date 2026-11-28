@@ -6,6 +6,29 @@
 
 ---
 
+## #323 — 2026-11-28 — 后端清算第三批：音质弹层支持手动切换播放平台（借用本人已登录 VIP 听高音质，按曲记忆）
+
+**目标**：解决单平台歌单（如酷我无 VIP、但用户同时登着 QQ VIP / 网易云 SVIP）被卡死在本平台低音质的问题，在播放条音质弹层里提供「播放来源」手动切换渠道，并记住该曲选择（仅调用用户本人已登录平台的官方接口与合法权益，不破解任何音源/音质）。
+
+**改动点**
+- **后端多源列表与单平台严格解析**（`src/main/types.ts`、`src/main/services/songResolver.ts`、`src/main/ipc.ts`、`electron/preload.cjs`）：
+  - 新增 `PlaybackSourceOption`、`SongResolver.listPlayableSources(track)`：读取 `platformRouter` 5 分钟内存快照，零额外网络耗时返回可播平台列表（原平台排第一，其余按用户当前 SVIP > VIP > 普通 > 游客排序；波点游客不列，过期平台不列）；
+  - 新增 `SongResolver.resolveOnPlatform(track, targetPlatform, quality, options)`：严格在用户指定单一平台上按 `recordingMatch` 查找同一录音并取链，不静默跳回其他平台；失败或仅有试听时明确返回，由前端保持原播放；
+  - `SongResolver.resolve` 新增可选 `preferPlatform`：命中整曲直接用指定平台，取不到时无缝回落常规路由，不中断播放；
+  - 暴露 `nebula:song-sources` 与 `nebula:resolve-on-platform` 两条 IPC 通道。
+- **前端按曲记忆与音质弹层交互**（`src/lib/preferences.ts`、`src/lib/playlist/ipcClient.ts`、`src/lib/audio/desktopPlayback.ts`、`src/components/player/QualityControl.tsx`、`src/components/player/BottomPlayer.tsx`、`src/App.tsx`、`src/styles.css`）：
+  - `preferences.ts` 新增 `getPreferredSource / setPreferredSource`（`localStorage` 键 `music-nebula.source-overrides`，上限 500 首，切回原平台清除覆盖）；
+  - `desktopPlayback.ts` 在点播时自动携带该曲记忆的 `preferPlatform`；新增 `loadPlaybackSources` 与 `selectPlaybackSource`（保持当前进度无缝切流、自动刷新目标平台音质列表、失败保留原播放并轻提示）；
+  - `QualityControl` 弹层打开时按需加载可选平台，超 1 个来源时在细分隔线下展示「播放来源」列表（平台名 + `SVIP / VIP / 原平台` 弱文字标注，复用克制列表样式，零外发光与圆底）。
+- **回归与文档**（`scripts/router-regression.mjs`、`docs/project/ARCHITECTURE.md`、`docs/project/PLATFORM_MATRIX.md`、`docs/meta/CONTEXT_SNAPSHOT.md`、`docs/project/NOTES.md`）：
+  - 新增回归覆盖 `listPlayableSources` 排序、`resolveOnPlatform` 严格单平台切换/失败不跳回、`preferPlatform` 命中与失败回落；
+  - 同步刷新架构持久化表、平台矩阵、上下文快照（`#323`）与踩坑沉淀。
+
+**验证**
+- `$env:pnpm_config_verify_deps_before_run='false'; pnpm build` + `pnpm qa:backend`（全套通过，含 `router-regression` 新增断言）+ `pnpm qa`（全部通过，0 控制台错误）。
+
+**遗留与风险**：待用户桌面验收三批后端清算（`#321–#323`）；YouTube Music 本平台音频仍维持暂不做，待后续按需决定。
+
 ## #322 — 2026-11-28 — 后端清算第二批：Spotify 搜索/专辑/歌手页迁 pathfinder 防 429、YouTube Music 搜歌、Apple Music 歌手/专辑页、酷我搜歌手与账号副本矩阵清零
 
 **目标**：按后端清算第二批计划，横向补齐九大平台在线搜索与内容页（让九平台全网搜歌全部点亮、补齐 Spotify / Apple Music 歌手页与专辑页及酷我搜歌手），并用账号副本核验矩阵中悬而未决的 ☑️/⚠️ 项，收紧专辑兜底对豪华版的误优先。

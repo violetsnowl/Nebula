@@ -53,6 +53,13 @@ export interface DesktopQualityOption {
   needsSvip?: boolean;
 }
 
+export interface DesktopPlaybackSourceOption {
+  platform: string;
+  tier: 'svip' | 'vip' | 'free' | 'guest';
+  isOriginal: boolean;
+  sourceId?: string;
+}
+
 export interface DesktopPlaylistResult {
   platformName: string;
   name: string;
@@ -242,7 +249,9 @@ export interface DesktopSheetBounds {
 
 export interface DesktopApi {
   importPlaylist: (url: string) => IpcResult<DesktopPlaylistResult>;
-  resolveSong: (track: DesktopTrack, quality?: string, options?: { requestId?: string; forceRefresh?: boolean }) => IpcResult<DesktopResolveResult | null>;
+  resolveSong: (track: DesktopTrack, quality?: string, options?: { requestId?: string; forceRefresh?: boolean; preferPlatform?: string }) => IpcResult<DesktopResolveResult | null>;
+  songSources?: (track: DesktopTrack) => IpcResult<DesktopPlaybackSourceOption[]>;
+  resolveOnPlatform?: (track: DesktopTrack, platform: string, quality?: string, options?: { requestId?: string }) => IpcResult<DesktopResolveResult | null>;
   cancelResolve?: (requestId: string) => IpcResult<boolean>;
   songQualities: (track: DesktopTrack) => IpcResult<DesktopQualityOption[]>;
   fallbackSong: (track: DesktopTrack) => IpcResult<DesktopTrack | null>;

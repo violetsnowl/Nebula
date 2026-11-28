@@ -156,6 +156,14 @@ export interface QualityOption {
   needsSvip?: boolean;
 }
 
+/** 音质弹层「播放来源」可选平台（#323：允许用户主动切到自己已登录的 VIP 平台播放更高音质）。 */
+export interface PlaybackSourceOption {
+  platform: Platform;
+  tier: 'svip' | 'vip' | 'free' | 'guest';
+  isOriginal: boolean;
+  sourceId?: string;
+}
+
 /** Unified platform adapter interface. */
 export interface PlatformAdapter {
   platform: Platform;
