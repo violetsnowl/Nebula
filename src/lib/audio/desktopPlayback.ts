@@ -93,12 +93,24 @@ export async function loadPlaybackSources(): Promise<DesktopPlaybackSourceOption
   }
 }
 
-/** 手动切换当前歌曲的播放平台（#323）：保持当前播放进度，成功后记住该曲选择；失败时保持原播放。 */
-export function selectPlaybackSource(targetPlatform: string): void {
+export interface PlaybackSourceSwitchResult {
+  ok: boolean;
+  status: 'switched' | 'noop' | 'cancelled' | 'trial' | 'unavailable' | 'auth_expired' | 'timeout' | 'error';
+  message?: string;
+  quality?: string;
+}
+
+/** 手动切换当前歌曲的播放平台（#323 / #324）：保持当前播放进度，成功后记住该曲选择；失败时保持原播放并给出清晰反馈。 */
+export function selectPlaybackSource(
+  targetPlatform: string,
+  onNotify?: (message: string) => void,
+): Promise<PlaybackSourceSwitchResult> {
   const song = audioPlayer.getState().song;
-  if (!song || !hasDesktopAPI() || !song.sourceId || !window.nebulaAPI?.resolveOnPlatform) return;
+  if (!song || !hasDesktopAPI() || !song.sourceId || !window.nebulaAPI?.resolveOnPlatform) {
+    return Promise.resolve({ ok: false, status: 'noop' });
+  }
   const activePlatform = song.via?.platform ?? song.source;
-  if (targetPlatform === activePlatform) return;
+  if (targetPlatform === activePlatform) return Promise.resolve({ ok: true, status: 'noop' });
   const generation = audioPlayer.getGeneration(), seq = ++qualitySequence;
   qualityRequest?.abort();
   const control = new AbortController(); qualityRequest = control;
@@ -114,21 +126,31 @@ export function selectPlaybackSource(targetPlatform: string): void {
       if (installed === audioPlayer.getGeneration() && audioPlayer.getState().error === msg) audioPlayer.setError(null);
     }, ms);
   };
-  flash(`正在切换至 ${platformName(targetPlatform)}…`, 6000);
-  void window.nebulaAPI
+  const label = platformName(targetPlatform);
+  flash(`正在切换至 ${label}…`, 8000);
+  return window.nebulaAPI
     .resolveOnPlatform(toBackendTrack(song), targetPlatform, preferredQuality() || undefined, { requestId })
-    .then((res) => {
-      unsubscribe();
-      control.signal.removeEventListener('abort', cancel);
-      if (!current()) return;
+    .then((res): PlaybackSourceSwitchResult => {
+      if (!current()) return { ok: false, status: 'cancelled' };
       if (!res.ok || !res.data?.url || res.data.playable === false || res.data.trial) {
         if (res.ok && res.data?.code === 'AUTH_EXPIRED') {
-          audioPlayer.setError(res.data.error || `${platformName(targetPlatform)} 登录已过期，请重新登录`);
-          return;
+          const msg = res.data.error || `${label} 登录已过期，请重新登录`;
+          audioPlayer.setError(msg);
+          onNotify?.(msg);
+          return { ok: false, status: 'auth_expired', message: msg };
         }
-        const reason = res.ok && res.data?.trial ? '仅有试听片段' : '暂无可用整曲音源';
-        flash(`${platformName(targetPlatform)}${reason}，已保持当前播放`, 3200);
-        return;
+        if (res.ok && res.data?.code === 'TIMEOUT') {
+          const msg = `${label}请求超时，已保持当前播放`;
+          flash(msg, 3200);
+          onNotify?.(msg);
+          return { ok: false, status: 'timeout', message: msg };
+        }
+        const isTrial = Boolean(res.ok && res.data?.trial);
+        const reason = isTrial ? '仅有试听片段' : '暂无可用整曲音源';
+        const msg = `${label}${reason}，已保持当前播放`;
+        flash(msg, 3200);
+        onNotify?.(msg);
+        return { ok: false, status: isTrial ? 'trial' : 'unavailable', message: msg };
       }
       const key = `${song.source}:${song.sourceId}`;
       setPreferredSource(key, targetPlatform === song.source ? null : targetPlatform);
@@ -141,10 +163,17 @@ export function selectPlaybackSource(targetPlatform: string): void {
         expiresAt: res.data.expiresAt,
       });
       const qText = qualityName(got);
-      flash(qText ? `已切至 ${platformName(targetPlatform)}（${qText}）` : `已切至 ${platformName(targetPlatform)}`);
+      const msg = qText ? `已切至 ${label}（${qText}）` : `已切至 ${label}`;
+      flash(msg);
+      onNotify?.(msg);
+      return { ok: true, status: 'switched', message: msg, quality: got };
     })
-    .catch(() => {
-      if (current()) flash(`切换至 ${platformName(targetPlatform)} 失败，已保持当前播放`, 3200);
+    .catch((): PlaybackSourceSwitchResult => {
+      if (!current()) return { ok: false, status: 'cancelled' };
+      const msg = `切换至 ${label} 失败，已保持当前播放`;
+      flash(msg, 3200);
+      onNotify?.(msg);
+      return { ok: false, status: 'error', message: msg };
     })
     .finally(() => {
       unsubscribe();

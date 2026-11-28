@@ -2,12 +2,13 @@
 
 ## 已知坑（遇事优先查这里）
 
-- **后端清算踩坑沉淀（2026-11-28，#321–#323）**：
+- **后端清算踩坑沉淀（2026-11-28，#321–#324）**：
   - **Spotify 公开 Web API（`/v1/search`、`/v1/albums`）对桌面客户端令牌恒 429**：不止 `/v1/me`，搜歌和搜专辑同样 429；所有搜索、专辑与歌手总览现已迁至 `api-partner.spotify.com/pathfinder/v2/query`（`QUERY_HASH` 在 `spotifyAdapter.ts`）。若未来 Spotify 轮换某个 hash，从 `open.spotify.com` 首页和 `xpui-routes-search.*.js` 提取新 hash 更新即可。
   - **酷狗 `singer/album` 封面必须用 `a.imgurl` 替换 `{size}`**：不要硬拼 `imge.kugou.com/msoft/480/{id}.jpg`（全 404）；真实字段是 `imgurl`（`stdmusic/{size}/...`），用 `kugouCoverUrl(a.imgurl, 400)` 稳定 200。
   - **适配器加高音质别忘了同步 `SongResolver.LEVELS`**：`#229` 改了 `kuwoAdapter` 支持 `flac/320/128`，但 `SongResolver.LEVELS.kuwo` 仍写死 `['128']`，导致高档请求在进适配器前就被 `mapQualityTo` 截断；以后调音质档位两处必须一起改。
   - **Apple Music 页面引擎白名单不可对 `library-songs` 放行 `editorialNotes`**：`applemusic-engine-regression` 明确校验资料库曲目剥离 `editorialNotes`；扩展目录歌手/专辑字段时必须限定 `out.type === 'artists' || out.type === 'albums'`。
   - **汽水登录后 PC 评论/详情实测封板**：即使带用户真实登录 Cookie 与 `pcParams`，`/luna/pc/comments` `count` 仍为 `0`，`/luna/pc/track_v2` 与 `/luna/pc/search/track` 无 `a_bogus` 签名回空体；评论/详情固定走网易云/QQ 兜底，搜歌走 volcengine 公开目录（UA `MusicNebula/1.0` 实测可用）。
+  - **手动单平台切换不能直接复用后台 5 平台兜底的紧超时与熔断**（`#324`）：`POLICY.searchMs = 1600ms` 适合 5 家并发竞速，但 QQ `client_search_cp` 常在 1.3–2.5s，`resolveOnPlatform` 直接复用 1600ms 且不重搜会导致手动切 QQ 频发超时且被静默归为无源；手动单平台应给足单路预算（`totalMs >= 10s`、`searchMs >= 4s` + 1 次重搜、`candidateMs >= 4.5s`）、绕过后台兜底熔断，并在 UI 弹层原地显示 `切换中… / 无整曲 / 超时` + 居中轻提示，避免弹层直接关掉让用户误以为按钮点不动。
 
 - **歌词「同一句显示两遍」先查 yrc 里是不是有两份逐字**（2026-11-26，#285）：缓存的 `lines` 每句一份不代表界面每句一份——跨源补逐字可能把本平台和补充来源（AMLL）的同一句逐字都留在 `yrc` 里，开始时间只差几十毫秒。凡是「本行已有逐字吗 / 这两行是同一句吗」的判断，时间窗口要和配对用的 `PAIR_WINDOW_MS`（1.2 秒）一致并按顺序配对，别再写死 250ms：网易云普通行常比自己的逐字早 1 秒多。前端合并逐字也要保证一句正文只认一份。
 - **英文逐字粘词先比字母数字**（同上）：网易云部分逐字把「, 」整个丢了（`souls` 后直接 `but`），逐字拼起来与正文差一个逗号。照正文还原空格时只比字母和数字（`alignLoose`），别要求一字不差。查歌词显示问题可用 esbuild 把 `src/lib/lyrics.ts` 的 `normalizeLyricLines` 打包，对 `%APPDATA%\music-nebula\lyric-cache.json` 的副本批量跑。

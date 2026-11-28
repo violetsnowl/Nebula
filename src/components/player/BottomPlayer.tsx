@@ -6,6 +6,7 @@ import { VolumeControl } from './VolumeControl';
 import { QueueControl } from './QueueControl';
 import { QualityControl } from './QualityControl';
 import type { DesktopPlaybackSourceOption } from '../../lib/playlist/ipcClient';
+import type { PlaybackSourceSwitchResult } from '../../lib/audio/desktopPlayback';
 import { platformName } from '../../lib/quality';
 import { placeholderBg } from '../../lib/coverPlaceholder';
 import {
@@ -26,7 +27,7 @@ interface BottomPlayerProps {
   onCycleMode: () => void;
   onSelectQuality: (level: string) => void;
   onLoadSources?: () => Promise<DesktopPlaybackSourceOption[]>;
-  onSelectSource?: (platform: string) => void;
+  onSelectSource?: (platform: string) => Promise<PlaybackSourceSwitchResult> | void;
   onOpenNowPlaying: () => void;
   onOpenComments: () => void;
   onOpenSongDetail: () => void;
@@ -165,6 +166,7 @@ export const BottomPlayer = memo(function BottomPlayer({
           <QualityControl
             qualities={qualities}
             quality={quality}
+            songKey={state.song ? `${state.song.source}:${state.song.sourceId || state.song.id}` : ''}
             source={state.song?.via ? platformName(state.song.via.platform) : undefined}
             activePlatform={state.song?.via?.platform ?? state.song?.source}
             onSelectQuality={onSelectQuality}

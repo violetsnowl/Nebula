@@ -1,10 +1,13 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import { platformName, qualityCode, qualityName } from '../../lib/quality';
 import type { DesktopPlaybackSourceOption } from '../../lib/playlist/ipcClient';
+import type { PlaybackSourceSwitchResult } from '../../lib/audio/desktopPlayback';
 
 interface QualityControlProps {
   qualities: { level: string; label: string; needsVip?: boolean; needsSvip?: boolean }[];
   quality: string;
+  /** 当前曲目身份键：切歌时清空该曲临时标记的不可播平台状态 */
+  songKey?: string;
   /** 跨平台兜底供流时的平台名：弹层标题下注明档位来自哪个平台 */
   source?: string;
   /** 当前实际出声的平台标识（用于高亮「播放来源」列表里的当前项） */
@@ -12,13 +15,20 @@ interface QualityControlProps {
   onSelectQuality: (level: string) => void;
   /** 弹层打开时按需读取可切换的播放平台列表（#323） */
   onLoadSources?: () => Promise<DesktopPlaybackSourceOption[]>;
-  onSelectSource?: (platform: string) => void;
+  onSelectSource?: (platform: string) => Promise<PlaybackSourceSwitchResult> | void;
 }
 
 function tierTag(opt: DesktopPlaybackSourceOption): string {
   if (opt.tier === 'svip') return opt.isOriginal ? '原平台 · SVIP' : 'SVIP';
   if (opt.tier === 'vip') return opt.isOriginal ? '原平台 · VIP' : 'VIP';
   return opt.isOriginal ? '原平台' : '';
+}
+
+function failTag(status: PlaybackSourceSwitchResult['status']): string {
+  if (status === 'trial') return '仅试听';
+  if (status === 'timeout') return '超时';
+  if (status === 'auth_expired') return '需重登';
+  return '无整曲';
 }
 
 /**
@@ -28,6 +38,7 @@ function tierTag(opt: DesktopPlaybackSourceOption): string {
 export const QualityControl = memo(function QualityControl({
   qualities,
   quality,
+  songKey,
   source,
   activePlatform,
   onSelectQuality,
@@ -36,9 +47,17 @@ export const QualityControl = memo(function QualityControl({
 }: QualityControlProps) {
   const [open, setOpen] = useState(false);
   const [sources, setSources] = useState<DesktopPlaybackSourceOption[]>([]);
+  const [pendingPlatform, setPendingPlatform] = useState<string | null>(null);
+  const [failedTags, setFailedTags] = useState<Record<string, string>>({});
   const rootRef = useRef<HTMLDivElement>(null);
   // 列表里没有当前档位（没有歌曲、或平台给了列表外的一档）时用通用中文名兜底，绝不把原始英文标识露给用户
   const qualityLabel = qualities.find((o) => o.level === quality)?.label ?? (qualityName(quality) || '音质');
+
+  // 切歌时重置当前曲的切换中 / 不可播标记
+  useEffect(() => {
+    setPendingPlatform(null);
+    setFailedTags({});
+  }, [songKey]);
 
   useEffect(() => {
     if (!open || !onLoadSources) {
@@ -52,7 +71,7 @@ export const QualityControl = memo(function QualityControl({
     return () => {
       cancelled = true;
     };
-  }, [open, activePlatform, onLoadSources]);
+  }, [open, songKey, activePlatform, onLoadSources]);
 
   useEffect(() => {
     if (!open) return;
@@ -69,6 +88,38 @@ export const QualityControl = memo(function QualityControl({
       document.removeEventListener('keydown', onKey);
     };
   }, [open]);
+
+  const handleSourceClick = (platform: string) => {
+    if (!onSelectSource) return;
+    if (platform === activePlatform) {
+      setOpen(false);
+      return;
+    }
+    setPendingPlatform(platform);
+    setFailedTags((prev) => {
+      if (!prev[platform]) return prev;
+      const next = { ...prev };
+      delete next[platform];
+      return next;
+    });
+    const ret = onSelectSource(platform);
+    if (!ret || typeof (ret as Promise<PlaybackSourceSwitchResult>).then !== 'function') {
+      setPendingPlatform(null);
+      setOpen(false);
+      return;
+    }
+    void (ret as Promise<PlaybackSourceSwitchResult>).then((res) => {
+      setPendingPlatform((cur) => (cur === platform ? null : cur));
+      if (!res || res.status === 'cancelled') return;
+      if (res.ok) {
+        setOpen(false);
+        return;
+      }
+      if (res.status !== 'noop') {
+        setFailedTags((prev) => ({ ...prev, [platform]: failTag(res.status) }));
+      }
+    });
+  };
 
   return (
     <div className="quality-ctl" ref={rootRef}>
@@ -105,15 +156,14 @@ export const QualityControl = memo(function QualityControl({
               <div className="queue-pop-title">播放来源</div>
               {sources.map((opt) => {
                 const isCur = opt.platform === activePlatform;
-                const tag = tierTag(opt);
+                const isBusy = pendingPlatform === opt.platform;
+                const fail = failedTags[opt.platform];
+                const tag = isBusy ? '切换中…' : fail || tierTag(opt);
                 return (
                   <button
                     key={opt.platform}
-                    className={`quality-src-item${isCur ? ' is-current' : ''}`}
-                    onClick={() => {
-                      onSelectSource(opt.platform);
-                      setOpen(false);
-                    }}
+                    className={`quality-src-item${isCur ? ' is-current' : ''}${isBusy ? ' is-busy' : ''}${fail ? ' is-unavailable' : ''}`}
+                    onClick={() => handleSourceClick(opt.platform)}
                   >
                     <span>{platformName(opt.platform)}</span>
                     {tag && <span className="quality-src-tag">{tag}</span>}

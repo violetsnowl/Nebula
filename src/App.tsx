@@ -391,6 +391,10 @@ export default function App() {
   }, []);
 
   const handleQualitySelect = selectQuality;
+  const handleSelectSource = useCallback(
+    (platform: string) => selectPlaybackSource(platform, setModeToast),
+    [setModeToast],
+  );
   /** 歌单列表：双击播放某首 → 回到该歌曲卡片中心。 */
   const playSongFromList = useCallback(
     (index: number) => {
@@ -742,7 +746,7 @@ export default function App() {
           mode={playerState.mode}
           onSelectQuality={handleQualitySelect}
           onLoadSources={loadPlaybackSources}
-          onSelectSource={selectPlaybackSource}
+          onSelectSource={handleSelectSource}
           onCycleMode={cycleModeWithToast}
           onOpenNowPlaying={openNowPlaying}
           onOpenComments={openCommentsModal}

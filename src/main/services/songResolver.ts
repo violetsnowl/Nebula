@@ -129,20 +129,32 @@ export class SongResolver {
     catch(e) { outcome=codeOf(e); throw e; }
     finally { timings.push({stage,platform,ms:Date.now()-at,outcome}); }
   }
-  private async source(track: Track, platform: Platform, quality: string | undefined, fallback: boolean, timings: Timings): Promise<ResolveResult | null> {
+  private async source(
+    track: Track,
+    platform: Platform,
+    quality: string | undefined,
+    fallback: boolean,
+    timings: Timings,
+    opts?: { candidateMs?: number; probeMs?: number; skipBreaker?: boolean },
+  ): Promise<ResolveResult | null> {
     throwIfCancelled();
     const breaker = this.health.get(platform);
-    // 用户主动点播始终给主源恢复机会；单曲超时不代表整个平台不可用。
-    if (fallback && breaker && breaker.until > Date.now()) { timings.push({stage:'circuit',platform,ms:0,outcome:'open'}); return null; }
+    // 用户主动点播（主源或手动指定平台）始终给该平台恢复机会；单曲超时不代表整个平台不可用。
+    if (fallback && !opts?.skipBreaker && breaker && breaker.until > Date.now()) {
+      timings.push({ stage: 'circuit', platform, ms: 0, outcome: 'open' });
+      return null;
+    }
+    const candidateMs = opts?.candidateMs ?? this.policy.candidateMs;
+    const probeMs = opts?.probeMs ?? this.policy.probeMs;
     try {
-      const direct = await this.stage(timings,'fetch',platform,this.policy.candidateMs,() => this.adapters[platform].fetchSongUrl(
+      const direct = await this.stage(timings, 'fetch', platform, candidateMs, () => this.adapters[platform].fetchSongUrl(
         track.sourceId, track.extra?.albumId == null ? undefined : String(track.extra.albumId), mapQualityTo(LEVELS[platform] || [],quality),track.extra,
       ));
       if (!direct?.url || direct.playable === false) {
         timings.push({stage:'availability',platform,ms:0,outcome:direct?.code || 'NO_SOURCE'});
         return direct?.code==='AUTH_EXPIRED'?failure(track,'AUTH_EXPIRED'):null;
       }
-      const accepted = !this.probe || await this.stage(timings,'probe',platform,this.policy.probeMs,() => this.probe!(direct.url,platform,requestScope()?.signal));
+      const accepted = !this.probe || await this.stage(timings, 'probe', platform, probeMs, () => this.probe!(direct.url, platform, requestScope()?.signal));
       if (!accepted) { timings.push({stage:'availability',platform,ms:0,outcome:'PROBE_REJECTED'}); return null; }
       this.health.delete(platform);
       const now = Date.now();
@@ -366,11 +378,19 @@ export class SongResolver {
     const traceId = `play-${++sequence}`;
     const timings: Timings = [];
     const fallback = targetPlatform !== track.platform;
+    // 手动单平台切换：用户明确在等这一家，比后台 5 平台竞速兜底给足预算（QQ 搜索常在 1.3–2.5s），并做 1 次重搜。
+    // 单元测试注入小预算（< 1s）时沿用注入值，不拖慢测试。
+    const manual = this.policy.totalMs >= 1000;
+    const totalMs = manual ? Math.max(this.policy.totalMs, 10000) : this.policy.totalMs;
+    const searchMs = manual ? Math.max(this.policy.searchMs, 4000) : this.policy.searchMs;
+    const candidateMs = manual ? Math.max(this.policy.candidateMs, 4500) : this.policy.candidateMs;
+    const probeMs = manual ? Math.max(this.policy.probeMs, 2500) : this.policy.probeMs;
     try {
       const res = await withRequestScope(
-        this.policy.totalMs,
+        totalMs,
         async (): Promise<ResolveResult> => {
           let candidates: Track[] = [];
+          let searchTimedOut = false;
           if (!fallback) {
             candidates = [track];
           } else {
@@ -390,12 +410,25 @@ export class SongResolver {
               if (hit && Date.now() - hit.at < 24 * 3600_000) {
                 candidates = hit.tracks;
               } else if (adapter.searchSongs) {
-                const rows = await this.stage(timings, 'search', targetPlatform, this.policy.searchMs, () =>
-                  adapter.searchSongs!(searchKeyword(track), 12),
-                ).catch(() => {
+                const runSearch = async (stage: string): Promise<Track[]> => {
+                  try {
+                    const found = await this.stage(timings, stage, targetPlatform, searchMs, () =>
+                      adapter.searchSongs!(searchKeyword(track), 12),
+                    );
+                    searchTimedOut = false;
+                    return found;
+                  } catch (e) {
+                    throwIfCancelled();
+                    if (codeOf(e) === 'TIMEOUT') searchTimedOut = true;
+                    return [];
+                  }
+                };
+                let rows = await runSearch('search');
+                if (!rows.length) {
+                  await new Promise((r) => setTimeout(r, Math.min(250, Math.max(5, searchMs / 4))));
                   throwIfCancelled();
-                  return [] as Track[];
-                });
+                  rows = await runSearch('search-retry');
+                }
                 candidates = rows
                   .map((c) => ({ c, score: matchScore(c, track), guard: filterCandidate(c, track) }))
                   .filter((x) => x.guard.ok && x.score >= 0.55)
@@ -409,10 +442,17 @@ export class SongResolver {
           let trial: ResolveResult | null = null;
           for (const c of candidates) {
             throwIfCancelled();
-            const got = await this.source(c, targetPlatform, quality, fallback, timings);
+            const got = await this.source(c, targetPlatform, quality, fallback, timings, {
+              candidateMs,
+              probeMs,
+              skipBreaker: true,
+            });
             if (got?.code === 'AUTH_EXPIRED') return { ...got, platform: targetPlatform };
             if (got?.url && !got.trial) return got;
             if (got?.url) trial ??= got;
+          }
+          if (!candidates.length && searchTimedOut) {
+            return { ...failure(track, 'TIMEOUT'), platform: targetPlatform, error: '该平台搜索超时，请稍后再试' };
           }
           return trial ?? { ...failure(track, 'NO_SOURCE'), platform: targetPlatform, error: '该平台暂无此录音的可用音源' };
         },

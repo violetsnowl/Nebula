@@ -6,6 +6,33 @@
 
 ---
 
+## #324 — 2026-11-28 — 手动切源超时与交互反馈修补（单平台放宽预算/重搜/绕熔断 + 弹层原地状态与居中提示）
+
+**目标**：解决桌面验收反馈的「音质弹层里手动切换播放来源时，后面三项（QQ / 酷狗 / 波点）点不动」问题。经 Playwright 命中测试与账号副本实测定位，点击事件本身无 CSS 遮挡，问题由三层原因叠加造成：① `SongResolver.resolveOnPlatform` 直接复用了后台 5 平台兜底的紧超时（`searchMs: 1600ms` 且不重搜）与后台熔断器，QQ 搜索（实测常在 1.3–2.5s）频发超时且返回 `NO_SOURCE`；② 酷狗 / 波点无会员号对 VIP 歌按规则仅能拿到试听或无权限（波点 `checkRight status=3` 为 29 秒试听）；③ 点击任意来源后弹层立刻关闭，失败提示只闪在播放条最左侧（远离右侧弹层），观感等同于「点不动」。
+
+**改动点**
+- **单平台手动解析可靠性**（`src/main/services/songResolver.ts`）：
+  - `resolveOnPlatform` 为生产环境手动切源提供独立预算（`totalMs >= 10s`、`searchMs >= 4s`、`candidateMs >= 4.5s`、`probeMs >= 2.5s`；单测注入 `< 1s` 小预算时沿用注入值不拖慢测试）；
+  - 首次搜索返回空或超时时自动重搜一次（对齐 `#205`）；若搜索超时则返回明确 `code: 'TIMEOUT'` 而非笼统的 `NO_SOURCE`；
+  - `source()` 新增可选 `skipBreaker`，用户主动指定某平台时绕过后台兜底熔断器，确保每次点击都真实尝试。
+- **弹层原地状态反馈与居中轻提示**（`src/lib/audio/desktopPlayback.ts`、`src/components/player/QualityControl.tsx`、`src/components/player/BottomPlayer.tsx`、`src/App.tsx`、`src/styles.css`）：
+  - `selectPlaybackSource` 返回 `Promise<PlaybackSourceSwitchResult>`（区分 `switched / trial / timeout / auth_expired / unavailable / cancelled`），并回调触发居中 G3 轻提示（`modeToast`），成功与失败原因都在视线正下方明确告知；
+  - `QualityControl` 点击非当前来源时不再盲目立刻关弹层，而是原地显示 `切换中…`；切换成功自动关闭弹层，失败则保留弹层并在该行右侧弱化标注 `无整曲 / 仅试听 / 超时 / 需重登`（切歌自动清空），仍可按 Esc 或点外部关闭。
+- **回归与文档**（`scripts/router-regression.mjs`、`docs/project/NOTES.md`、`docs/meta/CONTEXT_SNAPSHOT.md`、`docs/project/CHANGE_LOG.md`）：
+  - `router-regression.mjs` 新增 3 项回归：首次空搜索自动重搜命中、搜索超时返回 `TIMEOUT`、后台熔断开启后手动指定平台仍放行。
+
+**验证方式**
+- `pnpm build` 通过；
+- `pnpm qa:backend`（含 `router-regression` 新 3 项）全套离线回归通过；
+- `pnpm qa`（架构约束 + UI 播放回归 + 分段回归 + 无头 Chrome 全量验收，0 console error）通过；
+- Playwright 真实渲染验证：点击失败源（`NO_SOURCE`）弹层原地显示 `无整曲` + 居中轻提示，点击可用源（QQ 无损）自动切流关闭弹层 + 居中轻提示；
+- 账号副本实测确认「晴天」未出现汽水系因汽水无周杰伦《晴天》版权（搜「孤勇者」「起风了」全网分组均正常带出 `qishui`），副本测试目录已删除。
+
+**遗留与风险**
+- 酷狗 / 波点在无会员账号下对 VIP 歌曲仍按平台规则返回无整曲（不破解），现已由弹层原地标注 `无整曲` 与居中提示清晰告知用户。
+
+---
+
 ## #323 — 2026-11-28 — 后端清算第三批：音质弹层支持手动切换播放平台（借用本人已登录 VIP 听高音质，按曲记忆）
 
 **目标**：解决单平台歌单（如酷我无 VIP、但用户同时登着 QQ VIP / 网易云 SVIP）被卡死在本平台低音质的问题，在播放条音质弹层里提供「播放来源」手动切换渠道，并记住该曲选择（仅调用用户本人已登录平台的官方接口与合法权益，不破解任何音源/音质）。

@@ -215,5 +215,32 @@ await test('手动切换播放来源（#323）：列出可选平台按原平台+
  const prefFallback=await r.resolve(kuwoSong,'flac',{preferPlatform:'netease'});
  assert.equal(prefFallback.platform,'kuwo');
  assert.equal(prefFallback.playable,true);
+ // 手动指定平台：首次搜索空结果时自动重搜一次命中；且不受后台兜底熔断器阻拦（#324）
+ const a2=adapters();
+ let qqSearchCalls=0;
+ a2.qq.searchSongs=async()=>{qqSearchCalls++;return qqSearchCalls===1?[]:[{...song,id:'qq:88',platform:'qq',sourceId:'88',title:'PROVE',artist:'Nil',duration:156}];};
+ a2.qq.fetchSongUrl=async(id,_al,q)=>id==='88'?{url:'https://qq/retry-flac.flac',quality:q||'flac'}:null;
+ const r2=make(a2);
+ const retried=await r2.resolveOnPlatform(kuwoSong,'qq','flac');
+ assert.equal(qqSearchCalls,2,'首次空结果后应重搜一次');
+ assert.equal(retried.playable,true);
+ assert.equal(retried.sourceId,'88');
+ // 搜索超时时返回明确 TIMEOUT 码，不伪装成 NO_SOURCE
+ const a3=adapters();
+ a3.qq.searchSongs=()=>new Promise(()=>{});
+ const r3=make(a3);
+ const timedOut=await r3.resolveOnPlatform(kuwoSong,'qq','flac');
+ assert.equal(timedOut.playable,false);
+ assert.equal(timedOut.code,'TIMEOUT');
+ // 后台熔断开启后，手动指定该平台仍必须放行尝试
+ const a4=adapters();
+ let neteaseFails=0;
+ a4.netease.searchSongs=async()=>[{...song,id:'netease:99',platform:'netease',sourceId:'99',title:'PROVE',artist:'Nil',duration:156}];
+ a4.netease.fetchSongUrl=async()=>{if(++neteaseFails<=3)throw new Error('boom');return {url:'https://ne/ok.flac',quality:'lossless'};};
+ const r4=make(a4);
+ for(let i=0;i<3;i++)await r4.resolve({...kuwoSong,sourceId:`trip-${i}`});
+ const manualHit=await r4.resolveOnPlatform(kuwoSong,'netease','lossless');
+ assert.equal(manualHit.playable,true,'手动切换应绕过后台熔断');
+ assert.equal(manualHit.sourceId,'99');
 });
 console.log(`路由与代理回归 ${passed}/${passed}`);
