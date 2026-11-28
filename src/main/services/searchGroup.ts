@@ -29,7 +29,13 @@ export function groupSearchResults(tracks: Track[], limit?: number): SearchSongG
     else groups.push([track]);
   }
   const merged: SearchSongGroup[] = groups.map((items) => {
-    const sources = [...items].sort((a, b) => rank(a.platform) - rank(b.platform));
+    // 同一录音在同一平台可能出现多条不同 sourceId（专辑版 / 合集版），展开列表只按平台展示，
+    // 保留每家最靠前的一条，避免出现两个「QQ 音乐」或两个「酷我音乐」。
+    const perPlatform = new Map<Platform, Track>();
+    for (const item of items) {
+      if (!perPlatform.has(item.platform)) perPlatform.set(item.platform, item);
+    }
+    const sources = [...perPlatform.values()].sort((a, b) => rank(a.platform) - rank(b.platform));
     return { primary: sources[0]!, sources };
   });
   return limit && limit > 0 ? merged.slice(0, limit) : merged;

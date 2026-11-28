@@ -8,7 +8,7 @@ import { decodeKrc, fromTimed } from '../parsers/timedLyrics';
 import { mapKugouMobileTrack, mapKugouTrack } from './mappers';
 import { sourceTiming } from '../../lib/audio/sourceLifetime';
 
-// --- 文本处理（对齐 Mineradio） ---
+// --- 文本处理 ---
 function stripKugouHtml(text: string): string {
   return decodeKugouDisplayText(String(text || '').replace(/<[^>]+>/g, '').trim());
 }
@@ -347,7 +347,7 @@ interface UrlCacheEntry {
 const VIP_TTL_MS = 5 * 60 * 1000;
 
 
-/** H5 网关歌单歌曲映射（对齐 Mineradio mapKugouPlaylistTrack） */
+/** H5 网关歌单歌曲映射 */
 function mapKugouPlaylistTrack(item: Record<string, any>): Track | null {
   try {
     const artists = extractKugouArtists(item);
@@ -678,7 +678,7 @@ export class KugouAdapter implements PlatformAdapter {
             platform: 'kugou' as const,
             id,
             name: String(a.albumname ?? ''),
-            cover: id ? `https://imge.kugou.com/msoft/480/${id}.jpg` : '',
+            cover: kugouCoverUrl(String(a.imgurl || a.sizable_cover || ''), 400),
             artist: String(a.singername ?? ''),
             year: a.publishtime ? Number(String(a.publishtime).slice(0, 4)) || undefined : undefined,
             songCount: Number(a.songcount) || undefined,

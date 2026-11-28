@@ -13,7 +13,7 @@ const PLAYABLE: Platform[] = ['netease', 'qq', 'kugou', 'kuwo', 'bodian'];
 const PRIMARY: Platform[] = [...PLAYABLE, 'qishui'];
 const LEVELS: Record<string, string[]> = {
   netease: ['jymaster','hires','lossless','exhigh','standard'], qq: ['flac','320k','128k'], kugou: ['hires','flac','320','128'],
-  kuwo: ['128'], // 实测匿名只有 128k；高档位待真实账号核验后再加
+  kuwo: ['flac','320','128'], // #229 起适配器支持逐档降级（无权限自动落回 128k）
   bodian: ['flac','320','128'],
   qishui: ['standard'], // 车机协议只给未加密的标准音质 // 对应 flac/2000kflac、mp3/320kmp3、mp3/128kmp3；取不到时适配器自己依次降档
 };

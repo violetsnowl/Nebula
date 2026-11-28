@@ -6,6 +6,26 @@
 
 ---
 
+## #321 — 2026-11-28 — 后端清算第一批：补接汽水全网搜歌、同平台来源去重、酷我档位透传、酷狗专辑真封面、本地搜歌简繁折叠与第三方名残留清理
+
+**目标**：根据 `#223–#233` 桌面验收反馈与源码自查，一次性修复 5 个明确缺陷并清理运行时代码与注释里残留的第三方参考项目名（`Mineradio` / `folia`）。
+
+**改动点**
+- **补接汽水进全网搜歌**（`src/main/services/lyricService.ts`）：`#231` 修好汽水公开搜索字段但漏把 `this.adapters.qishui` 加入 `searchSongs` 来源列表，现已补上；未登录走公开搜索、登录后优先 PC 搜索。
+- **全网搜歌分组内同平台去重**（`src/main/services/searchGroup.ts`）：`groupSearchResults` 按平台保留每家最靠前的一条，修复展开来源时同一平台重复出现两条（如两个「QQ 音乐」、两个「酷我音乐」）的问题。
+- **酷我档位透传修正**（`src/main/services/songResolver.ts`）：将 `LEVELS.kuwo` 从 `['128']` 更正为 `['flac','320','128']`，解决 `#229` 漏改导致高音质请求在进 `kuwoAdapter` 前就被压成 `128` 的问题（无权限时仍由适配器安全降回 `128`）。
+- **酷狗歌手页专辑封面修复**（`src/main/adapters/kugouAdapter.ts`）：`fetchArtistAlbums` 改为读取接口真实的 `imgurl`（`{size}` 替换为 `400` 并升 `https`），修复此前硬拼失效地址 `msoft/480/{id}.jpg` 导致专辑封面全为 404 的问题。
+- **本地歌单搜索简繁 / 日文汉字归一**（`src/lib/search.ts`）：`norm()` 新增 NFKC 归一化与常用繁体 / 日文新旧字体 → 简体折叠表（`foldCjkVariants`），修复歌单内存 `米津玄師 / 周杰倫 / 桜` 时输入简体 `米津玄师 / 周杰伦 / 樱` 命不中本歌单的问题。
+- **代码卫生清理**（`src/main/adapters/qishuiAdapter.ts`、`kugouAdapter.ts`、`spotifyAdapter.ts`、`src/main/login/qishuiLogin.ts`、`qishui-sign-engine/security_host.html`、`scripts/kugou-krcs-verify.mjs`）：将汽水公开目录请求头 `User-Agent` 改为 `MusicNebula/1.0 (Qishui public catalog)`（实测 volcengine 正常返回），并清理源码/脚本中全部残留的第三方参考项目名。
+- **回归与文档**（`scripts/search-regression.mjs`、`scripts/kuwo-regression.mjs`、`docs/project/PLATFORM_MATRIX.md`）：补 4 项离线回归（汽水入全网搜索、分组同平台去重、酷狗专辑 `imgurl` 替换、`SongResolver` 酷我 `flac/320` 透传），同步刷新矩阵。
+
+**验证**
+- `$env:pnpm_config_verify_deps_before_run='false'; pnpm build` + `pnpm qa:backend`（全套通过，含新增 4 项回归）+ `pnpm qa`（全部通过，0 控制台错误）。
+- 实网抽验：`MusicNebula/1.0` 调汽水 volcengine 公开搜歌返回 3 条；酷狗 `imge.kugou.com/stdmusic/400/...` 返回 `200 image/jpeg`；`matchSongs('米津玄师', ...)` 命中 `米津玄師`。
+- 全仓 `src/ electron/ scripts/` 检索第三方名残留为 0。
+
+**遗留与风险**：下一步按三批计划推进第二批（Spotify 搜索/专辑防 429 核验迁移、汽水登录态评论/详情探测、Apple Music 歌手/专辑补全、YouTube Music 搜歌、酷我/波点/汽水搜歌手与专辑探测、账号副本清零矩阵）。
+
 ## #320 — 2026-11-27 — 会话结项交接文档刷新：补齐穿行细打磨用户拍板边界与避坑沉淀
 
 **目标**：本窗口结束前收尾交接，修正 `CONTEXT_SNAPSHOT.md` 残留旧句形/招式计数并固化 `#318–#319` 用户明确拍板的边界与踩坑记录，供新窗口无缝接手。

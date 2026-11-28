@@ -238,4 +238,54 @@ await test('搜歌手：单家抛错不影响其他家', async () => {
   assert.equal(list.length, 1);
 });
 
+await test('搜歌：汽水已接入全网搜索来源列表（补 #231 漏接线）', async () => {
+  const svc = new b.LyricService({
+    netease: songAdapter('netease', ['A1']),
+    qishui: songAdapter('qishui', ['Q1']),
+  });
+  const groups = await svc.searchSongs('测试', 6);
+  assert.ok(groups.some((g) => g.sources.some((s) => s.platform === 'qishui')), '汽水必须参与全网搜歌');
+});
+
+await test('合并：同一平台搜出两条不同 id 的同一录音时，组内该平台只留一条', async () => {
+  const groups = b.groupSearchResults(
+    [
+      song('qq', { sourceId: 'q-album', album: 'Lover' }),
+      song('qq', { sourceId: 'q-comp', album: 'Hits 2020' }),
+      song('kuwo', { sourceId: 'u-1' }),
+      song('kuwo', { sourceId: 'u-2' }),
+      song('netease', { sourceId: 'n-1' }),
+    ],
+    10,
+  );
+  assert.equal(groups.length, 1);
+  assert.deepEqual(groups[0].sources.map((s) => s.platform), ['netease', 'qq', 'kuwo']);
+  assert.equal(groups[0].sources.find((s) => s.platform === 'qq').sourceId, 'q-album', '保留排在前面的那条');
+});
+
+await test('酷狗歌手专辑：封面读取真实 imgurl 替换 {size} 并升级 https（修 404）', async () => {
+  const http = {
+    requestJson: async () => ({
+      data: {
+        info: [
+          {
+            albumid: 179652761,
+            albumname: '太阳之子',
+            singername: '周杰伦',
+            publishtime: '2026-03-25 00:00:00',
+            songcount: 13,
+            imgurl: 'http://imge.kugou.com/stdmusic/{size}/20260319/20260319101420611881.jpg',
+          },
+          { albumid: 2, albumname: '无图专辑', singername: '周杰伦', imgurl: '' },
+        ],
+      },
+    }),
+  };
+  const kg = new b.KugouAdapter(http, new b.CookieStore(require('node:path').join(require('node:os').tmpdir(), 'kg-alb-reg.json')));
+  const albums = await kg.fetchArtistAlbums('3520');
+  assert.equal(albums.length, 2);
+  assert.equal(albums[0].cover, 'https://imge.kugou.com/stdmusic/400/20260319/20260319101420611881.jpg');
+  assert.equal(albums[1].cover, '');
+});
+
 console.log(`在线搜索回归 ${n}/${n}`);

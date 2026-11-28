@@ -280,4 +280,16 @@ await test('会员：有 http 才查；到期晚于服务器时间才算；接�
  }
  acc=await new KuwoLogin(newStore('sid=x'),m.http).getAccount();assert.equal(acc.authStatus,'missing');assert.equal(m.calls.length,1,'cookie 不完整不发请求');
 });
+await test('SongResolver 酷我档位透传：不再把 flac / 320 压死成 128',async()=>{
+ const seen=[];
+ const resolver=new api.SongResolver({
+  kuwo:{fetchSongUrl:async(_id,_alb,q)=>{seen.push(q);return {url:'https://kw-er.kuwo.cn/sig/ts/resource/x/f.flac',quality:q};}},
+ },()=>{});
+ const tr={id:'kuwo:1',title:'歌',artist:'手',album:'',cover:'',duration:200,platform:'kuwo',sourceId:'1',originalUrl:'',fallbackUrl:''};
+ const r1=await resolver.resolve(tr,'flac');
+ const r2=await resolver.resolve({...tr,sourceId:'2'},'320');
+ assert.equal(r1.quality,'flac');
+ assert.equal(r2.quality,'320');
+ assert.deepEqual(seen,['flac','320']);
+});
 console.log(`酷我回归 ${passed}/${passed}`);

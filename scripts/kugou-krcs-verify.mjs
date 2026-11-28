@@ -97,7 +97,7 @@ async function verifyQishuiVolcengine(trackId) {
   const url = `https://api-vehicle.volcengine.com/v2/custom/contents?sources=qishui&need_author=true&need_album=true&need_ugc=true&need_stat=true&item_ids=${trackId}`;
   console.log(`\n[1] GET ${url}`);
   const res = await fetch(url, {
-    headers: { 'User-Agent': 'Mineradio/2.1.0 (Qishui public catalog bridge)' },
+    headers: { 'User-Agent': 'MusicNebula/1.0 (Qishui public catalog)' },
   });
   console.log(`    Status: ${res.status}`);
   const data = JSON.parse(res.data);

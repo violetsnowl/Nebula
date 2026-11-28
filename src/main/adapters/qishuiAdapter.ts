@@ -148,7 +148,7 @@ export class QishuiAdapter implements PlatformAdapter {
       const url = `https://api-vehicle.volcengine.com/v2/search/type?keyword=${encodeURIComponent(keyword)}&search_type=music&limit=${pageSize}&real_offset=0&search_source=qishui`;
       const data = await this.http.requestJson<any>(url, {
         platform: 'qishui',
-        headers: { 'User-Agent': 'Mineradio/2.1.0 (Qishui public catalog bridge)' },
+        headers: { 'User-Agent': 'MusicNebula/1.0 (Qishui public catalog)' },
       });
       const list = data?.data?.list || [];
       return list.map((item: any) => this.mapPublicTrack(item)).filter(Boolean) as Track[];
@@ -394,7 +394,7 @@ export class QishuiAdapter implements PlatformAdapter {
       const volUrl = `https://api-vehicle.volcengine.com/v2/custom/contents?sources=qishui&need_author=true&need_album=true&need_ugc=true&need_stat=true&item_ids=${trackId}`;
       const volData = await this.http.requestJson<any>(volUrl, {
         platform: 'qishui',
-        headers: { 'User-Agent': 'Mineradio/2.1.0 (Qishui public catalog bridge)' },
+        headers: { 'User-Agent': 'MusicNebula/1.0 (Qishui public catalog)' },
       });
       const item = volData?.data?.[0];
       const lrc = item?.lyric_text;

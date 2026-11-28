@@ -336,7 +336,7 @@ export class QishuiLogin {
     }
     const signedMsToken = signedQuery.get('msToken') || '';
     if (signedMsToken && signedMsToken !== this.msToken) {
-      // SDK 篡改/替换了 msToken 时尽早暴露（与 Mineradio 行为一致）
+      // SDK 篡改/替换了 msToken 时尽早暴露
       console.warn("[QishuiLogin] 签名后 msToken 与本地不一致（SDK 替换），使用签名 URL 的 msToken");
     }
     // 补充捕获：XHR 响应头的 Set-Cookie 直接并入（onHeadersReceived 可能因 URL 模式漏匹配）

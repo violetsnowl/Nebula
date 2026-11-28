@@ -9,7 +9,7 @@ const API = 'https://api.spotify.com/v1';
 /**
  * Spotify 登录用的客户端身份：默认用 Spotify 桌面客户端的公开 ID（开源播放器 librespot 等都用它），
  * 用户不用去开发者后台注册应用，也不受开发模式 5 个用户的限制；设了环境变量 SPOTIFY_CLIENT_ID 则用自己的。
- * 回调地址必须是这个 ID 登记过的形式：http://127.0.0.1:5588/login（folia 2026-10 实测）。
+ * 回调地址必须是这个 ID 登记过的形式：http://127.0.0.1:5588/login。
  */
 export const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID || '65b708073fc0480ea92a077233ca87bd';
 export const SPOTIFY_REDIRECT_PORT = 5588;
@@ -58,8 +58,8 @@ function mapSpotifyTrack(raw: Record<string, any> | undefined | null): Track | n
 /**
  * Spotify 自家 App 用的查询服务（pathfinder，固定名字的持久化查询）。
  * 桌面客户端身份在公开 Web API 上第一次请求就被 429（全世界的开源播放器共用这个身份，额度总是满的；
- * 2026-11-18 用户账号实测，folia 2026-10-08 记录相同），所以账号、我的歌单、歌单曲目都走这里，用的是同一个登录令牌。
- * 查询名和哈希来自 folia 2026-10 的实测记录；Spotify 改版换掉某个查询时会返回错误，届时按日志更新哈希。
+ * 2026-11-18 用户账号实测），所以账号、我的歌单、歌单曲目都走这里，用的是同一个登录令牌。
+ * 查询名和哈希来自实测记录；Spotify 改版换掉某个查询时会返回错误，届时按日志更新哈希。
  */
 const PATHFINDER = 'https://api-partner.spotify.com/pathfinder/v2/query';
 const QUERY_HASH = {

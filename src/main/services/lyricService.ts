@@ -722,6 +722,7 @@ export class LyricService {
       this.adapters.kugou,
       this.adapters.kuwo,
       this.adapters.bodian,
+      this.adapters.qishui,
     ].filter(Boolean);
     // Spotify 只有登录后才有令牌；没有就跳过，省一次必然失败的请求（未登录时搜索接口回空）
     const spotify = this.adapters.spotify;
