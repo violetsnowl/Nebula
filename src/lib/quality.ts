@@ -5,6 +5,7 @@
  */
 const LABEL: Record<string, string> = {
   standard: '标准',
+  high: '较高',
   higher: '较高',
   exhigh: '极高',
   lossless: '无损',

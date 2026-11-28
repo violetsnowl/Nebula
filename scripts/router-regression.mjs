@@ -242,5 +242,22 @@ await test('手动切换播放来源（#323）：列出可选平台按原平台+
  const manualHit=await r4.resolveOnPlatform(kuwoSong,'netease','lossless');
  assert.equal(manualHit.playable,true,'手动切换应绕过后台熔断');
  assert.equal(manualHit.sourceId,'99');
+ // #326：汽水仅在已完成车机授权（canPlayDirect）时进入手动切换候选，并支持手动切到汽水
+ const a5=adapters();
+ let carReady=false;
+ a5.qishui={
+  platform:'qishui',
+  canPlayDirect:()=>carReady,
+  searchSongs:async()=>[{...song,id:'qishui:888',platform:'qishui',sourceId:'888',title:'PROVE',artist:'Nil',duration:156}],
+  fetchSongUrl:async(id)=>id==='888'?{url:'https://qishui/ok.mp3',quality:'standard'}:null,
+ };
+ const r5=make(a5);
+ assert.ok(!(await r5.listPlayableSources(kuwoSong)).some(x=>x.platform==='qishui'),'未做车机授权时不列汽水');
+ carReady=true;
+ assert.ok((await r5.listPlayableSources(kuwoSong)).some(x=>x.platform==='qishui'),'完成车机授权后汽水进入手动切换候选');
+ const qsHit=await r5.resolveOnPlatform(kuwoSong,'qishui','standard');
+ assert.equal(qsHit.playable,true);
+ assert.equal(qsHit.platform,'qishui');
+ assert.equal(qsHit.sourceId,'888');
 });
 console.log(`路由与代理回归 ${passed}/${passed}`);

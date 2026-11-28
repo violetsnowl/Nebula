@@ -100,6 +100,11 @@ export class QishuiAdapter implements PlatformAdapter {
     this.car = new QishuiCar(cookies);
   }
 
+  /** 是否已完成且未过期的车机音频授权（供手动切换播放来源决定是否列出汽水）。 */
+  canPlayDirect(): boolean {
+    return this.car.hasUsableCredential();
+  }
+
   /** 获取登录 cookie */
   private getCookie(): string {
     return this.cookies.getHeader('qishui') || '';

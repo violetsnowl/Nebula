@@ -191,6 +191,8 @@ export interface PlatformAdapter {
   fetchArtistAllSongs?(artistId: string): Promise<Track[]>;
   /** Quality options available for the current account (netease/qq). */
   listQualities?(songId?: string): Promise<QualityOption[]>;
+  /** 是否具备直接取流授权（如汽水车机授权；供手动切换播放来源判断是否展示该平台）。 */
+  canPlayDirect?(): boolean;
 }
 
 /** User playlist summary (shown after login). */

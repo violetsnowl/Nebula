@@ -322,7 +322,8 @@ export class SongResolver {
   }
 
   /**
-   * 列出当前曲目可手动切换的播放平台（#323）：原平台（若可直取）排第一，其余按用户已登录 VIP 档位排序。
+   * 列出当前曲目可手动切换的播放平台（#323 / #326）：原平台（若可直取）排第一，其余按用户已登录 VIP 档位排序。
+   * 汽水在用户完成车机授权（canPlayDirect）后也加入手动切换候选，但仍不参与后台自动兜底以免拖慢或降质。
    * 读取的是 platformRouter 的 5 分钟内存快照，零额外网络等待。
    */
   async listPlayableSources(track: Track): Promise<PlaybackSourceOption[]> {
@@ -337,11 +338,20 @@ export class SongResolver {
     if (PRIMARY.includes(track.platform) && typeof this.adapters[track.platform]?.fetchSongUrl === 'function') {
       candidates.push(track.platform);
     }
-    for (const p of PLAYABLE) {
-      if (p === track.platform || typeof this.adapters[p]?.fetchSongUrl !== 'function') continue;
-      if (this.adapters[p]?.getAuthStatus?.() === 'expired') continue;
+    for (const p of PRIMARY) {
+      const adapter = this.adapters[p];
+      if (p === track.platform || typeof adapter?.fetchSongUrl !== 'function') continue;
+      if (adapter.getAuthStatus?.() === 'expired') continue;
       // 波点游客无整曲权限，仅登录后列出
       if (p === 'bodian' && (tierBy.get(p) ?? 'guest') === 'guest') continue;
+      // 汽水仅在已完成有效车机授权时加入手动切换候选，且从车机凭据读取会员标注
+      if (p === 'qishui') {
+        if (!adapter.canPlayDirect?.()) continue;
+        if (!tierBy.has('qishui')) {
+          const carVip = (adapter as { car?: { loadCredential?: () => { user?: { isVip?: boolean } } | null } }).car?.loadCredential?.()?.user?.isVip;
+          tierBy.set('qishui', carVip ? 'vip' : 'free');
+        }
+      }
       candidates.push(p);
     }
     const rest = candidates

@@ -6,6 +6,31 @@
 
 ---
 
+## #326 — 2026-11-28 — 汽水音乐加入手动切源候选（车机已授权时可见）+ YouTube Music 直出音频可行性实测封板
+
+**目标**：响应用户需求：① 将已完成车机音频授权的「汽水音乐」加入播放条音质弹层的「播放来源」手动切换候选（不进后台自动兜底，不拖慢自动播放，但为用户扩大有版权可播范围）；② 实测调研 YouTube Music `youtubei/v1/player` 本平台出声可行性并落档结论。
+
+**改动点**
+- **汽水入手动切换候选**（`src/main/types.ts`、`src/main/adapters/qishuiAdapter.ts`、`src/main/services/songResolver.ts`、`src/lib/quality.ts`）：
+  - `PlatformAdapter` 新增可选 `canPlayDirect()`，`QishuiAdapter.canPlayDirect()` 读取 `car.hasUsableCredential()`；
+  - `SongResolver.listPlayableSources` 遍历 `PRIMARY`：汽水仅在已完成有效车机授权时加入手动切换列表（同步读取车机凭据的 `isVip` 标注 `VIP` / 普通）；后台自动兜底 `PLAYABLE` 仍保持 5 家不变；
+  - `src/lib/quality.ts` 补齐 `high: '较高'`，避免汽水车机返回 `high` 档位时回落为通用「音质」。
+- **YouTube Music 直出音频实测调研封板**（`docs/project/PLATFORM_MATRIX.md`、`docs/project/NOTES.md`、`docs/meta/CONTEXT_SNAPSHOT.md`）：
+  - 实网测试 `TVHTML5 + OAuth + real sts`（返回 `UNPLAYABLE`，需 BotGuard / PO Token）、`ANDROID_VR 1.71`（全走 `signatureCipher` 轮换加密签名）、`IOS 20.10.4`（虽返回 5 条直链且前 1MB 范围请求 206，但**满 1,048,576 字节 / 约 60 秒后所有 Range 含文件尾一律 403**）；
+  - 遵循不做反爬绕过、不上线 60 秒断流半成品的原则，YouTube Music 保持跨平台兜底，实测结论写入 `PLATFORM_MATRIX.md` 与 `NOTES.md`。
+- **回归**（`scripts/router-regression.mjs`）：新增汽水未授权不列、完成车机授权后进入候选且 `resolveOnPlatform('qishui')` 命中整曲回归。
+
+**验证方式**
+- `pnpm build` 通过；
+- `pnpm qa:backend`（含 `router-regression` 新汽水切源回归）全套离线回归通过；
+- `pnpm qa`（架构约束 + UI 播放回归 + 分段回归 + 无头 Chrome 全量验收，0 console error）通过；
+- 临时调研副本与脚本已清理。
+
+**遗留与风险**
+- 各平台真实付费 VIP 账号逐一验证（酷狗第四路、酷我高音质等）按用户决定留作后续专项实测。
+
+---
+
 ## #325 — 2026-11-28 — 验收修补：拦截巡演/演唱会场次 Live 顶替原版 + 音质切不上去时原地标注与居中提示
 
 **目标**：解决桌面验收发现的两个问题：① 播放《孤勇者》切到波点音乐时播成演唱会 Live 版——根因是波点原版需会员（仅试听），第二候选 `孤勇者 (2023 FEAR and DREAMS世界巡回演唱会上海站)` 的括注因以「上海站」而非「演唱会」结尾，绕过了 `recordingMatch` 的 `CJK_VERSION_END` 末尾锚定检查，且恰好同长 256 秒，被误当成录音室原版放行；② 在无会员平台（如酷狗无 VIP）点更高音质（如「高品 320k」）降回原档位时，旧逻辑只在播放条最左侧闪一句弱提示、且无谓重载同一档位音频，右侧弹层直接关闭，观感像「选不了却无提示」。
